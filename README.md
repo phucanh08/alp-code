@@ -38,8 +38,8 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/phucanh08/alp-code/main/install.ps1 | iex
 ```
 
-Installer clone repo về `~/.alp-code`, compile ACL cho mọi vai, trust workspace, rồi chạy
-`doctor.sh`. Cần `git` và Node >= v18.
+Installer clone repo về `~/.alp-code`, compile ACL cho mọi vai, trust workspace, chạy
+doctor, rồi cài luôn lệnh `alp`. Cần `git` và Node >= v18.
 
 **Chạy lại chính lệnh đó = cập nhật** — `git pull --ff-only` rồi recompile. `memory/` không
 bị đụng tới. Nhánh nội bộ đã rẽ thì installer **dừng** và báo, không tự merge hộ.
@@ -48,14 +48,21 @@ bị đụng tới. Nhánh nội bộ đã rẽ thì installer **dừng** và b�
 |---|---|---|
 | Đổi vị trí cài | `bash -s -- --home ~/dev/alp` hoặc `ALP_HOME=…` | `$env:ALP_HOME = "D:\alp-code"` |
 | Bỏ bước trust | `bash -s -- --no-trust` | `$env:ALP_NO_TRUST = "1"` |
+| Không tự sửa PATH | `bash -s -- --no-path` hoặc `ALP_NO_PATH=1` | `$env:ALP_NO_PATH = "1"` |
 | Nhánh khác | `bash -s -- --branch dev` hoặc `ALP_BRANCH=…` | `$env:ALP_BRANCH = "dev"` |
 
 > `iex` không nhận tham số dòng lệnh nên bản PowerShell chỉ đọc biến môi trường.
 
 Đã có repo trên máy rồi thì bỏ qua installer, chạy thẳng: `scripts/bootstrap.cjs`.
 
-Bootstrap symlink `~/.local/bin/alp` → `scripts/alp.cjs`. Không ghi được (hoặc Windows) thì
-nó in ra đường dẫn để tự thêm vào PATH — nó **không** sửa `.bashrc`/`.zshrc` hộ.
+- macOS / Linux / WSL: tạo symlink `~/.local/bin/alp` → `scripts/alp.cjs`, rồi thêm một
+  khối có marker vào profile của zsh, bash hoặc fish nếu thư mục đó chưa có trong PATH.
+- Windows: tạo `%LOCALAPPDATA%\alp\bin\alp.cmd` (không cần symlink, admin hay Developer
+  Mode), rồi thêm thư mục đó vào User PATH bằng PowerShell — không dùng `setx`.
+
+Installer không thể đổi PATH của terminal cha đang chạy. Sau lần cài đầu, mở terminal mới
+rồi gõ `alp`. Nếu shell không nhận diện được hoặc không ghi PATH được, installer báo rõ câu
+lệnh/thư mục cần thêm; `--no-path` / `ALP_NO_PATH=1` giữ nguyên profile và User PATH.
 
 ## Làm việc trong project của bạn
 
@@ -198,11 +205,12 @@ alp-code/
 │                           (+ .claude/settings.json — SINH RA, không commit)
 │                           `alp init` sinh bản song sinh trong project:
 │                           <project>/.claude/settings.local.json + .codex/config.toml
-├── memory/
+├── memory/                 KHÔNG commit — cục bộ từng máy, xem "Trí nhớ không đi theo git"
 │   ├── INDEX.md            mục lục trí nhớ chung
 │   ├── shared/             decisions · people · reference
 │   ├── projects/           Project Layer 3 tầng
 │   └── private/<role>/     nháp riêng, cách ly hai chiều
+├── scaffold/memory/        khung RỖNG của memory/ — bootstrap chép sang cái còn thiếu
 ├── skills/                 agent-memory (luật ghi trí nhớ) · herdr (quản fleet)
 ├── hooks/                  session-start · acl-guard · session-end
 ├── scripts/                alp · compile-acl · new-role · doctor · trust-role · test-isolation
@@ -243,7 +251,26 @@ alp-code/
 | `scripts/test-isolation.sh` | cách ly giữa các vai + chống đệ quy (nhanh, qua hook) · `--live` chạy `claude -p` thật |
 | `scripts/test-delegation.cjs` | contract ủy nhiệm · luật định tuyến pane/exec · seq |
 | `scripts/test-project-config.cjs` | nghiệm thu `alp init`: idempotent · uninstall sạch · cwd lạ chỉ-đọc |
+| `scripts/test-cli-link.cjs` | cài lệnh + PATH: macOS/Linux profile · Windows shim/User PATH · idempotent |
 | `scripts/sync-project-index.sh --write` | sinh lại L0 từ frontmatter L1 |
+
+## Trí nhớ không đi theo git
+
+`memory/` nằm trong `.gitignore` — **toàn bộ**, kể cả `shared/` và `projects/`. Trí nhớ là
+dữ liệu cục bộ của từng máy, không phải source code. Đồng bộ giữa nhiều máy sẽ do Agent
+runtime lo ở phase sau, không phải bằng `git push`.
+
+Hệ quả phải biết:
+
+- **Clone sạch không có một byte trí nhớ nào.** `scripts/bootstrap.cjs` dựng lại khung từ
+  `scaffold/memory/` — hai file `INDEX.md`, `README.md`, `PROTOCOL.md`, `_template/` và các
+  thư mục rỗng. Nó **chỉ tạo cái còn thiếu, không bao giờ đè**.
+- **Không có bản sao trên remote.** Mất `memory/` là mất thật. Muốn phòng thì backup ngoài
+  git (rsync, Time Machine, thư mục cloud) — đừng gỡ dòng ignore.
+- **`alp update` không đụng tới `memory/`.** Pull chỉ đổi code.
+
+Thiếu `memory/projects/INDEX.md` thì `alp init` chết ngay ở marker `END:INDEX`, và hook
+`SessionStart` boot rỗng — đó là lý do bước dựng khung chạy **trước** compile ACL.
 
 ## Ba điều dễ sai nhất
 

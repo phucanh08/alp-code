@@ -3,9 +3,11 @@ identity/*/.claude/settings.json
 identity/*/.claude/.acl-stamp
 identity/*/.claude/session-state/
 
-# Nháp riêng không đẩy lên remote; chỉ giữ cấu trúc thư mục.
-memory/private/*/*
-!memory/private/*/.gitkeep
+# Trí nhớ là dữ liệu CỤC BỘ của từng máy — không bao giờ đẩy lên remote.
+# Đồng bộ giữa máy sẽ do Agent runtime lo, không phải git.
+# Khung rỗng để dựng lại `memory/` trên máy mới nằm ở `scaffold/memory/` (tracked),
+# `scripts/bootstrap.cjs` chép sang những file còn thiếu — không bao giờ đè file đã có.
+/memory/
 
 .DS_Store
 

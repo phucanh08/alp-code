@@ -6,8 +6,10 @@
 #
 #   $env:ALP_HOME = "D:\alp-code"; irm …/install.ps1 | iex
 #   $env:ALP_NO_TRUST = "1";       irm …/install.ps1 | iex
+#   $env:ALP_NO_PATH = "1";        irm …/install.ps1 | iex
 #
-# Biến: ALP_HOME (mặc định ~\.alp-code) · ALP_BRANCH (main) · ALP_REPO · ALP_NO_TRUST
+# Biến: ALP_HOME (mặc định ~\.alp-code) · ALP_BRANCH (main) · ALP_REPO ·
+#       ALP_NO_TRUST · ALP_NO_PATH
 #
 # Bản song sinh của install.sh và cũng cố ý mỏng: kiểm dependency, lấy code, rồi giao
 # cho scripts/bootstrap.cjs — implementation thật, dùng chung cho cả ba OS.
