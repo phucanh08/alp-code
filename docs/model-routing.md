@@ -97,6 +97,10 @@ vẫn ở Claude Code; một câu hỏi dễ nhưng cần đào sâu vẫn sang 
 |---|---|
 | **Nghiên cứu sâu** — đào một chủ đề tới đáy, nhiều nguồn | `codex exec -m gpt-5.6-sol` |
 | **Cần phương án sáng tạo hơn** — bí hướng, muốn cách tiếp cận khác | `codex exec -m gpt-5.6-sol` |
+| Context summarization cho thread dài | Compaction · `gpt-5.6-sol` · `medium` |
+| Fast title generation cho thread | Titling · `gpt-5.6-luna` · `low` |
+| Tìm code local | Search · `gpt-5.6-terra` · `low` |
+| Code review theo một concern | Review · `gpt-5.5` · `medium` |
 | Khảo sát rộng nhưng nông, chỉ cần kết luận | `codex exec -m gpt-5.6-terra` |
 | — *ranh giới* — | |
 | Điều phối, giữ bức tranh tổng thể | **Phở (Opus 5)** — tự làm |
@@ -152,7 +156,15 @@ Propose 3 fundamentally different approaches. Do not refine mine."
 
 # Khảo sát rộng nhưng nông
 codex exec -m gpt-5.6-terra "<prompt>"
+
+# Vai đã có loadout — launcher tự lấy cả model lẫn effort
+scripts/run-role.sh compaction -- "<thread/context bundle>"
+scripts/run-role.sh titling -- "<thread/context bundle>"
 ```
+
+Với `scripts/run-role.*`, không truyền effort bằng tay: launcher đọc
+`reasoning_effort` từ `identity/<role>/loadout.yaml` và chuyển thành
+`model_reasoning_effort` cho Codex.
 
 Trong phiên tương tác: `/model` để đổi model và effort.
 

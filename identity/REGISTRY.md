@@ -4,16 +4,16 @@
 > Chi tiết từng vai: `identity/<role>/`. ACL từng vai: `identity/<role>/loadout.yaml`.
 > **Chỉ principal sửa file này.** Agent không có quyền ghi. `scripts/new-role.sh` tự thêm dòng.
 
-| Vai | Tên | Emoji | Model | Báo cáo cho | Trạng thái |
+| Vai | Tên | Emoji | Model · effort | Báo cáo cho | Trạng thái |
 |---|---|---|---|---|---|
 | main | Phở | 🍜 | claude-opus-5 | principal | ACTIVE |
-| search | Search | 🔍 | gpt-5.6-terra | main | ACTIVE |
+| search | Search | 🔍 | gpt-5.6-terra · low | main | ACTIVE |
 | librarian | Librarian | 📚 | gpt-5.6-sol | main | ACTIVE |
 | read-thread | Read Thread | 🧵 | gpt-5.6-luna | main | ACTIVE |
-| review | Review | 🔎 | gpt-5.5 | main | ACTIVE |
+| review | Review | 🔎 | gpt-5.5 · medium | main | ACTIVE |
 | oracle | Oracle | 🔮 | gpt-5.6-sol / claude-opus-5 | main | ACTIVE |
-| compaction | Compaction | 🗜️ | gpt-5.6-sol | main | ACTIVE |
-| titling | Titling | 🏷️ | gpt-5.6-luna | main | ACTIVE |
+| compaction | Compaction | 🗜️ | gpt-5.6-sol · medium | main | ACTIVE |
+| titling | Titling | 🏷️ | gpt-5.6-luna · low | main | ACTIVE |
 
 ## Quy ước
 

@@ -14,11 +14,13 @@ Luật nền: [`CHARTER.md`](CHARTER.md). Danh bạ các vai: [`identity/REGISTR
 | Vai | Tên | Việc |
 |---|---|---|
 | `main` | Phở 🍜 | điều phối agents, vận hành project, chốt quyết định |
-| `search` | Search 🔍 · GPT-5.6 Terra | local code retrieval |
+| `search` | Search 🔍 · GPT-5.6 Terra low | local code retrieval |
 | `librarian` | Librarian 📚 · GPT-5.6 Sol | external/cross-repo research |
 | `read-thread` | Read Thread 🧵 · GPT-5.6 Luna | tìm kiếm trong memory |
-| `review` | Review 🔎 · GPT-5.5 | code review; mỗi concern là một subagent riêng |
+| `review` | Review 🔎 · GPT-5.5 medium | code review; mỗi concern là một phiên riêng |
 | `oracle` | Oracle 🔮 · Opus 5 / GPT-5.6 Sol | senior consultant, second opinion tùy chọn |
+| `compaction` | Compaction 🗜️ · GPT-5.6 Sol medium | context summarization cho thread dài |
+| `titling` | Titling 🏷️ · GPT-5.6 Luna low | sinh nhanh một title cho thread |
 
 ## Chạy một vai
 
@@ -60,7 +62,7 @@ memory. `main` được ghi source. Tuỳ chỉnh bằng option lặp lại `--r
 và `--write-role <role>`. Installer tạo project card, cập nhật L0, ghi
 `workspaces.read/write` vào loadout và recompile ACL. Chạy lại cùng project là an toàn.
 
-## Phở chạy nhóm Knowledge Retrieval bằng Codex
+## Phở chạy các vai Codex
 
 Các launcher dưới đây là công cụ delegation nội bộ cho `main`/operator, không phải các kênh
 giao tiếp thay thế dành cho principal.
@@ -71,10 +73,12 @@ scripts/run-role.sh librarian -- "Đối chiếu API này với official docs"
 scripts/run-role.sh read-thread -- "Tìm các decision liên quan ACL"
 scripts/run-role.sh review --project /path/to/app -- "Review correctness của diff hiện tại"
 scripts/run-role.sh oracle --project /path/to/app -- "Phản biện phương án migration này"
+scripts/run-role.sh compaction -- "Tóm tắt context thread này"
+scripts/run-role.sh titling -- "Đặt title cho thread này"
 ```
 
-Windows dùng `scripts/run-role.ps1`. Launcher chọn model từ loadout và ép sandbox
-`read-only`; artifact được trả cho main kiểm chứng và lưu. Oracle chạy Claude thì mở
+Windows dùng `scripts/run-role.ps1`. Launcher chọn model + reasoning effort từ loadout và ép
+sandbox `read-only`; artifact được trả cho main kiểm chứng và lưu. Oracle chạy Claude thì mở
 `identity/oracle` bằng Claude Opus 5; chạy Codex thì launcher dùng GPT-5.6 Sol từ loadout.
 
 ## Cây thư mục
@@ -109,7 +113,7 @@ alp-code/
 | `scripts/new-role.sh <slug>` | tạo vai mới + recompile ACL toàn bộ + trust workspace |
 | `scripts/install-project.sh <path>` | đăng ký project code có sẵn (macOS/Linux) |
 | `scripts/install-project.ps1 <path>` | đăng ký project code có sẵn (Windows PowerShell) |
-| `scripts/run-role.sh <role>` | chạy Search/Librarian/Read Thread bằng Codex read-only |
+| `scripts/run-role.sh <role>` | chạy các vai Codex bằng model + effort trong loadout |
 | `scripts/trust-role.sh [role]` | đánh dấu workspace trusted trong `~/.claude.json` |
 | `scripts/doctor.sh` | kiểm toàn vẹn: DRIFT · STALE · ORPHAN · ACL-* · TRUST-MISSING |
 | `scripts/test-communication.sh` | kiểm topology giao tiếp và contract main-only |

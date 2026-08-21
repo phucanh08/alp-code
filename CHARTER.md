@@ -41,11 +41,14 @@ memory/private/<role>/  nháp riêng từng vai
 | `read-thread` | Read Thread 🧵 | tìm kiếm trong memory | private của vai; memory chỉ đọc |
 | `review` | Review 🔎 | review code, một concern mỗi phiên | private của vai; code/memory chỉ đọc |
 | `oracle` | Oracle 🔮 | senior consultant tùy chọn của Main | private của vai; code/memory chỉ đọc |
+| `compaction` | Compaction 🗜️ | context summarization cho thread dài | private của vai; memory chỉ đọc |
+| `titling` | Titling 🏷️ | sinh nhanh title cho thread | private của vai; không đọc/ghi memory chung |
 
 Danh bạ đầy đủ: [`identity/REGISTRY.md`](identity/REGISTRY.md).
 
-Quyền ghi khác nhau **có chủ đích**: Librarian đưa *tài liệu*, Search và Read Thread chỉ
-retrieval, Phở chốt *quyết định*. `decisions/` và `PROJECT.md` không mở cho nhóm retrieval.
+Quyền ghi khác nhau **có chủ đích**: Librarian đưa *tài liệu*; Search, Read Thread,
+Compaction và Titling chỉ trả artifact; Phở chốt *quyết định*. `decisions/` và `PROJECT.md`
+không mở cho các vai read-only.
 
 ## 4. Thêm vai — chỉ có một con đường
 
@@ -88,7 +91,7 @@ và *sự tập trung của context*, không phải bảo vệ *bí mật quốc
 
 ## 7. Luật vận hành phiên agent
 
-- Phiên Claude chạy với **CWD = `identity/<role>/`**. Codex retrieval chạy qua
+- Phiên Claude chạy với **CWD = `identity/<role>/`**. Các vai Codex chạy qua
   `scripts/run-role.*`, launcher tự chọn CWD và inject identity.
 - **Lần đầu mở một vai mới phải chạy `claude` tương tác một lần và bấm chấp nhận trust
   dialog.** Chưa trust ⇒ Claude Code **bỏ qua toàn bộ** `permissions.allow` và
