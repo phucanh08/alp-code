@@ -6,6 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const L = require("./lib/loadout.cjs");
+const D = require("./lib/delegation.cjs");
 
 const repoRoot = L.findRepoRoot(__dirname);
 if (!repoRoot) die("không tìm thấy repo alp-code");
@@ -39,14 +40,21 @@ if (role === "search" && !project)
 
 const cwd = project || repoRoot;
 const boot = buildBoot(role, loadout, ws);
-const userPrompt = promptParts.join(" ").trim() || "Chờ yêu cầu của người dùng.";
-const prompt = `${boot}\n\n# NHIỆM VỤ\n\n${userPrompt}`;
+const userPrompt = promptParts.join(" ").trim() || "Báo main rằng chưa có nội dung nhiệm vụ.";
+const prompt = `${boot}\n\n${D.wrapDelegatedPrompt(userPrompt)}`;
 const args = ["-m", loadout.model, "-s", "read-only", "-a", "never", "-C", cwd];
 if (role === "librarian") args.push("--search");
 args.push(prompt);
 
 if (dryRun) {
-  console.log(JSON.stringify({ role, model: loadout.model, cwd, sandbox: "read-only", webSearch: role === "librarian" }, null, 2));
+  console.log(JSON.stringify({
+    role,
+    model: loadout.model,
+    cwd,
+    sandbox: "read-only",
+    webSearch: role === "librarian",
+    delegation: { from: "main", replyTo: "main", principalFacing: false },
+  }, null, 2));
   process.exit(0);
 }
 
