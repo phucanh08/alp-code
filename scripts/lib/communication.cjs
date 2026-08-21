@@ -9,6 +9,10 @@ function checkCommunicationTopology(repoRoot, roles, loadLoadout) {
   const exists = (relative) => fs.existsSync(path.join(repoRoot, relative));
   const contains = (relative, needle) =>
     exists(relative) && fs.readFileSync(path.join(repoRoot, relative), "utf8").includes(needle);
+  const hasLine = (relative, expected) =>
+    exists(relative) && fs.readFileSync(path.join(repoRoot, relative), "utf8")
+      .split(/\r?\n/)
+      .some((line) => line.trim() === expected);
 
   if (!exists("AGENTS.md")) add("COMMS-MISSING", "thiếu AGENTS.md ở repo root");
   if (!exists("identity/main/AGENTS.md")) add("COMMS-MISSING", "main thiếu AGENTS.md");
@@ -29,7 +33,7 @@ function checkCommunicationTopology(repoRoot, roles, loadLoadout) {
   for (const file of ["identity/_template/AGENTS.md", "identity/_template/CLAUDE.md"])
     if (!contains(file, ENTRYPOINT_CONTRACT))
       add("COMMS-CONTRACT", `${file} thiếu contract giao tiếp qua main`);
-  if (!contains("identity/_template/loadout.yaml", "reports_to: main"))
+  if (!hasLine("identity/_template/loadout.yaml", "reports_to: main"))
     add("COMMS-TOPOLOGY", "template vai mới phải reports_to: main");
 
   return issues;

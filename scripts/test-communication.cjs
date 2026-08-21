@@ -28,6 +28,10 @@ try {
   assert(checkCommunicationTopology(root, roles, (role) => loadouts[role])
     .some((item) => item.tag === "COMMS-CONTRACT"));
 
+  write("identity/_template/loadout.yaml", "# reports_to: main\nreports_to: principal\n");
+  assert(checkCommunicationTopology(root, roles, (role) => loadouts[role])
+    .some((item) => item.tag === "COMMS-TOPOLOGY"));
+
   console.log("OK               communication topology tests passed");
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
