@@ -44,4 +44,11 @@ const main = L.loadLoadout(repoRoot, "main");
 assert(main.delegates_to.includes("compaction"));
 assert(main.delegates_to.includes("titling"));
 
+const compaction = L.loadLoadout(repoRoot, "compaction");
+assert.deepStrictEqual(compaction.tools, ["Read", "Glob", "Grep"]);
+assert.deepStrictEqual(compaction.skills, []);
+const titling = L.loadLoadout(repoRoot, "titling");
+assert.deepStrictEqual(titling.tools, []);
+assert.deepStrictEqual(titling.skills, []);
+
 console.log("OK               agent routing tests passed");
