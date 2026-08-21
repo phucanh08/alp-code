@@ -13,7 +13,8 @@
 #
 set -euo pipefail
 
-if ! herdr status server 2>/dev/null | grep -q "status: running"; then
+SERVER_STATUS="$(herdr status server 2>/dev/null || true)"
+if [[ "$SERVER_STATUS" != *"status: running"* ]]; then
   echo "herdr server không chạy — khởi động: herdr server >/dev/null 2>&1 &" >&2
   exit 2
 fi
