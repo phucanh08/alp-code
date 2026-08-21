@@ -113,6 +113,7 @@ alp-code/
 | `scripts/trust-role.sh [role]` | đánh dấu workspace trusted trong `~/.claude.json` |
 | `scripts/doctor.sh` | kiểm toàn vẹn: DRIFT · STALE · ORPHAN · ACL-* · TRUST-MISSING |
 | `scripts/test-communication.sh` | kiểm topology giao tiếp và contract main-only |
+| `scripts/test-agent-routing.sh` | kiểm model, effort và delegation route của các vai Codex |
 | `scripts/test-isolation.sh` | 20 ca cách ly (nhanh, qua hook) · `--live` chạy `claude -p` thật |
 | `scripts/sync-project-index.sh --write` | sinh lại L0 từ frontmatter L1 |
 
