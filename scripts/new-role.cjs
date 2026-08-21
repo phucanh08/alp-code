@@ -66,14 +66,16 @@ addToRegistry(slug, name, emoji, model);
 
 // 6. RECOMPILE MỌI VAI — bước không được bỏ. Thiếu nó = rò rỉ.
 console.log("---");
-run(path.join(repoRoot, "scripts", "compile-acl.sh"), []);
+runNode("compile-acl.cjs", []);
 
 // 7. trust workspace của vai mới — chưa trust thì allow/additionalDirectories bị bỏ qua
-run(path.join(repoRoot, "scripts", "trust-role.sh"), [slug]);
+runNode("trust-role.cjs", [slug]);
 
 // 8. kiểm tra lại
 console.log("---");
-run(path.join(repoRoot, "scripts", "doctor.sh"), []);
+// doctor exit 1 = có finding — vai mới CHẮC CHẮN còn TEMPLATE-LEFT nên đó là
+// kết quả mong đợi, không phải lỗi. Chỉ exit 2 mới là doctor tự gãy.
+runNode("doctor.cjs", [], { allow: [0, 1] });
 
 console.log(
   [
@@ -127,13 +129,18 @@ function walk(dir) {
   });
 }
 
-function run(cmd, args) {
+// Gọi script chị em qua process.execPath, KHÔNG qua wrapper .sh — bash không có
+// trên Windows, mà new-role.ps1 vẫn phải chạy được.
+function runNode(script, args, { allow = [0] } = {}) {
+  const file = path.join(repoRoot, "scripts", script);
   try {
-    process.stdout.write(execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
+    process.stdout.write(
+      execFileSync(process.execPath, [file, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+    );
   } catch (e) {
     process.stdout.write((e.stdout || "") + (e.stderr || ""));
-    const label = path.relative(repoRoot, cmd) || cmd;
-    die(`bước bắt buộc \`${label} ${args.join(" ")}\` thất bại (exit ${e.status ?? "?"})`);
+    if (allow.includes(e.status)) return;
+    die(`bước bắt buộc \`${script} ${args.join(" ")}\` thất bại (exit ${e.status ?? "?"})`);
   }
 }
 

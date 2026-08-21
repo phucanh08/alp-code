@@ -61,11 +61,9 @@ function main() {
 
 function buildContext(warnings) {
   const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  const repoRoot = L.findRepoRoot(cwd);
-  if (!repoRoot) throw new Error("không tìm thấy repo root (thư mục có CHARTER.md)");
-
-  const rel = path.relative(repoRoot, cwd).split(path.sep);
-  const role = rel[0] === "identity" && rel[1] ? rel[1] : path.basename(cwd);
+  const ident = L.sessionIdentity(cwd, __dirname);
+  if (!ident) throw new Error("không tìm thấy repo root (thư mục có CHARTER.md)");
+  const { repoRoot, role } = ident;
 
   const loadout = L.loadLoadout(repoRoot, role);
   if (!loadout) throw new Error(`không có identity/${role}/loadout.yaml`);

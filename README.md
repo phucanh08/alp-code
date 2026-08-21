@@ -22,6 +22,36 @@ Luật nền: [`CHARTER.md`](CHARTER.md). Danh bạ các vai: [`identity/REGISTR
 | `compaction` | Compaction 🗜️ · GPT-5.6 Sol medium | context summarization cho thread dài |
 | `titling` | Titling 🏷️ · GPT-5.6 Luna low | sinh nhanh một title cho thread |
 
+## Cài đặt
+
+macOS / Linux / WSL:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/phucanh08/alp-code/main/install.sh | bash
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/phucanh08/alp-code/main/install.ps1 | iex
+```
+
+Installer clone repo về `~/.alp-code`, compile ACL cho mọi vai, trust workspace, rồi chạy
+`doctor.sh`. Cần `git` và Node >= v18.
+
+**Chạy lại chính lệnh đó = cập nhật** — `git pull --ff-only` rồi recompile. `memory/` không
+bị đụng tới. Nhánh nội bộ đã rẽ thì installer **dừng** và báo, không tự merge hộ.
+
+| Tuỳ chọn | bash | PowerShell |
+|---|---|---|
+| Đổi vị trí cài | `bash -s -- --home ~/dev/alp` hoặc `ALP_HOME=…` | `$env:ALP_HOME = "D:\alp-code"` |
+| Bỏ bước trust | `bash -s -- --no-trust` | `$env:ALP_NO_TRUST = "1"` |
+| Nhánh khác | `bash -s -- --branch dev` hoặc `ALP_BRANCH=…` | `$env:ALP_BRANCH = "dev"` |
+
+> `iex` không nhận tham số dòng lệnh nên bản PowerShell chỉ đọc biến môi trường.
+
+Đã có repo trên máy rồi thì bỏ qua installer, chạy thẳng: `scripts/bootstrap.cjs`.
+
 ## Chạy một vai
 
 ```bash
@@ -78,7 +108,11 @@ scripts/run-role.sh titling -- "Đặt title cho thread này"
 scripts/run-role.sh main -- "Việc cho chính Phở, chạy trên Codex"
 ```
 
-Windows dùng `scripts/run-role.ps1`. Launcher chọn model + reasoning effort từ loadout;
+Thêm `--exec` để chạy headless: `scripts/run-role.sh read-thread --exec -- "<việc>"` trả text
+ra stdout thay vì mở phiên tương tác.
+
+Windows dùng `scripts/run-role.ps1`. Model, effort, sandbox và hook boot nằm trong profile
+`$CODEX_HOME/<role>.config.toml` do `compile-acl.sh` sinh từ loadout;
 artifact được trả cho main kiểm chứng và lưu. Oracle chạy Claude thì mở `identity/oracle`
 bằng Claude Opus 5; chạy Codex thì launcher dùng GPT-5.6 Sol từ loadout.
 
@@ -118,12 +152,14 @@ alp-code/
 
 | Lệnh | Việc |
 |---|---|
+| `install.sh` · `install.ps1` | cài/cập nhật bằng một dòng — clone, compile ACL, trust, doctor |
+| `scripts/bootstrap.cjs` | bước sau khi có repo: compile ACL + trust + doctor (`--no-trust` để bỏ trust) |
 | `scripts/compile-acl.sh` | sinh `.claude/settings.json` cho **mọi** vai từ `loadout.yaml` |
 | `scripts/compile-acl.sh --check` | so sánh, exit 1 nếu lệch — dùng trong CI |
 | `scripts/new-role.sh <slug>` | tạo vai mới + recompile ACL toàn bộ + trust workspace |
 | `scripts/install-project.sh <path>` | đăng ký project code có sẵn (macOS/Linux) |
 | `scripts/install-project.ps1 <path>` | đăng ký project code có sẵn (Windows PowerShell) |
-| `scripts/run-role.sh <role>` | chạy một vai trên Codex bằng model + effort trong loadout |
+| `scripts/run-role.sh <role> [--exec]` | chạy một vai trên Codex bằng profile sinh từ loadout |
 | `scripts/trust-role.sh [role]` | đánh dấu workspace trusted trong `~/.claude.json` |
 | `scripts/doctor.sh` | kiểm toàn vẹn: DRIFT · STALE · ORPHAN · ACL-* · TRUST-MISSING |
 | `scripts/test-communication.sh` | kiểm topology giao tiếp và contract main-only |

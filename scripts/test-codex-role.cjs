@@ -10,10 +10,5 @@ assert(C.isAllowedRole("oracle"));
 assert(C.isAllowedRole("main"));
 assert(!C.isAllowedRole("principal"));
 assert(!C.isAllowedRole("_shared"));
-assert.deepStrictEqual(C.reasoningArgs({ reasoning_effort: "medium" }), [
-  "-c",
-  'model_reasoning_effort="medium"',
-]);
-assert.deepStrictEqual(C.reasoningArgs({}), []);
 
 console.log("OK               Codex role tests passed");

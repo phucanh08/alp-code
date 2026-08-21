@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// compile-acl.cjs — sinh identity/<role>/.claude/settings.json từ loadout.yaml.
+// compile-acl.cjs — sinh từ loadout.yaml ra HAI sản phẩm:
+//   identity/<role>/.claude/settings.json   (Claude Code)
+//   $CODEX_HOME/<role>.config.toml          (Codex, xem lib/codex-profile.cjs)
 //
 //   compile-acl.sh              = --all (mặc định)
 //   compile-acl.sh --check      chỉ so sánh, exit 1 nếu lệch
@@ -18,6 +20,7 @@
 const fs = require("fs");
 const path = require("path");
 const L = require("./lib/loadout.cjs");
+const P = require("./lib/codex-profile.cjs");
 
 const repoRoot = L.findRepoRoot(__dirname);
 if (!repoRoot) die("Không tìm thấy repo root (thư mục có CHARTER.md)");
@@ -160,11 +163,18 @@ function absoluteRule(p, glob) {
 
 // ---------------------------------------------------------------- ghi / so sánh
 
+// Profile Codex nằm NGOÀI repo (`$CODEX_HOME`, mặc định `~/.codex`) vì `codex -p <name>`
+// chỉ tìm ở đó. Đây là chỗ duy nhất script này ghi ra ngoài repo.
+const CODEX_HOME = P.codexHome();
+
 let drifted = 0;
 for (const role of roles) {
   const outDir = path.join(repoRoot, "identity", role, ".claude");
   const outFile = path.join(outDir, "settings.json");
   const body = JSON.stringify(buildSettings(role), null, 2) + "\n";
+
+  const profileFile = P.profilePath(CODEX_HOME, role);
+  const profileBody = P.buildProfile(L.loadLoadout(repoRoot, role), role, repoRoot);
 
   if (checkOnly) {
     const cur = fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : null;
@@ -172,8 +182,21 @@ for (const role of roles) {
       console.log(`ACL-DRIFT ${role} — settings.json lệch với loadout.yaml`);
       drifted++;
     }
+    const curProfile = fs.existsSync(profileFile) ? fs.readFileSync(profileFile, "utf8") : null;
+    if (curProfile !== profileBody) {
+      console.log(
+        curProfile === null
+          ? `PROFILE-MISSING ${role} — ${profileFile} chưa sinh; \`codex -p ${role}\` sẽ IM LẶNG chạy mặc định (workspace-write)`
+          : `PROFILE-DRIFT ${role} — ${path.basename(profileFile)} lệch với loadout.yaml`
+      );
+      drifted++;
+    }
     continue;
   }
+
+  fs.mkdirSync(path.dirname(profileFile), { recursive: true });
+  fs.writeFileSync(profileFile, profileBody);
+  console.log(`WROTE    ${profileFile}`);
 
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(outFile, body);
@@ -192,10 +215,10 @@ for (const role of roles) {
 
 if (checkOnly) {
   if (drifted) {
-    console.log(`---\n${drifted} vai lệch. Chạy: scripts/compile-acl.sh`);
+    console.log(`---\n${drifted} chỗ lệch. Chạy: scripts/compile-acl.sh`);
     process.exit(1);
   }
-  console.log("OK       ACL khớp loadout.yaml ở mọi vai");
+  console.log("OK       ACL + profile Codex khớp loadout.yaml ở mọi vai");
 }
 
 function warn(m) { console.error(`WARN     ${m}`); }

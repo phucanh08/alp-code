@@ -56,6 +56,10 @@ function checkAcl() {
   for (const line of run(compile, ["--check"]).split("\n")) {
     if (/^ACL-DRIFT/.test(line)) signal("ACL-DRIFT", line.replace(/^ACL-DRIFT\s*/, "") + " → chạy scripts/compile-acl.sh");
     if (/^INVALID/.test(line)) signal("ACL-INVALID", line.replace(/^INVALID\s*/, ""));
+    // Profile Codex lệch/thiếu là hỏng IM LẶNG: `codex -p` bỏ qua profile không có và
+    // chạy mặc định `workspace-write`. Phải kêu ở đây, không ai đi đọc ~/.codex bằng mắt.
+    if (/^PROFILE-(DRIFT|MISSING)/.test(line))
+      signal("CODEX-PROFILE", line.replace(/^PROFILE-\w+\s*/, "") + " → chạy scripts/compile-acl.sh");
   }
 
   for (const role of roles) {

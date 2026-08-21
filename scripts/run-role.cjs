@@ -2,10 +2,13 @@
 // Launcher Codex. Vai phụ chạy read-only; main chịu trách nhiệm lưu artifact sau
 // khi kiểm chứng.
 //
-// `main` cũng chạy được qua đây nhưng KHÁC vai phụ ở ba chỗ, đừng gộp:
+// Model, effort, approval, web search và HOOK BOOT đều nằm trong profile
+// `$CODEX_HOME/<role>.config.toml` do compile-acl sinh ra. Launcher này chỉ còn ba việc
+// mà profile không làm được: chọn cwd, nâng quyền ghi theo cwd, và bọc contract delegation.
+//
+// `main` cũng chạy được qua đây nhưng KHÁC vai phụ ở hai chỗ, đừng gộp:
 //   - không bọc prompt bằng wrapDelegatedPrompt — main nhận việc TỪ principal, không từ ai khác
 //   - được `workspace-write`, nhưng CHỈ ở nhà mình hoặc workspace đã khai `workspaces.write`
-//   - boot không nói "trả artifact cho main" — main không báo cáo cho chính nó
 
 const fs = require("fs");
 const path = require("path");
@@ -13,6 +16,7 @@ const { spawnSync } = require("child_process");
 const L = require("./lib/loadout.cjs");
 const D = require("./lib/delegation.cjs");
 const C = require("./lib/codex-role.cjs");
+const P = require("./lib/codex-profile.cjs");
 
 const repoRoot = L.findRepoRoot(__dirname);
 if (!repoRoot) die("không tìm thấy repo alp-code");
@@ -26,6 +30,7 @@ if (!loadout) die(`thiếu identity/${role}/loadout.yaml`);
 
 let project = null;
 let dryRun = false;
+let exec = false;
 const promptParts = [];
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--project") {
@@ -33,6 +38,8 @@ for (let i = 0; i < argv.length; i++) {
     project = path.resolve(argv[++i]);
   } else if (argv[i] === "--dry-run") {
     dryRun = true;
+  } else if (argv[i] === "--exec") {
+    exec = true;
   } else if (argv[i] !== "--") promptParts.push(argv[i]);
 }
 
@@ -45,36 +52,42 @@ if (role === "search" && !project)
 
 const isMain = role === "main";
 const cwd = project || repoRoot;
-
-// `model:` là model của runtime chính. Với main runtime chính là Claude, nên launcher Codex
-// phải lấy `codex_model:` — nếu không sẽ đưa `claude-opus-5` cho `codex -m`.
-const model = loadout.codex_model || loadout.model;
+const profile = P.profilePath(P.codexHome(), role);
 
 // BẤT BIẾN CHARTER: cwd lạ = read-only. Chỉ main, và chỉ ở nhà mình hoặc trong một
 // workspace đã khai `workspaces.write`, mới được ghi. Vai phụ không bao giờ.
+// Profile pin sẵn `read-only`; chỉ nâng ở đây, cho ĐÚNG lần chạy này.
 const sandbox = isMain && (!project || isInside(cwd, ws.write)) ? "workspace-write" : "read-only";
 
-const boot = buildBoot(role, loadout, ws, sandbox);
 const userPrompt = promptParts.join(" ").trim() ||
   (isMain ? "Chưa có nội dung nhiệm vụ." : "Báo main rằng chưa có nội dung nhiệm vụ.");
 // main nhận việc từ principal — bọc nó bằng contract delegation là nói dối nó về nguồn việc.
-const prompt = isMain ? `${boot}\n\n# NHIỆM VỤ\n\n${userPrompt}` : `${boot}\n\n${D.wrapDelegatedPrompt(userPrompt)}`;
-const args = [
-  "-m", model,
-  ...C.reasoningArgs(loadout),
-  "-s", sandbox, "-a", "never", "-C", cwd,
-];
-if (role === "librarian") args.push("--search");
+const prompt = isMain ? userPrompt : D.wrapDelegatedPrompt(userPrompt);
+
+const args = exec
+  ? [
+      "exec", "-p", role,
+      // Hook bị trust-gate: profile chưa duyệt thì SessionStart bị BỎ QUA IM LẶNG trong
+      // phiên headless — vai vào việc mà không có danh tính. Profile này do chính
+      // compile-acl sinh ra nên bề mặt vẫn là file của mình.
+      "--dangerously-bypass-hook-trust",
+      "-C", cwd, "--skip-git-repo-check",
+    ]
+  : ["-p", role, "-C", cwd];
+// Chỉ truyền `-s` khi NÂNG quyền: mức nền read-only đã nằm trong profile.
+if (sandbox === "workspace-write") args.push("-s", sandbox);
 args.push(prompt);
 
 if (dryRun) {
   console.log(JSON.stringify({
     role,
-    model,
+    mode: exec ? "exec" : "interactive",
+    profile,
+    model: P.codexModel(loadout),
     reasoningEffort: loadout.reasoning_effort || null,
     cwd,
     sandbox,
-    webSearch: role === "librarian",
+    webSearch: P.WEB_SEARCH_ROLES.has(role),
     delegation: isMain
       ? { from: "principal", replyTo: "principal", principalFacing: true }
       : { from: "main", replyTo: "main", principalFacing: false },
@@ -82,29 +95,18 @@ if (dryRun) {
   process.exit(0);
 }
 
+// Thiếu profile thì `codex -p` KHÔNG báo lỗi — nó im lặng chạy mặc định, mà mặc định của
+// `exec` là `workspace-write`. Fail đóng ở đây, đừng để hỏng thầm lặng ở đó.
+if (!fs.existsSync(profile))
+  die(`thiếu profile ${profile} — chạy scripts/compile-acl.sh rồi thử lại`);
+
 const bin = process.platform === "win32" ? "codex.cmd" : "codex";
-const result = spawnSync(bin, args, { stdio: "inherit" });
+// BẪY: `codex exec` đọc stdin mặc định. Không đóng stdin thì phiên treo ở
+// "Reading additional input from stdin..." cho tới khi bị giết.
+const result = spawnSync(bin, args, { stdio: exec ? ["ignore", "inherit", "inherit"] : "inherit" });
 if (result.error) die(`không chạy được Codex CLI: ${result.error.message}`);
 process.exit(result.status ?? 1);
 
-function buildBoot(role, lo, ws, sandbox) {
-  const roleDir = path.join(repoRoot, "identity", role);
-  const shared = path.join(repoRoot, "identity", "_shared");
-  const files = [
-    path.join(roleDir, "IDENTITY.md"), path.join(roleDir, "SOUL.md"),
-    path.join(roleDir, "PLAYBOOK.md"), path.join(roleDir, "RELATIONS.md"),
-    path.join(shared, "VOICE.md"), path.join(shared, "HOUSE-RULES.md"),
-    path.join(shared, "PRINCIPAL.md"),
-  ];
-  const body = files.map((f) => `## ${path.basename(f)}\n\n${fs.readFileSync(f, "utf8")}`).join("\n\n---\n\n");
-  return `# BOOT alp-code\n\nTên: ${lo.name}\nVai: ${role}\nModel: ${model}\n` +
-    `Reasoning effort: ${lo.reasoning_effort || "mặc định runtime"}\n` +
-    `Workspace đọc: ${ws.read.join(", ") || "không có"}\n` +
-    `Chế độ: ${sandbox.toUpperCase()}. ` +
-    (role === "main"
-      ? "Bạn báo cáo cho principal.\n\n"
-      : "Không sửa file; trả artifact cho main.\n\n") + body;
-}
 /**
  * `dir` có nằm trong (hoặc bằng) một trong các root đã khai không?
  * `effectiveWorkspaces` trả path tuyệt đối đã resolve, không có glob — so bằng tiền tố
@@ -116,7 +118,7 @@ function isInside(dir, roots) {
 function usage(code) {
   console.log(
     "Usage: run-role <main|search|librarian|read-thread|review|oracle|compaction|titling> " +
-    "[--project path] [--] [prompt]"
+    "[--project path] [--exec] [--dry-run] [--] [prompt]"
   );
   process.exit(code);
 }

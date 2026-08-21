@@ -103,6 +103,26 @@ function loadoutPath(repoRoot, role) {
   return path.join(repoRoot, "identity", role, "loadout.yaml");
 }
 
+/**
+ * Vai + repo root của phiên hiện tại — dùng chung cho cả hai hook.
+ *
+ * `ALP_ROLE` đứng TRƯỚC cwd vì danh tính đi theo profile/settings, không theo chỗ đứng:
+ * `codex exec -p search -C /repo/nguoi-khac` thì cwd chẳng nói gì về vai. Không có
+ * `ALP_ROLE` thì rơi về quy ước cũ (cwd = `identity/<role>/`).
+ *
+ * `fallbackFrom` là `__dirname` của hook: khi agent đứng ngoài alp-code, repo root không
+ * suy ra được từ cwd, nhưng hook thì luôn nằm trong repo.
+ */
+function sessionIdentity(cwd, fallbackFrom, env = process.env) {
+  const repoRoot = findRepoRoot(cwd) || (fallbackFrom ? findRepoRoot(fallbackFrom) : null);
+  if (!repoRoot) return null;
+
+  if (env.ALP_ROLE) return { repoRoot, role: env.ALP_ROLE };
+
+  const rel = path.relative(repoRoot, cwd).split(path.sep);
+  return { repoRoot, role: rel[0] === "identity" && rel[1] ? rel[1] : path.basename(cwd) };
+}
+
 function loadLoadout(repoRoot, role) {
   const p = loadoutPath(repoRoot, role);
   if (!fs.existsSync(p)) return null;
@@ -140,6 +160,13 @@ const KNOWN_TOOLS = [
 ];
 const REASONING_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"];
 
+// Khai sai chính tả một khoá là hỏng IM LẶNG: `codex_modl:` không lỗi, nó chỉ khiến
+// launcher rơi về `model:` — tức đưa model Claude cho Codex. Nên khoá lạ = lỗi.
+const KNOWN_KEYS = [
+  "role", "name", "emoji", "model", "codex_model", "reasoning_effort",
+  "reports_to", "delegates_to", "memory", "workspaces", "tools", "skills",
+];
+
 /** Trả về mảng thông báo lỗi. Rỗng = hợp lệ. */
 function validate(loadout, role, allRoles) {
   const errs = [];
@@ -151,6 +178,9 @@ function validate(loadout, role, allRoles) {
 
   if (!loadout.name) add("thiếu `name:`");
   if (!loadout.memory) add("thiếu khối `memory:`");
+  for (const k of Object.keys(loadout)) {
+    if (!KNOWN_KEYS.includes(k)) add(`khoá lạ \`${k}:\` — gõ sai chính tả sẽ hỏng im lặng`);
+  }
   if (loadout.reasoning_effort && !REASONING_EFFORTS.includes(loadout.reasoning_effort))
     add(`\`reasoning_effort: ${loadout.reasoning_effort}\` không hợp lệ`);
 
@@ -279,7 +309,7 @@ function isWithin(root, target) {
 
 module.exports = {
   findRepoRoot, parseYaml, globToRegExp, matchesAny,
-  listRoles, loadoutPath, loadLoadout, effectiveGrants, effectiveWorkspaces,
+  listRoles, loadoutPath, loadLoadout, sessionIdentity, effectiveGrants, effectiveWorkspaces,
   validate, checkPath, checkWorkspacePath, isWithin,
   KNOWN_TOOLS, REASONING_EFFORTS, FROZEN,
 };

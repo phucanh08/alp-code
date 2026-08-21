@@ -59,6 +59,15 @@ assert.deepStrictEqual(L.effectiveWorkspaces(main).write, [], "tiền đề: mai
 const mainAway = dryRun(["main", "--project", "/tmp", "--dry-run", "--", "probe"]);
 assert.strictEqual(mainAway.sandbox, "read-only", "main ở cwd lạ PHẢI read-only");
 
+// `--exec` KHÔNG được nới quyền: nó chỉ đổi cách chạy (headless), không đổi vai là ai.
+const execAway = dryRun(["main", "--project", "/tmp", "--exec", "--dry-run", "--", "probe"]);
+assert.strictEqual(execAway.mode, "exec");
+assert.strictEqual(execAway.sandbox, "read-only", "--exec ở cwd lạ vẫn phải read-only");
+const execSub = dryRun(["read-thread", "--exec", "--dry-run", "--", "probe"]);
+assert.strictEqual(execSub.sandbox, "read-only", "vai phụ không bao giờ ghi được");
+assert.match(execSub.profile, /read-thread\.config\.toml$/, "phải trỏ tới profile của đúng vai");
+assert.strictEqual(dryRun(["read-thread", "--dry-run", "--", "probe"]).mode, "interactive");
+
 const compaction = L.loadLoadout(repoRoot, "compaction");
 assert.deepStrictEqual(compaction.tools, ["Read", "Glob", "Grep"]);
 assert.deepStrictEqual(compaction.skills, []);

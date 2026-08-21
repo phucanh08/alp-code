@@ -52,6 +52,7 @@ herdr mà không cần nhồi prompt.
 | 3 | `herdr agent start --kind claude -- <args>` pass-through | ✅ `argv:["claude","--settings",…]`, hook chạy |
 | 4 | Codex có `.codex/config.toml` cấp project + 11 hook event | ✅ (`codex-rs/config/src/loader`, `hooks/src/lib.rs`) |
 | 5 | Codex plugin marketplace = của OpenAI, không có `alp` | ✅ ⇒ main giữ Claude làm runtime chính |
+| 6 | hook Codex nhận `additionalContext`, wire format trùng Claude Code | ✅ nhưng **chỉ khi qua được trust-gate** (P1) |
 
 ## Ba cạm bẫy phát hiện khi test — phải code đúng ngay lần đầu
 
@@ -60,6 +61,8 @@ herdr mà không cần nhồi prompt.
 | 1 | `codex exec` **đọc stdin mặc định** → treo vô hạn khi không TTY | wrapper BẮT BUỘC `< /dev/null` |
 | 2 | sandbox mặc định của `exec` là **`workspace-write`** | `sandbox_mode="read-only"` phải nằm TRONG profile |
 | 3 | **Dialog trust chặn hook** — cwd chưa trust thì hook không chạy | `alp init` trust CẢ HAI runtime |
+| 4 | **Hook chưa duyệt bị bỏ qua im lặng** trong phiên headless (đo ở P1) | `--exec` kèm `--dangerously-bypass-hook-trust` |
+| 5 | `codex -p <profile không có>` **không báo lỗi**, rơi về `workspace-write` (đo ở P1) | `run-role` fail đóng · `doctor` báo `CODEX-PROFILE` |
 
 Bẫy 2 nguy hiểm nhất: phá bất biến read-only, mặc định *trông có vẻ* hợp lý, không test nào bắt được.
 
@@ -68,12 +71,17 @@ Bẫy 2 nguy hiểm nhất: phá bất biến read-only, mặc định *trông c
 | Phase | Nội dung | Ước lượng | Phụ thuộc | Trạng thái |
 |---|---|---|---|---|
 | [P0](phase-0-quick-wins.md) | `RELATIONS.md` vào boot set · mở `main` cho Codex | ~1h | — | **xong 2026-08-21** |
-| [P1](phase-1-codex-profile.md) | loadout → `~/.codex/<role>.config.toml` · `run-role --exec` · xoá `buildBoot()` | ~0.5 ngày | P0 | chưa làm |
+| [P1](phase-1-codex-profile.md) | loadout → `~/.codex/<role>.config.toml` · `run-role --exec` · xoá `buildBoot()` | ~0.5 ngày | P0 | **xong 2026-08-21** |
 | [P2](phase-2-alp-cli.md) | `alp` CLI · `alp init` · config theo project · trust hai runtime | ~1 ngày | P1 | chưa làm |
 | [P3](phase-3-delegation-herdr.md) | wrapper herdr · luật định tuyến · phanh chi phí · chống đệ quy | ~0.5 ngày | P2 | chưa làm |
 | [P4](phase-4-doctor-docs.md) | `alp doctor` finding mới · README viết lại | ~0.5 ngày | P3 | chưa làm |
 
 **P0 riêng lẻ đã giải quyết ~80% pain delegation** — làm trước, ship trước, không chờ P1–P4.
+
+> **P1 xong 2026-08-21.** Hook Codex bị **trust-gate**: chưa duyệt thì bị bỏ qua IM LẶNG,
+> nên `--exec` phải kèm `--dangerously-bypass-hook-trust`. Và `codex -p <profile-không-có>`
+> cũng im lặng rơi về mặc định `workspace-write` — nên profile pin `read-only` cho mọi vai,
+> quyền ghi chỉ nâng theo từng lần chạy. Chi tiết: [phase-1](phase-1-codex-profile.md).
 
 > **P0 xong 2026-08-21.** Hai tiền đề của plan đo ra sai — ngân sách boot đã vượt từ trước
 > (16686 > 15000, nay ngưỡng nâng lên 18000), và "thêm `main` vào `ALLOWED_ROLES`" kéo theo

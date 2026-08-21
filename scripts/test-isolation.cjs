@@ -13,6 +13,7 @@
 // NHÓM "CHO PHÉP" QUAN TRỌNG NGANG NHÓM "CHẶN". ACL chặn hết = ACL vô dụng.
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { execFileSync, spawnSync } = require("child_process");
 const L = require("./lib/loadout.cjs");
@@ -54,6 +55,18 @@ const CASES = [
   ["main", "ALLOW", "Read", { file_path: R("memory/private/main/x.md") }, "Read private của mình"],
 ];
 
+/**
+ * Phiên delegation Codex: agent đứng ở repo NGƯỜI KHÁC, vai đến từ `ALP_ROLE` chứ không
+ * từ cwd. Trước P1 những ca này lọt hết — acl-guard thấy cwd ngoài repo là buông tay.
+ * Luôn chạy qua hook kể cả ở chế độ `--live`: `--live` kiểm đường dây Claude, còn đây là
+ * đường dây Codex.
+ */
+const DELEGATED_CASES = [
+  ["librarian", "DENY", "Bash", { command: `cat ${R("memory/private/main/x.md")}` }, "ngoài repo vẫn chặn kho riêng vai khác"],
+  ["librarian", "DENY", "Edit", { file_path: R("identity/main/SOUL.md") }, "ngoài repo vẫn chặn persona vai khác"],
+  ["librarian", "ALLOW", "Read", { file_path: R("memory/shared/reference/deepseek-harness.md") }, "ngoài repo vẫn đọc được shared"],
+];
+
 // ---------------------------------------------------------------- chạy
 // main() gọi ở CUỐI file: mọi `const` phải khởi tạo xong trước, nếu không
 // try/catch trong setupFixtures sẽ nuốt mất ReferenceError và fixture hỏng
@@ -74,16 +87,23 @@ function main() {
     console.log(`${ok ? " ok " : "FAIL"}  ${role.padEnd(15)} ${expect.padEnd(5)} ${label}`);
   }
 
+  for (const [role, expect, tool, input, label] of DELEGATED_CASES) {
+    const got = runHook(role, tool, input, { cwd: os.tmpdir(), env: { ALP_ROLE: role } });
+    const ok = got === expect;
+    ok ? pass++ : failures.push({ role, expect, got, label });
+    console.log(`${ok ? " ok " : "FAIL"}  ${role.padEnd(15)} ${expect.padEnd(5)} ${label}`);
+  }
+
   cleanupFixtures();
 
   console.log("---");
   if (failures.length) {
-    console.log(`${pass}/${CASES.length} đúng. ${failures.length} ca SAI:`);
+    console.log(`${pass}/${CASES.length + DELEGATED_CASES.length} đúng. ${failures.length} ca SAI:`);
     for (const f of failures) console.log(`  ${f.role} · ${f.label} — cần ${f.expect}, thực tế ${f.got}`);
     console.log("\nMột ca sai = cách ly chưa xong. Không được bỏ qua ca ALLOW.");
     process.exit(1);
   }
-  console.log(`${pass}/${CASES.length} đúng — cách ly hoạt động cả hai chiều.`);
+  console.log(`${pass}/${CASES.length + DELEGATED_CASES.length} đúng — cách ly hoạt động cả hai chiều.`);
   process.exit(0);
 }
 
@@ -126,14 +146,18 @@ function assertGeneratedSettings() {
 // ---------------------------------------------------------------- chế độ nhanh
 
 /** Gọi thẳng acl-guard.cjs với payload hook y như Claude Code gửi. */
-function runHook(role, tool, input) {
+function runHook(role, tool, input, opts = {}) {
   const payload = JSON.stringify({
     hook_event_name: "PreToolUse",
     tool_name: tool,
     tool_input: input,
-    cwd: R("identity", role),
+    cwd: opts.cwd || R("identity", role),
   });
-  const res = spawnSync("node", [R("hooks/acl-guard.cjs")], { input: payload, encoding: "utf8" });
+  const res = spawnSync("node", [R("hooks/acl-guard.cjs")], {
+    input: payload,
+    encoding: "utf8",
+    env: { ...process.env, ...opts.env },
+  });
   const out = (res.stdout || "").trim();
   if (!out) return "ALLOW";
   try {

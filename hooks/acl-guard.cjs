@@ -65,13 +65,18 @@ function main() {
 
 // ---------------------------------------------------------------- bối cảnh
 
-/** { repoRoot, cwd, role, grants } — hoặc null nếu cwd nằm ngoài repo. */
+/**
+ * { repoRoot, cwd, role, grants } — hoặc null khi không xác định được vai.
+ *
+ * Phiên delegation đứng ở repo NGƯỜI KHÁC: cwd không suy ra được vai lẫn repo root.
+ * `sessionIdentity` lấy vai từ `ALP_ROLE` và repo root từ chỗ hook nằm — nhờ vậy ACL vẫn
+ * hiệu lực với đường dẫn tuyệt đối trỏ ngược vào alp-code. Không có `ALP_ROLE` mà cũng
+ * ngoài repo thì mới buông (phiên đó không phải của hệ này).
+ */
 function resolveContext(cwd) {
-  const repoRoot = L.findRepoRoot(cwd);
-  if (!repoRoot) return null;
-
-  const rel = path.relative(repoRoot, cwd).split(path.sep);
-  const role = rel[0] === "identity" && rel[1] ? rel[1] : path.basename(cwd);
+  const ident = L.sessionIdentity(cwd, process.env.ALP_ROLE ? __dirname : null);
+  if (!ident) return null;
+  const { repoRoot, role } = ident;
 
   const loadout = L.loadLoadout(repoRoot, role);
   if (!loadout) {

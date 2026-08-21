@@ -162,9 +162,13 @@ scripts/run-role.sh compaction -- "<thread/context bundle>"
 scripts/run-role.sh titling -- "<thread/context bundle>"
 ```
 
-Với `scripts/run-role.*`, không truyền effort bằng tay: launcher đọc
-`reasoning_effort` từ `identity/<role>/loadout.yaml` và chuyển thành
-`model_reasoning_effort` cho Codex.
+Với `scripts/run-role.*`, không truyền model lẫn effort bằng tay: cả hai nằm trong profile
+`$CODEX_HOME/<role>.config.toml` mà `compile-acl.sh` sinh từ loadout, và launcher chỉ gọi
+`codex -p <role>`. Thêm `--exec` để chạy headless (một câu hỏi → một câu trả lời, không mở pane).
+
+**Profile thiếu thì `codex -p` KHÔNG báo lỗi** — nó im lặng chạy mặc định, mà mặc định của
+`codex exec` là `workspace-write`. `run-role` chặn trước ở chỗ đó; `doctor.sh` báo
+`CODEX-PROFILE` khi profile lệch hoặc chưa sinh. Sửa loadout xong luôn chạy `compile-acl.sh`.
 
 **`main` cũng chạy được qua launcher** (`scripts/run-role.sh main -- "<việc>"`) — đường phụ
 khi muốn tiết kiệm quota Claude. Hai chỗ khác vai phụ, nhớ khi đọc loadout của main:
