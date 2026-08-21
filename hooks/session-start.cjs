@@ -6,7 +6,7 @@
 // FAIL-SAFE: hook lỗi → exit 0 với additionalContext rỗng + cảnh báo lên systemMessage.
 // Hook chết KHÔNG được làm chết phiên. (Ngược với acl-guard.cjs — fail-closed.)
 //
-// NGÂN SÁCH: 7 nguồn, ≤ BOOT_BUDGET ký tự (~4k token). Vượt thì cảnh báo, không cắt —
+// NGÂN SÁCH: 9 nguồn, ≤ BOOT_BUDGET ký tự (~5k token). Vượt thì cảnh báo, không cắt —
 // cắt thầm lặng nguy hiểm hơn: agent tưởng mình đã đọc đủ.
 
 const fs = require("fs");
@@ -14,12 +14,17 @@ const path = require("path");
 const L = require(path.join(__dirname, "..", "scripts", "lib", "loadout.cjs"));
 
 // Ngân sách boot. CHARTER §2.6 đặt mục tiêu ~4k token; tiếng Việt có dấu tốn khoảng
-// 3.5 ký tự/token nên 15k ký tự ≈ 4.3k token — sát mục tiêu, trong sai số của ước lượng.
-// Ngưỡng theo KÝ TỰ vì hook không có tokenizer và không được phép gọi mạng.
+// 3.5 ký tự/token. Ngưỡng theo KÝ TỰ vì hook không có tokenizer và không được phép gọi mạng.
+//
+// 18000 ký tự ≈ 5.1k token. Con số cũ là 15000 nhưng ĐO RA CHƯA BAO GIỜ ĐẠT: boot set của
+// main đã là 16686 trước khi thêm RELATIONS — ngưỡng cũ là ước lượng trên giấy, không phải
+// phép đo. Giữ một ngưỡng luôn đỏ thì cảnh báo thành tiếng ồn và không ai còn đọc nó.
+// 18000 = mức đo thật (17556) cộng chỗ thở; muốn về 4k token thì phải rút gọn
+// HOUSE-RULES/SOUL/PLAYBOOK, không phải hạ ngưỡng tiếp.
 //
 // Vượt ngưỡng thì CẢNH BÁO chứ không cắt: cắt thầm lặng nguy hiểm hơn nhiều —
 // agent tưởng mình đã đọc đủ trong khi thiếu mất nửa bộ luật.
-const BOOT_BUDGET = 15000;
+const BOOT_BUDGET = 18000;
 
 main();
 
@@ -88,6 +93,10 @@ function buildContext(warnings) {
   push("SOUL", read(path.join(roleDir, "SOUL.md"), warnings));
   push("HOUSE-RULES (chung mọi vai)", read(path.join(sharedDir, "HOUSE-RULES.md"), warnings));
   push("PLAYBOOK", read(path.join(roleDir, "PLAYBOOK.md"), warnings));
+  // Sau PLAYBOOK, trước PRINCIPAL: "làm việc thế nào" → "giao cho ai" → "phục vụ ai".
+  // Vai phụ vốn đã được nạp RELATIONS qua launcher; main thì chưa — nó là vai DUY NHẤT
+  // thực sự cần bảng định tuyến, mà lại là vai không có.
+  push("RELATIONS", read(path.join(roleDir, "RELATIONS.md"), warnings));
   push("PRINCIPAL", read(path.join(sharedDir, "PRINCIPAL.md"), warnings));
   push("MEMORY INDEX (đã lọc theo quyền của bạn)", stripDocHeader(filteredIndex(repoRoot, grants)));
   push("PROJECTS L0", stripDocHeader(read(path.join(repoRoot, "memory", "projects", "INDEX.md"), warnings)));

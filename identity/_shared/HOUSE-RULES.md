@@ -54,7 +54,7 @@ Mỗi agent khởi động từ con số không và phải suy luận lại bố
 
 **Luật cứng:** không spawn subagent in-process, không dùng `Agent` tool — mọi việc giao đi
 qua **herdr**. Khuôn prompt & luật song song: [`DELEGATION.md`](DELEGATION.md).
-Giao cho ai: `identity/<role>/RELATIONS.md`.
+Giao cho ai: bảng RELATIONS đã nạp sẵn ở boot.
 
 ## 4. Khi nào hỏi principal
 

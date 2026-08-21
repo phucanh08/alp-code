@@ -160,7 +160,11 @@ function checkIdentityFiles() {
 
     const lo = L.loadLoadout(repoRoot, role);
     if (lo) for (const e of L.validate(lo, role, roles)) signal("ACL-INVALID", e);
-    if (lo?.model?.startsWith("gpt-") && !fs.existsSync(path.join(repoRoot, "identity", role, "AGENTS.md")))
+    // Vai chạy Codex cần AGENTS.md (Codex đọc file đó, không đọc CLAUDE.md).
+    // Xét CẢ `codex_model` — main khai `model: claude-opus-5` cho runtime chính nhưng vẫn
+    // có đường phụ Codex, và chỉ soi `model` thì bỏ lọt đúng vai đó.
+    const codexModel = lo?.codex_model || lo?.model;
+    if (codexModel?.startsWith("gpt-") && !fs.existsSync(path.join(repoRoot, "identity", role, "AGENTS.md")))
       signal("IDENTITY-MISSING", `${role} dùng Codex nhưng thiếu AGENTS.md`);
 
     // Placeholder chưa thay = vai được tạo tay, không qua new-role.sh.
@@ -182,30 +186,32 @@ function checkIdentityFiles() {
  */
 function checkTrust() {
   const cfgPath = path.join(process.env.HOME || "", ".claude.json");
-  if (!fs.existsSync(cfgPath)) {
-    for (const role of roles)
-      signal(
-        "TRUST-MISSING",
-        `${role} chưa trust → chạy scripts/trust-role.sh ${role}`
-      );
-    return;
+  let projects = null;
+
+  if (fs.existsSync(cfgPath)) {
+    try {
+      projects = (JSON.parse(fs.readFileSync(cfgPath, "utf8")).projects) || {};
+    } catch {
+      return signal("TRUST-UNKNOWN", "~/.claude.json không parse được — không kiểm được trust");
+    }
   }
-  let cfg;
-  try {
-    cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
-  } catch {
-    return signal("TRUST-UNKNOWN", "~/.claude.json không parse được — không kiểm được trust");
-  }
-  const projects = cfg.projects || {};
-  for (const role of roles) {
+
+  const missing = roles.filter((role) => {
+    if (!projects) return true;
     const dir = path.join(repoRoot, "identity", role);
     const variants = [dir, fs.existsSync(dir) ? fs.realpathSync(dir) : dir];
-    if (!variants.some((d) => projects[d]?.hasTrustDialogAccepted))
-      signal(
-        "TRUST-MISSING",
-        `${role} chưa trust → allow/additionalDirectories bị bỏ qua. Chạy \`cd identity/${role} && claude\` một lần rồi chấp nhận.`
-      );
-  }
+    return !variants.some((d) => projects[d]?.hasTrustDialogAccepted);
+  });
+  if (!missing.length) return;
+
+  // MỘT dòng, không phải một dòng mỗi vai. doctor chạy trong boot hook
+  // (`session-start.cjs:runDoctor`) nên mỗi dòng lặp lại là ngân sách boot bị đốt —
+  // 8 vai chưa trust từng ngốn ~1000 ký tự để nói đúng một điều.
+  signal(
+    "TRUST-MISSING",
+    `${missing.length} vai chưa trust (${missing.join(", ")}) → allow/additionalDirectories ` +
+      "bị bỏ qua. Chạy `scripts/trust-role.sh` (không tham số = mọi vai)."
+  );
 }
 
 // ---------------------------------------------------------------- tiện ích

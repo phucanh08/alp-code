@@ -25,15 +25,11 @@ for (const [role, [model, effort]] of Object.entries(expected)) {
   const args = [role];
   if (["search", "review"].includes(role)) args.push("--project", repoRoot);
   args.push("--dry-run", "--", "routing probe");
-  const result = spawnSync(path.join(repoRoot, "scripts", "run-role.sh"), args, {
-    cwd: repoRoot,
-    encoding: "utf8",
-  });
-  assert.strictEqual(result.status, 0, `${role} dry-run: ${result.stderr || result.stdout}`);
-  const dryRun = JSON.parse(result.stdout);
-  assert.strictEqual(dryRun.model, model, `${role} dry-run model`);
-  assert.strictEqual(dryRun.reasoningEffort, effort, `${role} dry-run effort`);
-  assert.deepStrictEqual(dryRun.delegation, {
+  const probe = dryRun(args);
+  assert.strictEqual(probe.model, model, `${role} dry-run model`);
+  assert.strictEqual(probe.reasoningEffort, effort, `${role} dry-run effort`);
+  assert.strictEqual(probe.sandbox, "read-only", `${role} phải read-only`);
+  assert.deepStrictEqual(probe.delegation, {
     from: "main",
     replyTo: "main",
     principalFacing: false,
@@ -44,6 +40,25 @@ const main = L.loadLoadout(repoRoot, "main");
 assert(main.delegates_to.includes("compaction"));
 assert(main.delegates_to.includes("titling"));
 
+// main qua launcher Codex: `model:` là model Claude (runtime chính), nên launcher PHẢI
+// lấy `codex_model:` — đưa `claude-opus-5` cho `codex -m` là hỏng câm.
+assert.strictEqual(main.model, "claude-opus-5", "main giữ model Claude làm runtime chính");
+const mainHome = dryRun(["main", "--dry-run", "--", "probe"]);
+assert.strictEqual(mainHome.model, main.codex_model, "main dry-run dùng codex_model");
+assert(mainHome.model.startsWith("gpt-"), "codex_model phải là model Codex");
+assert.strictEqual(mainHome.sandbox, "workspace-write", "main ở nhà mình thì ghi được");
+assert.deepStrictEqual(mainHome.delegation, {
+  from: "principal",
+  replyTo: "principal",
+  principalFacing: true,
+}, "main nhận việc từ principal, không bị bọc contract delegation");
+
+// BẤT BIẾN CHARTER: cwd không nằm trong `workspaces.write` = read-only, kể cả main.
+// Đây là chỗ dễ vỡ IM LẶNG nhất — không lỗi, không cảnh báo, chỉ mất bất biến.
+assert.deepStrictEqual(L.effectiveWorkspaces(main).write, [], "tiền đề: main chưa khai workspace ghi");
+const mainAway = dryRun(["main", "--project", "/tmp", "--dry-run", "--", "probe"]);
+assert.strictEqual(mainAway.sandbox, "read-only", "main ở cwd lạ PHẢI read-only");
+
 const compaction = L.loadLoadout(repoRoot, "compaction");
 assert.deepStrictEqual(compaction.tools, ["Read", "Glob", "Grep"]);
 assert.deepStrictEqual(compaction.skills, []);
@@ -52,3 +67,12 @@ assert.deepStrictEqual(titling.tools, []);
 assert.deepStrictEqual(titling.skills, []);
 
 console.log("OK               agent routing tests passed");
+
+function dryRun(args) {
+  const result = spawnSync(path.join(repoRoot, "scripts", "run-role.sh"), args, {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  assert.strictEqual(result.status, 0, `dry-run ${args[0]}: ${result.stderr || result.stdout}`);
+  return JSON.parse(result.stdout);
+}

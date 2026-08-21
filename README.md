@@ -75,11 +75,21 @@ scripts/run-role.sh review --project /path/to/app -- "Review correctness của d
 scripts/run-role.sh oracle --project /path/to/app -- "Phản biện phương án migration này"
 scripts/run-role.sh compaction -- "Tóm tắt context thread này"
 scripts/run-role.sh titling -- "Đặt title cho thread này"
+scripts/run-role.sh main -- "Việc cho chính Phở, chạy trên Codex"
 ```
 
-Windows dùng `scripts/run-role.ps1`. Launcher chọn model + reasoning effort từ loadout và ép
-sandbox `read-only`; artifact được trả cho main kiểm chứng và lưu. Oracle chạy Claude thì mở
-`identity/oracle` bằng Claude Opus 5; chạy Codex thì launcher dùng GPT-5.6 Sol từ loadout.
+Windows dùng `scripts/run-role.ps1`. Launcher chọn model + reasoning effort từ loadout;
+artifact được trả cho main kiểm chứng và lưu. Oracle chạy Claude thì mở `identity/oracle`
+bằng Claude Opus 5; chạy Codex thì launcher dùng GPT-5.6 Sol từ loadout.
+
+**Sandbox.** Vai phụ **luôn** `read-only`. Riêng `main` được `workspace-write`, nhưng chỉ khi
+đứng ở repo alp-code hoặc trong một đường dẫn đã khai ở `workspaces.write` — cwd lạ vẫn
+`read-only`, đúng bất biến CHARTER.
+
+**`main` trên Codex là đường phụ**, dùng khi muốn tiết kiệm quota Claude. Codex không nạp
+được skill `alp:plan`/`alp:cook` (marketplace của Claude Code), nên runtime chính của main
+vẫn là Claude. Model Codex của main khai riêng ở `codex_model:` trong loadout — `model:` giữ
+nguyên `claude-opus-5` cho runtime chính.
 
 ## Cây thư mục
 
@@ -113,7 +123,7 @@ alp-code/
 | `scripts/new-role.sh <slug>` | tạo vai mới + recompile ACL toàn bộ + trust workspace |
 | `scripts/install-project.sh <path>` | đăng ký project code có sẵn (macOS/Linux) |
 | `scripts/install-project.ps1 <path>` | đăng ký project code có sẵn (Windows PowerShell) |
-| `scripts/run-role.sh <role>` | chạy các vai Codex bằng model + effort trong loadout |
+| `scripts/run-role.sh <role>` | chạy một vai trên Codex bằng model + effort trong loadout |
 | `scripts/trust-role.sh [role]` | đánh dấu workspace trusted trong `~/.claude.json` |
 | `scripts/doctor.sh` | kiểm toàn vẹn: DRIFT · STALE · ORPHAN · ACL-* · TRUST-MISSING |
 | `scripts/test-communication.sh` | kiểm topology giao tiếp và contract main-only |

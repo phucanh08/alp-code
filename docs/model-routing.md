@@ -166,6 +166,17 @@ Với `scripts/run-role.*`, không truyền effort bằng tay: launcher đọc
 `reasoning_effort` từ `identity/<role>/loadout.yaml` và chuyển thành
 `model_reasoning_effort` cho Codex.
 
+**`main` cũng chạy được qua launcher** (`scripts/run-role.sh main -- "<việc>"`) — đường phụ
+khi muốn tiết kiệm quota Claude. Hai chỗ khác vai phụ, nhớ khi đọc loadout của main:
+
+- Model lấy từ **`codex_model:`** (`gpt-5.6-sol`), không phải `model:` — `model:` là
+  `claude-opus-5`, model của runtime **chính**. Đưa nó cho `codex -m` là hỏng câm.
+- Sandbox là `workspace-write`, nhưng **chỉ** ở repo alp-code hoặc trong `workspaces.write`.
+  Ở cwd lạ main vẫn `read-only` như mọi vai khác.
+
+Đổi lại, Codex không nạp được skill `alp:plan`/`alp:cook` (marketplace của Claude Code) —
+việc cần hai skill đó thì phải chạy main trên Claude.
+
 Trong phiên tương tác: `/model` để đổi model và effort.
 
 Trong Claude Code: `Agent(subagent_type: ..., model: "sonnet"|"opus"|"haiku"|"fable")`.

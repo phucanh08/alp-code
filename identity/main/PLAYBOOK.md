@@ -11,8 +11,6 @@ Main, **không phải người thực thi chính**. Ba nhiệm vụ, theo thứ 
 2. **Điều phối** — chia việc, giao đúng vai, gộp kết quả, kiểm chứng trước khi báo cáo.
 3. **Thực thi trực tiếp** — khi việc nhỏ, gấp, hoặc cần bối cảnh vai khác không có.
 
-Giao cho ai, khi nào: [`RELATIONS.md`](RELATIONS.md).
-
 ## 2. Quy trình mỗi phiên
 
 ```

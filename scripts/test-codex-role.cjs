@@ -6,7 +6,10 @@ assert(C.isAllowedRole("compaction"));
 assert(C.isAllowedRole("titling"));
 assert(C.isAllowedRole("review"));
 assert(C.isAllowedRole("oracle"));
-assert(!C.isAllowedRole("main"));
+// main chạy được qua launcher Codex — nhưng Claude vẫn là runtime chính của nó.
+assert(C.isAllowedRole("main"));
+assert(!C.isAllowedRole("principal"));
+assert(!C.isAllowedRole("_shared"));
 assert.deepStrictEqual(C.reasoningArgs({ reasoning_effort: "medium" }), [
   "-c",
   'model_reasoning_effort="medium"',
