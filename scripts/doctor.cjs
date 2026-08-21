@@ -13,6 +13,7 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const L = require("./lib/loadout.cjs");
+const C = require("./lib/communication.cjs");
 
 const quiet = process.argv.includes("--quiet");
 const repoRoot = L.findRepoRoot(__dirname);
@@ -134,6 +135,16 @@ function checkRegistry() {
   }
 }
 
+// ---------------------------------------------------------------- COMMUNICATION
+
+function checkCommunication() {
+  for (const issue of C.checkCommunicationTopology(
+    repoRoot,
+    roles,
+    (role) => L.loadLoadout(repoRoot, role)
+  )) signal(issue.tag, issue.msg);
+}
+
 // ---------------------------------------------------------------- bộ file vai
 
 const REQUIRED = ["IDENTITY.md", "SOUL.md", "PLAYBOOK.md", "RELATIONS.md", "CLAUDE.md", "loadout.yaml"];
@@ -211,6 +222,7 @@ function main() {
   checkProjectLayer();
   checkAcl();
   checkRegistry();
+  checkCommunication();
   checkIdentityFiles();
   checkTrust();
 
