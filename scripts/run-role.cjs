@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Launcher Codex cho các vai retrieval. Mọi vai chạy read-only; chief-of-staff
+// Launcher Codex cho các vai retrieval. Mọi vai chạy read-only; main
 // chịu trách nhiệm lưu artifact sau khi kiểm chứng.
 
 const fs = require("fs");
@@ -67,7 +67,7 @@ function buildBoot(role, lo, ws) {
   const body = files.map((f) => `## ${path.basename(f)}\n\n${fs.readFileSync(f, "utf8")}`).join("\n\n---\n\n");
   return `# BOOT alp-code\n\nTên: ${lo.name}\nVai: ${role}\nModel: ${lo.model}\n` +
     `Workspace đọc: ${ws.read.join(", ") || "không có"}\n` +
-    "Chế độ: READ-ONLY. Không sửa file; trả artifact cho chief-of-staff.\n\n" + body;
+    "Chế độ: READ-ONLY. Không sửa file; trả artifact cho main.\n\n" + body;
 }
 function usage(code) {
   console.log("Usage: run-role <search|librarian|read-thread> [--project path] [--] [prompt]");

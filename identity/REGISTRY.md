@@ -6,14 +6,16 @@
 
 | Vai | Tên | Emoji | Model | Báo cáo cho | Trạng thái |
 |---|---|---|---|---|---|
-| chief-of-staff | Phở | 🍜 | claude-opus-5 | principal | ACTIVE |
-| search | Search | 🔍 | gpt-5.6-terra | chief-of-staff | ACTIVE |
-| librarian | Librarian | 📚 | gpt-5.6-sol | chief-of-staff | ACTIVE |
-| read-thread | Read Thread | 🧵 | gpt-5.6-luna | chief-of-staff | ACTIVE |
+| main | Phở | 🍜 | claude-opus-5 | principal | ACTIVE |
+| search | Search | 🔍 | gpt-5.6-terra | main | ACTIVE |
+| librarian | Librarian | 📚 | gpt-5.6-sol | main | ACTIVE |
+| read-thread | Read Thread | 🧵 | gpt-5.6-luna | main | ACTIVE |
+| review | Review | 🔎 | gpt-5.5 | main | ACTIVE |
+| oracle | Oracle | 🔮 | gpt-5.6-sol / claude-opus-5 | main | ACTIVE |
 
 ## Quy ước
 
-- **Key là vai, không phải tên.** Thư mục `identity/chief-of-staff/`, không phải `identity/pho/`.
+- **Key là vai, không phải tên.** Thư mục `identity/main/`, không phải `identity/pho/`.
   Đổi tên = sửa một dòng `name:` trong `loadout.yaml`, không đổi path nào.
 - Một vai = một thư mục = một `loadout.yaml` = một phiên runtime riêng.
 - Thêm vai **chỉ** qua `scripts/new-role.sh`. Tạo tay = thiếu deny ở các vai cũ = rò rỉ.

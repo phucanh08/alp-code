@@ -1,7 +1,7 @@
 # P0 — Scaffold + Migrate Phở
 
 **Mục tiêu:** cây thư mục đứng vững, Phở chạy được y như trước ở vị trí mới. Chưa có ACL, chưa có hook.
-**Nghiệm thu:** mở `cd identity/chief-of-staff && claude`, Phở boot đúng, đọc được memory, không lỗi path.
+**Nghiệm thu:** mở `cd identity/main && claude`, Phở boot đúng, đọc được memory, không lỗi path.
 
 ## 0.1 Dựng cây
 
@@ -14,13 +14,13 @@ agent-memory/
 │   ├── REGISTRY.md
 │   ├── _shared/{HOUSE-RULES.md,VOICE.md,PRINCIPAL.md}
 │   ├── _template/{CLAUDE.md,IDENTITY.md,SOUL.md,PLAYBOOK.md,RELATIONS.md,loadout.yaml,journal/.gitkeep}
-│   └── chief-of-staff/
+│   └── main/
 ├── memory/
 │   ├── INDEX.md
 │   ├── README.md
 │   ├── shared/{decisions,people,reference}/
 │   ├── projects/{INDEX.md,PROTOCOL.md,_template/}
-│   └── private/chief-of-staff/
+│   └── private/main/
 ├── skills/
 ├── hooks/
 └── scripts/
@@ -38,16 +38,16 @@ Nguồn: `~/AnhlpProjects/agent-team/pho/`
 
 | Cũ | Mới | Ghi chú |
 |---|---|---|
-| `IDENTITY.md` | `identity/chief-of-staff/IDENTITY.md` | thêm `role: chief-of-staff`; `workspace:` đổi path; bỏ bảng "Bộ file cấu thành Phở" (chuyển vào `_template`) |
-| `SOUL.md` | `identity/chief-of-staff/SOUL.md` | **giữ nguyên** phần tính cách/giọng riêng. Cắt phần "Tính liên tục" (đường dẫn) → viết lại theo path mới |
-| `AGENTS.md` §1, §2, §5 | `identity/chief-of-staff/PLAYBOOK.md` | vai trò + quy trình phiên + định dạng báo cáo — **riêng vai chief-of-staff** |
+| `IDENTITY.md` | `identity/main/IDENTITY.md` | thêm `role: main`; `workspace:` đổi path; bỏ bảng "Bộ file cấu thành Phở" (chuyển vào `_template`) |
+| `SOUL.md` | `identity/main/SOUL.md` | **giữ nguyên** phần tính cách/giọng riêng. Cắt phần "Tính liên tục" (đường dẫn) → viết lại theo path mới |
+| `AGENTS.md` §1, §2, §5 | `identity/main/PLAYBOOK.md` | vai trò + quy trình phiên + định dạng báo cáo — **riêng vai main** |
 | `AGENTS.md` §3, §6, §7 | `identity/_shared/HOUSE-RULES.md` | luật cứng + khi nào hỏi + thứ tự ưu tiên khi xung đột — **dùng chung mọi vai** |
 | `AGENTS.md` §4 | `skills/agent-memory/SKILL.md` (P2) | bảng "ghi vào đâu" → thành luật của skill, dùng chung |
 | `USER.md` | `identity/_shared/PRINCIPAL.md` | **một bản duy nhất**. Mục "Cách giao tiếp" tách ra `_shared/VOICE.md` |
 | `USER.md` → "Cách giao tiếp" | `identity/_shared/VOICE.md` | quy ước output chung |
 | `TOOLS.md` §0,§1,§5,§6 | `identity/_shared/HOUSE-RULES.md` (gộp) | luật herdr, chọn tự làm/giao, giao việc, chạy song song |
-| `TOOLS.md` §2,§3,§4 | `identity/chief-of-staff/loadout.yaml` + `RELATIONS.md` (P1) | bảng định tuyến → `delegates_to`; quyền công cụ → `tools:` |
-| `HEARTBEAT.md` | `identity/chief-of-staff/HEARTBEAT.md` | riêng vai này (chỉ chief-of-staff chạy heartbeat) |
+| `TOOLS.md` §2,§3,§4 | `identity/main/loadout.yaml` + `RELATIONS.md` (P1) | bảng định tuyến → `delegates_to`; quyền công cụ → `tools:` |
+| `HEARTBEAT.md` | `identity/main/HEARTBEAT.md` | riêng vai này (chỉ main chạy heartbeat) |
 | `BOOTSTRAP.md` | `identity/_template/CLAUDE.md` + hook P2 | trình tự boot thành **hook inject**; CLAUDE.md còn lại là fallback mỏng |
 | `MEMORY.md` | `memory/INDEX.md` | mục lục toàn kho, dùng chung |
 | `memory/{decisions,people,reference}/` | `memory/shared/…` | **giữ nguyên nội dung**, chỉ đổi vị trí |
@@ -56,7 +56,7 @@ Nguồn: `~/AnhlpProjects/agent-team/pho/`
 | `docs/**`, `skills/herdr/**` | `docs/**`, `skills/herdr/**` | copy nguyên |
 | `.claude/session-state/` | **bỏ** | rác phiên cũ |
 
-**Quy tắc cắt AGENTS.md:** câu nào bắt đầu bằng "Phở là…" hoặc mô tả vai chief-of-staff → `PLAYBOOK.md`.
+**Quy tắc cắt AGENTS.md:** câu nào bắt đầu bằng "Phở là…" hoặc mô tả vai main → `PLAYBOOK.md`.
 Câu nào là luật an toàn/trung thực áp cho mọi agent → `HOUSE-RULES.md`. Nghi ngờ → `_shared` (DRY thắng).
 
 ## 0.3 Sửa đường dẫn
@@ -65,7 +65,7 @@ Sau khi copy, chạy và sửa **hết** kết quả:
 
 ```bash
 cd ~/AnhlpProjects/agent-memory
-grep -rn "chief-of-staff/pho\|agent-team/pho\|projects/INDEX\|memory/decisions\|memory/people\|memory/reference" \
+grep -rn "main/pho\|agent-team/pho\|projects/INDEX\|memory/decisions\|memory/people\|memory/reference" \
   --include="*.md" --include="*.sh" .
 ```
 
@@ -77,7 +77,7 @@ grep -rn "chief-of-staff/pho\|agent-team/pho\|projects/INDEX\|memory/decisions\|
 ```markdown
 | Vai | Tên | Emoji | Model | Báo cáo cho | Trạng thái |
 |---|---|---|---|---|---|
-| chief-of-staff | Phở | 🍜 | claude-opus-5 | principal | ACTIVE |
+| main | Phở | 🍜 | claude-opus-5 | principal | ACTIVE |
 ```
 
 **`CHARTER.md`** — hiến chương: hệ này là gì, ai tồn tại, luật nào áp cho mọi vai, cách thêm vai,
@@ -89,7 +89,7 @@ và **ranh giới `shared/` vs `private/`** (chống rủi ro #5).
 
 ## 0.5 Nghiệm thu P0
 
-- [ ] `cd identity/chief-of-staff && claude` → Phở tự nhận diện đúng (qua `CLAUDE.md`, chưa cần hook)
+- [ ] `cd identity/main && claude` → Phở tự nhận diện đúng (qua `CLAUDE.md`, chưa cần hook)
 - [ ] `grep -rn "agent-team/pho" .` → **0 kết quả**
 - [ ] `scripts/sync-project-index.sh` → chạy được, không lỗi path
 - [ ] Hỏi Phở "principal là ai, thích gì" → trả lời đúng từ `_shared/PRINCIPAL.md`

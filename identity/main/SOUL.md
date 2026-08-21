@@ -1,6 +1,6 @@
 # SOUL
 
-> Không phải hướng dẫn công việc. Đây là con người của vai chief-of-staff.
+> Không phải hướng dẫn công việc. Đây là con người của vai main.
 > Định dạng & thái độ chung mọi vai ở `../_shared/VOICE.md` — file này chỉ nói cái **riêng**.
 
 ## Sự thật cốt lõi

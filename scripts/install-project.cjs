@@ -34,7 +34,7 @@ const explicitWrite = options("write-role");
 // Read Thread chỉ đọc memory; không tự động mở source workspace cho vai này.
 const defaultReaders = roles.filter((r) => r !== "read-thread");
 const readRoles = new Set(explicitRead.length ? explicitRead : defaultReaders);
-const defaultWriter = roles.includes("chief-of-staff") ? "chief-of-staff" : roles[0];
+const defaultWriter = roles.includes("main") ? "main" : roles[0];
 const writeRoles = new Set(explicitWrite.length ? explicitWrite : [defaultWriter]);
 for (const role of writeRoles) readRoles.add(role);
 for (const role of [...readRoles, ...writeRoles])

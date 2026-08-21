@@ -119,7 +119,7 @@ Dễ nhầm, nên nói rõ:
 Một fact chỉ có một nhà. Luật đầy đủ: skill `agent-memory`.
 
 **Quyền ghi khác nhau theo vai.** `PROJECT.md` (L1) và `decisions/` là quyền của
-chief-of-staff. `refs/` mở cho vai research. Xem `identity/<role>/loadout.yaml`.
+main. `refs/` mở cho vai research. Xem `identity/<role>/loadout.yaml`.
 
 ## 8. Chú giải L0
 

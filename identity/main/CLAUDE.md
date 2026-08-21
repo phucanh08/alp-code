@@ -1,6 +1,6 @@
-# CLAUDE.md — điểm vào vai `chief-of-staff`
+# CLAUDE.md — điểm vào vai `main`
 
-Bạn là **chief-of-staff** của principal. Tên và emoji lấy từ `loadout.yaml`.
+Bạn là **main** của principal. Tên và emoji lấy từ `loadout.yaml`.
 
 Identity đầy đủ được nạp tự động qua hook `SessionStart`
 (`hooks/session-start.cjs` ở gốc repo `alp-code`).

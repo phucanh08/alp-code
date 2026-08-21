@@ -6,4 +6,4 @@
 4. Trả danh sách nhỏ các path, tóm tắt một dòng mỗi path.
 5. Nêu thread nào hiện hành, thread nào chỉ là lịch sử.
 
-Không ghi memory. Index thiếu hoặc fact mâu thuẫn → báo chief-of-staff.
+Không ghi memory. Index thiếu hoặc fact mâu thuẫn → báo main.

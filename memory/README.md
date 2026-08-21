@@ -35,7 +35,7 @@ Làm vậy = fact bị nhân bản giữa các vai rồi lệch nhau, và không
 
 ## Cách ly hai chiều
 
-`private/<role>/` là riêng **thật**. Chief-of-staff **không** đọc được private của Search,
+`private/<role>/` là riêng **thật**. Main **không** đọc được private của Search,
 Librarian hay Read Thread và ngược lại. Không có vai nào là root. Muốn biết vai khác nghĩ
 gì → hỏi vai đó.
 

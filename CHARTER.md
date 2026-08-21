@@ -1,14 +1,14 @@
 # CHARTER — hiến chương hệ alp-code
 
 > Luật nền của cả hệ. Đứng trên `HOUSE-RULES.md` và trên mọi `PLAYBOOK.md`.
-> **Chỉ principal sửa file này.** Không agent nào có quyền ghi — kể cả chief-of-staff.
+> **Chỉ principal sửa file này.** Không agent nào có quyền ghi — kể cả main.
 
 ## 1. Hệ này là gì
 
 Một kho duy nhất chứa **danh tính** của nhiều agent và **trí nhớ** dùng chung giữa chúng.
 
-Mỗi vai chạy trong một phiên riêng: chief-of-staff dùng Claude Code, nhóm Knowledge
-Retrieval dùng Codex. Tất cả cùng nhìn vào một `memory/`. Nhờ đó các agent không phải kể
+Mỗi vai chạy trong một phiên riêng: main dùng Claude Code hoặc Codex; các vai chuyên môn
+được định tuyến theo loadout. Tất cả cùng nhìn vào một `memory/`. Nhờ đó các agent không phải kể
 lại cho nhau thứ đã biết,
 mà vẫn không đọc được nháp riêng của nhau.
 
@@ -21,7 +21,7 @@ memory/private/<role>/  nháp riêng từng vai
 
 ## 2. Sáu nguyên tắc bất biến
 
-1. **Key theo vai trò, không theo tên.** Thư mục là `chief-of-staff`, không phải `pho`.
+1. **Key theo vai trò, không theo tên.** Thư mục là `main`, không phải `pho`.
    Tên người nằm ở `name:` trong `loadout.yaml`. Đổi tên = sửa một dòng, không đổi path nào.
 2. **`loadout.yaml` là nguồn sự thật duy nhất của ACL.** `.claude/settings.json` là **sản phẩm
    sinh ra** bởi `scripts/compile-acl.sh` — không sửa tay, không commit.
@@ -35,10 +35,12 @@ memory/private/<role>/  nháp riêng từng vai
 
 | Vai | Tên | Việc | Ghi được |
 |---|---|---|---|
-| `chief-of-staff` | Phở 🍜 | điều phối, vận hành project, **chốt quyết định** | `shared/**` · `projects/**` |
+| `main` | Phở 🍜 | điều phối, vận hành project, **chốt quyết định** | `shared/**` · `projects/**` |
 | `search` | Search 🔍 | local code retrieval | private của vai; source workspace chỉ đọc |
 | `librarian` | Librarian 📚 | external/cross-repo research | `shared/reference/**` · `projects/*/refs/**` |
 | `read-thread` | Read Thread 🧵 | tìm kiếm trong memory | private của vai; memory chỉ đọc |
+| `review` | Review 🔎 | review code, một concern mỗi phiên | private của vai; code/memory chỉ đọc |
+| `oracle` | Oracle 🔮 | senior consultant tùy chọn của Main | private của vai; code/memory chỉ đọc |
 
 Danh bạ đầy đủ: [`identity/REGISTRY.md`](identity/REGISTRY.md).
 
@@ -70,7 +72,7 @@ Claude Code, nên không viết được luật "cấm `private/**`, trừ `priv
 **KHÔNG BAO GIỜ** `private/`. Vi phạm = fact bị nhân bản giữa các vai rồi lệch nhau, và
 không vai nào biết bản nào đúng. Đây là lỗi tốn kém nhất hệ này có thể mắc.
 
-**Cách ly hai chiều.** Không có vai nào là root. Chief-of-staff **không** đọc được
+**Cách ly hai chiều.** Không có vai nào là root. Main **không** đọc được
 private của các vai retrieval. `private` mà cấp trên đọc được thì không còn là `private`.
 
 ## 6. Giới hạn — nói thẳng

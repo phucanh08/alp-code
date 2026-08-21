@@ -1,6 +1,6 @@
 # HEARTBEAT — Checklist định kỳ
 
-> Vai chief-of-staff đọc file này khi chạy theo lịch (cron / `/loop` / `/schedule`), hoặc khi principal
+> Vai main đọc file này khi chạy theo lịch (cron / `/loop` / `/schedule`), hoặc khi principal
 > hỏi "có gì mới không?".
 > Nguyên tắc: **im lặng là mặc định.** Chỉ lên tiếng khi thật sự có gì đáng nói.
 

@@ -53,7 +53,7 @@ Ghi kết quả vào `memory/shared/reference/claude-code-acl-behavior.md` — �
 
 ```yaml
 # --- danh tính (không ảnh hưởng ACL) ---
-role: chief-of-staff          # BẮT BUỘC, trùng tên thư mục
+role: main          # BẮT BUỘC, trùng tên thư mục
 name: Phở
 emoji: 🍜
 model: claude-opus-5
@@ -64,8 +64,8 @@ delegates_to: [researcher]    # vai này được giao việc cho ai
 
 # --- ACL: đường dẫn tương đối tính từ memory/ ---
 memory:
-  read:  [shared/**, projects/**, private/chief-of-staff/**]
-  write: [shared/**, projects/**, private/chief-of-staff/**]
+  read:  [shared/**, projects/**, private/main/**]
+  write: [shared/**, projects/**, private/main/**]
 
 # --- công cụ & skill ---
 tools:  [Read, Write, Edit, Glob, Grep, Bash, WebSearch, WebFetch]
@@ -106,7 +106,7 @@ Path **tuyệt đối** (settings không đảm bảo hỗ trợ `../`). Machine
       "/Users/oaidq/AnhlpProjects/agent-memory/identity/_shared",
       "/Users/oaidq/AnhlpProjects/agent-memory/memory/shared",
       "/Users/oaidq/AnhlpProjects/agent-memory/memory/projects",
-      "/Users/oaidq/AnhlpProjects/agent-memory/memory/private/chief-of-staff",
+      "/Users/oaidq/AnhlpProjects/agent-memory/memory/private/main",
       "/Users/oaidq/AnhlpProjects/agent-memory/skills",
       "/Users/oaidq/AnhlpProjects/agent-memory/docs"
     ],
@@ -118,8 +118,8 @@ Path **tuyệt đối** (settings không đảm bảo hỗ trợ `../`). Machine
       "Edit(/…/identity/_shared/**)",
       "Edit(/…/identity/REGISTRY.md)",
       "Edit(/…/CHARTER.md)",
-      "Edit(/…/identity/chief-of-staff/loadout.yaml)",
-      "Edit(/…/identity/chief-of-staff/.claude/**)",
+      "Edit(/…/identity/main/loadout.yaml)",
+      "Edit(/…/identity/main/.claude/**)",
       "Edit(/…/scripts/**)",
       "Edit(/…/hooks/**)"
     ]
@@ -158,10 +158,10 @@ Chọn Node nếu spike cho thấy phải viết hook nặng — dùng chung par
 ## 1.3 Nghiệm thu P1
 
 - [x] Spike 1.0 xong, 6 ô có kết quả thật, ghi vào `memory/shared/reference/claude-code-acl-behavior.md`
-- [x] `compile-acl.sh` sinh `settings.json` hợp lệ cho `chief-of-staff`
+- [x] `compile-acl.sh` sinh `settings.json` hợp lệ cho `main`
 - [x] `compile-acl.sh --check` exit 1 khi sửa tay `loadout.yaml` mà chưa recompile
 - [x] Validate bắt đúng lỗi: `role` lệch thư mục · `write` ⊄ `read` · khai `private/<vai-khác>`
-- [x] Tạo vai giả `identity/qa/` → chạy `compile-acl.sh` → `settings.json` của `chief-of-staff`
+- [x] Tạo vai giả `identity/qa/` → chạy `compile-acl.sh` → `settings.json` của `main`
       **tự có thêm** dòng deny `private/qa/**`. Xoá vai giả sau khi xong.
 - [x] `.gitignore` chặn `identity/*/.claude/settings.json`; `loadout.yaml` **được** track
 
@@ -170,7 +170,7 @@ Chọn Node nếu spike cho thấy phải viết hook nặng — dùng chung par
 - `scripts/compile-acl.sh --check`: OK cho mọi vai.
 - Ba ca validate âm đều bị bắt đúng: role lệch, write không nằm trong read, private vai khác.
 - Phép thử enumerate bằng vai tạm `qa` được thay bằng phép thử tương đương trên vai thật
-  `researcher`: settings của `chief-of-staff` chứa deny tương ứng, và test hồi quy kiểm trực tiếp
+  `researcher`: settings của `main` chứa deny tương ứng, và test hồi quy kiểm trực tiếp
   deny của mọi cặp vai. Không để lại fixture `qa` trong cây identity.
 - Thu hẹp `additionalDirectories`: chỉ mở `memory/shared`, `memory/projects` và
   `memory/private/<role>`, không mở thư mục cha `memory/`.

@@ -89,11 +89,11 @@ Agent bị chặn → viết lại lệnh cho tường minh. Chi phí thấp, gi
 
 | Ca | Lệnh | Kỳ vọng |
 |---|---|---|
-| 1 | `Read` `memory/private/chief-of-staff/*` | DENY |
-| 2 | `cat memory/private/chief-of-staff/*` | DENY |
-| 3 | `cd ../../memory/private/chief-of-staff && cat *` | DENY |
-| 4 | `cat $(echo ../../memory/private/chief-of-staff/x.md)` | DENY (indirection) |
-| 5 | `ln -s ../../memory/private/chief-of-staff /tmp/x && cat /tmp/x/*` | DENY (realpath) |
+| 1 | `Read` `memory/private/main/*` | DENY |
+| 2 | `cat memory/private/main/*` | DENY |
+| 3 | `cd ../../memory/private/main && cat *` | DENY |
+| 4 | `cat $(echo ../../memory/private/main/x.md)` | DENY (indirection) |
+| 5 | `ln -s ../../memory/private/main /tmp/x && cat /tmp/x/*` | DENY (realpath) |
 | 6 | `Edit` `identity/researcher/loadout.yaml` | DENY |
 | 7 | `Read` `memory/shared/*` | **ALLOW** — không được chặn nhầm |
 | 8 | `Write` `memory/private/researcher/note.md` | **ALLOW** |
@@ -183,7 +183,7 @@ Tái dùng `read_fm()` và ánh xạ `modified` của `sync-project-index.sh` �
 
 ## 2.6 Nghiệm thu P2
 
-- [x] Mở phiên `chief-of-staff` → identity có sẵn trong context, **không** cần tool call nào
+- [x] Mở phiên `main` → identity có sẵn trong context, **không** cần tool call nào
 - [x] Boot set ≤ 16000 ký tự (~4k token); vượt → hook cảnh báo
 - [x] Đổi tên hook thành file sai → phiên vẫn mở được, có cảnh báo (fail-safe)
 - [x] `test-isolation.sh` **8/8 ca đúng** — gồm cả 2 ca ALLOW
@@ -193,7 +193,7 @@ Tái dùng `read_fm()` và ánh xạ `modified` của `sync-project-index.sh` �
 
 ### Kết quả verify lại — 2026-08-21
 
-- SessionStart sinh boot context trực tiếp: chief-of-staff 14,498 ký tự; researcher 14,937 ký tự.
+- SessionStart sinh boot context trực tiếp: main 14,498 ký tự; researcher 14,937 ký tự.
 - Thiếu `loadout.yaml` trong sandbox: hook exit 0, context rỗng và có `systemMessage` cảnh báo.
 - Repo sandbox bị move: doctor báo cả `ACL-DRIFT` và `ACL-PATH`; sửa grant chưa compile:
   doctor báo `ACL-DRIFT` đúng vai.

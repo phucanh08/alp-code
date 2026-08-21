@@ -3,7 +3,7 @@ id: agent-memory-architecture
 type: decision
 layer: L3
 visibility: team
-owner: chief-of-staff
+owner: main
 created: 2026-08-21
 updated: 2026-08-21
 tags: [architecture, acl, identity, memory, multi-agent]
@@ -22,12 +22,12 @@ CWD riêng `identity/<role>/`, nhưng cùng nhìn vào một `memory/`.
 
 Sáu nguyên tắc bất biến ở [`CHARTER.md`](../../../CHARTER.md) §2. Ba cái quan trọng nhất:
 
-1. **Key theo vai trò, không theo tên.** Thư mục là `chief-of-staff`, tên người là
+1. **Key theo vai trò, không theo tên.** Thư mục là `main`, tên người là
    `name: Phở` trong `loadout.yaml`. Đổi tên = sửa **một dòng**, không path nào đổi,
    không recompile ACL. Đã kiểm chứng.
 2. **`loadout.yaml` là nguồn sự thật duy nhất của ACL.** `.claude/settings.json` là sản
    phẩm sinh ra bởi `scripts/compile-acl.sh` — không sửa tay, không commit (gitignore).
-3. **Cách ly hai chiều.** Chief-of-staff **không** phải root: không đọc được
+3. **Cách ly hai chiều.** Main **không** phải root: không đọc được
    `memory/private/researcher/`. `private` mà cấp trên đọc được thì không còn là `private`.
 
 ## Vì sao ba lớp enforce, không phải một

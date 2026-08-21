@@ -28,14 +28,14 @@ const SLUG = firstProjectSlug();
 
 const CASES = [
   // --- Nhóm CHẶN, từ phiên librarian ---
-  ["librarian", "DENY", "Read", { file_path: R("memory/private/chief-of-staff/x.md") }, "Read kho riêng chief-of-staff"],
-  ["librarian", "DENY", "Bash", { command: "cat ../../memory/private/chief-of-staff/x.md" }, "cat kho riêng chief-of-staff"],
-  ["librarian", "DENY", "Bash", { command: "cd ../../memory/private/chief-of-staff && cat x.md" }, "cd rồi cat"],
-  ["librarian", "DENY", "Bash", { command: "cat $(echo ../../memory/private/chief-of-staff/x.md)" }, "indirection $()"],
+  ["librarian", "DENY", "Read", { file_path: R("memory/private/main/x.md") }, "Read kho riêng main"],
+  ["librarian", "DENY", "Bash", { command: "cat ../../memory/private/main/x.md" }, "cat kho riêng main"],
+  ["librarian", "DENY", "Bash", { command: "cd ../../memory/private/main && cat x.md" }, "cd rồi cat"],
+  ["librarian", "DENY", "Bash", { command: "cat $(echo ../../memory/private/main/x.md)" }, "indirection $()"],
   ["librarian", "DENY", "Bash", { command: `cat ${path.join("/tmp", "acl-symlink-probe", "x.md")}` }, "symlink → realpath"],
   ["librarian", "DENY", "Edit", { file_path: R("identity/librarian/loadout.yaml") }, "tự sửa loadout (self-escalation)"],
   ["librarian", "DENY", "Edit", { file_path: R("identity/librarian/.claude/settings.json") }, "tự sửa settings.json"],
-  ["librarian", "DENY", "Read", { file_path: R("identity/chief-of-staff/SOUL.md") }, "Read persona vai khác"],
+  ["librarian", "DENY", "Read", { file_path: R("identity/main/SOUL.md") }, "Read persona vai khác"],
   ["librarian", "DENY", "Edit", { file_path: R("identity/_shared/HOUSE-RULES.md") }, "sửa luật chung"],
   ["librarian", "DENY", "Edit", { file_path: R("memory/projects", SLUG, "PROJECT.md") }, "ghi ngoài write grant"],
   ["librarian", "DENY", "Edit", { file_path: R("hooks/acl-guard.cjs") }, "sửa công cụ enforce"],
@@ -48,10 +48,10 @@ const CASES = [
   ["librarian", "ALLOW", "Read", { file_path: R("memory/projects/INDEX.md") }, "Read L0"],
   ["librarian", "ALLOW", "Read", { file_path: R("identity/_shared/PRINCIPAL.md") }, "Read PRINCIPAL"],
 
-  // --- Nhóm chief-of-staff: cách ly HAI CHIỀU ---
-  ["chief-of-staff", "DENY", "Read", { file_path: R("memory/private/librarian/y.md") }, "chief-of-staff KHÔNG phải root"],
-  ["chief-of-staff", "ALLOW", "Edit", { file_path: R("memory/projects", SLUG, "PROJECT.md") }, "ghi L1 — quyền của vai này"],
-  ["chief-of-staff", "ALLOW", "Read", { file_path: R("memory/private/chief-of-staff/x.md") }, "Read private của mình"],
+  // --- Nhóm main: cách ly HAI CHIỀU ---
+  ["main", "DENY", "Read", { file_path: R("memory/private/librarian/y.md") }, "main KHÔNG phải root"],
+  ["main", "ALLOW", "Edit", { file_path: R("memory/projects", SLUG, "PROJECT.md") }, "ghi L1 — quyền của vai này"],
+  ["main", "ALLOW", "Read", { file_path: R("memory/private/main/x.md") }, "Read private của mình"],
 ];
 
 // ---------------------------------------------------------------- chạy
@@ -175,7 +175,7 @@ function runLive(role, tool, input) {
 const SYMLINK = path.join("/tmp", "acl-symlink-probe");
 
 function setupFixtures() {
-  write(R("memory/private/chief-of-staff/x.md"), "nháp của chief-of-staff\n");
+  write(R("memory/private/main/x.md"), "nháp của main\n");
   write(R("memory/private/librarian/y.md"), "nháp của librarian\n");
 
   // Symlink cho ca 5. Fixture hỏng KHÔNG được biến thành ca "pass" —
@@ -186,12 +186,12 @@ function setupFixtures() {
     /* chưa tồn tại — bình thường */
   }
   try {
-    fs.symlinkSync(R("memory/private/chief-of-staff"), SYMLINK);
+    fs.symlinkSync(R("memory/private/main"), SYMLINK);
   } catch (e) {
     die(`không tạo được symlink fixture ${SYMLINK}: ${e.message}`);
   }
   const resolved = fs.realpathSync(path.join(SYMLINK, "x.md"));
-  if (resolved !== fs.realpathSync(R("memory/private/chief-of-staff/x.md")))
+  if (resolved !== fs.realpathSync(R("memory/private/main/x.md")))
     die(`symlink fixture trỏ sai: ${resolved}`);
 }
 

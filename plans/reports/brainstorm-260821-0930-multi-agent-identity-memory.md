@@ -9,7 +9,7 @@ status: agreed
 
 ## 1. Vấn đề
 
-Hiện có: `agent-team/pho` — 1 agent (Phở, chief of staff), identity + memory + projects trộn ở root.
+Hiện có: `agent-team/pho` — 1 agent (Phở, main), identity + memory + projects trộn ở root.
 Bộ file đó tốt (SOUL/AGENTS tách, progressive disclosure L0→L2, kiểm soát bằng `modified`), nhưng **không nhân bản được cho N agent**.
 
 Cần: hệ multi-agent, identity là thư mục độc lập, mỗi agent có kho memory riêng + phần chung, tham chiếu TencentDB-Agent-Memory.
@@ -21,7 +21,7 @@ Cần: hệ multi-agent, identity là thư mục độc lập, mỗi agent có k
 - Write trigger = **hook tự động + agent chủ động**.
 - Runtime = **mỗi agent 1 phiên Claude Code, CWD riêng**.
 - Migrate Phở vào hệ mới.
-- **Key theo vai trò**, không theo tên: `identity/chief-of-staff/` ← `name: Phở`.
+- **Key theo vai trò**, không theo tên: `identity/main/` ← `name: Phở`.
 - Project layer → memory namespace dùng chung.
 
 ## 2. Đánh giá TencentDB-Agent-Memory
@@ -76,7 +76,7 @@ agent-memory/
 │   │   ├── VOICE.md              # quy ước output chung (tiếng Việt, ngắn, không xu nịnh)
 │   │   └── PRINCIPAL.md          # USER.md — MỘT bản duy nhất, mọi vai đọc
 │   ├── _template/                # khuôn tạo vai mới
-│   ├── chief-of-staff/           # name: Phở 🍜
+│   ├── main/           # name: Phở 🍜
 │   │   ├── CLAUDE.md             # entry — Claude Code tự nạp khi cd vào đây
 │   │   ├── IDENTITY.md           # name, emoji, role, một câu định nghĩa
 │   │   ├── SOUL.md               # tính cách, giọng, ranh giới — riêng vai này
@@ -105,7 +105,7 @@ role: researcher
 name: Long
 emoji: 🔎
 model: claude-opus-5
-reports_to: chief-of-staff
+reports_to: main
 delegates_to: []
 memory:
   read:  [shared/**, projects/**, private/researcher/**]
@@ -164,7 +164,7 @@ Phase 2 index (SQLite FTS5 + sqlite-vec) **derive** từ files; markdown vẫn l
 | # | Rủi ro | Mức | Chặn |
 |---|---|---|---|
 | 1 | **Self-escalation** — agent sửa `loadout.yaml`/`settings.json` của chính nó để mở quyền | P0 | `deny: Edit(./loadout.yaml)`, `Edit(./.claude/**)`; `compile-acl.sh` chạy từ root, không từ trong phiên agent |
-| 2 | **deny thắng allow** ⇒ không viết được "deny `private/**`, allow `private/<mình>/**`". Phải enumerate anh em: `deny: Read(../../memory/private/chief-of-staff/**)` | P0 | Thêm vai mới ⇒ **recompile TẤT CẢ vai**. Bắt buộc qua script, cấm sửa tay `settings.json` |
+| 2 | **deny thắng allow** ⇒ không viết được "deny `private/**`, allow `private/<mình>/**`". Phải enumerate anh em: `deny: Read(../../memory/private/main/**)` | P0 | Thêm vai mới ⇒ **recompile TẤT CẢ vai**. Bắt buộc qua script, cấm sửa tay `settings.json` |
 | 3 | **Bash bypass** — `deny Read()` không chặn `cat` | P0 | `acl-guard.cjs` PreToolUse. (Pattern đã chứng minh: `scout-block.cjs` của alp chặn được `.git`/`node_modules`) |
 | 4 | **Fact duplication** — silo làm 2 agent ghi cùng 1 fact về principal ở 2 nơi rồi lệch nhau | P1 | Luật cứng: fact về principal/project **LUÔN** vào `shared/` hoặc `projects/`. `private/` chỉ chứa working notes + self-log. Enforce bằng `write:` grant, không cấp write `private/` cho fact loại team |
 | 5 | Journal phình, nhiễu context | P1 | 1 file/tháng, mỗi entry ≤5 dòng, >200 dòng thì nén. Journal **không** nằm trong boot set |
@@ -176,7 +176,7 @@ Phase 2 index (SQLite FTS5 + sqlite-vec) **derive** từ files; markdown vẫn l
 
 | Phase | Nội dung | Ước lượng |
 |---|---|---|
-| **P0** | Scaffold cây thư mục; migrate `agent-team/pho` → `identity/chief-of-staff` + `memory/`; tách `_shared/`; chưa hook chưa ACL. Chạy thử 1 phiên. | ~0.5 ngày |
+| **P0** | Scaffold cây thư mục; migrate `agent-team/pho` → `identity/main` + `memory/`; tách `_shared/`; chưa hook chưa ACL. Chạy thử 1 phiên. | ~0.5 ngày |
 | **P1** | `loadout.yaml` schema + `compile-acl.sh` → `.claude/settings.json`. Test cách ly bằng Read. | ~0.5 ngày |
 | **P2** | `hooks/session-start.cjs` + `acl-guard.cjs` + `skills/agent-memory/SKILL.md`. Test bypass bằng `cat`. | ~1 ngày |
 | **P3** | Thêm vai `researcher` (Long). `new-role.sh`. Test delegate qua herdr + recompile ACL toàn bộ. | ~0.5 ngày |
@@ -186,7 +186,7 @@ Phase 2 index (SQLite FTS5 + sqlite-vec) **derive** từ files; markdown vẫn l
 
 - `new-role.sh <slug>` tạo vai mới chạy được **< 2 phút**.
 - Boot context 1 agent **≤ ~4k token**.
-- **Test cách ly bắt buộc:** phiên `researcher` KHÔNG đọc được `memory/private/chief-of-staff/**` bằng cả `Read` **lẫn** `Bash(cat)`. Fail 1 trong 2 = ACL chưa xong.
+- **Test cách ly bắt buộc:** phiên `researcher` KHÔNG đọc được `memory/private/main/**` bằng cả `Read` **lẫn** `Bash(cat)`. Fail 1 trong 2 = ACL chưa xong.
 - Đổi `name: Phở` → tên khác: sửa **1 dòng**, 0 file path thay đổi, 0 recompile.
 - `doctor.sh` sạch (không DRIFT/STALE/ORPHAN) sau mỗi phiên.
 - Principal không phải giải thích lại điều gì lần thứ 2 — thước đo thật của memory.

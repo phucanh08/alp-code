@@ -1,7 +1,7 @@
 # alp-code
 
-Identity + trí nhớ dùng chung cho nhiều agent. Chief-of-staff chạy Claude Code; nhóm
-Knowledge Retrieval chạy Codex. Mỗi vai có phiên riêng và cùng một kho trí nhớ.
+Identity + trí nhớ dùng chung cho nhiều agent. Main có thể chạy Claude Code hoặc Codex;
+các vai chuyên môn chạy trong phiên riêng và cùng một kho trí nhớ.
 
 Luật nền: [`CHARTER.md`](CHARTER.md). Danh bạ các vai: [`identity/REGISTRY.md`](identity/REGISTRY.md).
 
@@ -9,15 +9,17 @@ Luật nền: [`CHARTER.md`](CHARTER.md). Danh bạ các vai: [`identity/REGISTR
 
 | Vai | Tên | Việc |
 |---|---|---|
-| `chief-of-staff` | Phở 🍜 | điều phối agents, vận hành project, chốt quyết định |
+| `main` | Phở 🍜 | điều phối agents, vận hành project, chốt quyết định |
 | `search` | Search 🔍 · GPT-5.6 Terra | local code retrieval |
 | `librarian` | Librarian 📚 · GPT-5.6 Sol | external/cross-repo research |
 | `read-thread` | Read Thread 🧵 · GPT-5.6 Luna | tìm kiếm trong memory |
+| `review` | Review 🔎 · GPT-5.5 | code review; mỗi concern là một subagent riêng |
+| `oracle` | Oracle 🔮 · Opus 5 / GPT-5.6 Sol | senior consultant, second opinion tùy chọn |
 
 ## Chạy một vai
 
 ```bash
-cd identity/chief-of-staff && claude
+cd identity/main && claude
 ```
 
 Hook `SessionStart` tự nạp identity. Không cần đọc file thủ công.
@@ -49,8 +51,8 @@ Windows PowerShell:
 .\scripts\install-project.ps1 C:\Projects\my-app --slug my-app
 ```
 
-Mặc định `chief-of-staff`, `search` và `librarian` được đọc workspace; `read-thread` chỉ đọc
-memory. `chief-of-staff` được ghi source. Tuỳ chỉnh bằng option lặp lại `--read-role <role>`
+Mặc định `main`, `search` và `librarian` được đọc workspace; `read-thread` chỉ đọc
+memory. `main` được ghi source. Tuỳ chỉnh bằng option lặp lại `--read-role <role>`
 và `--write-role <role>`. Installer tạo project card, cập nhật L0, ghi
 `workspaces.read/write` vào loadout và recompile ACL. Chạy lại cùng project là an toàn.
 
@@ -60,10 +62,13 @@ và `--write-role <role>`. Installer tạo project card, cập nhật L0, ghi
 scripts/run-role.sh search --project /path/to/app -- "Tìm luồng authentication"
 scripts/run-role.sh librarian -- "Đối chiếu API này với official docs"
 scripts/run-role.sh read-thread -- "Tìm các decision liên quan ACL"
+scripts/run-role.sh review --project /path/to/app -- "Review correctness của diff hiện tại"
+scripts/run-role.sh oracle --project /path/to/app -- "Phản biện phương án migration này"
 ```
 
 Windows dùng `scripts/run-role.ps1`. Launcher chọn model từ loadout và ép sandbox
-`read-only`; artifact được trả cho chief-of-staff kiểm chứng và lưu.
+`read-only`; artifact được trả cho main kiểm chứng và lưu. Oracle chạy Claude thì mở
+`identity/oracle` bằng Claude Opus 5; chạy Codex thì launcher dùng GPT-5.6 Sol từ loadout.
 
 ## Cây thư mục
 

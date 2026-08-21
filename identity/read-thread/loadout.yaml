@@ -9,7 +9,7 @@ emoji: 🧵
 model: gpt-5.6-luna
 
 # --- quan hệ ---
-reports_to: chief-of-staff
+reports_to: main
 delegates_to: []
 
 # --- ACL: đường dẫn tương đối tính từ memory/ ---

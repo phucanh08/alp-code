@@ -3,7 +3,7 @@ id: claude-code-acl-behavior
 type: reference
 layer: L3
 visibility: team
-owner: chief-of-staff
+owner: main
 created: 2026-08-21
 updated: 2026-08-21
 tags: [claude-code, acl, permissions, hooks, security]

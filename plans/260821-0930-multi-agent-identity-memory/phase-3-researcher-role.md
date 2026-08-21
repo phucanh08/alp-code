@@ -37,7 +37,7 @@ role: researcher
 name: Long
 emoji: 🔎
 model: claude-opus-5
-reports_to: chief-of-staff
+reports_to: main
 delegates_to: []
 memory:
   read:  [shared/**, projects/**]
@@ -47,7 +47,7 @@ skills: [agent-memory, alp:research, alp:docs-seeker, alp:scout]
 ```
 
 **Vì sao `write` hẹp:** Long tra cứu, không quyết định. Nó ghi `shared/reference/` và
-`projects/*/refs/` — tức là *tài liệu*. `decisions/` và `PROJECT.md` là quyền của chief-of-staff.
+`projects/*/refs/` — tức là *tài liệu*. `decisions/` và `PROJECT.md` là quyền của main.
 (`private/researcher/**` tự thêm, không cần khai.)
 
 Nội dung riêng cần viết:
@@ -55,9 +55,9 @@ Nội dung riêng cần viết:
   vs "suy ra", luôn kèm link, không kết luận vượt dữ liệu.
 - `PLAYBOOK.md` — quy trình research: xác định câu hỏi → tìm nguồn sơ cấp → đối chiếu chéo
   → viết report vào `projects/<slug>/refs/` → báo cáo ngắn cho Phở.
-- `RELATIONS.md` — nhận việc từ `chief-of-staff`; không delegate cho ai.
+- `RELATIONS.md` — nhận việc từ `main`; không delegate cho ai.
 
-Cập nhật `identity/chief-of-staff/`:
+Cập nhật `identity/main/`:
 - `loadout.yaml` → `delegates_to: [researcher]`
 - `RELATIONS.md` → khi nào giao cho Long, giao thế nào (herdr), kiểm chứng ra sao
 
@@ -71,14 +71,14 @@ Chạy `scripts/test-isolation.sh`. **Fail 1 ca = P3 chưa xong.**
 
 | # | Hành động | Kỳ vọng |
 |---|---|---|
-| 1 | `Read` `memory/private/chief-of-staff/*` | DENY |
-| 2 | `cat memory/private/chief-of-staff/*` | DENY |
+| 1 | `Read` `memory/private/main/*` | DENY |
+| 2 | `cat memory/private/main/*` | DENY |
 | 3 | `cd` rồi `cat *` | DENY |
 | 4 | `cat $(echo …)` | DENY (indirection) |
 | 5 | symlink rồi đọc | DENY (realpath) |
 | 6 | `Edit identity/researcher/loadout.yaml` | DENY |
 | 7 | `Edit identity/researcher/.claude/settings.json` | DENY |
-| 8 | `Read identity/chief-of-staff/SOUL.md` | DENY |
+| 8 | `Read identity/main/SOUL.md` | DENY |
 | 9 | `Edit identity/_shared/HOUSE-RULES.md` | DENY |
 | 10 | `Edit memory/projects/<slug>/PROJECT.md` | DENY (ngoài `write` grant) |
 | 11 | `Edit hooks/acl-guard.cjs` | DENY |
@@ -94,15 +94,15 @@ Chạy `scripts/test-isolation.sh`. **Fail 1 ca = P3 chưa xong.**
 | 16 | `Read memory/projects/INDEX.md` | ALLOW |
 | 17 | `Read identity/_shared/PRINCIPAL.md` | ALLOW |
 
-### Nhóm chief-of-staff
+### Nhóm main
 
 | # | Hành động | Kỳ vọng |
 |---|---|---|
-| 18 | `Read memory/private/researcher/*` | **DENY** — cách ly hai chiều, chief-of-staff không phải root |
+| 18 | `Read memory/private/researcher/*` | **DENY** — cách ly hai chiều, main không phải root |
 | 19 | `Edit memory/projects/<slug>/PROJECT.md` | ALLOW |
-| 20 | `Read memory/private/chief-of-staff/*` | ALLOW |
+| 20 | `Read memory/private/main/*` | ALLOW |
 
-Ca 18 dễ bị bỏ sót. Chief of staff **không** có đặc quyền đọc kho riêng của Long — muốn biết
+Ca 18 dễ bị bỏ sót. Main **không** có đặc quyền đọc kho riêng của Long — muốn biết
 thì hỏi Long. `private` mà cấp trên đọc được thì không còn là `private`.
 
 **Chạy `test-isolation.sh` ở cả `default` mode và mode bạn dùng thật.** Nếu spike 1.0 cho thấy
@@ -125,7 +125,7 @@ Không chạy được luồng này = hệ đúng về bảo mật nhưng vô d�
 
 ## 3.5 Test đổi tên
 
-Sửa `identity/chief-of-staff/loadout.yaml`: `name: Phở` → `name: Bún`.
+Sửa `identity/main/loadout.yaml`: `name: Phở` → `name: Bún`.
 
 - [x] **Chỉ 1 dòng đổi**
 - [x] Không path nào đổi
@@ -166,5 +166,5 @@ Sửa `identity/chief-of-staff/loadout.yaml`: `name: Phở` → `name: Bún`.
 - Test đổi tên: hook boot nhận `Bún`, `compile-acl.sh --check` vẫn sạch, không path đổi;
   sau test đã trả đúng một dòng về `name: Phở`.
 - Luồng quyền của 3.4 đã được suite chứng minh: researcher ghi `projects/*/refs`,
-  chief-of-staff đọc vùng projects và ghi decisions/L1. Luồng Claude + herdr end-to-end và
+  main đọc vùng projects và ghi decisions/L1. Luồng Claude + herdr end-to-end và
   kiểm tra hồi quy hành vi Phở còn chờ quota Claude reset; không đánh dấu khống hai mục này.

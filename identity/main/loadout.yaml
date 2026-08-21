@@ -3,26 +3,25 @@
 # .claude/settings.json là SẢN PHẨM SINH RA — không sửa tay, không commit.
 
 # --- danh tính (không ảnh hưởng ACL) ---
-role: librarian
-name: Librarian
-emoji: 📚
-model: gpt-5.6-sol
+role: main
+name: Phở
+emoji: 🍜
+model: claude-opus-5
 
 # --- quan hệ ---
-reports_to: main
-delegates_to: []
+reports_to: principal
+delegates_to: [search, librarian, read-thread, review, oracle]
 
 # --- ACL: đường dẫn tương đối tính từ memory/ ---
-# private/librarian/** tự thêm vào cả read lẫn write — không cần khai.
+# private/main/** tự thêm vào cả read lẫn write — không cần khai.
 memory:
   read:  [shared/**, projects/**]
-  write: []
+  write: [shared/**, projects/**]
 
-# --- workspace code ngoài alp-code (path tuyệt đối) ---
 workspaces:
   read:  []
   write: []
 
 # --- công cụ & skill ---
-tools:  [Read, Glob, Grep, Bash, WebSearch, WebFetch]
-skills: [agent-memory, alp:research, alp:docs-seeker]
+tools:  [Read, Write, Edit, Glob, Grep, Bash, WebSearch, WebFetch]
+skills: [agent-memory, herdr, alp:plan, alp:cook]

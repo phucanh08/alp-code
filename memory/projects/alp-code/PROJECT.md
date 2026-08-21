@@ -12,7 +12,7 @@ updated: 2026-08-21
 
 ## Mục tiêu
 Một hệ multi-agent giữ identity và memory xuyên phiên, route knowledge retrieval cho đúng
-Search, Librarian hoặc Read Thread, đồng thời để chief-of-staff chịu trách nhiệm kết quả cuối.
+Search, Librarian hoặc Read Thread, đồng thời để main chịu trách nhiệm kết quả cuối.
 
 ## Trạng thái hiện tại
 Bộ file identity đã dựng xong theo mô hình OpenClaw (SOUL / IDENTITY / AGENTS / USER / TOOLS /
@@ -31,7 +31,7 @@ Claude Code và Codex. Chưa có project thật nào ngoài chính nó.
 | | |
 |---|---|
 | Stack | Markdown + Node/Bash/PowerShell; runtime Claude Code + Codex |
-| Chạy | `cd ~/AnhlpProjects/agent-memory/identity/chief-of-staff && claude` |
+| Chạy | `cd ~/AnhlpProjects/agent-memory/identity/main && claude` |
 | Kiểm tra | `scripts/sync-project-index.sh` |
 | Đồng bộ L0 | `scripts/sync-project-index.sh --write` |
 

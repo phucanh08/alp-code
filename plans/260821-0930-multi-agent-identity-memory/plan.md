@@ -15,13 +15,13 @@ Xây `agent-memory/`: hệ identity + memory dùng chung cho nhiều agent, mỗ
 Claude Code riêng với CWD riêng, ACL được harness enforce.
 
 Nguồn sự thật: [brainstorm](../reports/brainstorm-260821-0930-multi-agent-identity-memory.md).
-Migrate từ `~/AnhlpProjects/agent-team/pho` (Phở, chief of staff — bộ file đã hoàn chỉnh, tái dùng tối đa).
+Migrate từ `~/AnhlpProjects/agent-team/pho` (Phở, main — bộ file đã hoàn chỉnh, tái dùng tối đa).
 
 **Ngoài phạm vi:** SQLite FTS5, vector search, web panel, auto-extract bằng LLM, Code-Graph. Tất cả là P4/sau.
 
 ## Nguyên tắc bất biến
 
-1. **Key theo vai trò, không theo tên.** `identity/chief-of-staff/` ← `name: Phở`. Phase 1: 1 vai = 1 agent.
+1. **Key theo vai trò, không theo tên.** `identity/main/` ← `name: Phở`. Phase 1: 1 vai = 1 agent.
 2. **`loadout.yaml` là nguồn sự thật duy nhất của ACL.** `.claude/settings.json` là sản phẩm sinh ra, không sửa tay, không commit.
 3. **Markdown là source of truth.** Mọi index/cache đều derive được, xoá đi sinh lại được.
 4. **Fact về principal/project luôn vào `shared/` hoặc `projects/`.** `private/` chỉ chứa nháp + self-log.
@@ -53,7 +53,7 @@ hoặc container, **ngoài phạm vi plan này**.
 
 | Phase | Nội dung | Ước lượng | Phụ thuộc |
 |---|---|---|---|
-| [P0](phase-0-scaffold-migrate.md) | Scaffold cây thư mục + migrate Phở → `identity/chief-of-staff` + `memory/` chung | ~0.5 ngày | — |
+| [P0](phase-0-scaffold-migrate.md) | Scaffold cây thư mục + migrate Phở → `identity/main` + `memory/` chung | ~0.5 ngày | — |
 | [P1](phase-1-loadout-acl.md) | **Spike verify deny×bypass** → `loadout.yaml` schema → `compile-acl.sh` | ~0.5 ngày | P0 |
 | [P2](phase-2-hooks-skill.md) | `session-start.cjs` · `acl-guard.cjs` · `skills/agent-memory/SKILL.md` · `doctor.sh` | ~1 ngày | P1 |
 | [P3](phase-3-researcher-role.md) | `new-role.sh` → vai `researcher` (Long) → test cách ly | ~0.5 ngày | P2 |
@@ -62,9 +62,9 @@ hoặc container, **ngoài phạm vi plan này**.
 
 Hoàn thành khi **tất cả** đúng:
 
-- [ ] Phiên `researcher` **không** đọc được `memory/private/chief-of-staff/**` bằng `Read` **lẫn** `Bash(cat)`. Fail 1 trong 2 = chưa xong.
+- [ ] Phiên `researcher` **không** đọc được `memory/private/main/**` bằng `Read` **lẫn** `Bash(cat)`. Fail 1 trong 2 = chưa xong.
 - [ ] Phiên `researcher` **không** sửa được `identity/researcher/loadout.yaml` và `identity/researcher/.claude/settings.json`.
-- [ ] Phiên `chief-of-staff` đọc/ghi được `memory/shared/**`, `memory/projects/**`, `memory/private/chief-of-staff/**`.
+- [ ] Phiên `main` đọc/ghi được `memory/shared/**`, `memory/projects/**`, `memory/private/main/**`.
 - [ ] `scripts/new-role.sh qa` tạo vai chạy được **< 2 phút**, và tự recompile ACL của **mọi** vai.
 - [ ] Đổi `name: Phở` → tên khác: sửa **1 dòng**, 0 path đổi, 0 recompile.
 - [ ] Boot context 1 agent ≤ **~4k token** (hook tự cảnh báo khi vượt).
