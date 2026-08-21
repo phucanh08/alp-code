@@ -68,8 +68,52 @@ Không có 3.5 thì Search spawn được Search — vòng lặp đốt quota kh
 
 ## Định nghĩa hoàn thành
 
-- [ ] Phở tự delegate, principal không gõ lệnh nào
-- [ ] Không fleet → tự rơi về `--exec`, không lỗi
-- [ ] Vai phụ bị chặn khi thử spawn
-- [ ] Xong việc thì `release-agent` được gọi, panel không kẹt `working`
-- [ ] Cuối lượt có dòng liệt kê vai đã gọi
+- [x] Phở tự delegate, principal không gõ lệnh nào
+- [x] Không fleet → tự rơi về `--exec`, không lỗi
+- [x] Vai phụ bị chặn khi thử spawn
+- [x] Xong việc thì `release-agent` được gọi, panel không kẹt `working`
+- [x] Cuối lượt có dòng liệt kê vai đã gọi
+
+---
+
+## Đã làm gì — và bốn chỗ plan chưa lường
+
+**Xong 2026-08-21.** Nghiệm thu bằng một pane thật: Titling nhận việc qua herdr, hook boot
+chạy, model `gpt-5.6-luna low` đúng từ profile, trả về title, `--release` dọn sạch panel.
+
+### Bề mặt khác plan: `run-role --pane`, không phải lệnh mới
+
+Plan mô tả `herdr-fleet.cjs` như module để model gọi. Nhưng model gọi qua **Bash**, nên nó
+cần một CLI — và đã có sẵn một cái đúng chỗ: `run-role`. Thêm `--pane` vào đó giữ được
+**một** launcher (`--exec` / `--pane` / tương tác là ba chế độ của cùng một lệnh), và
+allowlist chống đệ quy chỉ phải liệt kê hai bin thay vì ba. `--release <pane>` cũng nằm ở
+đây vì cùng lý do: seq phải ở trong code.
+
+### Bốn bẫy chỉ lộ ra khi chạy thật
+
+| # | Đo được | Xử lý |
+|---|---|---|
+| 1 | **herdr từ chối arg có xuống dòng** — `invalid_agent_argument`. Mà prompt delegation LUÔN nhiều dòng | ghi ra `$TMPDIR/alp-delegation/`, thay bằng một dòng trỏ tới file |
+| 2 | Dòng trỏ file **mất nguồn ủy nhiệm** ⇒ Titling từ chối: *"chỉ nhận nhiệm vụ từ Phở"* | `delegation.cjs:delegatedPromptPointer` — contract nén một dòng |
+| 3 | `foreground_process_group_id == shell_pid` là điều kiện **cần, chưa đủ** (shell đang source `.zshrc` cũng thoả) ⇒ vẫn `agent_pane_busy` | chờ hai lớp: poll process-info **rồi thử lại chính `agent start`** |
+| 4 | Phiên Codex tương tác **chặn ở dialog "Hooks need review"** — plan chỉ lường nhánh headless | `--pane` cũng kèm `--dangerously-bypass-hook-trust`; phiên do principal mở thì không |
+
+Thêm hai điều nhỏ: `release-agent`/`report-agent` in ra **rỗng** khi thành công (parse JSON
+là ném lỗi trên đúng đường thành công), và `agent start --timeout` phải `> 3000ms`.
+
+### 3.5 làm khác plan: suy từ `delegates_to`, không thêm khoá mới
+
+Plan định khai allow/deny trong từng `loadout.yaml`. Nhưng "vai này có được giao việc
+không" đã có sẵn ở `delegates_to` — thêm khoá thứ hai là tạo chỗ cho hai nguồn lệch nhau.
+`canDelegate(loadout)` suy ra, `claude-settings` sinh allow (main) / deny (vai phụ).
+
+Và **deny trong settings không đủ**: luật `Bash(...)` khớp theo tiền tố chuỗi, không resolve
+lệnh — đúng bài học P2. Lớp enforce thật là `acl-guard`
+(`loadout.cjs:checkDelegationCommand`), khớp theo **tên lệnh ở vị trí đầu**, có bóc tiền tố
+`VAR=x` và wrapper `node …`. Cố ý không khớp chuỗi con: `grep herdr docs/` vẫn phải chạy được.
+
+### Nợ lại
+
+`--seq` dùng `Date.now()` thay vì counter có state. Đơn điệu qua nhiều tiến trình, không
+cần file — nhưng đồng hồ lùi (NTP) thì seq lùi theo. Chưa gặp; nếu gặp, panel sẽ bỏ qua
+một lần báo state, không mất dữ liệu.

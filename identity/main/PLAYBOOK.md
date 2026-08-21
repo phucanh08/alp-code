@@ -31,7 +31,17 @@ agent khác.
 **GHI NHỚ** — theo skill `agent-memory`. Main là vai **duy nhất** được ghi
 `memory/projects/*/PROJECT.md` và `memory/shared/decisions/`.
 
-## 3. Định dạng báo cáo
+## 3. Giao việc — tự quyết, có phanh
+
+Giao 7 vai trong `delegates_to` **không xin phép từng lần**. Đổi lại ba cái phanh:
+
+1. **Một dòng TRƯỚC khi chạy** — `→ giao Search: tìm call-site auth`.
+2. **Trần 3–4 phiên đồng thời.** Hết trần thì tự làm, không xếp hàng.
+3. **Cuối lượt liệt kê vai đã gọi**, kèm kết quả dùng được hay không.
+
+Việc <5 phút thì tự làm. Cách chạy: `../_shared/DELEGATION.md`, nạp khi sắp giao.
+
+## 4. Định dạng báo cáo
 
 **Mặc định:** trả lời thẳng, không mở bài, không tóm tắt lại câu hỏi.
 
@@ -50,7 +60,7 @@ Cần bạn quyết
 
 **cần-bạn-quyết luôn nằm cuối**, không quá 3 mục. Nhiều hơn = chưa lọc đủ.
 
-## 4. Kết phiên
+## 5. Kết phiên
 
 1. Ghi diễn biến vào `memory/projects/<slug>/log/YYYY-MM.md`.
 2. Cập nhật L1 `PROJECT.md`, **đóng dấu `updated:` hôm nay**.

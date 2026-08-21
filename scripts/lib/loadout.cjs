@@ -312,6 +312,49 @@ function checkPath(repoRoot, role, grants, absPath, isWrite) {
   return null;
 }
 
+// ---------------------------------------------------------------- chống đệ quy
+
+/** Vai này có được giao việc cho vai khác không? `delegates_to` là nguồn sự thật. */
+function canDelegate(loadout) {
+  return (loadout?.delegates_to || []).length > 0;
+}
+
+/** Lệnh spawn vai khác. Khớp theo TÊN LỆNH ở vị trí đầu, không theo chuỗi con. */
+const DELEGATION_BINS = /^(herdr|run-role\.(cjs|sh|ps1))$/;
+const WRAPPERS = /^(node|bash|sh|zsh|pwsh|powershell)$/;
+
+/**
+ * BẤT BIẾN CHARTER: vai phụ KHÔNG được spawn vai khác. Không có luật này thì Search
+ * spawn được Search — vòng lặp đốt quota không phanh, và không ai ngồi giữa để cắt.
+ *
+ * Phải enforce Ở HOOK chứ không chỉ ở `permissions.deny`: luật `Bash(...)` khớp theo
+ * TIỀN TỐ CHUỖI, không resolve lệnh, nên nó chặn không đáng tin (xem đầu acl-guard.cjs).
+ *
+ * Khớp theo tên lệnh ở vị trí đầu mỗi đoạn, có bóc tiền tố `VAR=x` và wrapper
+ * (`node …/run-role.cjs`). Cố ý KHÔNG khớp chuỗi con: `grep herdr docs/` là lệnh đọc
+ * hợp lệ, chặn nó chỉ dạy agent tìm đường vòng.
+ *
+ * Trả `null` nếu cho phép, hoặc chuỗi lý do nếu chặn.
+ */
+function checkDelegationCommand(role, mayDelegate, cmd) {
+  if (mayDelegate) return null;
+
+  for (const segment of String(cmd).split(/[;\n]|&&|\|\||\|/)) {
+    const words = segment.trim().split(/\s+/).filter(Boolean);
+    let i = 0;
+    while (i < words.length && /^[A-Za-z_]\w*=/.test(words[i])) i++; // VAR=x prefix
+    if (i >= words.length) continue;
+
+    let head = unquote(words[i]);
+    if (WRAPPERS.test(path.basename(head)) && words[i + 1]) head = unquote(words[i + 1]);
+    const bin = path.basename(head);
+
+    if (DELEGATION_BINS.test(bin))
+      return `${role} không được spawn vai khác (\`${bin}\`) — chống đệ quy delegation, chỉ \`main\` giao việc`;
+  }
+  return null;
+}
+
 /** Kiểm quyền workspace ngoài repo. null = allow. */
 function checkWorkspacePath(role, workspaces, absPath, isWrite) {
   const target = path.resolve(absPath);
@@ -331,6 +374,6 @@ module.exports = {
   findRepoRoot, parseYaml, globToRegExp, matchesAny,
   listRoles, loadoutPath, loadLoadout, sessionIdentity, effectiveGrants, effectiveWorkspaces,
   writeWorkspaces,
-  validate, checkPath, checkWorkspacePath, isWithin,
+  validate, checkPath, checkWorkspacePath, canDelegate, checkDelegationCommand, isWithin,
   KNOWN_TOOLS, REASONING_EFFORTS, FROZEN,
 };

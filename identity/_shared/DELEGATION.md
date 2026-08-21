@@ -4,6 +4,42 @@
 > Luật "khi nào tự làm, khi nào giao" ở [`HOUSE-RULES.md`](HOUSE-RULES.md) §3.
 > Giao cho ai: `identity/<role>/RELATIONS.md`.
 
+## Cách chạy — chọn đường theo HÌNH DẠNG việc, không theo cảm giác
+
+| Hình dạng việc | Đường |
+|---|---|
+| ≥2 vai song song · >1 phút · cần theo dõi/tương tác · review nhiều concern | **pane herdr** |
+| Một câu hỏi · đồng bộ · <1 phút · **hoặc không có fleet** | **`--exec`** |
+
+```bash
+# pane: chạy nền, theo dõi được, không chiếm terminal
+node scripts/run-role.cjs search --project /path/to/app --pane -- "<việc>"
+#   → PANE w5:p3 · AGENT search-8f2a · kèm sẵn lệnh WATCH và RELEASE
+
+# exec: một câu hỏi, chờ ngay tại chỗ
+node scripts/run-role.cjs read-thread --exec -- "<câu hỏi>"
+```
+
+Ba điều launcher đã lo, đừng làm lại bằng tay:
+
+- **Không có fleet ⇒ `--pane` tự rơi về `--exec`.** Phiên headless không có pane để mở.
+- **`--seq` và `release-agent`.** `release-agent` thiếu `--seq` bị bỏ qua IM LẶNG (exit 0,
+  panel không đổi) — nên trả quyền bằng `run-role.cjs <role> --release <pane>`,
+  không gõ `herdr pane release-agent` trần.
+- **Prompt nhiều dòng.** herdr từ chối arg có xuống dòng; launcher tự đưa ra file và thay
+  bằng một dòng có mang nguồn ủy nhiệm.
+
+Xong việc thì **release**, đừng để pane kẹt `working`:
+
+```bash
+node scripts/run-role.cjs <role> --release <pane>
+```
+
+`alp doctor` báo `ORPHAN-PANE` cho pane đã quên trả quyền.
+
+**Vai phụ không được chạy hai lệnh trên.** `delegates_to` rỗng = không spawn được ai;
+acl-guard chặn `herdr` và `run-role` ở vị trí lệnh. Cần thêm tay thì báo `main`.
+
 ## Khuôn prompt — sáu mục, không thiếu mục nào
 
 ```

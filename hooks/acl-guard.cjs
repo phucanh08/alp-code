@@ -111,6 +111,9 @@ function resolveContext(cwd) {
     role,
     grants: L.effectiveGrants(loadout, role),
     workspaces: L.effectiveWorkspaces(loadout),
+    // Vai phụ không được spawn vai khác — quyền này đọc từ `delegates_to`, không phải
+    // một khoá riêng có thể lệch với nó.
+    mayDelegate: L.canDelegate(loadout),
   };
 }
 
@@ -190,6 +193,11 @@ function within(root, target) {
 function checkBash(ctx, input) {
   const cmd = String(input.command || "");
   if (!cmd.trim()) return null;
+
+  // Chống đệ quy delegation. Kiểm TRƯỚC indirection: lý do từ chối phải nói đúng bệnh,
+  // không phải "lệnh có $()".
+  const recursion = L.checkDelegationCommand(ctx.role, ctx.mayDelegate, cmd);
+  if (recursion) return recursion;
 
   if (INDIRECTION.test(cmd)) {
     return (

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// test-isolation.cjs — 20 ca test cách ly giữa các vai. Nghiệm thu chính của cả hệ.
+// test-isolation.cjs — test cách ly giữa các vai. Nghiệm thu chính của cả hệ.
 //
 //   test-isolation.sh              chạy nhanh, gọi thẳng acl-guard.cjs (mặc định)
 //   test-isolation.sh --live       chạy thật bằng `claude -p` — chậm (~vài phút), tốn token
@@ -25,7 +25,7 @@ const live = process.argv.includes("--live");
 const R = (...p) => path.join(repoRoot, ...p);
 const SLUG = firstProjectSlug();
 
-// ---------------------------------------------------------------- 20 ca
+// ---------------------------------------------------------------- các ca
 
 const CASES = [
   // --- Nhóm CHẶN, từ phiên librarian ---
@@ -53,6 +53,16 @@ const CASES = [
   ["main", "DENY", "Read", { file_path: R("memory/private/librarian/y.md") }, "main KHÔNG phải root"],
   ["main", "ALLOW", "Edit", { file_path: R("memory/projects", SLUG, "PROJECT.md") }, "ghi L1 — quyền của vai này"],
   ["main", "ALLOW", "Read", { file_path: R("memory/private/main/x.md") }, "Read private của mình"],
+
+  // --- Chống đệ quy delegation ---
+  // Không có nhóm này thì Search spawn được Search: vòng lặp đốt quota không có phanh,
+  // và không ai ngồi giữa để cắt. `delegates_to` rỗng = không được mở phiên vai nào.
+  ["librarian", "DENY", "Bash", { command: "herdr agent start x --kind codex --pane w1:p1" }, "vai phụ spawn agent"],
+  ["librarian", "DENY", "Bash", { command: `node ${R("scripts/run-role.cjs")} search -- việc` }, "vai phụ gọi run-role"],
+  ["librarian", "DENY", "Bash", { command: "ALP_ROLE=main herdr pane split --pane w1:p1" }, "lách bằng tiền tố env"],
+  ["librarian", "ALLOW", "Bash", { command: "grep -rn herdr ../../docs" }, "đọc TÀI LIỆU về herdr vẫn được"],
+  ["main", "ALLOW", "Bash", { command: "herdr agent list" }, "main điều phối — không hỏi permission"],
+  ["main", "ALLOW", "Bash", { command: `node ${R("scripts/run-role.cjs")} search --pane -- việc` }, "main giao việc"],
 ];
 
 /**
@@ -139,6 +149,16 @@ function assertGeneratedSettings() {
       const needle = `Read(//${R("memory", "private", other, "**").replace(/^\/+/, "")})`;
       if (!(settings.permissions?.deny || []).includes(needle))
         die(`${role}: settings thiếu deny private/${other}/**`);
+    }
+
+    // Chống đệ quy ở LỚP SETTINGS. Hook mới là lớp enforce thật (luật `Bash(...)` khớp
+    // theo tiền tố chuỗi nên chặn không đáng tin), nhưng hai lớp phải nói CÙNG một điều —
+    // lệch nhau là lúc không ai biết luật thật là gì.
+    const mayDelegate = L.canDelegate(L.loadLoadout(repoRoot, role));
+    const bucket = mayDelegate ? settings.permissions?.allow : settings.permissions?.deny;
+    for (const rule of ["Bash(herdr:*)", `Bash(node ${R("scripts", "run-role.cjs")}:*)`]) {
+      if (!(bucket || []).includes(rule))
+        die(`${role}: settings thiếu ${mayDelegate ? "allow" : "deny"} \`${rule}\``);
     }
   }
 }

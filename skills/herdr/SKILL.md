@@ -3,7 +3,7 @@ name: herdr
 description: "Quản fleet AI agent chạy trong terminal qua herdr — quét trạng thái, đọc agent đang blocked, trả lời, giao việc mới, báo trạng thái ngược về panel. Dùng khi cần theo dõi nhiều agent song song, chạy batch agent, hỏi 'agent nào đang chờ', 'fleet thế nào', hoặc khi thấy lệnh herdr."
 metadata:
   author: pho
-  version: "1.1.0"
+  version: "1.2.0"
   herdr-verified: "0.8.0"
 ---
 
@@ -70,6 +70,15 @@ herdr agent start rev-auth --kind claude --pane $P --timeout 60000 \
      -- "review module auth, chỉ báo lỗi correctness"
 ```
 
+Giao cho **vai của alp-code** thì đi qua launcher thay vì hai lệnh trên — nó lo bốn thứ mà
+hai lệnh trần không lo: chờ pane sẵn sàng (`agent_pane_busy` nếu vội, và điều kiện "sẵn
+sàng" thật chỉ herdr biết), prompt nhiều dòng (herdr **từ chối** arg có xuống dòng), seq,
+và trust-gate hook của Codex.
+
+```bash
+node scripts/run-role.cjs review --project ~/AnhlpProjects/api --pane -- "<việc>"
+```
+
 `--kind` nhận: `claude` `codex` `gemini` `cursor` `copilot` `devin` `droid` `amp` `grok`
 `opencode` `hermes` `kimi` `kiro` `cline` `omp` `pi` `agy` `mastracode` `kilo` `qodercli` `maki`.
 `--no-focus` bắt buộc khi spawn hàng loạt, nếu không sẽ cướp màn hình.
@@ -109,26 +118,46 @@ herdr agent explain <target>        # rule nào khớp, priority, kèm trích m�
    Giữ `SEQ=$((SEQ+1))` suốt phiên.
 3. **Pipe nuốt exit code.** `herdr wait ... | head` → `$?` là của `head`. Bắt exit trước khi pipe.
 
-Thêm hai điều hay sai:
+Thêm mấy điều hay sai:
 
 - **`report-agent` không nhận `done`.** `done` là state herdr tự suy ra khi tiến trình kết
   thúc. Giữ quyền bằng seq cao còn **đè mất** `done` — tiến trình chết mà panel vẫn `working`.
-  Xong việc thì `herdr pane release-agent <pane> --source pho --agent <label> --seq <n>`.
+  Xong việc thì trả quyền: `node scripts/run-role.cjs <role> --release <pane>`.
+- **`release-agent` THIẾU `--seq` bị bỏ qua im lặng** — exit 0, panel không đổi một chút nào.
+  Đó là lý do dùng launcher: seq nằm trong code, không ai gõ tay được sai.
+- **`agent start` từ chối arg có xuống dòng** — `invalid_agent_argument: agent arguments
+  cannot be encoded safely for the target shell`. Prompt nhiều dòng phải ghi ra file rồi
+  trỏ tới nó bằng một dòng.
 - **Mỗi kết nối socket chỉ `events.subscribe` được một lần.** Lần hai không ack, nghẽn stream.
   Dùng `fleet-watch.py` thay vì tự viết — nó đã xử lý reconnect khi có pane mới.
 - **CLI đổi giữa các minor.** 0.7→0.8 xoá cả nhóm `herdr wait` (→ `agent wait --until`,
   `pane wait-output`), bỏ `agent send` (→ `agent prompt` / `agent send-keys`), và đổi hẳn
   `agent start`. Lệnh báo `unknown option` thì kiểm tra `herdr --version` trước khi debug.
 
-## Phải hỏi Phúc Anh trước khi chạy
+## Xin phép hay không
 
-- `agent start` — spawn agent thật, tốn token thật
-- `agent prompt` / `agent send-keys` / `pane run` / `pane send-text` — gõ vào phiên agent đang
-  chạy; nó có thể sửa code hoặc deploy dựa trên câu trả lời đó
+**Miễn hỏi** — spawn 7 vai trong `delegates_to` của `main`. Đó là công việc của vai điều
+phối; hỏi từng lần thì "tự delegate" chỉ là đổi chỗ cho principal gõ lệnh. Báo **một dòng**
+trước khi chạy (`→ giao Search: tìm call-site auth`) và liệt kê vai đã gọi ở cuối lượt.
+
+Spawn vai qua launcher, **không** gõ `agent start` tay — nó lo chờ shell, seq, prompt nhiều
+dòng và trust-gate của hook:
+
+```bash
+node scripts/run-role.cjs <role> --pane [--project <path>] -- "<việc>"
+```
+
+**Vẫn phải hỏi:**
+
+- `--kind` ngoài `claude`/`codex`, hoặc agent tự do không thuộc 7 vai
+- `agent prompt` / `agent send-keys` / `pane run` / `pane send-text` — gõ vào phiên agent
+  đang chạy; nó có thể sửa code hoặc deploy dựa trên câu trả lời đó
 - `pane close` / `workspace close` / `server stop` — giết việc đang chạy dở
 
 Lệnh chỉ đọc (`workspace list`, `agent list`, `pane read`, `agent explain`, `status`) và lệnh
 chỉ đổi panel (`report-agent`, `report-metadata`) thì tự chạy được.
+
+**Trần 3–4 phiên đồng thời.** Hết trần thì tự làm, đừng xếp hàng.
 
 ## Ngưỡng báo cáo
 

@@ -78,7 +78,20 @@ function denyRules(repoRoot, role, allRoles, loadout) {
   const granted = new Set(loadout.tools || []);
   for (const t of L.KNOWN_TOOLS) if (!granted.has(t)) deny.push(t);
 
+  // 5. Chống đệ quy: vai không có `delegates_to` thì không spawn được vai khác.
+  //    Đây là lớp PHÒNG THỦ THỨ HAI — luật `Bash(...)` khớp theo tiền tố chuỗi nên chặn
+  //    không đáng tin; lớp enforce thật là acl-guard (`checkDelegationCommand`).
+  if (!L.canDelegate(loadout)) deny.push(...delegationRules(repoRoot));
+
   return deny;
+}
+
+/** Hai lệnh mở phiên vai khác. Dùng chung cho cả allow (main) lẫn deny (vai phụ). */
+function delegationRules(repoRoot) {
+  return [
+    "Bash(herdr:*)",
+    `Bash(node ${path.join(repoRoot, "scripts", "run-role.cjs")}:*)`,
+  ];
 }
 
 const hookCmd = (repoRoot, f) => `node ${path.join(repoRoot, "hooks", f)}`;
@@ -131,6 +144,9 @@ function buildSettings(repoRoot, role, allRoles, loadout) {
         `Read(${rule("CHARTER.md")})`,
         `Read(${rule("README.md")})`,
         `Read(${rule("identity/REGISTRY.md")})`,
+        // Vai điều phối tự quyết giao việc — hỏi permission mỗi lần thì "tự delegate"
+        // chỉ là đổi chỗ cho principal gõ lệnh. Vai phụ nhận DENY cho đúng hai luật này.
+        ...(L.canDelegate(lo) ? delegationRules(repoRoot) : []),
       ],
       deny: denyRules(repoRoot, role, allRoles, lo),
     },
@@ -138,4 +154,4 @@ function buildSettings(repoRoot, role, allRoles, loadout) {
   };
 }
 
-module.exports = { buildSettings, denyRules, additionalDirectories, absoluteRule, hooks };
+module.exports = { buildSettings, denyRules, delegationRules, additionalDirectories, absoluteRule, hooks };
