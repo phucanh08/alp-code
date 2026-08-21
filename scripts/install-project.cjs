@@ -91,20 +91,16 @@ function updateProjectIndex() {
 
 function updateLoadout(role, canRead, canWrite) {
   if (!canRead && !canWrite) return;
-  const file = L.loadoutPath(repoRoot, role);
-  let text = fs.readFileSync(file, "utf8");
-  const lo = L.parseYaml(text);
-  const ws = lo.workspaces || { read: [], write: [] };
-  const read = [...new Set([...(ws.read || []), ...(canRead ? [projectPath] : [])])];
-  const write = [...new Set([...(ws.write || []), ...(canWrite ? [projectPath] : [])])];
-  const block = `workspaces:\n  read:  [${read.join(", ")}]\n  write: [${write.join(", ")}]`;
-  if (/^workspaces:\s*$/m.test(text)) {
-    text = text.replace(/^workspaces:\s*$\n(?:^[ \t]+.*(?:\n|$))*/m, block + "\n");
-  } else {
-    text = text.trimEnd() + "\n\n# --- workspace code ngoài alp-code (path tuyệt đối) ---\n" + block + "\n";
-  }
-  fs.writeFileSync(file, text);
-  console.log(`WROTE     identity/${role}/loadout.yaml (${canWrite ? "read+write" : "read"})`);
+  const ws = L.effectiveWorkspaces(L.loadLoadout(repoRoot, role));
+  const changed = L.writeWorkspaces(
+    repoRoot,
+    role,
+    [...ws.read, ...(canRead ? [projectPath] : [])],
+    [...ws.write, ...(canWrite ? [projectPath] : [])]
+  );
+  console.log(
+    `${changed ? "WROTE" : "KEEP "}     identity/${role}/loadout.yaml (${canWrite ? "read+write" : "read"})`
+  );
 }
 
 function updateOptionIndex(name) {

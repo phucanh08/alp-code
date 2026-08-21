@@ -152,6 +152,26 @@ function effectiveWorkspaces(loadout) {
   };
 }
 
+/**
+ * Ghi lại khối `workspaces:` của một vai. `alp init` thêm cwd, `alp init --uninstall`
+ * bỏ ra — hai chiều của cùng một phép sửa, nên chỉ có MỘT nơi biết cách viết khối này.
+ * Trả về true nếu file thực sự đổi (idempotent: gọi lại với cùng input không ghi lại).
+ */
+function writeWorkspaces(repoRoot, role, read, write) {
+  const file = loadoutPath(repoRoot, role);
+  const text = fs.readFileSync(file, "utf8");
+  const block =
+    `workspaces:\n  read:  [${[...new Set(read)].join(", ")}]\n  write: [${[...new Set(write)].join(", ")}]`;
+
+  const next = /^workspaces:\s*$/m.test(text)
+    ? text.replace(/^workspaces:\s*$\n(?:^[ \t]+.*(?:\n|$))*/m, block + "\n")
+    : text.trimEnd() + "\n\n# --- workspace code ngoài alp-code (path tuyệt đối) ---\n" + block + "\n";
+
+  if (next === text) return false;
+  fs.writeFileSync(file, next);
+  return true;
+}
+
 // ---------------------------------------------------------------- validate
 
 const KNOWN_TOOLS = [
@@ -310,6 +330,7 @@ function isWithin(root, target) {
 module.exports = {
   findRepoRoot, parseYaml, globToRegExp, matchesAny,
   listRoles, loadoutPath, loadLoadout, sessionIdentity, effectiveGrants, effectiveWorkspaces,
+  writeWorkspaces,
   validate, checkPath, checkWorkspacePath, isWithin,
   KNOWN_TOOLS, REASONING_EFFORTS, FROZEN,
 };

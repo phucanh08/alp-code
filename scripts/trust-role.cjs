@@ -9,12 +9,12 @@
 // memory/. `deny` vẫn áp dụng, nên vai hỏng theo kiểu "câm", không phải "hở".
 // Đã đo: memory/shared/reference/claude-code-acl-behavior.md phát hiện 2.
 //
-// macOS: /tmp là symlink tới /private/tmp và Claude Code dùng CẢ HAI dạng path làm key.
-// Vì vậy ghi cả path thường lẫn realpath.
+// Cơ chế ghi nằm ở lib/trust.cjs — `alp init` trust project bằng đúng hàm đó.
 
 const fs = require("fs");
 const path = require("path");
 const L = require("./lib/loadout.cjs");
+const T = require("./lib/trust.cjs");
 
 const repoRoot = L.findRepoRoot(__dirname);
 if (!repoRoot) die("không tìm thấy repo root (thư mục có CHARTER.md)");
@@ -24,43 +24,21 @@ const targets = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 const roles = targets.length ? targets : allRoles;
 for (const r of roles) if (!allRoles.includes(r)) die(`không có vai \`${r}\``);
 
-const cfgPath = path.join(process.env.HOME || "", ".claude.json");
-let cfg;
-if (!fs.existsSync(cfgPath)) {
-  // Máy mới chưa chạy Claude Code vẫn phải tạo vai được. Claude Code chấp nhận
-  // object tối thiểu này và sẽ bổ sung các key khác khi khởi động lần đầu.
-  cfg = {};
-} else {
-  try {
-    cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
-  } catch (e) {
-    die(`${cfgPath} không parse được: ${e.message}`);
-  }
-}
-cfg.projects = cfg.projects || {};
-
-let changed = 0;
-for (const role of roles) {
+const dirs = roles.map((role) => {
   const dir = path.join(repoRoot, "identity", role);
   if (!fs.existsSync(dir)) die(`không thấy ${dir}`);
-  for (const key of new Set([dir, fs.realpathSync(dir)])) {
-    if (cfg.projects[key]?.hasTrustDialogAccepted) continue;
-    cfg.projects[key] = { ...cfg.projects[key], hasTrustDialogAccepted: true };
-    console.log(`TRUSTED  ${key}`);
-    changed++;
-  }
+  return dir;
+});
+
+let added;
+try {
+  added = T.trustClaude(dirs);
+} catch (e) {
+  die(e.message);
 }
 
-if (changed) {
-  // Ghi qua file tạm rồi rename — ~/.claude.json là state sống của Claude Code,
-  // ghi dở dang là hỏng cấu hình của mọi phiên.
-  const tmp = cfgPath + ".alp-code.tmp";
-  fs.mkdirSync(path.dirname(cfgPath), { recursive: true });
-  fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2) + "\n");
-  fs.renameSync(tmp, cfgPath);
-} else {
-  console.log("OK       mọi vai đã trusted");
-}
+if (added.length) added.forEach((key) => console.log(`TRUSTED  ${key}`));
+else console.log("OK       mọi vai đã trusted");
 
 function die(m) {
   console.error(`ERROR    ${m}`);

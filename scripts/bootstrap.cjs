@@ -8,6 +8,7 @@
 // buộc phải viết bằng shell. Từ lúc có repo trở đi, ba OS dùng chung một implementation
 // Node — đúng luật của repo này: .sh/.ps1 là wrapper, .cjs là bản thật duy nhất.
 
+const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const L = require("./lib/loadout.cjs");
@@ -39,6 +40,11 @@ console.log("---");
 const health = run("doctor.cjs", []);
 if (health === 2) die("doctor.cjs gãy — repo có thể clone thiếu file");
 
+// 4. `alp` vào PATH. Không có bước này thì mọi lệnh trong README đều phải gõ đường dẫn
+//    tuyệt đối tới repo — tức là vẫn đúng cái phiền mà `alp init` sinh ra để xoá bỏ.
+console.log("---");
+linkCli();
+
 const mainRole = roles.includes("main") ? "main" : roles[0];
 const cdPath = path.join(repoRoot, "identity", mainRole);
 
@@ -46,9 +52,59 @@ console.log("---");
 console.log(`READY    alp-code tại ${repoRoot} — ${roles.length} vai: ${roles.join(", ")}`);
 if (health !== 0) console.log("CHECK    doctor còn cảnh báo ở trên — cài đặt vẫn dùng được, xử lý sau cũng kịp");
 console.log("");
+console.log(`  cd <project-bất-kỳ> && alp init   # rồi gõ \`claude\` là ra Phở`);
 console.log(`  cd ${cdPath} && claude`);
 console.log("");
-console.log("Cập nhật về sau: chạy lại đúng lệnh cài — nó pull rồi recompile, không mất memory/.");
+console.log("Cập nhật về sau: `alp update` (hoặc chạy lại lệnh cài) — pull rồi recompile, không mất memory/.");
+
+/**
+ * Symlink `~/.local/bin/alp` → `scripts/alp.cjs`.
+ *
+ * Không sửa `.bashrc`/`.zshrc`: chỉnh shell profile của người khác là việc phải xin phép,
+ * và sửa sai thì họ mất luôn cái shell. Ghi được symlink thì báo; không ghi được (hoặc
+ * Windows) thì in path để họ tự thêm vào PATH — hỏng theo kiểu NÓI RA, không im lặng.
+ */
+function linkCli() {
+  const cli = path.join(repoRoot, "scripts", "alp.cjs");
+  try { fs.chmodSync(cli, 0o755); } catch {}
+
+  if (process.platform === "win32") {
+    console.log(`PATH     thêm vào PATH: ${path.join(repoRoot, "scripts")} (dùng \`alp.ps1\`)`);
+    return;
+  }
+
+  const dir = path.join(process.env.HOME || "", ".local", "bin");
+  const link = path.join(dir, "alp");
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    if (fs.existsSync(link) || isBrokenLink(link)) {
+      const current = fs.lstatSync(link).isSymbolicLink() ? fs.readlinkSync(link) : null;
+      if (current === cli) console.log(`OK       ${link} → ${cli}`);
+      else if (current === null) {
+        // File thật của người khác trùng tên — không đụng, chỉ nói.
+        console.log(`SKIP     ${link} đã tồn tại và không phải symlink của alp-code — chạy trực tiếp: ${cli}`);
+        return;
+      } else {
+        fs.rmSync(link);
+        fs.symlinkSync(cli, link);
+        console.log(`LINKED   ${link} → ${cli} (trỏ lại từ ${current})`);
+      }
+    } else {
+      fs.symlinkSync(cli, link);
+      console.log(`LINKED   ${link} → ${cli}`);
+    }
+  } catch (e) {
+    console.log(`SKIP     không tạo được ${link} (${e.message}) — chạy trực tiếp: ${cli}`);
+    return;
+  }
+
+  const onPath = (process.env.PATH || "").split(path.delimiter).includes(dir);
+  if (!onPath) console.log(`PATH     ${dir} chưa có trong PATH — thêm vào shell profile rồi mở lại terminal`);
+}
+
+function isBrokenLink(p) {
+  try { fs.lstatSync(p); return true; } catch { return false; }
+}
 
 // ---------------------------------------------------------------- tiện ích
 

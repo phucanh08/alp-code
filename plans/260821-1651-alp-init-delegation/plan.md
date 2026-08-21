@@ -72,11 +72,19 @@ Bẫy 2 nguy hiểm nhất: phá bất biến read-only, mặc định *trông c
 |---|---|---|---|---|
 | [P0](phase-0-quick-wins.md) | `RELATIONS.md` vào boot set · mở `main` cho Codex | ~1h | — | **xong 2026-08-21** |
 | [P1](phase-1-codex-profile.md) | loadout → `~/.codex/<role>.config.toml` · `run-role --exec` · xoá `buildBoot()` | ~0.5 ngày | P0 | **xong 2026-08-21** |
-| [P2](phase-2-alp-cli.md) | `alp` CLI · `alp init` · config theo project · trust hai runtime | ~1 ngày | P1 | chưa làm |
+| [P2](phase-2-alp-cli.md) | `alp` CLI · `alp init` · config theo project · trust hai runtime | ~1 ngày | P1 | **xong 2026-08-21** |
 | [P3](phase-3-delegation-herdr.md) | wrapper herdr · luật định tuyến · phanh chi phí · chống đệ quy | ~0.5 ngày | P2 | chưa làm |
 | [P4](phase-4-doctor-docs.md) | `alp doctor` finding mới · README viết lại | ~0.5 ngày | P3 | chưa làm |
 
 **P0 riêng lẻ đã giải quyết ~80% pain delegation** — làm trước, ship trước, không chờ P1–P4.
+
+> **P2 xong 2026-08-21.** `alp init` sinh config cục bộ cho cả hai runtime từ cùng
+> `loadout.yaml`, trust cả hai, và giấu file khỏi `git status` bằng exclude per-clone.
+> Hai điều plan chưa lường: `permissions.deny` **không** chặn được Bash nên phiên read-only
+> phải dựa thêm vào `ALP_READONLY_DIRS` trong `acl-guard`; và bộ sinh settings phải tách
+> thành lib dùng chung, không thì deny-list bị nhân bản — đúng chỗ CHARTER §4 cấm.
+> Một bug chỉ lộ ở lần chạy THỨ HAI (regex `\s*` nuốt newline, phá TOML trust của Codex).
+> Chi tiết: [phase-2](phase-2-alp-cli.md#đã-làm-gì--ba-chỗ-plan-thiếu-một-bug-chỉ-lộ-ở-lần-chạy-thứ-hai).
 
 > **P1 xong 2026-08-21.** Hook Codex bị **trust-gate**: chưa duyệt thì bị bỏ qua IM LẶNG,
 > nên `--exec` phải kèm `--dangerously-bypass-hook-trust`. Và `codex -p <profile-không-có>`
@@ -101,5 +109,5 @@ Bẫy 2 nguy hiểm nhất: phá bất biến read-only, mặc định *trông c
 | herdr CLI đổi giữa minor (0.7→0.8 xoá cả nhóm `wait`) | pin `herdr --version`; doctor báo lệch |
 | `release-agent` quên gọi → panel kẹt `working` | wrapper luôn release; doctor phát hiện pane mồ côi |
 | `--seq` phải tăng nghiêm ngặt, seq cũ **bỏ qua im lặng** | seq counter trong wrapper, không để model tự đếm |
-| Ghi file vào repo người khác | chỉ dùng slot cá nhân; có `--uninstall` |
+| Ghi file vào repo người khác | chỉ dùng slot cá nhân; exclude per-clone; `--uninstall` trả lại cả file backup (P2 đã làm) |
 | Phở lạm dụng delegation | trần 3–4 + luật "một câu hỏi → exec, không phải pane" |

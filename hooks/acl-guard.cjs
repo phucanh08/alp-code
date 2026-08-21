@@ -29,6 +29,22 @@ const INDIRECTION =
 const WRITE_INTENT =
   /(>>?|\btee\b|\brm\b|\bmv\b|\bcp\b|\btouch\b|\bmkdir\b|\btruncate\b|\bdd\b|\bchmod\b|\bchown\b|\bln\b|\bsed\s+-i\b|\bpatch\b|\binstall\b)/;
 
+/**
+ * Thư mục mà PHIÊN NÀY chỉ được đọc, do launcher truyền vào (`alp` không tham số, và
+ * `alp init` với project chưa nằm trong `workspaces`).
+ *
+ * VÌ SAO KHÔNG DÙNG `permissions.deny` CHO ĐỦ: path rule chỉ chặn được tool file.
+ * Bash thì không luật `Bash(...)` nào chặn nổi `echo x > file` một cách đáng tin — mà
+ * Bash mới là lỗ hổng thật (xem đầu file). Không có biến này thì "phiên read-only"
+ * đúng với Edit và sai với Bash, tức là sai.
+ *
+ * Đọc một lần lúc nạp module: hook là process ngắn, env không đổi giữa chừng.
+ */
+const READONLY_DIRS = (process.env.ALP_READONLY_DIRS || "")
+  .split(path.delimiter)
+  .filter(Boolean)
+  .map((p) => path.resolve(p));
+
 main();
 
 function main() {
@@ -42,6 +58,11 @@ function main() {
   const tool = payload.tool_name || "";
   const input = payload.tool_input || {};
   const cwd = payload.cwd || process.cwd();
+
+  // Luật chỉ-đọc theo PHIÊN, kiểm trước khi cần biết vai: `alp` chạy ở repo bất kỳ nên
+  // ctx có thể là null (ngoài alp-code), mà luật vẫn phải có hiệu lực ở đó.
+  const readonly = checkReadonlyDirs(tool, input, cwd);
+  if (readonly) return deny(readonly);
 
   let ctx;
   try {
@@ -97,15 +118,8 @@ function resolveContext(cwd) {
 
 function checkFileTool(ctx, tool, input) {
   const isWrite = WRITE_TOOLS.has(tool);
-  const candidates = [
-    input.file_path,
-    input.notebook_path,
-    input.path,
-    // Glob/Grep: `path` là thư mục gốc, `pattern` có thể chứa đường dẫn
-    typeof input.pattern === "string" && input.pattern.includes("/") ? input.pattern : null,
-  ].filter(Boolean);
 
-  for (const c of candidates) {
+  for (const c of fileCandidates(input)) {
     const abs = resolveAbs(c, ctx.cwd);
     const reason =
       L.checkPath(ctx.repoRoot, ctx.role, ctx.grants, abs, isWrite) ||
@@ -113,6 +127,62 @@ function checkFileTool(ctx, tool, input) {
     if (reason) return reason;
   }
   return null;
+}
+
+/** Path mà một tool file đụng tới. Glob/Grep: `path` là gốc, `pattern` có thể chứa path. */
+function fileCandidates(input) {
+  return [
+    input.file_path,
+    input.notebook_path,
+    input.path,
+    typeof input.pattern === "string" && input.pattern.includes("/") ? input.pattern : null,
+  ].filter(Boolean);
+}
+
+// ---------------------------------------------------------------- phiên chỉ-đọc
+
+/**
+ * Chặn mọi ý định GHI vào thư mục mà phiên này chỉ được đọc. `null` = không liên quan.
+ *
+ * Với Bash chỉ bắt được hai dạng mục tiêu: token trông giống path, và đích của `>`/`>>`.
+ * Nói thẳng phần thiếu: `cd`-rồi-ghi bằng tên trần trong lệnh khác vẫn lọt. Đây là
+ * guardrail, không phải sandbox (CHARTER §6) — bịt kín cần OS user riêng hoặc container.
+ */
+function checkReadonlyDirs(tool, input, cwd) {
+  if (!READONLY_DIRS.length) return null;
+
+  let targets;
+  if (WRITE_TOOLS.has(tool)) targets = fileCandidates(input);
+  else if (tool === "Bash") {
+    const cmd = String(input.command || "");
+    if (!WRITE_INTENT.test(cmd)) return null;
+    targets = [...pathTokens(cmd), ...redirectTargets(cmd)];
+  } else return null;
+
+  for (const t of targets) {
+    const abs = resolveAbs(t, cwd);
+    const root = READONLY_DIRS.find((r) => within(r, abs));
+    if (root)
+      return (
+        `phiên này CHỈ ĐỌC \`${root}\` nên không ghi được \`${abs}\`. ` +
+        "Muốn ghi thì đăng ký project trước: `alp init`."
+      );
+  }
+  return null;
+}
+
+/** Đích của `>` / `>>` — bắt được `echo x > out.txt`, dạng mà pathTokens bỏ qua. */
+function redirectTargets(cmd) {
+  const out = [];
+  const re = /(?:^|[^0-9<>])>{1,2}\s*("[^"]+"|'[^']+'|[^\s;|&<>]+)/g;
+  for (const m of cmd.matchAll(re)) out.push(m[1].replace(/^['"]|['"]$/g, ""));
+  return out;
+}
+
+/** `target` nằm trong (hoặc bằng) `root`? So theo đoạn path, không theo tiền tố chuỗi. */
+function within(root, target) {
+  const rel = path.relative(root, target);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 }
 
 // ---------------------------------------------------------------- Bash

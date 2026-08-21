@@ -45,10 +45,19 @@ function codexHome(env = process.env) {
 /** Model dùng cho Codex. `model:` là model của runtime CHÍNH — main khai model Claude. */
 const codexModel = (loadout) => loadout.codex_model || loadout.model;
 
-function buildProfile(loadout, role, repoRoot) {
+/**
+ * `opts.sandboxMode` — CHỈ dùng cho `<project>/.codex/config.toml` do `alp init` sinh:
+ * ở đó không có launcher nào nâng quyền theo từng lần chạy, mà project đã nằm trong
+ * `workspaces.write` nên `workspace-write` là mức đúng. Profile trong `$CODEX_HOME` giữ
+ * mặc định `read-only` — xem điều 4 ở đầu file.
+ * `opts.header` — hai dòng comment đầu file, để nói đúng ai sinh ra file này.
+ */
+function buildProfile(loadout, role, repoRoot, opts = {}) {
   const lines = [
-    `# GENERATED bởi scripts/compile-acl.sh từ identity/${role}/loadout.yaml — KHÔNG SỬA TAY.`,
-    `# Sửa loadout.yaml rồi chạy: scripts/compile-acl.sh`,
+    ...(opts.header || [
+      `# GENERATED bởi scripts/compile-acl.sh từ identity/${role}/loadout.yaml — KHÔNG SỬA TAY.`,
+      `# Sửa loadout.yaml rồi chạy: scripts/compile-acl.sh`,
+    ]),
     "",
     `model = ${str(codexModel(loadout))}`,
   ];
@@ -56,7 +65,7 @@ function buildProfile(loadout, role, repoRoot) {
     lines.push(`model_reasoning_effort = ${str(loadout.reasoning_effort)}`);
   lines.push(`approval_policy = "never"`);
   // Xem đầu file, điều 4: đây là mức nền an toàn, không phải mức quyền thật.
-  lines.push(`sandbox_mode = "read-only"`);
+  lines.push(`sandbox_mode = ${str(opts.sandboxMode || "read-only")}`);
 
   lines.push("", "[tools]", `web_search = ${WEB_SEARCH_ROLES.has(role)}`);
 

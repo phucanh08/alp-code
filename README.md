@@ -52,6 +52,44 @@ bị đụng tới. Nhánh nội bộ đã rẽ thì installer **dừng** và b�
 
 Đã có repo trên máy rồi thì bỏ qua installer, chạy thẳng: `scripts/bootstrap.cjs`.
 
+Bootstrap symlink `~/.local/bin/alp` → `scripts/alp.cjs`. Không ghi được (hoặc Windows) thì
+nó in ra đường dẫn để tự thêm vào PATH — nó **không** sửa `.bashrc`/`.zshrc` hộ.
+
+## Làm việc trong project của bạn
+
+```bash
+cd ~/code/my-app
+alp init          # một lần cho mỗi project
+claude            # ra Phở, ngay trong my-app
+```
+
+`alp init` làm bốn việc trong một lượt: đăng ký project (project card + `workspaces` trong
+loadout + recompile ACL), sinh `.claude/settings.local.json` và `.codex/config.toml` **cùng
+từ `loadout.yaml`**, giấu hai file đó khỏi `git status` bằng exclude per-clone, rồi **trust
+cả hai runtime**. Chạy lại bao nhiêu lần cũng cho cùng kết quả.
+
+Trust là bước không được bỏ: workspace chưa trust thì pane Claude mới dừng ở dialog *"Is this
+a project you trust?"* và **hook không chạy** cho tới khi trả lời — vai mở được phiên nhưng
+không có danh tính, không lỗi nào nổ ra.
+
+```bash
+alp                     # phiên Phở CHỈ-ĐỌC ở thư mục bất kỳ, không cần init
+alp init --uninstall    # gỡ sạch config cục bộ, huỷ đăng ký workspace
+alp doctor              # khám toàn hệ
+alp update              # git pull --ff-only rồi bootstrap lại
+alp help                # gom mọi script về một bảng
+```
+
+`alp` không tham số **không ghi gì** vào thư mục đó: cwd chưa đăng ký thì đúng bất biến
+CHARTER — đọc được, ghi thì bị chặn (cả tool file lẫn Bash). Muốn ghi thì `alp init` trước.
+
+`alp init --uninstall` trả lại nguyên trạng: xoá hai file, gỡ khối exclude, rút project khỏi
+`workspaces` của mọi vai rồi recompile. `git status` của project không đổi một dòng. Trí nhớ
+ở `memory/projects/<slug>/` **được giữ lại** — xoá tay nếu thật sự muốn quên.
+
+Có sẵn `.claude/settings.local.json` của riêng bạn? `alp init` cất nó thành
+`settings.local.json.alp-backup` và `--uninstall` trả lại nguyên văn.
+
 ## Chạy một vai
 
 ```bash
@@ -91,6 +129,10 @@ Mặc định `main`, `search` và `librarian` được đọc workspace; `read-
 memory. `main` được ghi source. Tuỳ chỉnh bằng option lặp lại `--read-role <role>`
 và `--write-role <role>`. Installer tạo project card, cập nhật L0, ghi
 `workspaces.read/write` vào loadout và recompile ACL. Chạy lại cùng project là an toàn.
+
+`alp init` gọi thẳng installer này rồi làm thêm phần config cục bộ + trust. Đứng trong
+project thì dùng `alp init`; installer trần dành cho lúc muốn đăng ký một project **không**
+đứng trong đó, hoặc cần `--read-role`/`--write-role` khác mặc định.
 
 ## Phở chạy các vai Codex
 
@@ -136,6 +178,8 @@ alp-code/
 │   ├── _template/          khuôn cho vai mới
 │   └── <role>/             IDENTITY · SOUL · PLAYBOOK · RELATIONS · loadout.yaml · journal/
 │                           (+ .claude/settings.json — SINH RA, không commit)
+│                           `alp init` sinh bản song sinh trong project:
+│                           <project>/.claude/settings.local.json + .codex/config.toml
 ├── memory/
 │   ├── INDEX.md            mục lục trí nhớ chung
 │   ├── shared/             decisions · people · reference
@@ -143,8 +187,9 @@ alp-code/
 │   └── private/<role>/     nháp riêng, cách ly hai chiều
 ├── skills/agent-memory/    luật ghi trí nhớ
 ├── hooks/                  session-start · acl-guard · session-end
-├── scripts/                compile-acl · new-role · doctor · trust-role · test-isolation
-│   └── lib/loadout.cjs     parser YAML + checkPath — MỘT nguồn logic ACL
+├── scripts/                alp · compile-acl · new-role · doctor · trust-role · test-isolation
+│   └── lib/                loadout (parser + checkPath) · claude-settings · codex-profile
+│                           project-config · trust — MỘT nguồn cho mỗi loại config
 └── docs/
 ```
 
@@ -152,6 +197,10 @@ alp-code/
 
 | Lệnh | Việc |
 |---|---|
+| `alp init` | đăng ký project hiện tại + sinh config Claude/Codex + trust hai runtime |
+| `alp init --uninstall` | gỡ config cục bộ, huỷ đăng ký workspace |
+| `alp` | phiên Phở chỉ-đọc ở cwd bất kỳ |
+| `alp doctor` · `alp update` · `alp help` | khám hệ · pull + bootstrap · bảng lệnh |
 | `install.sh` · `install.ps1` | cài/cập nhật bằng một dòng — clone, compile ACL, trust, doctor |
 | `scripts/bootstrap.cjs` | bước sau khi có repo: compile ACL + trust + doctor (`--no-trust` để bỏ trust) |
 | `scripts/compile-acl.sh` | sinh `.claude/settings.json` cho **mọi** vai từ `loadout.yaml` |
@@ -165,6 +214,7 @@ alp-code/
 | `scripts/test-communication.sh` | kiểm topology giao tiếp và contract main-only |
 | `scripts/test-agent-routing.sh` | kiểm model, effort và delegation route của các vai Codex |
 | `scripts/test-isolation.sh` | 20 ca cách ly (nhanh, qua hook) · `--live` chạy `claude -p` thật |
+| `scripts/test-project-config.cjs` | nghiệm thu `alp init`: idempotent · uninstall sạch · cwd lạ chỉ-đọc |
 | `scripts/sync-project-index.sh --write` | sinh lại L0 từ frontmatter L1 |
 
 ## Ba điều dễ sai nhất
