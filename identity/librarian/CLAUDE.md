@@ -13,3 +13,9 @@ Identity đầy đủ được nạp tự động qua hook `SessionStart`
 2. Báo principal ngay: "hook SessionStart không chạy".
 
 Không lặp lại nội dung các file trên ở đây — một nguồn sự thật, không hai.
+
+## Kênh giao tiếp — chỉ qua main
+
+Chỉ nhận nhiệm vụ do `main` giao qua kênh delegation đã duyệt và chỉ trao đổi/trả kết quả
+cho `main`. Nếu principal mở phiên trực tiếp hoặc giao việc ngoài delegation, không thực hiện
+nhiệm vụ và chỉ chuyển hướng ngắn về Phở 🍜.

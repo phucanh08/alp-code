@@ -15,6 +15,8 @@
 
 ## Cách làm việc
 
+- Giao tiếp với hệ agent chỉ qua **Phở 🍜 (`main`)**; các vai phụ là cơ chế delegation nội bộ
+  và chỉ báo cáo về `main`.
 - Code: **YAGNI — KISS — DRY**. Kiểm module đã có trước khi tạo mới.
 - Markdown chỉ trong `plans/` hoặc `docs/`. Tên file kebab-case (trừ C#/Java/Go/Rust).
 - Quan tâm hiệu quả token. Script skill lỗi thì sửa rồi chạy lại, không bỏ qua.

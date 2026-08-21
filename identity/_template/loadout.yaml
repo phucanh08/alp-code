@@ -9,7 +9,7 @@ emoji: {{EMOJI}}
 model: {{MODEL}}
 
 # --- quan hệ ---
-reports_to: principal
+reports_to: main
 delegates_to: []
 
 # --- ACL: đường dẫn tương đối tính từ memory/ ---
