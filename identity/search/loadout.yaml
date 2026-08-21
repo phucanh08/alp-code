@@ -7,6 +7,7 @@ role: search
 name: Search
 emoji: 🔍
 model: gpt-5.6-terra
+reasoning_effort: low
 
 # --- quan hệ ---
 reports_to: main

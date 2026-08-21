@@ -3,20 +3,20 @@
 # .claude/settings.json là SẢN PHẨM SINH RA — không sửa tay, không commit.
 
 # --- danh tính (không ảnh hưởng ACL) ---
-role: review
-name: Review
-emoji: 🔎
-model: gpt-5.5
-reasoning_effort: medium
+role: titling
+name: Titling
+emoji: 🏷️
+model: gpt-5.6-luna
+reasoning_effort: low
 
 # --- quan hệ ---
 reports_to: main
 delegates_to: []
 
 # --- ACL: đường dẫn tương đối tính từ memory/ ---
-# private/review/** tự thêm vào cả read lẫn write — không cần khai.
+# private/titling/** tự thêm vào cả read lẫn write — không cần khai.
 memory:
-  read:  [shared/**, projects/**]
+  read:  []
   write: []
 
 # --- workspace code ngoài alp-code (path tuyệt đối) ---
@@ -25,5 +25,5 @@ workspaces:
   write: []
 
 # --- công cụ & skill ---
-tools:  [Read, Glob, Grep, Bash]
-skills: [agent-memory]
+tools:  []
+skills: []

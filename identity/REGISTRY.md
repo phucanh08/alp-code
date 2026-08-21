@@ -12,6 +12,8 @@
 | read-thread | Read Thread | 🧵 | gpt-5.6-luna | main | ACTIVE |
 | review | Review | 🔎 | gpt-5.5 | main | ACTIVE |
 | oracle | Oracle | 🔮 | gpt-5.6-sol / claude-opus-5 | main | ACTIVE |
+| compaction | Compaction | 🗜️ | gpt-5.6-sol | main | ACTIVE |
+| titling | Titling | 🏷️ | gpt-5.6-luna | main | ACTIVE |
 
 ## Quy ước
 
