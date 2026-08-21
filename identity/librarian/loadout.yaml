@@ -20,7 +20,7 @@ memory:
 
 # --- workspace code ngoài alp-code (path tuyệt đối) ---
 workspaces:
-  read:  []
+  read:  [/Users/anhlp/StudioProjects/alp-plugin]
   write: []
 
 # --- công cụ & skill ---

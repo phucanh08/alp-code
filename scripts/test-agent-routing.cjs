@@ -55,8 +55,14 @@ assert.deepStrictEqual(mainHome.delegation, {
 
 // BẤT BIẾN CHARTER: cwd không nằm trong `workspaces.write` = read-only, kể cả main.
 // Đây là chỗ dễ vỡ IM LẶNG nhất — không lỗi, không cảnh báo, chỉ mất bất biến.
-assert.deepStrictEqual(L.effectiveWorkspaces(main).write, [], "tiền đề: main chưa khai workspace ghi");
-const mainAway = dryRun(["main", "--project", "/tmp", "--dry-run", "--", "probe"]);
+// Tiền đề là "/tmp NGOÀI workspaces.write", không phải "chưa đăng ký project nào" —
+// tiền đề cũ đỏ ngay lần `alp init` đầu tiên, tức test tự hỏng khi hệ bắt đầu được dùng.
+const away = "/tmp";
+assert(
+  !L.effectiveWorkspaces(main).write.some((w) => L.isWithin(w, away) || w === away),
+  `tiền đề: ${away} phải nằm ngoài workspaces.write của main`
+);
+const mainAway = dryRun(["main", "--project", away, "--dry-run", "--", "probe"]);
 assert.strictEqual(mainAway.sandbox, "read-only", "main ở cwd lạ PHẢI read-only");
 
 // `--exec` KHÔNG được nới quyền: nó chỉ đổi cách chạy (headless), không đổi vai là ai.
