@@ -138,6 +138,7 @@ const KNOWN_TOOLS = [
   "Read", "Write", "Edit", "Glob", "Grep", "Bash",
   "WebSearch", "WebFetch", "NotebookEdit", "Task",
 ];
+const REASONING_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"];
 
 /** Trả về mảng thông báo lỗi. Rỗng = hợp lệ. */
 function validate(loadout, role, allRoles) {
@@ -150,6 +151,8 @@ function validate(loadout, role, allRoles) {
 
   if (!loadout.name) add("thiếu `name:`");
   if (!loadout.memory) add("thiếu khối `memory:`");
+  if (loadout.reasoning_effort && !REASONING_EFFORTS.includes(loadout.reasoning_effort))
+    add(`\`reasoning_effort: ${loadout.reasoning_effort}\` không hợp lệ`);
 
   const { read = [], write = [] } = loadout.memory || {};
   const workspaces = loadout.workspaces || {};
@@ -278,5 +281,5 @@ module.exports = {
   findRepoRoot, parseYaml, globToRegExp, matchesAny,
   listRoles, loadoutPath, loadLoadout, effectiveGrants, effectiveWorkspaces,
   validate, checkPath, checkWorkspacePath, isWithin,
-  KNOWN_TOOLS, FROZEN,
+  KNOWN_TOOLS, REASONING_EFFORTS, FROZEN,
 };
