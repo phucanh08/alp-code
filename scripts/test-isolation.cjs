@@ -27,29 +27,29 @@ const SLUG = firstProjectSlug();
 // ---------------------------------------------------------------- 20 ca
 
 const CASES = [
-  // --- Nhóm CHẶN, từ phiên researcher ---
-  ["researcher", "DENY", "Read", { file_path: R("memory/private/chief-of-staff/x.md") }, "Read kho riêng chief-of-staff"],
-  ["researcher", "DENY", "Bash", { command: "cat ../../memory/private/chief-of-staff/x.md" }, "cat kho riêng chief-of-staff"],
-  ["researcher", "DENY", "Bash", { command: "cd ../../memory/private/chief-of-staff && cat x.md" }, "cd rồi cat"],
-  ["researcher", "DENY", "Bash", { command: "cat $(echo ../../memory/private/chief-of-staff/x.md)" }, "indirection $()"],
-  ["researcher", "DENY", "Bash", { command: `cat ${path.join("/tmp", "acl-symlink-probe", "x.md")}` }, "symlink → realpath"],
-  ["researcher", "DENY", "Edit", { file_path: R("identity/researcher/loadout.yaml") }, "tự sửa loadout (self-escalation)"],
-  ["researcher", "DENY", "Edit", { file_path: R("identity/researcher/.claude/settings.json") }, "tự sửa settings.json"],
-  ["researcher", "DENY", "Read", { file_path: R("identity/chief-of-staff/SOUL.md") }, "Read persona vai khác"],
-  ["researcher", "DENY", "Edit", { file_path: R("identity/_shared/HOUSE-RULES.md") }, "sửa luật chung"],
-  ["researcher", "DENY", "Edit", { file_path: R("memory/projects", SLUG, "PROJECT.md") }, "ghi ngoài write grant"],
-  ["researcher", "DENY", "Edit", { file_path: R("hooks/acl-guard.cjs") }, "sửa công cụ enforce"],
+  // --- Nhóm CHẶN, từ phiên librarian ---
+  ["librarian", "DENY", "Read", { file_path: R("memory/private/chief-of-staff/x.md") }, "Read kho riêng chief-of-staff"],
+  ["librarian", "DENY", "Bash", { command: "cat ../../memory/private/chief-of-staff/x.md" }, "cat kho riêng chief-of-staff"],
+  ["librarian", "DENY", "Bash", { command: "cd ../../memory/private/chief-of-staff && cat x.md" }, "cd rồi cat"],
+  ["librarian", "DENY", "Bash", { command: "cat $(echo ../../memory/private/chief-of-staff/x.md)" }, "indirection $()"],
+  ["librarian", "DENY", "Bash", { command: `cat ${path.join("/tmp", "acl-symlink-probe", "x.md")}` }, "symlink → realpath"],
+  ["librarian", "DENY", "Edit", { file_path: R("identity/librarian/loadout.yaml") }, "tự sửa loadout (self-escalation)"],
+  ["librarian", "DENY", "Edit", { file_path: R("identity/librarian/.claude/settings.json") }, "tự sửa settings.json"],
+  ["librarian", "DENY", "Read", { file_path: R("identity/chief-of-staff/SOUL.md") }, "Read persona vai khác"],
+  ["librarian", "DENY", "Edit", { file_path: R("identity/_shared/HOUSE-RULES.md") }, "sửa luật chung"],
+  ["librarian", "DENY", "Edit", { file_path: R("memory/projects", SLUG, "PROJECT.md") }, "ghi ngoài write grant"],
+  ["librarian", "DENY", "Edit", { file_path: R("hooks/acl-guard.cjs") }, "sửa công cụ enforce"],
 
-  // --- Nhóm CHO PHÉP, từ phiên researcher ---
-  ["researcher", "ALLOW", "Read", { file_path: R("memory/shared/reference/deepseek-harness.md") }, "Read shared/reference"],
-  ["researcher", "ALLOW", "Write", { file_path: R("memory/shared/reference/moi.md") }, "Write shared/reference"],
-  ["researcher", "ALLOW", "Write", { file_path: R("memory/projects", SLUG, "refs/moi.md") }, "Write projects/*/refs"],
-  ["researcher", "ALLOW", "Write", { file_path: R("memory/private/researcher/nhap.md") }, "Write private của mình"],
-  ["researcher", "ALLOW", "Read", { file_path: R("memory/projects/INDEX.md") }, "Read L0"],
-  ["researcher", "ALLOW", "Read", { file_path: R("identity/_shared/PRINCIPAL.md") }, "Read PRINCIPAL"],
+  // --- Nhóm CHO PHÉP, từ phiên librarian ---
+  ["librarian", "ALLOW", "Read", { file_path: R("memory/shared/reference/deepseek-harness.md") }, "Read shared/reference"],
+  ["librarian", "DENY", "Write", { file_path: R("memory/shared/reference/moi.md") }, "không tự ghi shared/reference"],
+  ["librarian", "DENY", "Write", { file_path: R("memory/projects", SLUG, "refs/moi.md") }, "không tự ghi projects/*/refs"],
+  ["librarian", "ALLOW", "Bash", { command: "touch ../../memory/private/librarian/nhap.md" }, "ghi private của mình"],
+  ["librarian", "ALLOW", "Read", { file_path: R("memory/projects/INDEX.md") }, "Read L0"],
+  ["librarian", "ALLOW", "Read", { file_path: R("identity/_shared/PRINCIPAL.md") }, "Read PRINCIPAL"],
 
   // --- Nhóm chief-of-staff: cách ly HAI CHIỀU ---
-  ["chief-of-staff", "DENY", "Read", { file_path: R("memory/private/researcher/y.md") }, "chief-of-staff KHÔNG phải root"],
+  ["chief-of-staff", "DENY", "Read", { file_path: R("memory/private/librarian/y.md") }, "chief-of-staff KHÔNG phải root"],
   ["chief-of-staff", "ALLOW", "Edit", { file_path: R("memory/projects", SLUG, "PROJECT.md") }, "ghi L1 — quyền của vai này"],
   ["chief-of-staff", "ALLOW", "Read", { file_path: R("memory/private/chief-of-staff/x.md") }, "Read private của mình"],
 ];
@@ -176,7 +176,7 @@ const SYMLINK = path.join("/tmp", "acl-symlink-probe");
 
 function setupFixtures() {
   write(R("memory/private/chief-of-staff/x.md"), "nháp của chief-of-staff\n");
-  write(R("memory/private/researcher/y.md"), "nháp của researcher\n");
+  write(R("memory/private/librarian/y.md"), "nháp của librarian\n");
 
   // Symlink cho ca 5. Fixture hỏng KHÔNG được biến thành ca "pass" —
   // với một test bảo mật, im lặng bỏ qua là chế độ hỏng tệ nhất có thể.

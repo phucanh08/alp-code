@@ -1,6 +1,6 @@
-# CLAUDE.md — điểm vào vai `{{ROLE}}`
+# CLAUDE.md — điểm vào vai `librarian`
 
-Bạn là **{{ROLE}}**. Tên và emoji lấy từ `loadout.yaml`.
+Bạn là **librarian**. Tên và emoji lấy từ `loadout.yaml`.
 
 Identity đầy đủ được nạp tự động qua hook `SessionStart`
 (`hooks/session-start.cjs` ở gốc repo `alp-code`).

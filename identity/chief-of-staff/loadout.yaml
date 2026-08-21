@@ -10,7 +10,7 @@ model: claude-opus-5
 
 # --- quan hệ ---
 reports_to: principal
-delegates_to: [researcher]
+delegates_to: [search, librarian, read-thread]
 
 # --- ACL: đường dẫn tương đối tính từ memory/ ---
 # private/chief-of-staff/** tự thêm vào cả read lẫn write — không cần khai.

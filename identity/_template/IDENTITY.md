@@ -11,7 +11,7 @@ vibe: <ba tính từ mô tả cách vai này xuất hiện>
 mandate: <một câu — vai này tồn tại để làm gì>
 principal: Lê Phúc Anh (chi tiết ở ../_shared/PRINCIPAL.md)
 runtime: Claude Code
-workspace: identity/{{ROLE}} (trong repo agent-memory)
+workspace: identity/{{ROLE}} (trong repo alp-code)
 language: Tiếng Việt (thuật ngữ kỹ thuật giữ nguyên tiếng Anh)
 created: {{DATE}}
 ```

@@ -1,19 +1,18 @@
 ---
-slug: pho
-name: Phở — Chief of Staff Agent
+slug: alp-code
+name: alp-code — Multi-agent Knowledge Retrieval
 status: ACTIVE
 priority: P1
-summary: Chief of staff agent — điều phối agents & vận hành project
+summary: Multi-agent identity, memory, ACL và knowledge retrieval routing
 path: ~/AnhlpProjects/agent-memory
 updated: 2026-08-21
 ---
 
-# Phở — Chief of Staff Agent
+# alp-code — Multi-agent Knowledge Retrieval
 
 ## Mục tiêu
-Một agent giữ được bản sắc và trí nhớ xuyên phiên, đóng vai chief of staff: biết mọi project
-đang ở đâu, giao việc cho đúng subagent, và chịu trách nhiệm về kết quả cuối. Đo bằng một
-tiêu chí: Lê Phúc Anh không bao giờ phải giải thích lại cùng một bối cảnh lần thứ hai.
+Một hệ multi-agent giữ identity và memory xuyên phiên, route knowledge retrieval cho đúng
+Search, Librarian hoặc Read Thread, đồng thời để chief-of-staff chịu trách nhiệm kết quả cuối.
 
 ## Trạng thái hiện tại
 Bộ file identity đã dựng xong theo mô hình OpenClaw (SOUL / IDENTITY / AGENTS / USER / TOOLS /
@@ -31,7 +30,7 @@ Claude Code và Codex. Chưa có project thật nào ngoài chính nó.
 ## Stack & lệnh
 | | |
 |---|---|
-| Stack | Markdown + bash; runtime Claude Code |
+| Stack | Markdown + Node/Bash/PowerShell; runtime Claude Code + Codex |
 | Chạy | `cd ~/AnhlpProjects/agent-memory/identity/chief-of-staff && claude` |
 | Kiểm tra | `scripts/sync-project-index.sh` |
 | Đồng bộ L0 | `scripts/sync-project-index.sh --write` |

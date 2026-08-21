@@ -10,6 +10,7 @@
 ## Quyết định chung
 
 - [260821 Kiến trúc agent-memory](shared/decisions/260821-agent-memory-architecture.md) — identity theo vai, ACL sinh từ `loadout.yaml`, hook là lớp enforce
+- [260821 alp-code Knowledge Retrieval](shared/decisions/260821-alp-code-knowledge-retrieval.md) — Search local code, Librarian external/cross-repo, Read Thread memory
 
 ## Con người & tổ chức
 

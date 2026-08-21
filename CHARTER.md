@@ -1,4 +1,4 @@
-# CHARTER — hiến chương hệ agent-memory
+# CHARTER — hiến chương hệ alp-code
 
 > Luật nền của cả hệ. Đứng trên `HOUSE-RULES.md` và trên mọi `PLAYBOOK.md`.
 > **Chỉ principal sửa file này.** Không agent nào có quyền ghi — kể cả chief-of-staff.
@@ -7,8 +7,9 @@
 
 Một kho duy nhất chứa **danh tính** của nhiều agent và **trí nhớ** dùng chung giữa chúng.
 
-Mỗi vai chạy trong một phiên Claude Code riêng, CWD riêng (`identity/<role>/`), nhưng
-cùng nhìn vào một `memory/`. Nhờ đó: hai agent không phải kể lại cho nhau thứ đã biết,
+Mỗi vai chạy trong một phiên riêng: chief-of-staff dùng Claude Code, nhóm Knowledge
+Retrieval dùng Codex. Tất cả cùng nhìn vào một `memory/`. Nhờ đó các agent không phải kể
+lại cho nhau thứ đã biết,
 mà vẫn không đọc được nháp riêng của nhau.
 
 ```
@@ -35,12 +36,14 @@ memory/private/<role>/  nháp riêng từng vai
 | Vai | Tên | Việc | Ghi được |
 |---|---|---|---|
 | `chief-of-staff` | Phở 🍜 | điều phối, vận hành project, **chốt quyết định** | `shared/**` · `projects/**` |
-| `researcher` | Long 🔎 | tra cứu bằng nguồn sơ cấp | `shared/reference/**` · `projects/*/refs/**` |
+| `search` | Search 🔍 | local code retrieval | private của vai; source workspace chỉ đọc |
+| `librarian` | Librarian 📚 | external/cross-repo research | `shared/reference/**` · `projects/*/refs/**` |
+| `read-thread` | Read Thread 🧵 | tìm kiếm trong memory | private của vai; memory chỉ đọc |
 
 Danh bạ đầy đủ: [`identity/REGISTRY.md`](identity/REGISTRY.md).
 
-Quyền ghi khác nhau **có chủ đích**: Long đưa *tài liệu*, Phở chốt *quyết định*.
-`decisions/` và `PROJECT.md` không mở cho vai research.
+Quyền ghi khác nhau **có chủ đích**: Librarian đưa *tài liệu*, Search và Read Thread chỉ
+retrieval, Phở chốt *quyết định*. `decisions/` và `PROJECT.md` không mở cho nhóm retrieval.
 
 ## 4. Thêm vai — chỉ có một con đường
 
@@ -68,7 +71,7 @@ Claude Code, nên không viết được luật "cấm `private/**`, trừ `priv
 không vai nào biết bản nào đúng. Đây là lỗi tốn kém nhất hệ này có thể mắc.
 
 **Cách ly hai chiều.** Không có vai nào là root. Chief-of-staff **không** đọc được
-`private/researcher/`. `private` mà cấp trên đọc được thì không còn là `private`.
+private của các vai retrieval. `private` mà cấp trên đọc được thì không còn là `private`.
 
 ## 6. Giới hạn — nói thẳng
 
@@ -83,7 +86,8 @@ và *sự tập trung của context*, không phải bảo vệ *bí mật quốc
 
 ## 7. Luật vận hành phiên agent
 
-- Phiên của một vai chạy với **CWD = `identity/<role>/`**. Không chạy từ gốc repo.
+- Phiên Claude chạy với **CWD = `identity/<role>/`**. Codex retrieval chạy qua
+  `scripts/run-role.*`, launcher tự chọn CWD và inject identity.
 - **Lần đầu mở một vai mới phải chạy `claude` tương tác một lần và bấm chấp nhận trust
   dialog.** Chưa trust ⇒ Claude Code **bỏ qua toàn bộ** `permissions.allow` và
   `additionalDirectories` trong `settings.json` của vai đó. `scripts/doctor.sh` kiểm việc này.

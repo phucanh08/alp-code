@@ -1,7 +1,7 @@
-# agent-memory
+# alp-code
 
-Identity + trí nhớ dùng chung cho nhiều agent. Mỗi vai một phiên Claude Code riêng,
-cùng một kho trí nhớ, ACL do harness enforce.
+Identity + trí nhớ dùng chung cho nhiều agent. Chief-of-staff chạy Claude Code; nhóm
+Knowledge Retrieval chạy Codex. Mỗi vai có phiên riêng và cùng một kho trí nhớ.
 
 Luật nền: [`CHARTER.md`](CHARTER.md). Danh bạ các vai: [`identity/REGISTRY.md`](identity/REGISTRY.md).
 
@@ -10,7 +10,9 @@ Luật nền: [`CHARTER.md`](CHARTER.md). Danh bạ các vai: [`identity/REGISTR
 | Vai | Tên | Việc |
 |---|---|---|
 | `chief-of-staff` | Phở 🍜 | điều phối agents, vận hành project, chốt quyết định |
-| `researcher` | Long 🔎 | tra cứu bằng nguồn sơ cấp, để lại tài liệu tái dùng |
+| `search` | Search 🔍 · GPT-5.6 Terra | local code retrieval |
+| `librarian` | Librarian 📚 · GPT-5.6 Sol | external/cross-repo research |
+| `read-thread` | Read Thread 🧵 · GPT-5.6 Luna | tìm kiếm trong memory |
 
 ## Chạy một vai
 
@@ -47,15 +49,26 @@ Windows PowerShell:
 .\scripts\install-project.ps1 C:\Projects\my-app --slug my-app
 ```
 
-Mặc định mọi vai được đọc workspace, còn `chief-of-staff` được ghi. Tuỳ chỉnh bằng option
-lặp lại `--read-role <role>` và `--write-role <role>`. Installer tạo project card, cập nhật
-L0, ghi `workspaces.read/write` vào loadout và recompile ACL cho mọi vai. Chạy lại cùng
-project là an toàn (idempotent), không ghi đè `PROJECT.md` đã có.
+Mặc định `chief-of-staff`, `search` và `librarian` được đọc workspace; `read-thread` chỉ đọc
+memory. `chief-of-staff` được ghi source. Tuỳ chỉnh bằng option lặp lại `--read-role <role>`
+và `--write-role <role>`. Installer tạo project card, cập nhật L0, ghi
+`workspaces.read/write` vào loadout và recompile ACL. Chạy lại cùng project là an toàn.
+
+## Chạy nhóm Knowledge Retrieval bằng Codex
+
+```bash
+scripts/run-role.sh search --project /path/to/app -- "Tìm luồng authentication"
+scripts/run-role.sh librarian -- "Đối chiếu API này với official docs"
+scripts/run-role.sh read-thread -- "Tìm các decision liên quan ACL"
+```
+
+Windows dùng `scripts/run-role.ps1`. Launcher chọn model từ loadout và ép sandbox
+`read-only`; artifact được trả cho chief-of-staff kiểm chứng và lưu.
 
 ## Cây thư mục
 
 ```
-agent-memory/
+alp-code/
 ├── CHARTER.md              hiến chương — chỉ principal sửa
 ├── identity/
 │   ├── REGISTRY.md         ai tồn tại
@@ -84,6 +97,7 @@ agent-memory/
 | `scripts/new-role.sh <slug>` | tạo vai mới + recompile ACL toàn bộ + trust workspace |
 | `scripts/install-project.sh <path>` | đăng ký project code có sẵn (macOS/Linux) |
 | `scripts/install-project.ps1 <path>` | đăng ký project code có sẵn (Windows PowerShell) |
+| `scripts/run-role.sh <role>` | chạy Search/Librarian/Read Thread bằng Codex read-only |
 | `scripts/trust-role.sh [role]` | đánh dấu workspace trusted trong `~/.claude.json` |
 | `scripts/doctor.sh` | kiểm toàn vẹn: DRIFT · STALE · ORPHAN · ACL-* · TRUST-MISSING |
 | `scripts/test-isolation.sh` | 20 ca cách ly (nhanh, qua hook) · `--live` chạy `claude -p` thật |

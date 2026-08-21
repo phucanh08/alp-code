@@ -1,6 +1,6 @@
 ---
 name: agent-memory
-description: Luật ghi trí nhớ dùng chung cho mọi vai trong repo agent-memory — khi nào ghi, ghi vào đâu, định dạng gì. Kích hoạt khi biết được fact mới về principal/project/thế giới, khi kết phiên, khi phân vân giữa shared/ và private/, hoặc khi cần tạo file trong memory/.
+description: Luật ghi trí nhớ dùng chung cho mọi vai trong repo alp-code — khi nào ghi, ghi vào đâu, định dạng gì. Kích hoạt khi biết được fact mới về principal/project/thế giới, khi kết phiên, khi phân vân giữa shared/ và private/, hoặc khi cần tạo file trong memory/.
 ---
 
 # agent-memory — ghi cái gì, vào đâu

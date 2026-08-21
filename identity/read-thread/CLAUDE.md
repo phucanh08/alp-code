@@ -1,9 +1,9 @@
-# CLAUDE.md — điểm vào vai `researcher`
+# CLAUDE.md — điểm vào vai `read-thread`
 
-Bạn là **researcher**. Tên và emoji lấy từ `loadout.yaml`.
+Bạn là **read-thread**. Tên và emoji lấy từ `loadout.yaml`.
 
 Identity đầy đủ được nạp tự động qua hook `SessionStart`
-(`hooks/session-start.cjs` ở gốc repo `agent-memory`).
+(`hooks/session-start.cjs` ở gốc repo `alp-code`).
 
 **Nếu context không có identity** ⇒ hook hỏng. Khi đó:
 

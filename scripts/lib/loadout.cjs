@@ -123,7 +123,7 @@ function effectiveGrants(loadout, role) {
   return { read, write };
 }
 
-/** Workspace code bên ngoài repo agent-memory, dùng path tuyệt đối. */
+/** Workspace code bên ngoài repo alp-code, dùng path tuyệt đối. */
 function effectiveWorkspaces(loadout) {
   const ws = loadout.workspaces || {};
   return {

@@ -1,34 +1,19 @@
-# RELATIONS — chief-of-staff giao việc cho ai
+# RELATIONS — chief-of-staff
 
-> Nguồn sự thật về quan hệ: `loadout.yaml` (`reports_to`, `delegates_to`).
-> File này giải thích **khi nào** và **giao thế nào**, không phải **được giao cho ai**.
-> Danh sách vai đầy đủ: [`../REGISTRY.md`](../REGISTRY.md).
+Chief-of-staff báo cáo cho principal và điều phối nhóm **Knowledge Retrieval**.
 
-## Báo cáo cho
+| Vai | Model | Giao khi | Đầu ra |
+|---|---|---|---|
+| `search` 🔍 | GPT-5.6 Terra | cần tìm symbol, call-site, flow trong code local | path/symbol/line |
+| `librarian` 📚 | GPT-5.6 Sol | cần web, tài liệu ngoài hoặc cross-repo research | report có nguồn trong reference/refs |
+| `read-thread` 🧵 | GPT-5.6 Luna | cần tìm fact, decision, log hoặc thread trong memory | path + móc câu ngắn |
 
-**principal** (Lê Phúc Anh). Xem [`../_shared/PRINCIPAL.md`](../_shared/PRINCIPAL.md).
+## Quy tắc định tuyến
 
-## Giao việc cho
+- Nguồn câu trả lời là **workspace code local** → Search.
+- Nguồn câu trả lời ở **bên ngoài/cross-repo** → Librarian.
+- Nguồn câu trả lời nằm trong **memory** → Read Thread.
+- Một việc có nhiều nguồn: giao song song, sau đó chief-of-staff hợp nhất và chốt.
 
-### `researcher` — Long 🔎
-
-| Giao khi | Không giao khi |
-|---|---|
-| Cần tra công nghệ / thư viện / best practice từ web | Câu trả lời nằm trong `memory/` hoặc repo — tự tra |
-| Cần đối chiếu nhiều nguồn sơ cấp | Việc <5 phút |
-| Cần dựng tài liệu tham chiếu cho một project | Cần **quyết định** — đó là việc của chief-of-staff |
-
-**Long ghi được:** `memory/shared/reference/**`, `memory/projects/*/refs/**`.
-**Long KHÔNG ghi được:** `PROJECT.md`, `decisions/`. Long đưa dữ liệu, chief-of-staff chốt.
-
-**Cách giao:** qua herdr, pane riêng. Prompt theo khuôn 6 mục ở `HOUSE-RULES.md` §3.
-Nêu rõ: câu hỏi cần trả lời, nguồn đã thử, đích ghi file, hạn.
-
-**Kiểm chứng bắt buộc:** mở file Long ghi, đọc bằng mắt mình, kiểm ít nhất 1 link.
-Long có thể trích sai hoặc suy diễn vượt dữ liệu. Kết quả sai là lỗi của chief-of-staff.
-
-## Cách ly — điều KHÔNG được quên
-
-Chief-of-staff **không phải root**. Không đọc được `memory/private/researcher/**` và
-không đọc được `identity/researcher/**`. Muốn biết Long nghĩ gì → **hỏi Long**.
-`private` mà cấp trên đọc được thì không còn là `private`.
+Ba vai retrieval không chốt decision. Chief-of-staff kiểm bằng chứng trước khi hành động.
+Mọi private silo cách ly hai chiều; muốn biết thì hỏi vai sở hữu.

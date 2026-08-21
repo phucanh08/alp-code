@@ -54,7 +54,7 @@ for (const role of roles) {
 if (changed) {
   // Ghi qua file tạm rồi rename — ~/.claude.json là state sống của Claude Code,
   // ghi dở dang là hỏng cấu hình của mọi phiên.
-  const tmp = cfgPath + ".agent-memory.tmp";
+  const tmp = cfgPath + ".alp-code.tmp";
   fs.mkdirSync(path.dirname(cfgPath), { recursive: true });
   fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2) + "\n");
   fs.renameSync(tmp, cfgPath);

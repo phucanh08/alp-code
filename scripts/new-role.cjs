@@ -20,7 +20,7 @@ if (!repoRoot) die("không tìm thấy repo root (thư mục có CHARTER.md)");
 
 const argv = process.argv.slice(2);
 const slug = argv.find((a) => !a.startsWith("--") && !isFlagValue(argv, a));
-if (!slug) die("thiếu <role-slug>. Ví dụ: new-role.sh researcher --name Long --emoji 🔎");
+if (!slug) die("thiếu <role-slug>. Ví dụ: new-role.sh qa --name QA --emoji 🧪");
 
 const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);

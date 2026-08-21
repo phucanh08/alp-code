@@ -142,7 +142,7 @@ Không dán output thô vào báo cáo. Tóm tắt, kèm `pane_id` để Phúc A
 
 ## Cần sâu hơn thì đọc
 
-Đường dẫn tính từ gốc repo `agent-memory` (`~/AnhlpProjects/agent-memory`):
+Đường dẫn tính từ gốc repo `agent-memory` (`~/AnhlpProjects/alp-code`):
 
 | Việc | File | Chi phí |
 |---|---|---|

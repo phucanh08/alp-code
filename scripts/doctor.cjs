@@ -149,6 +149,8 @@ function checkIdentityFiles() {
 
     const lo = L.loadLoadout(repoRoot, role);
     if (lo) for (const e of L.validate(lo, role, roles)) signal("ACL-INVALID", e);
+    if (lo?.model?.startsWith("gpt-") && !fs.existsSync(path.join(repoRoot, "identity", role, "AGENTS.md")))
+      signal("IDENTITY-MISSING", `${role} dùng Codex nhưng thiếu AGENTS.md`);
 
     // Placeholder chưa thay = vai được tạo tay, không qua new-role.sh.
     for (const f of REQUIRED) {
@@ -216,7 +218,7 @@ function main() {
     console.log(signals.join("\n"));
     process.exit(1);
   }
-  if (!quiet) console.log("OK               agent-memory sạch — không có tín hiệu nào");
+  if (!quiet) console.log("OK               alp-code sạch — không có tín hiệu nào");
   process.exit(0);
 }
 

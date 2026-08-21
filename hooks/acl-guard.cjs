@@ -49,7 +49,7 @@ function main() {
   } catch (e) {
     return deny(`acl-guard không xác định được vai/quyền: ${e.message}`);
   }
-  if (!ctx) return allow(); // ngoài repo agent-memory — không phải việc của hook này
+  if (!ctx) return allow(); // ngoài repo alp-code — không phải việc của hook này
 
   try {
     const reason = FILE_TOOLS.has(tool)

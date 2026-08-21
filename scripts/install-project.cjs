@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Đăng ký một project code có sẵn vào agent-memory — chạy trên macOS/Linux/Windows.
+// Đăng ký một project code có sẵn vào alp-code — chạy trên macOS/Linux/Windows.
 // Node là implementation duy nhất; install-project.sh và .ps1 chỉ là wrapper.
 
 const fs = require("fs");
@@ -8,7 +8,7 @@ const { execFileSync } = require("child_process");
 const L = require("./lib/loadout.cjs");
 
 const repoRoot = L.findRepoRoot(__dirname);
-if (!repoRoot) die("không tìm thấy repo agent-memory");
+if (!repoRoot) die("không tìm thấy repo alp-code");
 
 const argv = process.argv.slice(2);
 if (!argv.length || argv.includes("--help") || argv.includes("-h")) usage(argv.length ? 0 : 2);
@@ -19,7 +19,7 @@ const projectPath = realOrResolved(projectArg);
 if (!fs.existsSync(projectPath) || !fs.statSync(projectPath).isDirectory())
   die(`project không tồn tại hoặc không phải thư mục: ${projectPath}`);
 if (L.isWithin(repoRoot, projectPath) || L.isWithin(projectPath, repoRoot))
-  die("project code và agent-memory không được chứa lẫn nhau");
+  die("project code và alp-code không được chứa lẫn nhau");
 if (/[,#\[\]]/.test(projectPath))
   die("path chứa một trong các ký tự chưa được loadout parser hỗ trợ: , # [ ]");
 
@@ -31,7 +31,9 @@ if (!/^[a-z][a-z0-9-]*$/.test(slug)) die(`slug không hợp lệ: ${slug}`);
 const roles = L.listRoles(repoRoot);
 const explicitRead = options("read-role");
 const explicitWrite = options("write-role");
-const readRoles = new Set(explicitRead.length ? explicitRead : roles);
+// Read Thread chỉ đọc memory; không tự động mở source workspace cho vai này.
+const defaultReaders = roles.filter((r) => r !== "read-thread");
+const readRoles = new Set(explicitRead.length ? explicitRead : defaultReaders);
 const defaultWriter = roles.includes("chief-of-staff") ? "chief-of-staff" : roles[0];
 const writeRoles = new Set(explicitWrite.length ? explicitWrite : [defaultWriter]);
 for (const role of writeRoles) readRoles.add(role);
@@ -72,7 +74,7 @@ function installProjectCard() {
 }
 
 function projectCard(today) {
-  return `---\nslug: ${slug}\nname: ${name}\nstatus: ACTIVE\npriority: P1\nsummary: ${summary}\npath: ${projectPath}\nupdated: ${today}\n---\n\n# ${name}\n\n## Mục tiêu\n\nBổ sung mục tiêu của project.\n\n## Trạng thái hiện tại\n\nProject hiện có đã được đăng ký vào agent-memory.\n\n## Việc tiếp theo\n\n1. Đọc codebase và cập nhật hồ sơ này.\n\n## Đang chặn\n\n_(không có)_\n\n## Stack & lệnh\n\n| | |\n|---|---|\n| Stack | Bổ sung sau khi khảo sát |\n| Chạy | \`<bổ sung>\` |\n| Test | \`<bổ sung>\` |\n| Deploy | \`<bổ sung>\` |\n\n## Quyết định\n\n_(chưa có)_\n\n## Nhật ký\n\n- [${today.slice(0, 7)}](log/${today.slice(0, 7)}.md)\n`;
+  return `---\nslug: ${slug}\nname: ${name}\nstatus: ACTIVE\npriority: P1\nsummary: ${summary}\npath: ${projectPath}\nupdated: ${today}\n---\n\n# ${name}\n\n## Mục tiêu\n\nBổ sung mục tiêu của project.\n\n## Trạng thái hiện tại\n\nProject hiện có đã được đăng ký vào alp-code.\n\n## Việc tiếp theo\n\n1. Đọc codebase và cập nhật hồ sơ này.\n\n## Đang chặn\n\n_(không có)_\n\n## Stack & lệnh\n\n| | |\n|---|---|\n| Stack | Bổ sung sau khi khảo sát |\n| Chạy | \`<bổ sung>\` |\n| Test | \`<bổ sung>\` |\n| Deploy | \`<bổ sung>\` |\n\n## Quyết định\n\n_(chưa có)_\n\n## Nhật ký\n\n- [${today.slice(0, 7)}](log/${today.slice(0, 7)}.md)\n`;
 }
 
 function updateProjectIndex() {
@@ -99,7 +101,7 @@ function updateLoadout(role, canRead, canWrite) {
   if (/^workspaces:\s*$/m.test(text)) {
     text = text.replace(/^workspaces:\s*$\n(?:^[ \t]+.*(?:\n|$))*/m, block + "\n");
   } else {
-    text = text.trimEnd() + "\n\n# --- workspace code ngoài agent-memory (path tuyệt đối) ---\n" + block + "\n";
+    text = text.trimEnd() + "\n\n# --- workspace code ngoài alp-code (path tuyệt đối) ---\n" + block + "\n";
   }
   fs.writeFileSync(file, text);
   console.log(`WROTE     identity/${role}/loadout.yaml (${canWrite ? "read+write" : "read"})`);

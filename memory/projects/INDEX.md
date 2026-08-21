@@ -11,7 +11,7 @@
 <!-- BEGIN:INDEX -->
 | Slug | P | Trạng thái | Tóm tắt | Cập nhật |
 |---|---|---|---|---|
-| pho | P1 | ACTIVE | Chief of staff agent — điều phối agents & vận hành project | 2026-08-21 |
+| alp-code | P1 | ACTIVE | Multi-agent identity, memory, ACL và knowledge retrieval routing | 2026-08-21 |
 | vr-mobile-app | P1 | ACTIVE | App Flutter cho dân đặt lịch đăng kiểm, tra hồ sơ, eKYC bằng CCCD gắn chip | 2026-08-19 |
 <!-- END:INDEX -->
 

@@ -7,13 +7,15 @@
 | Vai | Tên | Emoji | Model | Báo cáo cho | Trạng thái |
 |---|---|---|---|---|---|
 | chief-of-staff | Phở | 🍜 | claude-opus-5 | principal | ACTIVE |
-| researcher | Long | 🔎 | claude-opus-5 | chief-of-staff | ACTIVE |
+| search | Search | 🔍 | gpt-5.6-terra | chief-of-staff | ACTIVE |
+| librarian | Librarian | 📚 | gpt-5.6-sol | chief-of-staff | ACTIVE |
+| read-thread | Read Thread | 🧵 | gpt-5.6-luna | chief-of-staff | ACTIVE |
 
 ## Quy ước
 
 - **Key là vai, không phải tên.** Thư mục `identity/chief-of-staff/`, không phải `identity/pho/`.
   Đổi tên = sửa một dòng `name:` trong `loadout.yaml`, không đổi path nào.
-- Một vai = một thư mục = một `loadout.yaml` = một phiên Claude Code với CWD riêng.
+- Một vai = một thư mục = một `loadout.yaml` = một phiên runtime riêng.
 - Thêm vai **chỉ** qua `scripts/new-role.sh`. Tạo tay = thiếu deny ở các vai cũ = rò rỉ.
 - Trạng thái: `ACTIVE` · `PAUSED` · `RETIRED`. Vai RETIRED giữ thư mục để tra cứu,
   nhưng vẫn phải có mặt trong deny-list của mọi vai khác.
