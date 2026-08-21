@@ -12,12 +12,17 @@
 
 | | Claude Code | Codex CLI |
 |---|---|---|
-| Bản | phiên hiện tại, model mặc định `opus` | `codex-cli 0.147.0` |
-| Giao việc | `Agent` tool (subagent trong phiên) | `codex exec -m <slug> "<prompt>"` |
-| Chọn model | tham số `model:` — **chỉ 4 alias** | `-m <slug>` hoặc `-c model="<slug>"` |
-| Effort | ẩn (theo alias) | `-c model_reasoning_effort="<level>"` |
+| Bản | phiên hiện tại, model mặc định `opus` | `codex-cli 0.149.0` |
+| Giao việc | `Agent` tool (subagent trong phiên) | `run-role <role> --pane` / `--exec` |
+| Chọn model | tham số `model:` — **chỉ 4 alias** | **profile**, không phải flag CLI |
+| Effort | ẩn (theo alias) | **profile** (`model_reasoning_effort`) |
 | Kết quả | trả về context của Phở | stdout / pane terminal |
-| Chạy dài | subagent nền, có notify | qua herdr, sống độc lập phiên |
+| Chạy dài | subagent nền, có notify | pane herdr, sống độc lập phiên |
+
+**Vai đã có loadout thì KHÔNG truyền model/effort bằng tay.** Cả hai — cộng sandbox,
+approval, web search và hook boot — nằm trong `$CODEX_HOME/<role>.config.toml` do
+`compile-acl` sinh từ `loadout.yaml`; launcher chỉ gọi `codex -p <role>`. Flag `-m`/`-c`
+chỉ dùng cho `codex exec` ad-hoc, tức việc **không** thuộc vai nào (mục 6).
 
 **Ràng buộc quan trọng:** `Agent` tool chỉ nhận `model` ∈ `opus` · `sonnet` · `haiku` · `fable`.
 Không spawn được subagent trên Opus 4.8, Sonnet 4.6 hay bất kỳ ID cụ thể nào — muốn model khác
@@ -157,18 +162,20 @@ Propose 3 fundamentally different approaches. Do not refine mine."
 # Khảo sát rộng nhưng nông
 codex exec -m gpt-5.6-terra "<prompt>"
 
-# Vai đã có loadout — launcher tự lấy cả model lẫn effort
-scripts/run-role.sh compaction -- "<thread/context bundle>"
-scripts/run-role.sh titling -- "<thread/context bundle>"
+# Vai đã có loadout — launcher tự lấy cả model lẫn effort từ profile
+scripts/run-role.sh compaction --exec -- "<thread/context bundle>"
+scripts/run-role.sh titling --exec -- "<thread/context bundle>"
+scripts/run-role.sh review --project ~/code/api --pane -- "<concern>"
 ```
 
-Với `scripts/run-role.*`, không truyền model lẫn effort bằng tay: cả hai nằm trong profile
-`$CODEX_HOME/<role>.config.toml` mà `compile-acl.sh` sinh từ loadout, và launcher chỉ gọi
-`codex -p <role>`. Thêm `--exec` để chạy headless (một câu hỏi → một câu trả lời, không mở pane).
+Chọn `--pane` hay `--exec` theo hình dạng việc, không theo cảm giác — bảng ở
+[`delegation.md`](delegation.md) §1. Tóm tắt: nhiều vai / dài / cần theo dõi → `--pane`;
+một câu hỏi đồng bộ dưới một phút → `--exec`.
 
 **Profile thiếu thì `codex -p` KHÔNG báo lỗi** — nó im lặng chạy mặc định, mà mặc định của
-`codex exec` là `workspace-write`. `run-role` chặn trước ở chỗ đó; `doctor.sh` báo
-`CODEX-PROFILE` khi profile lệch hoặc chưa sinh. Sửa loadout xong luôn chạy `compile-acl.sh`.
+`codex exec` là `workspace-write`. `run-role` chặn trước ở chỗ đó; `alp doctor` báo
+`CODEX-PROFILE-MISSING`/`-DRIFT` khi profile lệch hoặc chưa sinh, kèm dòng `→ fix:`.
+Sửa loadout xong luôn chạy `compile-acl.sh`.
 
 **`main` cũng chạy được qua launcher** (`scripts/run-role.sh main -- "<việc>"`) — đường phụ
 khi muốn tiết kiệm quota Claude. Hai chỗ khác vai phụ, nhớ khi đọc loadout của main:

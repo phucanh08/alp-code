@@ -43,7 +43,42 @@ Phần phải sửa:
 
 ## Định nghĩa hoàn thành
 
-- [ ] `alp doctor` mọi finding có dòng `→ fix:` chạy được
-- [ ] README không còn hướng dẫn `cd identity/main`
-- [ ] README không còn câu sai về Codex-main
-- [ ] `compile-acl.cjs --check` + `doctor.cjs` xanh trên máy sạch sau `alp init`
+- [x] `alp doctor` mọi finding có dòng `→ fix:` chạy được
+- [x] README không còn hướng dẫn `cd identity/main`
+- [x] README không còn câu sai về Codex-main
+- [x] `compile-acl.cjs --check` + `doctor.cjs` xanh trên máy sạch sau `alp init`
+
+---
+
+## Đã làm gì — và một bug chỉ lộ khi có project thật
+
+**Xong 2026-08-21.** Nghiệm thu bằng một project thật trong scratchpad: `alp init` →
+doctor sạch; ép lệch từng thứ một → đúng finding hiện ra kèm `→ fix:`; chạy lệnh fix →
+finding biến mất; `alp init --uninstall` trả lại nguyên trạng.
+
+### `ACL-PATH` là cảnh báo giả — và chỉ giả sau khi có project
+
+Luật cũ: *"mọi `additionalDirectories` phải nằm trong repoRoot"*. Nhưng workspace code hợp
+lệ nằm **ngoài** repo, nên `alp init` đầu tiên biến nó thành **8 cảnh báo giả** — một cho
+mỗi vai. Không ai thấy vì trước P4 chưa có project nào được đăng ký trên máy này.
+
+Luật mới: dir hợp lệ = trong repo **hoặc** trong một `workspaces.read` đã khai. Còn lại mới
+là tàn dư của repo root cũ. Cảnh báo luôn đỏ là cảnh báo không ai đọc — đúng bài học của
+ngưỡng boot ở P0.
+
+### Ba chỗ làm khác plan
+
+| Plan | Đã làm | Lý do |
+|---|---|---|
+| `PROJECT-CONFIG-STALE` khi file **cũ hơn** loadout | so theo **NỘI DUNG** | đổi `name:` không đổi ACL; mtime cho cảnh báo giả, đúng lý do `ACL-DRIFT` đã so nội dung từ đầu |
+| `CODEX-PROFILE-DRIFT` là finding mới | tách `CODEX-PROFILE` cũ thành `-DRIFT` / `-MISSING` | hai bệnh khác nhau, cùng một đơn thuốc nhưng khác mức khẩn |
+| `→ fix:` chỉ cho finding mới | **mọi** finding, kể cả từ `communication.cjs` | `signal(tag, msg, fix)` — thiếu tham số thứ ba thì render in ra chính lời tố cáo đó |
+
+`ORPHAN-PANE` in đúng lệnh chạy được: vai suy từ nhãn agent (`<role>-<hậu tố>` do launcher
+đặt), nên `→ fix: node scripts/run-role.cjs search --release w5:pE` copy-paste là xong.
+
+### Một chỗ dọn thêm ngoài plan
+
+`install-project.cjs` in *"Chạy agent: cd …/identity/main && claude"* — cùng lời khuyên đã
+chết mà plan bắt xoá khỏi README. Nay in gợi ý `alp init`, và im lặng khi chính `alp init`
+gọi nó (`ALP_INIT=1`) để principal không đọc hai lời khuyên khác nhau cho một bước.

@@ -181,7 +181,7 @@ function help() {
     ["alp", "phiên Phở chỉ-đọc ở cwd bất kỳ"],
     ["alp init [path]", "đăng ký project + sinh config Claude/Codex + trust"],
     ["alp init --uninstall", "gỡ config cục bộ, huỷ đăng ký workspace"],
-    ["alp doctor", "khám toàn hệ: DRIFT · ACL-* · TRUST-MISSING · CODEX-PROFILE"],
+    ["alp doctor", "khám toàn hệ; mọi tín hiệu kèm dòng `→ fix:` chạy được"],
     ["alp update", "git pull --ff-only rồi bootstrap lại"],
     ["alp help", "bảng này"],
   ];
@@ -190,11 +190,11 @@ function help() {
     ["compile-acl.cjs [--check]", "loadout.yaml → settings.json + profile Codex"],
     ["new-role.cjs <slug>", "tạo vai mới (đường DUY NHẤT — xem CHARTER §4)"],
     ["install-project.cjs <path>", "đăng ký project code có sẵn"],
-    ["run-role.cjs <role> [--exec]", "chạy một vai trên Codex"],
+    ["run-role.cjs <role> [--pane]", "giao việc cho một vai (--exec headless · --release trả quyền)"],
     ["trust-role.cjs [role]", "trust workspace của vai trong ~/.claude.json"],
     ["doctor.cjs [--quiet]", "kiểm toàn vẹn"],
     ["sync-project-index.sh --write", "sinh lại L0 từ frontmatter L1"],
-    ["test-isolation.cjs [--live]", "20 ca cách ly giữa các vai"],
+    ["test-isolation.cjs [--live]", "cách ly giữa các vai + chống đệ quy delegation"],
   ];
   const table = (rows) => rows.map(([a, b]) => `  ${a.padEnd(30)} ${b}`).join("\n");
 
@@ -226,7 +226,13 @@ function safeTrust(dirs) {
 
 function run(script, extra) {
   const file = path.join(repoRoot, "scripts", script);
-  const r = spawnSync(process.execPath, [file, ...extra], { stdio: "inherit", cwd: repoRoot });
+  // ALP_INIT: script con biết mình đang chạy TRONG `alp init` nên đừng in lại hướng dẫn
+  // bước tiếp theo — `alp init` in bản đầy đủ ở cuối.
+  const r = spawnSync(process.execPath, [file, ...extra], {
+    stdio: "inherit",
+    cwd: repoRoot,
+    env: { ...process.env, ALP_INIT: "1" },
+  });
   if (r.error) die(`không chạy được ${script}: ${r.error.message}`);
   return r.status ?? 1;
 }

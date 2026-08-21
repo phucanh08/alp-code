@@ -1,7 +1,9 @@
 # alp-code
 
-Identity + trí nhớ dùng chung cho nhiều agent. Main có thể chạy Claude Code hoặc Codex;
-các vai chuyên môn chạy trong phiên riêng và cùng một kho trí nhớ.
+Identity + trí nhớ dùng chung cho nhiều agent. Main chạy **Claude Code** — đó là runtime
+chính, vì Codex không nạp được skill `alp:plan`/`alp:cook` (marketplace của Claude Code).
+Codex là **đường phụ** cho main khi muốn tiết kiệm quota. Các vai chuyên môn chạy Codex
+trong phiên riêng, cùng một kho trí nhớ.
 
 **Principal luôn giao tiếp qua Phở 🍜 (`main`).** Các vai chuyên môn chỉ là cơ chế
 delegation nội bộ: nhận việc từ Phở, trao đổi với Phở và trả kết quả về Phở. Nếu mở trực
@@ -93,14 +95,17 @@ Có sẵn `.claude/settings.local.json` của riêng bạn? `alp init` cất nó
 ## Chạy một vai
 
 ```bash
-cd identity/main && claude
+alp                 # Phở, chỉ-đọc, ở thư mục bất kỳ
+cd ~/code/my-app && claude    # Phở, ghi được — trong project đã `alp init`
 ```
 
-Hook `SessionStart` tự nạp identity. Không cần đọc file thủ công.
+Hook `SessionStart` tự nạp identity. Không cần `cd` vào `identity/`, không cần đọc file
+thủ công. Vai phụ thì đi qua launcher, xem [Phở giao việc](#phở-giao-việc-cho-các-vai).
 
 > **Trust dialog:** workspace chưa trusted thì Claude Code **bỏ qua** `permissions.allow`
 > và `additionalDirectories` ⇒ vai đó mở được phiên nhưng không đọc nổi `memory/`.
-> `new-role.sh` tự chạy `trust-role.sh`; `doctor.sh` báo `TRUST-MISSING` nếu thiếu.
+> `alp init` và `new-role.sh` tự trust; `alp doctor` báo `TRUST-MISSING` (Claude) và
+> `TRUST-MISSING-CODEX` (Codex) nếu thiếu.
 
 ## Thêm một vai
 
@@ -113,16 +118,18 @@ scripts/new-role.sh qa --name QA --emoji 🧪
 
 ## Gắn một project code có sẵn
 
-macOS/Linux:
+**Đường thường dùng — đứng trong project:**
 
 ```bash
-scripts/install-project.sh /absolute/path/to/my-app --slug my-app
+cd ~/code/my-app && alp init
 ```
 
-Windows PowerShell:
+**Đường trần** — khi muốn đăng ký một project mà *không* đứng trong đó, hoặc cần đổi vai
+nào được đọc/ghi:
 
-```powershell
-.\scripts\install-project.ps1 C:\Projects\my-app --slug my-app
+```bash
+scripts/install-project.sh /absolute/path/to/my-app --slug my-app --write-role review
+.\scripts\install-project.ps1 C:\Projects\my-app --slug my-app        # Windows
 ```
 
 Mặc định `main`, `search` và `librarian` được đọc workspace; `read-thread` chỉ đọc
@@ -130,42 +137,53 @@ memory. `main` được ghi source. Tuỳ chỉnh bằng option lặp lại `--r
 và `--write-role <role>`. Installer tạo project card, cập nhật L0, ghi
 `workspaces.read/write` vào loadout và recompile ACL. Chạy lại cùng project là an toàn.
 
-`alp init` gọi thẳng installer này rồi làm thêm phần config cục bộ + trust. Đứng trong
-project thì dùng `alp init`; installer trần dành cho lúc muốn đăng ký một project **không**
-đứng trong đó, hoặc cần `--read-role`/`--write-role` khác mặc định.
+`alp init` gọi thẳng installer này rồi làm thêm phần config cục bộ + trust — nên sau
+`install-project.sh` trần, chạy `alp init` một lượt nữa nếu muốn gõ `claude` ngay trong repo đó.
 
-## Phở chạy các vai Codex
+## Phở giao việc cho các vai
 
-Các launcher dưới đây là công cụ delegation nội bộ cho `main`/operator, không phải các kênh
-giao tiếp thay thế dành cho principal.
+Delegation nội bộ của `main`, **không** phải kênh giao tiếp thay thế cho principal.
+Ba đường, chọn theo **hình dạng việc**:
+
+| Hình dạng việc | Đường |
+|---|---|
+| ≥2 vai song song · >1 phút · cần theo dõi · review nhiều concern | `--pane` (**đường chính**) |
+| Một câu hỏi · đồng bộ · <1 phút · hoặc không có fleet | `--exec` |
+| Principal tự ngồi vào phiên đó | không cờ nào (phiên tương tác) |
 
 ```bash
-scripts/run-role.sh search --project /path/to/app -- "Tìm luồng authentication"
-scripts/run-role.sh librarian -- "Đối chiếu API này với official docs"
-scripts/run-role.sh read-thread -- "Tìm các decision liên quan ACL"
-scripts/run-role.sh review --project /path/to/app -- "Review correctness của diff hiện tại"
-scripts/run-role.sh oracle --project /path/to/app -- "Phản biện phương án migration này"
-scripts/run-role.sh compaction -- "Tóm tắt context thread này"
-scripts/run-role.sh titling -- "Đặt title cho thread này"
-scripts/run-role.sh main -- "Việc cho chính Phở, chạy trên Codex"
+# pane herdr: chạy nền, theo dõi được, không chiếm terminal
+scripts/run-role.sh search --project /path/to/app --pane -- "Tìm luồng authentication"
+scripts/run-role.sh review --project /path/to/app --pane -- "Review correctness của diff"
+scripts/run-role.sh oracle --project /path/to/app --pane --kind claude -- "Phản biện migration"
+
+# headless: một câu hỏi, chờ ngay tại chỗ
+scripts/run-role.sh read-thread --exec -- "Tìm các decision liên quan ACL"
+scripts/run-role.sh titling --exec -- "Đặt title cho thread này"
+
+# xong việc thì trả quyền, đừng để panel kẹt `working`
+scripts/run-role.sh search --release w5:p3
 ```
 
-Thêm `--exec` để chạy headless: `scripts/run-role.sh read-thread --exec -- "<việc>"` trả text
-ra stdout thay vì mở phiên tương tác.
+**Không có fleet ⇒ `--pane` tự rơi về `--exec`** — phiên headless không có pane để mở.
+`--kind claude` chạy vai bằng Claude Code thay vì Codex (Oracle trên Opus 5).
+Windows dùng `scripts/run-role.ps1`. Luật đầy đủ + ba bẫy của herdr:
+[`docs/delegation.md`](docs/delegation.md).
 
-Windows dùng `scripts/run-role.ps1`. Model, effort, sandbox và hook boot nằm trong profile
-`$CODEX_HOME/<role>.config.toml` do `compile-acl.sh` sinh từ loadout;
-artifact được trả cho main kiểm chứng và lưu. Oracle chạy Claude thì mở `identity/oracle`
-bằng Claude Opus 5; chạy Codex thì launcher dùng GPT-5.6 Sol từ loadout.
+Model, effort, sandbox và hook boot nằm trong profile `$CODEX_HOME/<role>.config.toml` do
+`compile-acl.sh` sinh từ loadout — **không** truyền model bằng tay. Artifact được trả cho
+main kiểm chứng và lưu.
 
 **Sandbox.** Vai phụ **luôn** `read-only`. Riêng `main` được `workspace-write`, nhưng chỉ khi
 đứng ở repo alp-code hoặc trong một đường dẫn đã khai ở `workspaces.write` — cwd lạ vẫn
 `read-only`, đúng bất biến CHARTER.
 
-**`main` trên Codex là đường phụ**, dùng khi muốn tiết kiệm quota Claude. Codex không nạp
-được skill `alp:plan`/`alp:cook` (marketplace của Claude Code), nên runtime chính của main
-vẫn là Claude. Model Codex của main khai riêng ở `codex_model:` trong loadout — `model:` giữ
-nguyên `claude-opus-5` cho runtime chính.
+**Vai phụ không spawn được vai khác.** `delegates_to` rỗng ⇒ `acl-guard` chặn `herdr` và
+`run-role` ở vị trí lệnh. Không có phanh này thì Search spawn được Search.
+
+**`main` trên Codex là đường phụ** (`scripts/run-role.sh main -- "<việc>"`), dùng khi muốn
+tiết kiệm quota Claude. Model Codex của main khai riêng ở `codex_model:` trong loadout —
+`model:` giữ nguyên `claude-opus-5` cho runtime chính.
 
 ## Cây thư mục
 
@@ -185,22 +203,31 @@ alp-code/
 │   ├── shared/             decisions · people · reference
 │   ├── projects/           Project Layer 3 tầng
 │   └── private/<role>/     nháp riêng, cách ly hai chiều
-├── skills/agent-memory/    luật ghi trí nhớ
+├── skills/                 agent-memory (luật ghi trí nhớ) · herdr (quản fleet)
 ├── hooks/                  session-start · acl-guard · session-end
 ├── scripts/                alp · compile-acl · new-role · doctor · trust-role · test-isolation
 │   └── lib/                loadout (parser + checkPath) · claude-settings · codex-profile
-│                           project-config · trust — MỘT nguồn cho mỗi loại config
+│                           project-config · trust · herdr-fleet · delegation
+│                           — MỘT nguồn cho mỗi loại config
 └── docs/
 ```
 
 ## Scripts
 
+**Dùng hằng ngày — chỉ cần bảng này:**
+
 | Lệnh | Việc |
 |---|---|
+| `alp` | phiên Phở chỉ-đọc ở cwd bất kỳ |
 | `alp init` | đăng ký project hiện tại + sinh config Claude/Codex + trust hai runtime |
 | `alp init --uninstall` | gỡ config cục bộ, huỷ đăng ký workspace |
-| `alp` | phiên Phở chỉ-đọc ở cwd bất kỳ |
-| `alp doctor` · `alp update` · `alp help` | khám hệ · pull + bootstrap · bảng lệnh |
+| `alp doctor` | khám toàn hệ — mọi tín hiệu kèm dòng `→ fix:` chạy được |
+| `alp update` · `alp help` | pull + bootstrap · bảng lệnh |
+
+**Chi tiết bên dưới** — cài đặt, bảo trì, kiểm thử:
+
+| Lệnh | Việc |
+|---|---|
 | `install.sh` · `install.ps1` | cài/cập nhật bằng một dòng — clone, compile ACL, trust, doctor |
 | `scripts/bootstrap.cjs` | bước sau khi có repo: compile ACL + trust + doctor (`--no-trust` để bỏ trust) |
 | `scripts/compile-acl.sh` | sinh `.claude/settings.json` cho **mọi** vai từ `loadout.yaml` |
@@ -208,12 +235,13 @@ alp-code/
 | `scripts/new-role.sh <slug>` | tạo vai mới + recompile ACL toàn bộ + trust workspace |
 | `scripts/install-project.sh <path>` | đăng ký project code có sẵn (macOS/Linux) |
 | `scripts/install-project.ps1 <path>` | đăng ký project code có sẵn (Windows PowerShell) |
-| `scripts/run-role.sh <role> [--exec]` | chạy một vai trên Codex bằng profile sinh từ loadout |
+| `scripts/run-role.sh <role> [--pane\|--exec]` | giao việc cho một vai; `--release <pane>` trả quyền khi xong |
 | `scripts/trust-role.sh [role]` | đánh dấu workspace trusted trong `~/.claude.json` |
-| `scripts/doctor.sh` | kiểm toàn vẹn: DRIFT · STALE · ORPHAN · ACL-* · TRUST-MISSING |
+| `scripts/doctor.sh` | kiểm toàn vẹn: DRIFT · ACL-* · TRUST-MISSING\* · CODEX-PROFILE-\* · PROJECT-CONFIG-STALE · HERDR-VERSION · ORPHAN-PANE |
 | `scripts/test-communication.sh` | kiểm topology giao tiếp và contract main-only |
 | `scripts/test-agent-routing.sh` | kiểm model, effort và delegation route của các vai Codex |
-| `scripts/test-isolation.sh` | 20 ca cách ly (nhanh, qua hook) · `--live` chạy `claude -p` thật |
+| `scripts/test-isolation.sh` | cách ly giữa các vai + chống đệ quy (nhanh, qua hook) · `--live` chạy `claude -p` thật |
+| `scripts/test-delegation.cjs` | contract ủy nhiệm · luật định tuyến pane/exec · seq |
 | `scripts/test-project-config.cjs` | nghiệm thu `alp init`: idempotent · uninstall sạch · cwd lạ chỉ-đọc |
 | `scripts/sync-project-index.sh --write` | sinh lại L0 từ frontmatter L1 |
 

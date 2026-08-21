@@ -51,7 +51,10 @@ console.log(`MEMORY    ${path.join(repoRoot, "memory", "projects", slug, "PROJEC
 console.log(`READ      ${[...readRoles].join(", ")}`);
 console.log(`WRITE     ${[...writeRoles].join(", ") || "(không vai nào)"}`);
 console.log("");
-console.log(`Chạy agent: cd ${path.join(repoRoot, "identity", defaultWriter)} && claude`);
+// `alp init` gọi script này rồi in hướng dẫn của riêng nó — chỉ nhắc khi chạy trần,
+// nếu không principal đọc hai lời khuyên khác nhau cho cùng một bước.
+if (!process.env.ALP_INIT)
+  console.log(`Còn thiếu config cục bộ: chạy \`alp init ${projectPath}\` để gõ \`claude\` ngay trong project.`);
 
 function installProjectCard() {
   const dir = path.join(repoRoot, "memory", "projects", slug);

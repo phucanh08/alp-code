@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: complete
 created: 2026-08-21
 slug: alp-init-delegation
 source:
@@ -73,10 +73,20 @@ Bẫy 2 nguy hiểm nhất: phá bất biến read-only, mặc định *trông c
 | [P0](phase-0-quick-wins.md) | `RELATIONS.md` vào boot set · mở `main` cho Codex | ~1h | — | **xong 2026-08-21** |
 | [P1](phase-1-codex-profile.md) | loadout → `~/.codex/<role>.config.toml` · `run-role --exec` · xoá `buildBoot()` | ~0.5 ngày | P0 | **xong 2026-08-21** |
 | [P2](phase-2-alp-cli.md) | `alp` CLI · `alp init` · config theo project · trust hai runtime | ~1 ngày | P1 | **xong 2026-08-21** |
-| [P3](phase-3-delegation-herdr.md) | wrapper herdr · luật định tuyến · phanh chi phí · chống đệ quy | ~0.5 ngày | P2 | chưa làm |
-| [P4](phase-4-doctor-docs.md) | `alp doctor` finding mới · README viết lại | ~0.5 ngày | P3 | chưa làm |
+| [P3](phase-3-delegation-herdr.md) | wrapper herdr · luật định tuyến · phanh chi phí · chống đệ quy | ~0.5 ngày | P2 | **xong 2026-08-21** |
+| [P4](phase-4-doctor-docs.md) | `alp doctor` finding mới · README viết lại | ~0.5 ngày | P3 | **xong 2026-08-21** |
 
 **P0 riêng lẻ đã giải quyết ~80% pain delegation** — làm trước, ship trước, không chờ P1–P4.
+
+> **P3 + P4 xong 2026-08-21 — plan hoàn tất.** Delegation chạy end-to-end: một pane thật,
+> hook boot chạy, model đúng từ profile, `--release` dọn panel. Bốn bẫy herdr chỉ lộ khi
+> chạy thật (herdr **từ chối arg có xuống dòng**; dòng trỏ file mất nguồn ủy nhiệm khiến vai
+> phụ TỪ CHỐI việc; `shell_pid` là điều kiện cần chưa đủ; phiên Codex tương tác chặn ở dialog
+> hook-trust). Chống đệ quy suy từ `delegates_to` thay vì thêm khoá loadout, và enforce ở
+> hook chứ không ở `permissions.deny` — cùng bài học Bash của P2. P4 lộ một cảnh báo giả có
+> sẵn: `ACL-PATH` báo đỏ 8 vai ngay sau `alp init` đầu tiên vì workspace hợp lệ nằm ngoài
+> repo. Chi tiết: [phase-3](phase-3-delegation-herdr.md#đã-làm-gì--và-bốn-chỗ-plan-chưa-lường)
+> · [phase-4](phase-4-doctor-docs.md#đã-làm-gì--và-một-bug-chỉ-lộ-khi-có-project-thật).
 
 > **P2 xong 2026-08-21.** `alp init` sinh config cục bộ cho cả hai runtime từ cùng
 > `loadout.yaml`, trust cả hai, và giấu file khỏi `git status` bằng exclude per-clone.

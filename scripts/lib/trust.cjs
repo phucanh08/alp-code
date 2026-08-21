@@ -96,6 +96,23 @@ function trustCodex(dirs, env = process.env) {
   return added;
 }
 
+/**
+ * Thư mục đã được trust cho Codex chưa?
+ *
+ * Đường ĐỌC của `trustCodex`, và phải dùng CÙNG `pathVariants` + `tomlKey`: trust ghi
+ * dưới cả path thường lẫn realpath, đọc mà chỉ so một dạng thì báo thiếu trust cho một
+ * project đã trust — cảnh báo giả còn tệ hơn không cảnh báo.
+ */
+function isTrustedCodex(dir, env = process.env) {
+  const file = path.join(P.codexHome(env), "config.toml");
+  if (!fs.existsSync(file)) return false;
+  const text = fs.readFileSync(file, "utf8");
+  return pathVariants(dir).some((key) => {
+    const block = blockRange(text, `[projects.${tomlKey(key)}]`);
+    return !!block && /^[ \t]*trust_level[ \t]*=[ \t]*"trusted"/m.test(block.body);
+  });
+}
+
 /** Vị trí thân của một table TOML, tính từ sau dòng header tới header kế tiếp. */
 function blockRange(text, header) {
   const headerStart = text.indexOf(header);
@@ -123,4 +140,4 @@ function writeAtomic(file, body) {
   fs.renameSync(tmp, file);
 }
 
-module.exports = { trustClaude, trustCodex, pathVariants, claudeConfigPath };
+module.exports = { trustClaude, trustCodex, isTrustedCodex, pathVariants, claudeConfigPath };
