@@ -3,6 +3,10 @@
 Identity + trí nhớ dùng chung cho nhiều agent. Main có thể chạy Claude Code hoặc Codex;
 các vai chuyên môn chạy trong phiên riêng và cùng một kho trí nhớ.
 
+**Principal luôn giao tiếp qua Phở 🍜 (`main`).** Các vai chuyên môn chỉ là cơ chế
+delegation nội bộ: nhận việc từ Phở, trao đổi với Phở và trả kết quả về Phở. Nếu mở trực
+tiếp một vai phụ, vai đó sẽ từ chối nhiệm vụ và chuyển hướng về Phở.
+
 Luật nền: [`CHARTER.md`](CHARTER.md). Danh bạ các vai: [`identity/REGISTRY.md`](identity/REGISTRY.md).
 
 ## Các vai hiện có
@@ -56,7 +60,10 @@ memory. `main` được ghi source. Tuỳ chỉnh bằng option lặp lại `--r
 và `--write-role <role>`. Installer tạo project card, cập nhật L0, ghi
 `workspaces.read/write` vào loadout và recompile ACL. Chạy lại cùng project là an toàn.
 
-## Chạy nhóm Knowledge Retrieval bằng Codex
+## Phở chạy nhóm Knowledge Retrieval bằng Codex
+
+Các launcher dưới đây là công cụ delegation nội bộ cho `main`/operator, không phải các kênh
+giao tiếp thay thế dành cho principal.
 
 ```bash
 scripts/run-role.sh search --project /path/to/app -- "Tìm luồng authentication"
@@ -105,6 +112,7 @@ alp-code/
 | `scripts/run-role.sh <role>` | chạy Search/Librarian/Read Thread bằng Codex read-only |
 | `scripts/trust-role.sh [role]` | đánh dấu workspace trusted trong `~/.claude.json` |
 | `scripts/doctor.sh` | kiểm toàn vẹn: DRIFT · STALE · ORPHAN · ACL-* · TRUST-MISSING |
+| `scripts/test-communication.sh` | kiểm topology giao tiếp và contract main-only |
 | `scripts/test-isolation.sh` | 20 ca cách ly (nhanh, qua hook) · `--live` chạy `claude -p` thật |
 | `scripts/sync-project-index.sh --write` | sinh lại L0 từ frontmatter L1 |
 
