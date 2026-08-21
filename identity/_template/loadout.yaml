@@ -1,0 +1,28 @@
+# loadout — NGUỒN SỰ THẬT DUY NHẤT CỦA ACL cho vai này.
+# Sửa file này rồi chạy: scripts/compile-acl.sh
+# .claude/settings.json là SẢN PHẨM SINH RA — không sửa tay, không commit.
+
+# --- danh tính (không ảnh hưởng ACL) ---
+role: {{ROLE}}
+name: {{NAME}}
+emoji: {{EMOJI}}
+model: {{MODEL}}
+
+# --- quan hệ ---
+reports_to: principal
+delegates_to: []
+
+# --- ACL: đường dẫn tương đối tính từ memory/ ---
+# private/{{ROLE}}/** tự thêm vào cả read lẫn write — không cần khai.
+memory:
+  read:  [shared/**, projects/**]
+  write: []
+
+# --- workspace code ngoài agent-memory (path tuyệt đối) ---
+workspaces:
+  read:  []
+  write: []
+
+# --- công cụ & skill ---
+tools:  [Read, Write, Edit, Glob, Grep, Bash, WebSearch, WebFetch]
+skills: [agent-memory]

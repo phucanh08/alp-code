@@ -1,0 +1,10 @@
+# Sản phẩm sinh ra bởi scripts/compile-acl.sh — chứa path tuyệt đối, machine-specific.
+identity/*/.claude/settings.json
+identity/*/.claude/.acl-stamp
+identity/*/.claude/session-state/
+
+# Nháp riêng không đẩy lên remote; chỉ giữ cấu trúc thư mục.
+memory/private/*/*
+!memory/private/*/.gitkeep
+
+.DS_Store

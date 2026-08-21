@@ -1,0 +1,30 @@
+# loadout — NGUỒN SỰ THẬT DUY NHẤT CỦA ACL cho vai này.
+# Sửa file này rồi chạy: scripts/compile-acl.sh
+# .claude/settings.json là SẢN PHẨM SINH RA — không sửa tay, không commit.
+
+# --- danh tính (không ảnh hưởng ACL) ---
+role: researcher
+name: Long
+emoji: 🔎
+model: claude-opus-5
+
+# --- quan hệ ---
+reports_to: chief-of-staff
+delegates_to: []
+
+# --- ACL: đường dẫn tương đối tính từ memory/ ---
+# private/researcher/** tự thêm vào cả read lẫn write — không cần khai.
+#
+# write HẸP HƠN read có chủ đích: Long tra cứu, không quyết định. Nó ghi TÀI LIỆU
+# (reference, refs) — `decisions/` và `PROJECT.md` là quyền của chief-of-staff.
+memory:
+  read:  [shared/**, projects/**]
+  write: [shared/reference/**, projects/*/refs/**]
+
+workspaces:
+  read:  []
+  write: []
+
+# --- công cụ & skill ---
+tools:  [Read, Write, Edit, Glob, Grep, Bash, WebSearch, WebFetch]
+skills: [agent-memory, alp:research, alp:docs-seeker, alp:scout]
