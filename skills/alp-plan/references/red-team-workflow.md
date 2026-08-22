@@ -1,77 +1,81 @@
-# Red Team Review
+# Rà đối kháng kế hoạch
 
-Adversarially review an implementation plan by spawning parallel reviewer subagents that try to tear it apart. Each reviewer adopts a different hostile lens. You then adjudicate findings, and the user decides which to apply.
+Đọc kế hoạch với thái độ **thù địch**: mục tiêu là phá nó, không phải khen nó.
 
-**Mindset:** Like hiring someone who hates the implementer to destroy their work.
+Tâm thế: như thuê một người ghét người viết kế hoạch, trả tiền để họ tìm ra chỗ hỏng.
 
-## Plan Resolution
+## Hai đường chạy — chọn theo rủi ro
 
-1. If `$ARGUMENTS` provided → Use that path
-2. Else check `## Plan Context` section → Use active plan path
-3. If no plan found → Ask user to specify path or run `/alp-plan` first
+### A. Giao `oracle` — mặc định cho kế hoạch rủi ro cao
 
-## Workflow
+```bash
+scripts/run-role.sh oracle
+```
 
-### Step 1: Read Plan Files
-Read the plan directory:
-- `plan.md` — Overview, phases, dependencies
-- `phase-*.md` — All phase files (full content)
+`oracle` có skill `alp-predict` (năm persona tranh luận) và `problem-solving`. Đây là vai
+sinh ra để phản biện độc lập — dùng nó thay vì tự phản biện chính kế hoạch mình vừa viết.
 
-### Step 2: Scale Reviewer Count
+Brief cho oracle phải có: đường dẫn `plan.md` và các `phase-*.md`, quyết định nào đang cần
+chốt, ràng buộc nào không đổi được.
 
-| Phase Count | Reviewers | Lenses Selected |
-|-------------|-----------|-----------------|
-| 1-2 phases | 2 | Security Adversary + Assumption Destroyer |
-| 3-5 phases | 3 | + Failure Mode Analyst |
-| 6+ phases | 4 | + Scope & Complexity Critic (all lenses) |
+**Phán quyết DỪNG của oracle nghĩa là thiết kế lại.** Không phải thêm một dòng "rủi ro đã
+biết" rồi đi tiếp.
 
-### Step 3: Define Adversarial Lenses
-Load: `references/red-team-personas.md`
+### B. Tự rà — khi việc nhỏ hoặc oracle đang bận
 
-### Step 4: Spawn Reviewers
-Launch reviewers simultaneously via Task tool with `subagent_type: "code-reviewer"`.
-Each reviewer prompt MUST include override, persona, plan file paths, and hostile instructions.
-Load: `references/red-team-personas.md` for reviewer prompt template.
+Tự đọc kế hoạch qua từng lăng kính trong `red-team-personas.md`. Số lăng kính theo quy mô:
 
-### Step 5: Collect, Deduplicate & Cap
-1. Collect all findings
-2. Deduplicate overlapping findings
-3. Sort by severity: Critical → High → Medium
-4. Cap at 15 findings
+| Số phase | Lăng kính |
+|---|---|
+| 1–2 | Kẻ tấn công bảo mật + Kẻ phá giả định |
+| 3–5 | thêm Người phân tích failure mode |
+| 6+ | thêm Người chỉ trích phạm vi |
 
-### Step 6: Adjudicate
-For each finding, evaluate and propose: **Accept** or **Reject**.
+Đọc **hết một lăng kính** rồi mới sang lăng kính kế tiếp. Trộn lẫn thì cả bốn hội tụ về
+cùng một góc nhìn, và bài tập thành diễn.
 
-### Step 7: User Review
-Present via `AskUserQuestion`:
-- "Looks good, apply accepted findings"
-- "Let me review each one"
-- "Reject all, plan is fine"
+## Xử lý phát hiện
 
-**If "Let me review each one":**
-For each finding marked Accept, ask via `AskUserQuestion`:
-- Options: "Yes, apply" | "No, reject" | "Modify suggestion"
+1. **Gom** tất cả phát hiện.
+2. **Khử trùng lặp** mạnh tay — hai cách nói của cùng một vấn đề là một phát hiện.
+3. **Xếp** theo mức: CHẶN → NÊN SỬA → GHI NHẬN (cùng thang với `code-review`).
+4. **Cắt còn tối đa 15.** Danh sách 40 mục thì không ai xử lý, và mục quan trọng chìm mất.
+5. **Phân xử** từng phát hiện: nhận hay bác — **kèm lý do có bằng chứng**. "Cảm thấy không
+   quan trọng" không phải lý do.
 
-**If "Modify suggestion":**
-Ask via `AskUserQuestion`: "Describe your modification to this finding's suggested fix:"
-(user provides free text via "Other" option)
-Record the modified suggestion. Set disposition to "Accept (modified)" in the Red Team Review table.
+## Hỏi principal
 
-### Step 8: Apply to Plan
-For accepted findings, edit target phase files inline with marker.
-Add `## Red Team Review` section to `plan.md`.
+Main nói chuyện trực tiếp với principal. Trình bày gọn:
 
-## Output
-- Total findings by severity
-- Accepted vs rejected count
-- Files modified
-- Key risks addressed
+- Tổng số phát hiện theo mức.
+- Phát hiện nào bạn đề nghị nhận, phát hiện nào bác — kèm lý do.
+- Hỏi: áp dụng hết phần đề nghị nhận, xem từng cái, hay bác tất cả?
 
-## Next Steps (MANDATORY)
-Remind user to run `/alp-plan validate` then `/alp:cook --auto`.
+**Không tự sửa kế hoạch trước khi principal quyết.** Kế hoạch là hợp đồng đã trình; sửa
+lặng lẽ nghĩa là principal duyệt một bản, còn thực thi theo bản khác.
 
-## Important Notes
-- Reviewers must be HOSTILE, not helpful
-- Deduplicate aggressively
-- Adjudication must be evidence-based
-- Reviewers read plan files directly
+## Áp dụng
+
+Principal duyệt rồi mới sửa. Với mỗi phát hiện được nhận:
+
+- Sửa thẳng vào `phase-*.md` liên quan.
+- Thêm mục `## Rà đối kháng` vào `plan.md`: phát hiện, mức, xử lý (nhận/bác/nhận có sửa),
+  lý do.
+
+Mục đó tồn tại để sáu tháng sau còn trả lời được câu "sao lúc đó biết rủi ro này mà vẫn làm?".
+
+## Báo cáo
+
+```
+Rà đối kháng: <đường dẫn kế hoạch>
+Đường chạy: oracle | tự rà
+Phát hiện: CHẶN n · NÊN SỬA n · GHI NHẬN n
+Nhận: n · Bác: n
+File đã sửa: <danh sách>
+Rủi ro đã xử lý: <tóm tắt>
+Câu hỏi còn mở: …
+```
+
+## Bước sau
+
+Chạy `validate-workflow.md`. Xong thì báo principal — **không tự bắt tay triển khai**.

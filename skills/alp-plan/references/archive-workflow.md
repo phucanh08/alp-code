@@ -1,53 +1,77 @@
-# Archive Workflow
+# Quy trình đóng kế hoạch
 
-## Your mission
-Read and analyze the plans, then write journal entries and archive specific plans or all plans in the `plans` directory.
+Chạy khi một kế hoạch đã xong, hoặc khi principal muốn dọn `plans/`.
 
-## Plan Resolution
-1. If `$ARGUMENTS` provided → Use that path
-2. Else read all plans in the `plans` directory
+## 1. Đọc trạng thái thật
 
-## Workflow
+```bash
+ls plans/
+```
 
-### Step 1: Read Plan Files
+Với mỗi thư mục kế hoạch: đọc frontmatter `status:` của `plan.md`, và 20 dòng đầu của từng
+`phase-*.md`.
 
-Read the plan directory:
-- `plan.md` - Overview and phases list
-- `phase-*.md` - 20 first lines of each phase file to understand the progress and status
+**Đọc, đừng tin frontmatter.** `status: completed` mà còn phase chưa có tiêu chí hoàn thành
+nào được đánh dấu thì kế hoạch chưa xong — nó chỉ bị bỏ dở. Nói thẳng điều đó với principal.
 
-### Step 2: Summarize the plans and document them with `/alp:journal` skill invocation
-Use `AskUserQuestion` tool to ask if user wants to document journal entries or not.
-Skip this step if user selects "No".
-If user selects "Yes":
-- Analyze the information in previous steps.
-- Use Task tool with `subagent_type="journal-writer"` in parallel to document all plans.
-- Journal entries should be concise and focused on the most important events, key changes, impacts, and decisions.
-- Keep journal entries in the `./docs/journals/` directory.
+## 2. Ghi bài học
 
-### Step 3: Ask user to confirm the action before archiving these plans
-Use `AskUserQuestion` tool to ask if user wants to proceed with archiving these plans, select specific plans to archive or all completed plans only.
-Use `AskUserQuestion` tool to ask if user wants to delete permanently or move to the `./plans/archive` directory.
+Trước khi đóng, rút ra cái gì học được. Hai chỗ, đừng nhầm:
 
-### Step 4: Archive the plans
-Start archiving the plans based on the user's choice:
-- Move the plans to the `./plans/archive` directory.
-- Delete the plans permanently: `rm -rf ./plans/<plan-1> ./plans/<plan-2> ...`
+| Loại | Ghi vào |
+|---|---|
+| bài học về **cách bạn làm việc** — quyết định nào sai, vì sao | `identity/main/journal/YYYY-MM.md` |
+| fact về **project / principal / thế giới** | `memory/shared/` hoặc `memory/projects/` |
 
-### Step 5: Ask if user wants to commit the changes
-Use `AskUserQuestion` tool to ask if user wants to commit the changes with these options:
-- Stage and commit the changes (Use `/git` for commit flow)
-- Commit and push the changes (Use `/git` for push flow)
-- Nah, I'll do it later
+Đây là HOUSE-RULES §2 và CHARTER §2.4. Ghi fact chung vào journal riêng = nhân bản dữ liệu
+rồi để nó lệch — cấm.
 
-## Output
-After archiving the plans, provide summary:
-- Number of plans archived
-- Number of plans deleted permanently
-- Table of plans that are archived or deleted (title, status, created date, LOC)
-- Table of journal entries that are created (title, status, created date, LOC)
+Bài học phải cụ thể. "Cần lập kế hoạch kỹ hơn" thì vô dụng. "Spike ACL ở P1.0 đổi kiến trúc
+P2 — lần sau spike trước khi chia phase" thì dùng được.
 
-## Important Notes
-- Only ask questions about genuine decision points
-- Sacrifice grammar for concision
-- List any unresolved questions at the end
-- Ensure token efficiency while maintaining high quality
+## 3. Hỏi principal trước khi đóng
+
+Main nói chuyện trực tiếp với principal — hỏi thẳng trong phiên. Ba câu:
+
+1. Đóng kế hoạch nào — cụ thể, hay tất cả kế hoạch đã `completed`?
+2. Chuyển sang `plans/archive/` hay xoá hẳn?
+3. Có commit luôn không?
+
+**Không tự quyết.** Xoá kế hoạch là hành động khó đảo ngược (HOUSE-RULES §1.2) — và
+`plans/` có commit vào git, nên xoá nhầm thì lấy lại được, nhưng đừng dựa vào đó.
+
+## 4. Đóng
+
+```bash
+mkdir -p plans/archive
+git mv plans/<thư-mục-kế-hoạch> plans/archive/
+```
+
+Dùng `git mv`, không dùng `mv` — giữ được lịch sử file.
+
+Principal chọn xoá hẳn thì `rm -rf plans/<thư-mục>` — **hỏi lại một lần nữa** trước khi chạy.
+
+Đổi `status:` trong `plan.md` thành `completed` hoặc `cancelled` **trước khi** chuyển đi.
+
+## 5. Dọn quan hệ chặn
+
+Kế hoạch bị đóng có thể đang nằm trong `blockedBy` của kế hoạch khác. Quét `plans/` còn lại,
+gỡ tham chiếu tới thư mục vừa đóng.
+
+Bỏ bước này thì lần quét sau sẽ thấy một kế hoạch bị chặn bởi thứ không còn tồn tại — và nó
+sẽ bị chặn mãi mãi.
+
+## 6. Báo cáo
+
+```
+Đã đóng: N kế hoạch · Đã xoá: N
+| Kế hoạch | Trạng thái | Tạo ngày | Ghi chú |
+|---|---|---|---|
+
+Journal: identity/main/journal/YYYY-MM.md — <mục nào thêm mới>
+Quan hệ chặn đã gỡ: <kế hoạch nào>
+Commit: <hash hoặc "chưa — chờ principal">
+
+Câu hỏi còn mở:
+- …
+```

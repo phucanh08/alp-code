@@ -1,90 +1,82 @@
-# Step 0: Scope Challenge
+# Bước 0 — thách thức phạm vi
 
-Run BEFORE research or design. Forces intent clarification before investing time.
+Chạy **trước** khi thu thập bối cảnh hay thiết kế. Ép làm rõ ý định trước khi đổ thời gian
+vào một kế hoạch sai cỡ.
 
-**Inspired by:** gstack `/plan-eng-review` Step 0 + `/plan-ceo-review` scope modes.
+Đây là bước rẻ nhất và hay bị bỏ nhất. Một câu hỏi ở đây tiết kiệm cả một pha thu thập.
 
-## Skip Conditions
+## Bỏ qua khi
 
-Skip Step 0 when:
-- `--fast` mode explicitly set (user already wants minimal)
-- Task is clearly trivial (single file fix, typo, config change)
-- User says "just plan it", "quick", or similar urgency signal
-- Task description is under 20 words and unambiguous
+- Việc nhỏ rõ ràng: sửa một file, sửa chính tả, đổi config không có nhánh logic.
+- Principal nói "cứ lập nhanh thôi" hoặc có tín hiệu gấp.
+- Mô tả dưới 20 từ và không mơ hồ.
 
-## The 3 Questions
+## Ba câu hỏi
 
-Before planning, answer these concisely:
+### 1. Cái gì đã có sẵn?
 
-### 1. What already exists?
-- Scan codebase for code that partially/fully solves sub-problems
-- Check existing utilities, services, patterns that can be reused
-- Flag if plan would rebuild something that exists
+Quét repo tìm code đã giải một phần bài toán. Tiện ích, module, mẫu nào dùng lại được.
 
-### 2. What is the minimum change set?
-- Identify work that could be deferred without blocking core goal
-- Flag scope creep: nice-to-haves disguised as requirements
-- Be ruthless about what's truly necessary vs aspirational
+alp-code có nguyên tắc thành văn cho chuyện này — `README.md`: `scripts/lib/` là "MỘT nguồn
+cho mỗi loại config". Kế hoạch dựng thêm một nguồn thứ hai cho cùng loại dữ liệu là kế
+hoạch sai, không phải kế hoạch lớn.
 
-### 3. Complexity check
-- If plan would touch **>8 files**: challenge whether same goal achievable with fewer
-- If plan would introduce **>2 new classes/services**: smell — justify each
-- If plan would have **>3 phases**: consider if phases can be merged
+Không chắc → giao `search` một lượt trước khi trả lời.
 
-## Scope Modes
+### 2. Tập thay đổi tối thiểu là gì?
 
-After answering the 3 questions, present via `AskUserQuestion`:
+Phần nào hoãn được mà không chặn mục tiêu lõi? Phũ với chính mình ở đây: cái "tiện thì làm
+luôn" đội lốt yêu cầu là dạng phình phạm vi khó thấy nhất.
 
-**Header:** "Scope Challenge"
-**Question:** "Based on analysis, how should we scope this plan?"
+Đây chính là YAGNI, áp dụng cho kế hoạch trước khi áp dụng cho code.
 
-| Option | Label | Description |
-|--------|-------|-------------|
-| A | **SCOPE EXPANSION** | Dream big — explore the 10-star version, research deeply, add delight features |
-| B | **HOLD SCOPE** | Scope is right — focus on bulletproof execution, edge cases, test coverage |
-| C | **SCOPE REDUCTION** | Strip to essentials — defer everything non-blocking, minimal phases |
+### 3. Kiểm tra độ phức tạp
 
-## After Selection
+| Ngưỡng | Phải làm gì |
+|---|---|
+| đụng **> 8 file** | thách thức: cùng mục tiêu đó làm với ít file hơn được không? |
+| thêm **> 2 module/lớp mới** | mùi. Biện minh từng cái, hoặc bỏ |
+| **> 3 phase** | xem có gộp phase được không |
 
-### EXPANSION selected
-- Suggest `--hard` or `--two` mode if not already set
-- Research phase should explore alternatives and adjacent features
-- Plan should include "stretch" items clearly labeled
-- More phases are acceptable
+Vượt ngưỡng không có nghĩa là sai. Nó có nghĩa là **phải giải thích được**, và lời giải
+thích đi vào `plan.md`.
 
-### HOLD selected
-- Proceed with auto-detected mode
-- Respect scope exactly — no silent reduction or expansion
-- Focus on failure modes, edge cases, test coverage
-- Standard number of phases
+## Chốt phạm vi với principal
 
-### REDUCTION selected
-- Suggest `--fast` mode if not already set
-- Propose minimal version that achieves core goal
-- Defer everything non-critical to "NOT in scope" section
-- Fewer phases, simpler architecture
+Main nói chuyện trực tiếp với principal — hỏi thẳng, không cần tool nào.
 
-## Critical Rule
+Trình bày kết quả ba câu trên rồi hỏi chọn một trong ba hướng:
 
-**Once user selects a mode, RESPECT IT.**
+| Hướng | Nghĩa |
+|---|---|
+| **MỞ RỘNG** | làm bản đầy đủ — nghiên cứu sâu, khám phá phương án lân cận, chấp nhận nhiều phase |
+| **GIỮ NGUYÊN** | phạm vi đang đúng — dồn sức vào failure mode, edge case, tiêu chí kiểm chứng |
+| **THU HẸP** | cắt còn cốt lõi — hoãn mọi thứ không chặn, ít phase, kiến trúc đơn giản |
 
-Do not:
-- Silently reduce scope when user chose HOLD or EXPANSION
-- Silently expand scope when user chose REDUCTION
-- Re-argue for different scope in later review sections
+## Luật quan trọng nhất
 
-Raise scope concerns ONCE in Step 0. After that, commit to chosen scope and optimize within it.
+**Principal chọn rồi thì TÔN TRỌNG.**
 
-## Output Format
+Không được:
 
-After scope challenge, output brief summary before proceeding:
+- Âm thầm thu hẹp khi principal chọn GIỮ NGUYÊN hoặc MỞ RỘNG.
+- Âm thầm mở rộng khi principal chọn THU HẸP.
+- Cãi lại về phạm vi ở các mục sau của kế hoạch.
+
+Nêu lo ngại về phạm vi **một lần**, ở bước 0. Sau đó cam kết với phạm vi đã chọn và tối ưu
+bên trong nó. Đây cũng là HOUSE-RULES §1.7: cắt giảm phạm vi là quyền của principal.
+
+## Đầu ra
+
+Trước khi sang bước tiếp, xuất tóm tắt ngắn:
 
 ```
-Scope Challenge:
-- Existing code: [what was found that's reusable]
-- Minimum changes: [what's essential vs deferrable]
-- Complexity: [estimated files, new abstractions]
-- Selected mode: [EXPANSION/HOLD/REDUCTION]
+Thách thức phạm vi:
+- Đã có sẵn: <cái gì dùng lại được>
+- Tối thiểu: <cái gì thiết yếu, cái gì hoãn được>
+- Độ phức tạp: <ước lượng số file, module mới>
+- Hướng đã chốt: MỞ RỘNG | GIỮ NGUYÊN | THU HẸP
 ```
 
-Then proceed to mode detection and research phase.
+Phần "hoãn được" đi thẳng vào mục **Ngoài phạm vi** của `plan.md` — đừng để nó chỉ tồn tại
+trong context của phiên này.

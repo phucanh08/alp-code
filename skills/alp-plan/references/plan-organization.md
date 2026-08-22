@@ -1,183 +1,129 @@
-# Plan Creation & Organization
+# Tổ chức file kế hoạch
 
-## Directory Structure
+## Đường dẫn
 
-### Plan Location
-
-Use `Plan dir:` from `## Naming` section injected by hooks. This is the full computed path.
-
-**Example:** `plans/251101-1505-authentication/` or `ai_docs/feature/MRR-1453/`
-
-### File Organization
-
-IN CURRENT WORKING PROJECT DIRECTORY:
 ```
-{plan-dir}/                                    # From `Plan dir:` in ## Naming
-├── research/
-│   ├── researcher-XX-report.md
-│   └── ...
-├── reports/
-│   ├── scout-report.md
-│   ├── researcher-report.md
-│   └── ...
-├── plan.md                                    # Overview access point
-├── phase-01-setup-environment.md              # Setup environment
-├── phase-02-implement-database.md             # Database models
-├── phase-03-implement-api-endpoints.md        # API endpoints
-├── phase-04-implement-ui-components.md        # UI components
-├── phase-05-implement-authentication.md       # Auth & authorization
-├── phase-06-implement-profile.md              # Profile page
-└── phase-07-write-tests.md                    # Tests
+plans/{YYMMDD}-{HHMM}-{slug}/
+  plan.md
+  phase-0-<tên>.md
+  phase-1-<tên>.md
+  ...
 ```
 
-### Task Hydration
+Báo cáo: `plans/reports/{loại}-{YYMMDD}-{HHMM}-{slug}.md`
+(`loại` = `brainstorm`, `research`, `review`, `skills`… — tên vai hoặc loại báo cáo).
 
-After creating plan.md and phase files, hydrate tasks (unless `--no-tasks`):
-1. TaskCreate per phase with `addBlockedBy` dependency chain
-2. Add critical step tasks for high-risk items
-3. See `task-management.md` for patterns and cook handoff protocol
+`{YYMMDD}-{HHMM}` lấy lúc **bắt đầu** kế hoạch, không đổi về sau. Slug là kebab, mô tả
+được, không đánh số.
 
-### Active Plan State Tracking
+Ví dụ thật trong repo: `plans/260821-0930-multi-agent-identity-memory/`.
 
-See SKILL.md "Active Plan State" section for full rules. Key points:
-- Check `## Plan Context` injected by hooks for active/suggested/none state
-- After creating plan: `node .claude/scripts/set-active-plan.cjs {plan-dir}`
-- Active plans use plan-specific reports path; suggested plans use default path
+**Không có hook nào inject đường dẫn.** Tự tính từ ngày giờ hiện tại.
 
-## Plan Creation via CLI
+## `plan.md`
 
-After determining phases from research/design:
+Frontmatter bắt buộc:
 
-1. **Scaffold via CLI:**
-   ```bash
-   ck plan create \
-     --title "{plan title}" \
-     --phases "{Phase1},{Phase2},{Phase3}" \
-     --dir {plan-dir} \
-     --priority {P1|P2|P3} \
-     [--issue {N}]
-   ```
-
-2. **Fill content sections** in plan.md via Edit tool:
-   - `## Overview` — brief description
-   - `## Dependencies` — cross-plan dependencies
-
-3. **Fill each phase-XX.md** with:
-   - Architecture, implementation steps, success criteria
-   - Requirements, risk assessment, security considerations
-
-4. **NEVER edit the Phases table directly** — it's CLI-owned.
-   Use `ck plan check/uncheck/add-phase` for structural changes.
-
-**Fallback:** If `ck` CLI is not available (e.g., user hasn't installed),
-write plan.md directly using the canonical 3-column format.
-
-## File Structure
-
-### Overview Plan (plan.md)
-
-**IMPORTANT:** All plan.md files MUST include YAML frontmatter. See `output-standards.md` for schema.
-
-**Example plan.md structure:**
-```markdown
+```yaml
 ---
-title: "Feature Implementation Plan"
-description: "Add user authentication with OAuth2 support"
-status: pending
-priority: P1
-effort: 8h
-issue: 123
-branch: kai/feat/oauth-auth
-tags: [auth, backend, security]
+status: draft | in-progress | completed | cancelled
+created: YYYY-MM-DD
+slug: <kebab>
+source: plans/reports/<report sinh ra kế hoạch này>.md
 blockedBy: []
-blocks: [260115-0900-user-dashboard]
-created: 2025-12-16
+blocks: []
 ---
-
-# Feature Implementation Plan
-
-## Overview
-
-Brief description of what this plan accomplishes.
-
-## Cross-Plan Dependencies
-
-| Relationship | Plan | Status |
-|-------------|------|--------|
-| Blocks | [260115-0900-user-dashboard](../260115-0900-user-dashboard/plan.md) | pending |
-
-## Phases
-
-| Phase | Name | Status |
-|-------|------|--------|
-| 1 | [Setup Environment](./phase-01-setup.md) | Pending |
-| 2 | [Core Implementation](./phase-02-impl.md) | Pending |
-| 3 | [Testing & Validation](./phase-03-test.md) | Pending |
-
-<!-- IMPORTANT: Link text MUST be human-readable names (not filenames).
-     Bad:  [phase-01-setup.md](./phase-01-setup.md)
-     Good: [Setup Environment](./phase-01-setup.md) -->
-
-## Dependencies
-
-- List key dependencies here
 ```
 
-**Guidelines:**
-- Keep generic and under 80 lines
-- List each phase with status/progress
-- Link to detailed phase files
-- Key dependencies
+Thân, theo đúng thứ tự này:
 
-### Phase Files (phase-XX-name.md)
-Fully respect the `./docs/development-rules.md` file.
-Each phase file should contain:
+```markdown
+# <Tiêu đề>
 
-**Context Links**
-- Links to related reports, files, documentation
+## Tổng quan
 
-**Overview**
-- Priority
-- Current status
-- Brief description
+<2–5 câu: xây cái gì, cho ai, thay thế cái gì.>
 
-**Key Insights**
-- Important findings from research
-- Critical considerations
+Nguồn sự thật: [<report>](../reports/<file>.md).
 
-**Requirements**
-- Functional requirements
-- Non-functional requirements
+**Ngoài phạm vi:** <liệt kê thẳng. Cái gì để lại cho sau, cái gì cố tình không làm.>
 
-**Architecture**
-- System design
-- Component interactions
-- Data flow
+## Nguyên tắc bất biến
 
-**Related Code Files**
-- List of files to modify
-- List of files to create
-- List of files to delete
+1. **<Nguyên tắc>.** <Vì sao. Vi phạm thì hỏng thế nào.>
 
-**Implementation Steps**
-- Detailed, numbered steps
-- Specific instructions
+## Phase
 
-**Todo List**
-- Checkbox list for tracking
+| Phase | Tên | Trạng thái |
+|---|---|---|
+| 0 | [Dựng khung](./phase-0-scaffold.md) | chưa làm |
+| 1 | [ACL](./phase-1-loadout-acl.md) | chưa làm |
+```
 
-**Success Criteria**
-- Definition of done
-- Validation methods
+Giữ `plan.md` **dưới 80 dòng**. Nó là cửa vào, không phải nơi chứa chi tiết.
 
-**Risk Assessment**
-- Potential issues
-- Mitigation strategies
+Hai mục hay bị bỏ và đều đắt khi bỏ:
 
-**Security Considerations**
-- Auth/authorization
-- Data protection
+- **Ngoài phạm vi** — không có thì phạm vi tự phình trong lúc làm, và không ai chỉ ra được
+  lúc nào nó bắt đầu phình.
+- **Nguyên tắc bất biến** — cái neo để phase sau không mâu thuẫn phase trước.
 
-**Next Steps**
-- Dependencies
-- Follow-up tasks
+Text của link phải là **tên người đọc được**, không phải tên file:
+`[Dựng khung](./phase-0-scaffold.md)`, không phải `[phase-0-scaffold.md](...)`.
+
+## File phase
+
+Mở đầu bắt buộc:
+
+```markdown
+# P<n> — <tên>
+
+**Mục tiêu:** <một câu. Xong phase này thì cái gì đúng mà trước đó chưa đúng.>
+**Phụ thuộc:** <P trước đó, hoặc "không">
+
+---
+```
+
+Rồi các mục theo nhu cầu — **chỉ viết mục nào có nội dung thật**:
+
+| Mục | Khi nào cần |
+|---|---|
+| Bối cảnh | dẫn report, file, tài liệu liên quan |
+| Việc phải làm | các bước đánh số, cụ thể tới tên file và tên hàm |
+| File đụng tới | sửa gì, tạo gì, xoá gì |
+| **Tiêu chí hoàn thành** | **luôn luôn** — lệnh chạy được để chứng minh phase xong |
+| Rủi ro | failure mode + cách giảm thiểu |
+| Cần principal duyệt | thao tác khó đảo ngược trong phase này |
+
+**Không có tiêu chí hoàn thành thì phase không bao giờ đóng được.** Tiêu chí phải là thứ
+chạy được: `node scripts/doctor.cjs` sạch, `test-x.cjs` xanh — không phải "hoạt động tốt".
+
+Phase có spike (thử nghiệm để quyết kiến trúc) thì ghi thẳng: **không viết code phần sau
+trước khi spike xong**, vì kết quả spike có thể đổi cả phase kế tiếp.
+
+## Quan hệ giữa các kế hoạch
+
+Ghi vào frontmatter `blockedBy`/`blocks`, dùng tên thư mục kế hoạch.
+
+**Cập nhật cả hai file.** Ghi một chiều thì lần quét sau chỉ thấy một nửa.
+
+Có quan hệ chặn thì thêm bảng vào `plan.md`:
+
+```markdown
+## Phụ thuộc kế hoạch khác
+
+| Quan hệ | Kế hoạch | Trạng thái |
+|---|---|---|
+| Chặn | [<tên>](../<dir>/plan.md) | in-progress |
+```
+
+## Không có trong alp-code
+
+Bản gốc của skill này giả định vài thứ repo này không có — bỏ qua nếu gặp trong tài liệu cũ:
+
+| Không có | Thay bằng |
+|---|---|
+| `ck plan create` CLI | viết file trực tiếp bằng `Write` |
+| task hydration (`TaskCreate`) | không có hệ task; `plan.md` là nguồn sự thật duy nhất |
+| `set-active-plan.cjs` | không có khái niệm "kế hoạch đang hoạt động" |
+| hook inject `## Naming` / `## Plan Context` | tự tính đường dẫn |

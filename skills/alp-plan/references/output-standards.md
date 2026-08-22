@@ -1,145 +1,96 @@
-# Output Standards & Quality
+# Chuẩn đầu ra
 
-## Plan File Format
+## Frontmatter của `plan.md`
 
-### YAML Frontmatter (Required for plan.md)
-
-All `plan.md` files MUST include YAML frontmatter at the top:
+Sáu trường, không hơn. Repo này đã dùng đúng bộ này — xem
+`plans/260821-0930-multi-agent-identity-memory/plan.md`.
 
 ```yaml
 ---
-title: "{Brief plan title}"
-description: "{One-sentence summary for card preview}"
-status: pending  # pending | in-progress | completed | cancelled
-priority: P2     # P1 (High) | P2 (Medium) | P3 (Low)
-effort: 4h       # Estimated total effort
-issue: 74        # GitHub issue number (if applicable)
-branch: kai/feat/feature-name
-tags: [frontend, api]  # Category tags
-blockedBy: []    # Plan dirs this plan waits on (e.g., [260301-1200-auth-system])
-blocks: []       # Plan dirs this plan blocks (e.g., [260228-0900-user-dashboard])
-created: 2025-12-16
+status: draft | in-progress | completed | cancelled
+created: YYYY-MM-DD
+slug: <kebab>
+source: plans/reports/<report>.md
+blockedBy: []
+blocks: []
 ---
 ```
 
-### Auto-Population Rules
+| Trường | Điền thế nào |
+|---|---|
+| `status` | kế hoạch mới luôn là `draft` cho tới khi principal duyệt |
+| `created` | ngày hôm nay, `YYYY-MM-DD` |
+| `slug` | trùng phần slug của tên thư mục |
+| `source` | report sinh ra kế hoạch này. Không có thì bỏ trường |
+| `blockedBy` / `blocks` | phát hiện lúc quét trước khi tạo — `[]` nếu không có |
 
-When creating plans, auto-populate these fields:
-- **title**: Extract from task description
-- **description**: First sentence of Overview section
-- **status**: Always `pending` for new plans
-- **priority**: From user request or default `P2`
-- **effort**: Sum of phase estimates
-- **issue**: Parse from branch name or context
-- **branch**: Current git branch (`git branch --show-current`)
-- **tags**: Infer from task keywords (e.g., frontend, backend, api, auth)
-- **blockedBy**: Detected during pre-creation scan (empty `[]` if none)
-- **blocks**: Detected during pre-creation scan (empty `[]` if none)
-- **created**: Today's date in YYYY-MM-DD format
+**Không thêm trường.** `priority`, `effort`, `tags`, `branch`, `issue` là của bản gốc
+alp-plugin — chúng chỉ có nghĩa khi có dashboard đọc chúng. alp-code không có, nên thêm vào
+là dữ liệu không ai cập nhật rồi trôi lệch.
 
-### Tag Vocabulary (Recommended)
+## Chia phase
 
-Use these predefined tags for consistency:
-- **Type**: `feature`, `bugfix`, `refactor`, `docs`, `infra`
-- **Domain**: `frontend`, `backend`, `database`, `api`, `auth`
-- **Scope**: `critical`, `tech-debt`, `experimental`
+- Mỗi phase **chạy được độc lập** sau khi phase phụ thuộc xong. Phase phải mở ba file mới
+  chạy nổi thì đó là hai phase.
+- Xếp theo **phụ thuộc và rủi ro**, không theo mức dễ. Phần rủi ro cao đi trước — biết sớm
+  rẻ hơn biết muộn.
+- Phase nào có spike quyết kiến trúc thì đặt trước, và ghi rõ: kết quả spike có thể đổi
+  phase sau.
+- Mỗi phase phải có **lệnh chạy được** làm tiêu chí hoàn thành.
 
-### Task Naming Conventions
+## File đụng tới
 
-**subject** (imperative): Action verb + deliverable, <60 chars
-  Examples: "Setup database migrations", "Implement OAuth2 flow"
+Liệt kê kèm:
 
-**activeForm** (continuous): Present participle of subject
-  Examples: "Setting up database", "Implementing OAuth2"
+- Đường dẫn **từ gốc repo** (`scripts/lib/loadout.cjs`), không phải đường dẫn tương đối
+  theo chỗ đang đứng.
+- Hành động: sửa / tạo / xoá.
+- Một câu đổi gì.
+- Phụ thuộc vào thay đổi nào khác.
 
-**description**: 1-2 sentences, concrete deliverables, reference phase file
+Hai loại file **không bao giờ đưa vào danh sách sửa**:
 
-See `task-management.md` for full TaskCreate patterns and metadata.
+| Loại | Vì sao |
+|---|---|
+| `identity/*/.claude/**`, `$CODEX_HOME/*.config.toml` | sản phẩm của `compile-acl`. Sửa tay là mất ở lần compile sau |
+| `CHARTER.md`, `identity/_shared/**`, `identity/REGISTRY.md` | chỉ principal sửa (CHARTER §8) |
 
-## Task Breakdown
+Kế hoạch cần đổi chúng thì ghi vào mục **Cần principal duyệt**, đừng ghi vào danh sách việc.
 
-- Transform complex requirements into manageable, actionable tasks
-- Each task independently executable with clear dependencies
-- Prioritize by dependencies, risk, business value
-- Eliminate ambiguity in instructions
-- Include specific file paths for all modifications
-- Provide clear acceptance criteria per task
+## Văn phong
 
-### File Management
+Hy sinh ngữ pháp cho cô đọng. Gạch đầu dòng và bảng. Câu ngắn. Bỏ từ thừa.
 
-List affected files with:
-- Full paths (not relative)
-- Action type (modify/create/delete)
-- Brief change description
-- Dependencies on other changes
-- Fully respect the `./docs/development-rules.md` file.
+Viết cho một vai khác đọc và **làm được mà không hỏi lại**. Chỗ nào phải hỏi lại thì chỗ đó
+chưa viết xong.
 
-## Workflow Process
+Trong plan, nói **vì sao chọn cách này** ở chỗ quyết định không hiển nhiên. Sáu tháng sau,
+`git log` cho biết đã làm gì; chỉ plan mới cho biết vì sao.
 
-1. **Initial Analysis** → Read docs, understand context
-2. **Research Phase** → Spawn researchers in parallel, investigate approaches
-3. **Synthesis** → Analyze reports, identify optimal solution
-4. **Design Phase** → Create architecture, implementation design
-5. **Plan Documentation** → Write comprehensive plan in Markdown
-6. **Review & Refine** → Ensure completeness, clarity, actionability
+## Câu hỏi còn mở
 
-## Output Requirements
+**Luôn có mục này ở cuối `plan.md`**, kể cả khi rỗng (ghi "không").
 
-### What Planners Do
-- Create plans ONLY (no implementation)
-- Provide plan file path and summary
-- Self-contained plans with necessary context
-- Code snippets/pseudocode when clarifying
-- Multiple options with trade-offs when appropriate
-- Fully respect the `./docs/development-rules.md` file.
+Đưa vào đây: chỗ cần principal làm rõ, quyết định kỹ thuật cần người quyết, ẩn số ảnh
+hưởng cách triển khai, đánh đổi cần quyết định nghiệp vụ.
 
-### Writing Style
-**IMPORTANT:** Sacrifice grammar for concision
-- Focus clarity over eloquence
-- Use bullets and lists
-- Short sentences
-- Remove unnecessary words
-- Prioritize actionable info
+Hỏi principal thẳng trong phiên — main không có `AskUserQuestion`, và cũng không cần: bạn
+nói chuyện trực tiếp với principal. Có câu trả lời thì sửa lại plan và phase.
 
-### Unresolved Questions
-**IMPORTANT:** Use `AskUserQuestion` to ask users for unresolved questions at the end
-- Questions needing clarification
-- Technical decisions requiring input
-- Unknowns impacting implementation
-- Trade-offs requiring business decisions
-Revise the plan and phases based on the answers.
+## Chất lượng
 
-## Quality Standards
+- **Đủ sâu:** nêu edge case và failure mode. Phase chưa nêu được failure mode thì chưa
+  duyệt được.
+- **Bền:** ghi lý do quyết định. Tránh over-engineering — YAGNI áp dụng cho kế hoạch trước
+  khi áp dụng cho code.
+- **Có căn cứ:** không chắc thì giao `librarian` hoặc `search`, đừng đoán rồi viết như thật.
+- **Bảo mật và hiệu năng:** nêu ngay ở phase liên quan, không dồn vào một phase "review"
+  cuối.
+- **Khớp repo:** đối chiếu với mẫu đang có. Kế hoạch đúng kỹ thuật nhưng lệch quy ước thì
+  vẫn phải làm lại.
 
-### Thoroughness
-- Thorough and specific in research/planning
-- Consider edge cases, failure modes
-- Think through entire user journey
-- Document all assumptions
+## Không làm
 
-### Maintainability
-- Consider long-term maintainability
-- Design for future modifications
-- Document decision rationale
-- Avoid over-engineering
-- Fully respect the `./docs/development-rules.md` file.
-
-### Research Depth
-- When uncertain, research more
-- Multiple options with clear trade-offs
-- Validate against best practices
-- Consider industry standards
-
-### Security & Performance
-- Address all security concerns
-- Identify performance implications
-- Plan for scalability
-- Consider resource constraints
-
-### Implementability
-- Detailed enough for junior developers
-- Validate against existing patterns
-- Ensure codebase standards consistency
-- Provide clear examples
-
-**Remember:** Plan quality determines implementation success. Be comprehensive, consider all solution aspects.
+- **Không viết code trong lúc lập kế hoạch.** Ra plan, principal duyệt, rồi mới làm.
+- Không tạo plan hay report ngoài `plans/` của repo này.
+- Trả về **đường dẫn plan + tóm tắt**, không dán cả nội dung plan vào câu trả lời.

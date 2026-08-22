@@ -1,62 +1,55 @@
-# Codebase Understanding Phase
+# Pha hiểu codebase
 
-**When to skip:** If provided with scout reports, skip this phase.
+**Bỏ qua khi:** `search` đã trả báo cáo đủ dùng.
 
-## Core Activities
+## Đọc luật trước, đọc code sau
 
-### Parallel Scout Agents
-- Use `/scout ext` (preferred) or `/scout` (fallback) skill invocation to search the codebase for files needed to complete the task
-- Each scout locates files needed for specific task aspects
-- Wait for all scout agents to report back before analysis
-- Efficient for finding relevant code across large codebases
+Đọc code trước khi biết luật là cách viết ra một kế hoạch đúng kỹ thuật nhưng sai quy ước.
+Với alp-code, thứ tự bắt buộc:
 
-### Essential Documentation Review
-ALWAYS read these files first:
+| # | File | Cho biết |
+|---|---|---|
+| 1 | `CHARTER.md` | sáu nguyên tắc bất biến, ai sửa được gì. **Chỉ principal sửa** |
+| 2 | `identity/_shared/HOUSE-RULES.md` | luật cứng mọi vai, thứ tự ưu tiên khi xung đột |
+| 3 | `identity/main/PLAYBOOK.md` | quy trình của chính bạn |
+| 4 | `README.md` | cây thư mục, bảng script |
+| 5 | `docs/` | tài liệu chuyên đề (delegation, ACL…) |
 
-1. **`./docs/development-rules.md`** (IMPORTANT)
-   - File Name Conventions
-   - File Size Management
-   - Development rules and best practices
-   - Code quality standards
-   - Security guidelines
+Với repo **bên ngoài** (trong `workspaces.read`): đọc `README.md`, `CLAUDE.md`/`AGENTS.md`,
+rồi `docs/` nếu có. Không có tài liệu thì nói rõ trong plan là kế hoạch dựng trên việc đọc
+code, không phải trên quy ước đã ghi.
 
-2. **`./docs/codebase-summary.md`**
-   - Project structure and current status
-   - High-level architecture overview
-   - Component relationships
+## Tìm code
 
-3. **`./docs/code-standards.md`**
-   - Coding conventions and standards
-   - Language-specific patterns
-   - Naming conventions
+Giao `search` (`scripts/run-role.sh search`) — nó có `rg`, `Glob`, `Grep`, và `gkg` cho
+phân tích ảnh hưởng. Xem `research-phase.md` để biết cách viết brief.
 
-4. **`./docs/design-guidelines.md`** (if exists)
-   - Design system guidelines
-   - Branding and UI/UX conventions
-   - Component library usage
+Tự tìm khi câu hỏi nhỏ và bạn đã biết đại khái file nào. Giao đi tốn một phiên; tự
+`rg` một lần tốn vài giây.
 
-### Environment Analysis
-- Review development environment setup
-- Analyze dotenv files and configuration
-- Identify required dependencies
-- Understand build and deployment processes
+## Nhận quy ước
 
-### Pattern Recognition
-- Study existing patterns in codebase
-- Identify conventions and architectural decisions
-- Note consistency in implementation approaches
-- Understand error handling patterns
+Trước khi thiết kế, trả lời được ba câu:
 
-### Integration Planning
-- Identify how new features integrate with existing architecture
-- Map dependencies between components
-- Understand data flow and state management
-- Consider backward compatibility
+1. **Chỗ này đã có mẫu chưa?** Có module tương tự thì theo nó, đừng phát minh cái thứ hai.
+   `README.md` của alp-code ghi rõ: `scripts/lib/` là "MỘT nguồn cho mỗi loại config".
+2. **Lỗi được xử lý kiểu gì?** Ném, trả về, hay fail đóng? alp-code chọn **fail đóng** —
+   hỏng thì hỏng to và thấy ngay, không hỏng im lặng.
+3. **Cái gì là sinh ra, cái gì là nguồn?** Sửa nhầm file sinh ra thì mất trong lần compile
+   kế tiếp. Trong alp-code: `loadout.yaml` là nguồn; `identity/*/.claude/**` và
+   `$CODEX_HOME/<role>.config.toml` là sản phẩm.
 
-## Best Practices
+## Lập kế hoạch tích hợp
 
-- Start with documentation before diving into code
-- Use scouts for targeted file discovery
-- Document patterns found for consistency
-- Note any inconsistencies or technical debt
-- Consider impact on existing features
+- Tính năng mới nối vào kiến trúc hiện có ở đâu — đặt tên file, tên hàm cụ thể.
+- Đổi cái này thì vỡ những đâu. Không chắc → giao `search` phân tích ảnh hưởng bằng `gkg`.
+- Tương thích ngược: có ai đang phụ thuộc hành vi cũ không.
+- Có phải sinh lại artifact không (`compile-acl`), và ai chạy lệnh đó.
+
+## Ghi lại
+
+Phần hiểu được đi vào **plan**, không nằm lại trong context của phiên. Phiên sau không nhớ
+gì cả — CHARTER §2.3: markdown là source of truth.
+
+Thấy nợ kỹ thuật hoặc chỗ không nhất quán → ghi vào mục **Ngoài phạm vi** của plan.
+**Không tự sửa** (HOUSE-RULES §1.6).
