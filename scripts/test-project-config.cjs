@@ -4,7 +4,7 @@
 // Khoá lại đúng những chỗ hỏng IM LẶNG (không lỗi, không cảnh báo, chỉ là sai):
 //   1. cwd chưa đăng ký mà settings không deny ⇒ bất biến "cwd lạ = read-only" vỡ.
 //   2. `alp init` chạy hai lần ra hai kết quả khác nhau ⇒ không ai dám chạy lại.
-//   3. `--uninstall` để sót file hoặc sót quyền ⇒ gỡ rồi mà project vẫn ghi được.
+//   3. `alp deinit` để sót file hoặc sót quyền ⇒ gỡ rồi mà project vẫn ghi được.
 //   4. Đè lên `settings.local.json` của người ta ⇒ mất dữ liệu, không phục hồi được.
 //
 // Chạy trong repo git tạm ở $TMPDIR, và trỏ HOME/CODEX_HOME sang thư mục tạm để
@@ -202,8 +202,8 @@ function testGitStatusUnchanged() {
 }
 
 function testUninstallRestoresEverything() {
-  const r = alp(["init", "--uninstall", project]);
-  check("alp init --uninstall chạy được", () => assert.strictEqual(r.status, 0, r.output));
+  const r = alp(["deinit", project]);
+  check("alp deinit chạy được", () => assert.strictEqual(r.status, 0, r.output));
   check("xoá sạch hai file", () => {
     for (const f of Object.values(PC.paths(project))) assert(!fs.existsSync(f), `còn sót ${f}`);
   });
@@ -232,7 +232,7 @@ function testForeignFileNotClobbered() {
   check("file lạ được cất vào .alp-backup", () =>
     assert.strictEqual(fs.readFileSync(file + PC.BACKUP_SUFFIX, "utf8"), mine));
 
-  alp(["init", "--uninstall", project]);
+  alp(["init", "--uninstall", project]); // tên cũ: phải còn chạy được
   check("uninstall trả lại nguyên văn file lạ", () => {
     assert.strictEqual(fs.readFileSync(file, "utf8"), mine);
     assert(!fs.existsSync(file + PC.BACKUP_SUFFIX), "backup phải biến mất sau khi trả lại");

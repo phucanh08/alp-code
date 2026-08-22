@@ -89,7 +89,7 @@ không có danh tính, không lỗi nào nổ ra.
 
 ```bash
 alp                     # phiên Phở CHỈ-ĐỌC ở thư mục bất kỳ, không cần init
-alp init --uninstall    # gỡ sạch config cục bộ, huỷ đăng ký workspace
+alp deinit              # gỡ sạch config cục bộ, huỷ đăng ký workspace
 alp doctor              # khám toàn hệ
 alp update              # git pull --ff-only rồi bootstrap lại
 alp help                # gom mọi script về một bảng
@@ -98,12 +98,12 @@ alp help                # gom mọi script về một bảng
 `alp` không tham số **không ghi gì** vào thư mục đó: cwd chưa đăng ký thì đúng bất biến
 CHARTER — đọc được, ghi thì bị chặn (cả tool file lẫn Bash). Muốn ghi thì `alp init` trước.
 
-`alp init --uninstall` trả lại nguyên trạng: xoá hai file, gỡ khối exclude, rút project khỏi
+`alp deinit` trả lại nguyên trạng: xoá hai file, gỡ khối exclude, rút project khỏi
 `workspaces` của mọi vai rồi recompile. `git status` của project không đổi một dòng. Trí nhớ
 ở `memory/projects/<slug>/` **được giữ lại** — xoá tay nếu thật sự muốn quên.
 
 Có sẵn `.claude/settings.local.json` của riêng bạn? `alp init` cất nó thành
-`settings.local.json.alp-backup` và `--uninstall` trả lại nguyên văn.
+`settings.local.json.alp-backup` và `alp deinit` trả lại nguyên văn.
 
 ## Chạy một vai
 
@@ -240,7 +240,7 @@ alp-code/
 |---|---|
 | `alp` | phiên Phở chỉ-đọc ở cwd bất kỳ |
 | `alp init` | đăng ký project hiện tại + sinh config Claude/Codex + trust hai runtime |
-| `alp init --uninstall` | gỡ config cục bộ, huỷ đăng ký workspace |
+| `alp deinit` | gỡ config cục bộ, huỷ đăng ký workspace |
 | `alp doctor` | khám toàn hệ — mọi tín hiệu kèm dòng `→ fix:` chạy được |
 | `alp update` · `alp help` | pull + bootstrap · bảng lệnh |
 

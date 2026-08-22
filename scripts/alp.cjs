@@ -3,7 +3,7 @@
 //
 //   alp                    phiên Phở CHỈ-ĐỌC ở cwd bất kỳ (không cần init)
 //   alp init [path]        đăng ký project + sinh config Claude/Codex + trust hai runtime
-//   alp init --uninstall   gỡ config cục bộ, huỷ đăng ký workspace
+//   alp deinit [path]      gỡ config cục bộ, huỷ đăng ký workspace
 //   alp doctor             khám toàn hệ
 //   alp update             git pull --ff-only + bootstrap lại
 //   alp help               9 script của repo, gom về một chỗ
@@ -28,7 +28,7 @@ if (!repoRoot) die("không tìm thấy repo alp-code (thư mục có CHARTER.md)
 const argv = process.argv.slice(2);
 const cmd = argv[0] && !argv[0].startsWith("-") ? argv.shift() : null;
 
-const COMMANDS = { init, doctor, update, help };
+const COMMANDS = { init, deinit, doctor, update, help };
 
 if (!cmd) session();
 else if (COMMANDS[cmd]) COMMANDS[cmd](argv);
@@ -69,27 +69,39 @@ function session() {
   process.exit(r.status ?? 1);
 }
 
-// ---------------------------------------------------------------- alp init
+// ---------------------------------------------------------------- alp init / alp deinit
 
 function init(args) {
-  const uninstalling = args.includes("--uninstall");
-  const positional = args.filter((a) => !a.startsWith("-"));
-  for (const a of args)
-    if (a.startsWith("-") && a !== "--uninstall") die(`tham số lạ: ${a}`);
+  // `--uninstall` là tên cũ của `alp deinit`. Giữ lại vì nó đang nằm trong header của
+  // mọi file config đã sinh ra ngoài kia — gỡ ngay là bẻ tay người đã cài.
+  if (args.includes("--uninstall")) {
+    console.error("WARN     `alp init --uninstall` đổi tên thành `alp deinit` — dùng tên mới.");
+    return deinit(args.filter((a) => a !== "--uninstall"));
+  }
+  return initInstall(projectTarget(args));
+}
 
-  const projectPath = realOrResolved(positional[0] || process.cwd());
+function deinit(args) {
+  return deinitProject(projectTarget(args));
+}
+
+/** Đường dẫn project cho `alp init`/`alp deinit`: mặc định cwd, phải là thư mục, phải rời repo. */
+function projectTarget(args) {
+  for (const a of args) if (a.startsWith("-")) die(`tham số lạ: ${a}`);
+
+  const projectPath = realOrResolved(args[0] || process.cwd());
   if (!fs.existsSync(projectPath) || !fs.statSync(projectPath).isDirectory())
     die(`không phải thư mục: ${projectPath}`);
   if (L.isWithin(repoRoot, projectPath) || L.isWithin(projectPath, repoRoot))
     die("project code và alp-code không được chứa lẫn nhau");
 
-  return uninstalling ? initUninstall(projectPath) : initInstall(projectPath);
+  return projectPath;
 }
 
 function initInstall(projectPath) {
   // Gốc rễ của sự cố repoRoot: `alp init` từng chạy lên một CLONE alp-code khác. Dòng
   // `isWithin` ở trên chỉ chặn khi hai thư mục chứa lẫn nhau, không chặn clone rời.
-  // Chỉ chặn ở nhánh install — `--uninstall` phải gỡ được cái đã lỡ cài.
+  // Chỉ chặn ở nhánh install — `alp deinit` phải gỡ được cái đã lỡ cài.
   if (fs.existsSync(path.join(projectPath, "CHARTER.md")))
     die(`${projectPath} là một checkout alp-code — không \`alp init\` lên chính hệ này.\n` +
         "Dev alp-code thì mở `claude` trần trong clone đó, đừng để nó chạy dưới ACL của main.");
@@ -133,10 +145,10 @@ function initInstall(projectPath) {
   console.log(`  cd ${projectPath} && claude      # ra Phở, ghi được trong project này`);
   console.log(`  cd ${projectPath} && codex       # cũng ra Phở`);
   console.log("");
-  console.log("Gỡ: `alp init --uninstall` (chạy trong project đó).");
+  console.log("Gỡ: `alp deinit` (chạy trong project đó).");
 }
 
-function initUninstall(projectPath) {
+function deinitProject(projectPath) {
   console.log("---");
   for (const { file, action } of PC.uninstall(projectPath)) {
     if (action === "ABSENT") continue;
@@ -187,7 +199,7 @@ function help() {
   const rows = [
     ["alp", "phiên Phở chỉ-đọc ở cwd bất kỳ"],
     ["alp init [path]", "đăng ký project + sinh config Claude/Codex + trust"],
-    ["alp init --uninstall", "gỡ config cục bộ, huỷ đăng ký workspace"],
+    ["alp deinit [path]", "gỡ config cục bộ, huỷ đăng ký workspace"],
     ["alp doctor", "khám toàn hệ; mọi tín hiệu kèm dòng `→ fix:` chạy được"],
     ["alp update", "git pull --ff-only rồi bootstrap lại"],
     ["alp help", "bảng này"],
