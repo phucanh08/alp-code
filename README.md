@@ -90,6 +90,7 @@ không có danh tính, không lỗi nào nổ ra.
 ```bash
 alp                     # phiên Phở CHỈ-ĐỌC ở thư mục bất kỳ, không cần init
 alp deinit              # gỡ sạch config cục bộ, huỷ đăng ký workspace
+alp uninstall           # gỡ toàn bộ alp-code; memory được chuyển ra backup
 alp doctor              # khám toàn hệ
 alp update              # git pull --ff-only rồi bootstrap lại
 alp help                # gom mọi script về một bảng
@@ -104,6 +105,15 @@ CHARTER — đọc được, ghi thì bị chặn (cả tool file lẫn Bash). M
 
 Có sẵn `.claude/settings.local.json` của riêng bạn? `alp init` cất nó thành
 `settings.local.json.alp-backup` và `alp deinit` trả lại nguyên văn.
+
+`alp uninstall` là lệnh gỡ **toàn hệ**, khác với `alp deinit` chỉ gỡ một project. Nó gọi
+cùng logic deinit để dọn config khỏi các workspace còn tồn tại, sau đó xoá repo cài đặt,
+gỡ shim/symlink `alp`, và rút thư mục CLI khỏi profile/User PATH. `memory/` mặc định được
+chuyển sang thư mục backup nằm cạnh repo rồi in rõ đường dẫn để khôi phục. Dùng
+`alp uninstall --purge-memory` chỉ khi muốn xoá vĩnh viễn cả memory; thêm `--force` nếu chủ
+động bỏ qua chốt repo còn thay đổi chưa commit hoặc commit chưa push. Lệnh từ chối chạy khi
+cwd đang nằm bên trong repo alp-code — `cd` ra ngoài trước. Trust Claude/Codex được giữ lại
+vì vô hại và có thể đã tồn tại trước alp-code.
 
 ## Chạy một vai
 
@@ -241,6 +251,7 @@ alp-code/
 | `alp` | phiên Phở chỉ-đọc ở cwd bất kỳ |
 | `alp init` | đăng ký project hiện tại + sinh config Claude/Codex + trust hai runtime |
 | `alp deinit` | gỡ config cục bộ, huỷ đăng ký workspace |
+| `alp uninstall [--purge-memory] [--force]` | gỡ toàn hệ; backup memory mặc định |
 | `alp doctor` | khám toàn hệ — mọi tín hiệu kèm dòng `→ fix:` chạy được |
 | `alp update` · `alp help` | pull + bootstrap · bảng lệnh |
 
@@ -262,9 +273,10 @@ alp-code/
 | `scripts/test-agent-routing.sh` | kiểm model, effort và delegation route của các vai Codex |
 | `scripts/test-isolation.sh` | cách ly giữa các vai + chống đệ quy (nhanh, qua hook) · `--live` chạy `claude -p` thật |
 | `scripts/test-delegation.cjs` | contract ủy nhiệm · luật định tuyến pane/exec · seq |
-| `scripts/test-project-config.cjs` | nghiệm thu `alp init`: idempotent · uninstall sạch · cwd lạ chỉ-đọc |
+| `scripts/test-project-config.cjs` | nghiệm thu `alp init`/`alp deinit`: idempotent · gỡ sạch · cwd lạ chỉ-đọc |
 | `scripts/test-cli-link.cjs` | cài lệnh + PATH: macOS/Linux profile · Windows shim/User PATH · idempotent |
 | `scripts/test-windows-installer.cjs` | one-line Windows: PowerShell 5.1/7 · không đóng host · `alp` dùng ngay |
+| `scripts/test-uninstall.cjs` | gỡ toàn hệ: CLI/PATH · project config · memory backup/purge · safety guard |
 | `scripts/test-skill-links.cjs` | symlink skill: sinh · dọn link thừa · target tương đối · validate `skills:` |
 | `scripts/sync-project-index.sh --write` | sinh lại L0 từ frontmatter L1 |
 
