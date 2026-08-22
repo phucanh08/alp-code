@@ -1,48 +1,63 @@
-# Merge Workflow
+# Quy trình merge
 
-Execute via `git-manager` subagent.
+**Merge vào nhánh chính là hành động khó đảo ngược.** Phải được principal nói thẳng trong
+phiên này. Main không tự merge, kể cả khi thấy "rõ ràng là xong rồi".
 
-## Variables
-- TO_BRANCH: target (defaults to `main`)
-- FROM_BRANCH: source (defaults to current branch)
+Biến: `TO` = nhánh đích (mặc định `main`) · `FROM` = nhánh nguồn (mặc định nhánh hiện tại).
 
-## Step 1: Sync with Remote
-
-**IMPORTANT: Always merge `main` (or any default branch) to current branch first.**
+## 1. Đồng bộ với remote
 
 ```bash
 git fetch origin
-git checkout {TO_BRANCH}
-git pull origin {TO_BRANCH}
+git checkout {TO}
+git pull origin {TO}
 ```
 
-## Step 2: Merge from REMOTE
+## 2. Thử khô trước
+
 ```bash
-git merge origin/{FROM_BRANCH} --no-ff -m "merge: {FROM_BRANCH} into {TO_BRANCH}"
+git merge --no-commit --no-ff origin/{FROM}
+git merge --abort
 ```
 
-**Why `origin/{FROM_BRANCH}`:** Ensures merging only committed+pushed changes, not local WIP.
+Biết trước có xung đột hay không **trước khi** bắt đầu merge thật. Đây là bước rẻ nhất
+trong cả quy trình và là bước hay bị bỏ nhất.
 
-## Step 3: Resolve Conflicts
-If conflicts:
-1. Resolve manually
-2. `git add . && git commit`
-3. If clarifications needed, report to main agent
+## 3. Merge
 
-## Step 4: Push
 ```bash
-git push origin {TO_BRANCH}
+git merge origin/{FROM} --no-ff -m "merge: {FROM} vào {TO}"
 ```
 
-## Pre-Merge Checklist
-- Fetch latest: `git fetch origin`
-- Ensure FROM_BRANCH pushed to remote
-- Check for conflicts: `git merge --no-commit --no-ff origin/{FROM_BRANCH}` then abort
+**Vì sao `origin/{FROM}` chứ không phải `{FROM}`:** để chắc chỉ merge thứ đã commit *và* đã
+push. Merge nhánh local có thể kéo theo WIP chưa ai thấy.
 
-## Error Handling
+## 4. Xung đột
 
-| Error | Action |
-|-------|--------|
-| Merge conflicts | Resolve manually, then commit |
-| Branch not found | Verify branch name, ensure pushed |
-| Push rejected | `git pull --rebase`, retry |
+Có xung đột → **báo principal, không tự chọn bên**. Chọn sai bên trong một merge là mất
+code mà `git diff` sau đó không cho thấy.
+
+Principal quyết rồi thì:
+
+```bash
+git add <file đã giải quyết> && git commit
+```
+
+Không dùng `git add .` sau khi giải quyết xung đột — nó nuốt luôn file khác đang dở.
+
+## 5. Push
+
+Xem `workflow-push.md`. Vẫn cần duyệt riêng — duyệt merge không phải duyệt push.
+
+## Xử lý lỗi
+
+| Lỗi | Làm gì |
+|---|---|
+| xung đột | báo principal, không tự chọn bên |
+| không tìm thấy nhánh | kiểm tên, chắc là đã push lên remote chưa |
+| push bị từ chối | `git pull --rebase` — hỏi trước |
+
+## Worktree
+
+alp-code dùng worktree. Merge trong một worktree vẫn ảnh hưởng repo chung — nhánh là dùng
+chung, chỉ có working tree là riêng. Đừng nghĩ mình đang ở chỗ cô lập nên merge nào cũng an toàn.

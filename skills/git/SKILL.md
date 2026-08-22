@@ -1,100 +1,122 @@
 ---
 name: git
-description: Git operations with conventional commits. Use for staging, committing, pushing, PRs, merges. Auto-splits commits by type/scope. Security scans for secrets.
-version: 1.0.0
+description: Thao tác git với conventional commit — stage, quét secret, tách commit theo type/scope, push, PR, merge. Kích hoạt khi principal yêu cầu commit/push/mở PR, hoặc khi cần đọc trạng thái repo trước lúc bàn giao.
 ---
 
-# Git Operations
+# git — commit có kỷ luật
 
-Execute git workflows via `git-manager` subagent to isolate verbose output.
-Activate `context-engineering` skill.
+Skill của vai **main**. Đây là vai duy nhất có `Write`/`Edit`, nên cũng là vai duy nhất
+chạm được git ở mức ghi.
 
-**IMPORTANT:**
-- Sacrifice grammar for the sake of concision.
-- Ensure token efficiency while maintaining high quality.
-- Pass these rules to subagents.
+## Cổng chặn — đọc trước mọi thứ khác
 
-## Arguments
-- `cm`: Stage files & create commits
-- `cp`: Stage files, create commits and push
-- `pr`: Create Pull Request [to-branch] [from-branch]
-  - `to-branch`: Target branch (default: main)
-  - `from-branch`: Source branch (default: current branch)
-- `merge`: Merge [to-branch] [from-branch]
-  - `to-branch`: Target branch (default: main)
-  - `from-branch`: Source branch (default: current branch)
+**Không commit, không push, trừ khi principal yêu cầu** (HOUSE-RULES §1.3).
 
-## Quick Reference
+Không có ngoại lệ nào kiểu "làm xong rồi commit luôn cho gọn". Viết code xong thì báo cáo
+và dừng; principal quyết định có commit không.
 
-| Task | Reference |
-|------|-----------|
-| Commit | `references/workflow-commit.md` |
-| Push | `references/workflow-push.md` |
-| Pull Request | `references/workflow-pr.md` |
-| Merge | `references/workflow-merge.md` |
-| Standards | `references/commit-standards.md` |
-| Safety | `references/safety-protocols.md` |
-| Branches | `references/branch-management.md` |
-| GitHub CLI | `references/gh-cli-guide.md` |
+Bốn hành động **luôn phải hỏi lại từng lần**, kể cả khi lần trước đã được duyệt
+(HOUSE-RULES §1.2):
 
-## Core Workflow
+| Hành động | Vì sao |
+|---|---|
+| `git push` | ra ngoài máy, người khác thấy ngay |
+| `--force`, `--force-with-lease` | ghi đè lịch sử của người khác |
+| `merge` vào nhánh chính | khó đảo ngược, ảnh hưởng mọi người |
+| `git reset --hard`, xoá nhánh | mất việc chưa lưu |
 
-### Step 1: Stage + Analyze
+## Quy trình commit
+
+### 1. Stage và nhìn
+
 ```bash
 git add -A && git diff --cached --stat && git diff --cached --name-only
 ```
 
-### Step 2: Security Check
-Scan for secrets before commit:
+Đọc `--stat` trước khi viết message. Commit mà không biết mình đang commit gì là cách
+nhanh nhất để kéo nhầm file sinh ra vào lịch sử.
+
+### 2. Quét secret — bắt buộc, không bỏ
+
 ```bash
-git diff --cached | grep -iE "(api[_-]?key|token|password|secret|credential)"
-```
-**If secrets found:** STOP, warn user, suggest `.gitignore`.
-
-### Step 3: Split Decision
-
-**NOTE:**
-- Search for related issues on GitHub and add to body.
-- Only use `feat`, `fix`, or `perf` prefixes for files in `.claude` directory (do not use `docs`).
-
-**Split commits if:**
-- Different types mixed (feat + fix, code + docs)
-- Multiple scopes (auth + payments)
-- Config/deps + code mixed
-- FILES > 10 unrelated
-
-**Single commit if:**
-- Same type/scope, FILES ≤ 3, LINES ≤ 50
-
-### Step 4: Commit
-```bash
-git commit -m "type(scope): description"
+git diff --cached | grep -iE '(api[_-]?key|token|password|secret|credential)'
 ```
 
-## Output Format
+Có khớp → **DỪNG**, báo principal, đề xuất `.gitignore`. Không tự quyết định là "chắc chỉ
+là tên biến".
+
+Với alp-code còn hai thứ **không bao giờ được vào commit**:
+
+- `memory/` — trí nhớ là dữ liệu cục bộ từng máy, đã có trong `.gitignore`.
+- `identity/*/.claude/settings.json`, `.acl-stamp`, `skills/` — sản phẩm sinh ra bởi
+  `compile-acl`, chứa path tuyệt đối của máy này.
+
+Thấy chúng trong `--cached` nghĩa là `.gitignore` hỏng. Báo principal, đừng tự `git rm`.
+
+### 3. Quyết định tách commit
+
+**Tách khi:** trộn nhiều type (`feat` + `fix`, code + docs) · nhiều scope (`acl` +
+`herdr`) · trộn config/deps với code · trên 10 file không liên quan nhau.
+
+**Một commit khi:** cùng type và scope, ≤ 3 file, ≤ 50 dòng.
+
+### 4. Viết message
+
+Conventional commit, **tiếng Việt** cho phần mô tả — khớp lịch sử repo:
+
 ```
-✓ staged: N files (+X/-Y lines)
-✓ security: passed
-✓ commit: HASH type(scope): description
-✓ pushed: yes/no
+fix: repoRoot của phiên + workspaces không còn path tuyệt đối
+feat(acl): register alp-plugin workspace
+docs: báo cáo chẩn đoán repoRoot
 ```
 
-## Error Handling
+Thân commit trả lời **vì sao**, không phải **làm gì** — `git diff` đã nói làm gì rồi.
+Có issue liên quan thì dẫn số.
 
-| Error | Action |
-|-------|--------|
-| Secrets detected | Block commit, show files |
-| No changes | Exit cleanly |
-| Push rejected | Suggest `git pull --rebase` |
-| Merge conflicts | Suggest manual resolution |
+Chuẩn đầy đủ: `references/commit-standards.md`.
 
-## References
+## Mẫu báo cáo về principal
 
-- `references/workflow-commit.md` - Commit workflow with split logic
-- `references/workflow-push.md` - Push workflow with error handling
-- `references/workflow-pr.md` - PR creation with remote diff analysis
-- `references/workflow-merge.md` - Branch merge workflow
-- `references/commit-standards.md` - Conventional commit format rules
-- `references/safety-protocols.md` - Secret detection, branch protection
-- `references/branch-management.md` - Naming, lifecycle, strategies
-- `references/gh-cli-guide.md` - GitHub CLI commands reference
+```
+✓ staged: N file (+X/−Y dòng)
+✓ secret: sạch
+✓ commit: <hash> type(scope): mô tả
+✗ push: CHƯA — chờ principal duyệt
+```
+
+Chưa push thì ghi rõ chưa push. Không viết mập mờ để principal tự hiểu là xong.
+
+## Xử lý lỗi
+
+| Lỗi | Làm gì |
+|---|---|
+| phát hiện secret | chặn commit, liệt kê file, báo principal |
+| không có thay đổi | dừng, nói rõ, không tạo commit rỗng |
+| push bị từ chối | đề xuất `git pull --rebase`, **hỏi trước khi chạy** |
+| xung đột merge | báo principal, không tự chọn bên |
+
+## Worktree
+
+alp-code dùng worktree cho nhánh triển khai cô lập (`.worktrees/` đã trong `.gitignore`).
+Stash stack **dùng chung** giữa mọi worktree — `git stash pop` trần có thể lấy nhầm việc
+của phiên khác. Cần cất việc tạm thì tạo commit WIP, đừng stash.
+
+## Tham chiếu
+
+| File | Nội dung |
+|---|---|
+| `references/workflow-commit.md` | quy trình commit, logic tách |
+| `references/workflow-push.md` | push và xử lý lỗi |
+| `references/workflow-pr.md` | tạo PR, phân tích diff với remote |
+| `references/workflow-merge.md` | merge nhánh |
+| `references/commit-standards.md` | chuẩn conventional commit |
+| `references/safety-protocols.md` | phát hiện secret, bảo vệ nhánh |
+| `references/branch-management.md` | đặt tên, vòng đời nhánh |
+| `references/gh-cli-guide.md` | lệnh `gh` |
+
+## Ranh giới
+
+- Không có subagent nào để đẩy output dài sang. `main` không có `Task` trong `tools:`.
+  Output git dài thì lọc bằng `--stat`, `--oneline`, `-n`, đừng đổ nguyên vào context.
+- Không push lên `main`/`master`, không force-push, không merge — trừ khi principal nói
+  thẳng, trong phiên này.

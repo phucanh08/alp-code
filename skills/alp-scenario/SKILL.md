@@ -1,113 +1,85 @@
 ---
 name: alp-scenario
-description: "Generate comprehensive edge cases and test scenarios by decomposing features across 12 dimensions. Use before implementation or testing to catch issues early."
-argument-hint: "<file path or feature description>"
-metadata:
-  author: anhlpkit
-  attribution: "Scenario exploration pattern adapted from autoresearch by Udit Goenka (MIT)"
-  license: MIT
-  version: "1.0.0"
+description: Sinh edge case có hệ thống bằng cách bổ một tính năng hoặc đường code theo 12 chiều. Kích hoạt khi review concern correctness, khi cần liệt kê rủi ro trước lúc chốt một thay đổi, hoặc khi phải trả lời "còn thiếu trường hợp nào".
 ---
 
-# alp-scenario — Edge Case & Scenario Explorer
+# alp-scenario — bổ theo 12 chiều
 
-Decompose any feature or code path across 12 dimensions to surface edge cases, risks, and test targets before implementation begins.
+Skill của vai **review**. Dùng khi cần chắc rằng mình đã quét hết, không phải khi cần
+nghĩ sâu — nghĩ sâu là việc của `oracle`.
 
-## When to Use
+Giá trị của skill này nằm ở chỗ nó **cưỡng bức tính đầy đủ**. Người review giỏi vẫn quên
+chiều mình không quen. Danh sách dưới không cho quên.
 
-- Before implementing complex or stateful features
-- Before writing tests (generates test targets)
-- Risk assessment during planning or code review
-- API design review — surface contract edge cases early
+## Khi nào dùng
 
-## When NOT to Use
+- Concern `correctness` — sinh sẵn edge case rồi mới đọc diff.
+- Trước khi main chốt một thay đổi có trạng thái, có đồng thời, hoặc chạm dữ liệu.
+- Khi main hỏi "còn thiếu trường hợp nào" và cần câu trả lời có cấu trúc.
 
-- Trivial single-line changes or cosmetic UI tweaks
-- Already well-tested, stable code with no recent modifications
-- Pure configuration changes with no logic paths
+**Không dùng cho:** đổi một dòng, sửa chính tả, đổi config không có nhánh logic. Bổ 12
+chiều cho một `const` là lãng phí ngân sách phiên.
 
----
+## 12 chiều
 
-## 12 Decomposition Dimensions
+Không phải chiều nào cũng áp dụng. **Lọc trước, sinh sau** — và nói rõ chiều nào bỏ, vì sao.
+Liệt kê 12 chiều rồi sinh bừa cho đủ là cách nhanh nhất biến báo cáo thành rác.
 
-Not all 12 apply to every feature. Identify relevant dimensions first, then generate scenarios only for those.
+| # | Chiều | Tìm gì |
+|---|---|---|
+| 1 | Loại người dùng | admin, khách, bị khoá, mới, power user, bot |
+| 2 | Input cực đoan | rỗng, null, dài tối đa, unicode, ký tự đặc biệt, chuỗi injection |
+| 3 | Thời gian | truy cập đồng thời, race, timeout, mạng chậm, retry dồn |
+| 4 | Quy mô | 0 phần tử, 1, 1 triệu, biên phân trang, cursor quay vòng |
+| 5 | Chuyển trạng thái | lần đầu, bỏ dở giữa chừng, chạy lại sau crash, hoàn thành một phần |
+| 6 | Môi trường | máy yếu, không JS, screen reader, proxy/VPN, timezone/locale khác |
+| 7 | Lỗi dây chuyền | DB chết, API timeout, đầy đĩa, OOM, đứt mạng, ghi dở |
+| 8 | Phân quyền | token hết hạn, sai role, link public, CORS, CSRF, leo thang quyền |
+| 9 | Toàn vẹn dữ liệu | bản ghi trùng, tham chiếu mồ côi, lệch encoding, migration đang chạy |
+| 10 | Tích hợp | webhook phát lại, lệch version API, bên thứ ba chết, contract trôi |
+| 11 | Tuân thủ | yêu cầu xoá dữ liệu, thiếu audit log, thời hạn lưu trữ, lộ PII |
+| 12 | Nghiệp vụ | giá 0 hoặc âm, chồng khuyến mãi, hoàn tiền khi giao một phần, hạn mức gói free |
 
-| # | Dimension | What to Look For |
-|---|-----------|------------------|
-| 1 | **User Types** | admin, guest, banned, new user, power user, bot/scraper |
-| 2 | **Input Extremes** | empty, null, max length, unicode, special chars, SQL/script injection |
-| 3 | **Timing** | concurrent access, race conditions, timeout, slow network, retry storms |
-| 4 | **Scale** | 0 items, 1 item, 1M items, pagination boundary, cursor wrap |
-| 5 | **State Transitions** | first use, mid-flow abort, resume after crash, partial completion |
-| 6 | **Environment** | mobile/low-end CPU, no JS, screen reader, proxy/VPN, different timezone/locale |
-| 7 | **Error Cascades** | DB down, API timeout, disk full, OOM, network partition, partial write |
-| 8 | **Authorization** | expired token, wrong role, shared/public link, CORS, CSRF, privilege escalation |
-| 9 | **Data Integrity** | duplicate entries, orphan references, encoding mismatch, concurrent schema migration |
-| 10 | **Integration** | webhook replay, API version mismatch, third-party outage, contract drift |
-| 11 | **Compliance** | GDPR deletion request, audit logging gap, data retention, accidental PII exposure |
-| 12 | **Business Logic** | edge pricing (zero/negative), coupon stacking, refund after partial delivery, free tier limits |
+## Quy trình
 
----
+1. **Đọc** file đích, hoặc phân tích mô tả tính năng main đưa.
+2. **Lọc chiều** — đánh dấu chiều nào áp dụng, chiều nào không và vì sao.
+3. **Sinh 3–5 kịch bản** cho mỗi chiều còn lại.
+4. **Xếp mức** theo bảng dưới.
+5. **Xuất bảng**, kèm tổng theo mức.
 
-## Workflow
+### Mức
 
-1. **Read** target file(s) or parse feature description from argument
-2. **Filter dimensions** — mark which of the 12 apply; skip irrelevant ones explicitly
-3. **Generate 3–5 scenarios** per relevant dimension
-4. **Categorize severity** — Critical / High / Medium / Low
-5. **Output** as structured table (see format below)
-6. **Summarize** total scenario count by severity
+| Mức | Nghĩa |
+|---|---|
+| **CHẶN** | mất dữ liệu, thủng bảo mật, vượt xác thực, hỏng âm thầm |
+| **NÊN SỬA** | hỏng với một nhóm người dùng, dữ liệu không nhất quán |
+| **GHI NHẬN** | UX xuống cấp, lỗi có thể phục hồi nhưng không báo cho người dùng |
 
-### Severity Criteria
+Ba mức này khớp với `code-review` — cùng một thang, để main không phải quy đổi.
 
-| Level | Meaning |
-|-------|---------|
-| **Critical** | Data loss, security breach, auth bypass, silent corruption |
-| **High** | Feature broken for a subset of users, data inconsistency |
-| **Medium** | Degraded UX, recoverable error not surfaced to user |
-| **Low** | Minor visual glitch, non-blocking warning |
-
----
-
-## Output Format
+## Mẫu xuất
 
 ```
-## Scenario Report: [target]
+## Kịch bản: <đích>
 
-Dimensions analyzed: [list]
-Dimensions skipped: [list + reason]
+Chiều đã bổ: <danh sách>
+Chiều bỏ: <danh sách + lý do>
 
-| # | Dimension | Scenario | Severity | Expected Behavior |
-|---|-----------|----------|----------|-------------------|
-| 1 | Input Extremes | Empty string for required name field | High | Return 400 with field error |
-| 2 | Authorization | Expired JWT accessing protected route | Critical | Redirect to login, invalidate session |
-| 3 | Timing | Two users submit same form simultaneously | High | Idempotency key or conflict error |
+| # | Chiều | Kịch bản | Mức | Hành vi mong đợi |
+|---|---|---|---|---|
+| 1 | Input cực đoan | tên rỗng ở field bắt buộc | NÊN SỬA | trả 400 kèm lỗi field |
+| 2 | Phân quyền | JWT hết hạn gọi route được bảo vệ | CHẶN | về login, huỷ session |
+| 3 | Thời gian | hai người submit cùng form cùng lúc | NÊN SỬA | idempotency key hoặc báo xung đột |
 
-### Summary
-- Critical: N
-- High: N
-- Medium: N
-- Low: N
-- Total: N scenarios across X dimensions
+Tổng: CHẶN n · NÊN SỬA n · GHI NHẬN n — trên x chiều
 ```
 
----
+## Sau đó
 
-## Integration with Other Skills
+Kịch bản là **đầu vào cho người khác**, không phải kết luận cuối:
 
-| Next Step | Skill | How |
-|-----------|-------|-----|
-| Generate test cases from scenarios | `alp:test` | Pass scenario table as input context |
-| Inform implementation plan risks | `alp-plan` | Paste Critical/High rows into risk assessment |
-| Deep persona debate on top risks | `alp-predict` | Feed Critical scenarios as the change proposal |
-
----
-
-## Example Invocations
-
-```
-/alp-scenario src/api/payment.ts
-/alp-scenario "User registration with OAuth providers"
-/alp-scenario src/middleware/auth.ts
-/alp-scenario "Add multi-tenancy to the database layer"
-```
+- Mức CHẶN → đưa vào phần CHẶN của báo cáo `code-review`, kèm bằng chứng nếu tái hiện được.
+- Rủi ro kiến trúc, đánh đổi khó đảo ngược → báo main, main quyết có gọi `oracle` không.
+- Kịch bản chỉ là giả thuyết cho tới khi tái hiện được. Chưa tái hiện thì ghi ở mục
+  "Chưa chắc", **không** ghi ở mục CHẶN.

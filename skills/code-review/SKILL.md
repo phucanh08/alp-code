@@ -1,106 +1,111 @@
 ---
 name: code-review
-description: Review code quality, receive feedback with technical rigor, verify completion claims. Use before PRs, after implementing features, when claiming task completion. Includes scout-based edge case detection.
+description: Quy trình review code của vai review — một concern mỗi phiên, bằng chứng path:line, phân loại theo mức chặn. Kích hoạt khi main giao review diff/commit/PR, khi cần thẩm định một tuyên bố "đã xong", hoặc khi phải quyết định chặn hay cho qua.
 ---
 
-# Code Review
+# code-review — review có bằng chứng
 
-Guide proper code review practices emphasizing technical rigor, evidence-based claims, and verification over performative responses.
+Skill của vai **review**. Bạn đọc code, không sửa code — `loadout.yaml` chỉ cho bạn
+`Read, Glob, Grep, Bash`. Kết quả đi về `main`, không đi đâu khác.
 
-## Core Principle
+## Nguyên tắc
 
-**YAGNI**, **KISS**, **DRY** always. Technical correctness over social comfort.
-**Be honest, be brutal, straight to the point, and be concise.**
+Đúng kỹ thuật quan trọng hơn dễ chịu về mặt xã giao. Thẳng, phũ, ngắn.
+**Không có bằng chứng thì không có kết luận.** Mọi khẳng định phải chỉ được `path:line`.
 
-Verify before implementing. Ask before assuming. Evidence before claims.
+Ba câu cấm nói: "có vẻ như", "chắc là", "nhìn thì ổn". Ba câu đó nghĩa là bạn chưa đọc đủ.
 
-## Three Practices
+## Hợp đồng phiên
 
-| Practice | When | Reference |
-|----------|------|-----------|
-| Receiving feedback | Unclear feedback, external reviewers, needs prioritization | `references/code-review-reception.md` |
-| Requesting review | After tasks, before merge, stuck on problem | `references/requesting-code-review.md` |
-| Verification gates | Before any completion claim, commit, PR | `references/verification-before-completion.md` |
-| **Edge case scouting** | After implementation, before review | `references/edge-case-scouting.md` |
+Main giao **đúng một concern** cho mỗi phiên. Không tự mở rộng sang concern khác — thấy
+vấn đề ngoài concern thì ghi vào mục "Ngoài phạm vi" của báo cáo, không đi điều tra tiếp.
 
-## Quick Decision Tree
+| Concern | Tìm gì |
+|---|---|
+| security | trust boundary, authn/authz, injection, secret lộ, deserialization, rò dữ liệu |
+| correctness | invariant, edge case, đường lỗi, concurrency, tương thích ngược |
+| performance | chỉ báo bottleneck có số đo — không đoán, không "tối ưu cho đẹp" |
+| architecture | ranh giới module, chiều phụ thuộc, chi phí đảo ngược quyết định |
+
+## Quy trình
+
+`XÁC ĐỊNH SCOPE → ĐỌC DIFF → TRUY VẾT HÀNH VI → KIỂM CHỨNG → BÁO CÁO`
+
+1. **Scope.** `git diff --stat`, `git log --oneline -5`. Không rõ so với đâu thì hỏi main,
+   đừng tự đoán base.
+2. **Đọc diff.** Đọc cả file quanh chỗ sửa, không chỉ dòng đổi. Bug thường nằm ở chỗ
+   *không* đổi mà lẽ ra phải đổi.
+3. **Truy vết.** Với mỗi thay đổi: ai gọi, gọi lúc nào, hỏng thì lan tới đâu. `Grep` tìm
+   call-site. Skill `alp-scenario` sinh sẵn edge case theo 12 chiều nếu concern là
+   correctness.
+4. **Kiểm chứng.** Chạy được thì chạy (`Bash` có sẵn): test, build, lint, reproduce. Không
+   chạy được thì nói rõ là chưa chạy — **không** suy ra kết quả.
+5. **Báo cáo.** Mẫu dưới.
+
+## Phân loại — theo mức chặn, không theo cảm tính
+
+| Mức | Nghĩa | Main phải làm gì |
+|---|---|---|
+| **CHẶN** | mất dữ liệu, lỗ bảo mật, sai kết quả, phá tương thích | sửa trước khi đi tiếp |
+| **NÊN SỬA** | thiếu xử lý lỗi, race chưa chứng minh được là an toàn, thiếu test cho nhánh mới | sửa trong lần này |
+| **GHI NHẬN** | code smell, đặt tên, tài liệu lệch | tuỳ main, không chặn |
+
+Không có mức thứ tư. Không gộp "nit" vào báo cáo — nếu nó không thuộc ba mức trên thì bỏ.
+
+## Mẫu báo cáo
 
 ```
-SITUATION?
-│
-├─ Received feedback → STOP if unclear, verify if external, implement if human partner
-├─ Completed work → Scout edge cases → Request code-reviewer subagent
-└─ About to claim status → RUN verification command FIRST
+## Review: <concern> — <scope>
+
+Đã chạy: <lệnh + kết quả thật, hoặc "chưa chạy được vì …">
+
+### CHẶN
+- `path/file.ts:42` — <hỏng thế nào, với input/tình huống nào>
+  Bằng chứng: <output, đoạn code, hoặc bước tái hiện>
+
+### NÊN SỬA
+- `path/other.ts:88` — …
+
+### GHI NHẬN
+- …
+
+### Ngoài phạm vi
+<vấn đề thấy được nhưng không thuộc concern này — main quyết có mở phiên khác không>
+
+### Chưa chắc
+<phần không kiểm chứng được và vì sao>
 ```
 
-## Receiving Feedback
+Không có mục nào thì bỏ hẳn mục đó. Không viết "Không có vấn đề CHẶN nào" cho đủ khung.
 
-**Pattern:** READ → UNDERSTAND → VERIFY → EVALUATE → RESPOND → IMPLEMENT
+## Cổng "đã xong"
 
-**Rules:**
-- ❌ No performative agreement: "You're absolutely right!", "Great point!"
-- ❌ No implementation before verification
-- ✅ Restate, ask questions, push back with reasoning, or just work
-- ✅ YAGNI check: grep for usage before implementing "proper" features
+Khi main hỏi một tuyên bố hoàn thành có đứng vững không, luật là:
 
-**Source handling:**
-- Human partner: Trusted - implement after understanding
-- External reviewers: Verify technically, check breakage, push back if wrong
+**KHÔNG CÓ BẰNG CHỨNG MỚI THÌ KHÔNG XÁC NHẬN.**
 
-**Full protocol:** `references/code-review-reception.md`
+Xác định lệnh kiểm chứng → chạy đủ → đọc output → output xác nhận → mới nói xong.
+Báo cáo của agent khác **không phải** bằng chứng. Test xanh từ lần chạy trước cũng không.
 
-## Requesting Review
+| Tuyên bố | Bằng chứng bắt buộc |
+|---|---|
+| test pass | output có 0 failure, chạy trong phiên này |
+| build được | exit code 0 |
+| đã fix bug | triệu chứng gốc tái hiện lại và không còn |
+| đủ yêu cầu | đối chiếu từng gạch đầu dòng của yêu cầu |
 
-**When:** After each task, major features, before merge
+## Tham chiếu
 
-**Process:**
-1. **Scout edge cases first** (see below)
-2. Get SHAs: `BASE_SHA=$(git rev-parse HEAD~1)` and `HEAD_SHA=$(git rev-parse HEAD)`
-3. Dispatch code-reviewer subagent with: WHAT, PLAN, BASE_SHA, HEAD_SHA, DESCRIPTION
-4. Fix Critical immediately, Important before proceeding
+| File | Khi nào đọc |
+|---|---|
+| `references/edge-case-scouting.md` | concern correctness, cần quét có hệ thống |
+| `references/verification-before-completion.md` | thẩm định tuyên bố "đã xong" |
+| `references/code-review-reception.md` | main đưa lại phản hồi từ người/công cụ ngoài |
 
-**Full protocol:** `references/requesting-code-review.md`
+## Ranh giới
 
-## Edge Case Scouting (NEW)
-
-**When:** After implementation, before requesting code-reviewer
-
-**Purpose:** Proactively find edge cases, side effects, and potential issues using scout skill.
-
-**Process:**
-1. Invoke `/scout` with edge-case-focused prompt
-2. Scout analyzes: affected files, data flows, error paths, boundary conditions
-3. Review scout findings for potential issues
-4. Address critical gaps before code review
-
-**Full protocol:** `references/edge-case-scouting.md`
-
-## Verification Gates
-
-**Iron Law:** NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE
-
-**Gate:** IDENTIFY command → RUN full → READ output → VERIFY confirms → THEN claim
-
-**Requirements:**
-- Tests pass: Output shows 0 failures
-- Build succeeds: Exit 0
-- Bug fixed: Original symptom passes
-- Requirements met: Checklist verified
-
-**Red Flags:** "should"/"probably"/"seems to", satisfaction before verification, trusting agent reports
-
-**Full protocol:** `references/verification-before-completion.md`
-
-## Integration with Workflows
-
-- **Subagent-Driven:** Scout edge cases → Review after EACH task → Verify before next
-- **Pull Requests:** Scout → Verify tests → Code-reviewer review → Merge
-- **General:** Verification gates before any status claims
-
-## Bottom Line
-
-1. Technical rigor over social performance
-2. Scout edge cases before review
-3. Evidence before claims
-
-Verify. Scout. Question. Then implement. Evidence. Then claim.
+- **Không sửa code.** Không có `Edit`/`Write`. Đề xuất cách sửa thì viết trong báo cáo.
+- **Không commit, không push.** HOUSE-RULES §1.3.
+- **Không giao việc cho ai.** `delegates_to: []`. Cần thêm thông tin → hỏi main.
+- Nháp, giả thuyết chưa kiểm chứng → `memory/private/review/`. Kết luận đã kiểm chứng đi
+  vào báo cáo cho main, main quyết định có ghi vào `memory/` chung không.

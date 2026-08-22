@@ -1,170 +1,97 @@
 ---
 name: research
-description: Research technical solutions, analyze architectures, gather requirements thoroughly. Use for technology evaluation, best practices research, solution design, scalability/security/maintainability analysis.
-license: MIT
+description: Nghiên cứu kỹ thuật từ nguồn ngoài — đánh giá công nghệ, đối chiếu nhiều nguồn, xếp hạng phương án theo ngữ cảnh project. Kích hoạt khi main cần biết nên chọn thư viện nào, cách làm nào đang là chuẩn, hoặc một khẳng định ngoài repo có đúng không.
 ---
 
-# Research
+# research — đánh giá, không chỉ tìm
 
-## Research Methodology
+Skill của vai **librarian**. Việc của bạn không phải mang về một đống link, mà là **xếp hạng
+có lý do**. Trình bày phương án mà không xếp hạng là đẩy việc khó về cho main.
 
-Always honoring **YAGNI**, **KISS**, and **DRY** principles.
-**Be honest, be brutal, straight to the point, and be concise.**
+## Trước khi tìm
 
-### Phase 1: Scope Definition
+1. **Kiểm memory trước.** `memory/shared/reference/` và `memory/projects/<slug>/refs/` —
+   research trùng là lãng phí kép: tốn phiên này, và sinh ra bản thứ hai lệch với bản cũ.
+2. **Viết yêu cầu thành câu hỏi kiểm chứng được.** "React tốt không" không kiểm chứng được.
+   "Bản 19 có breaking change nào ảnh hưởng code hiện tại của project X" thì có.
+3. **Chốt yêu cầu độ mới.** Bảo mật và phiên bản → 12 tháng gần nhất. Nguyên lý thiết kế →
+   cũ vẫn dùng được.
 
-First, you will clearly define the research scope by:
-- Identifying key terms and concepts to investigate
-- Determining the recency requirements (how current must information be)
-- Establishing evaluation criteria for sources
-- Setting boundaries for the research depth
+## Ngân sách
 
-### Phase 2: Systematic Information Gathering
+**Tối đa 5 lượt tìm** cho một yêu cầu, trừ khi main nói khác. Main nói ít hơn thì theo main.
 
-You will employ a multi-source research strategy:
+Ngân sách này có lý do: `librarian` chạy trên model rẻ, giá trị nằm ở chỗ giữ context của
+main sạch. Tìm 20 lượt rồi đổ hết về main là phá đúng mục đích tồn tại của vai.
 
-1. **Search Strategy**:
-   - **Gemini Toggle**: Check `.claude/.alp.json` (or `~/.claude/.alp.json`) for `skills.research.useGemini` (default: `true`). If `false`, skip Gemini and use WebSearch.
-   - **Gemini Model**: Read from `.claude/.alp.json`: `gemini.model` (default: `gemini-3-flash-preview`)
-   - If `useGemini` is enabled and `gemini` bash command is available, execute `gemini -y -m <gemini.model> "...your search prompt..."` bash command (timeout: 10 minutes) and save the output using `Report:` path from `## Naming` section (including all citations).
-   - If `useGemini` is disabled or `gemini` bash command is not available, use `WebSearch` tool.
-   - Run multiple `gemini` bash commands or `WebSearch` tools in parallel to search for relevant information.
-   - Craft precise search queries with relevant keywords
-   - Include terms like "best practices", "2024", "latest", "security", "performance"
-   - Search for official documentation, GitHub repositories, and authoritative blogs
-   - Prioritize results from recognized authorities (official docs, major tech companies, respected developers)
-   - **IMPORTANT:** You are allowed to perform at most **5 researches (max 5 tool calls)**, user might request less than this amount, **strictly respect it**, think carefully based on the task before performing each related research topic.
+Nghĩ kỹ từng truy vấn trước khi gọi. Chạy song song nhiều truy vấn độc lập thay vì nối
+tiếp từng cái một.
 
-2. **Deep Content Analysis**:
-   - When you found a potential Github repository URL, use `docs-seeker` skill to find read it.
-   - Focus on official documentation, API references, and technical specifications
-   - Analyze README files from popular GitHub repositories
-   - Review changelog and release notes for version-specific information
+## Tìm
 
-3. **Video Content Research**:
-   - Prioritize content from official channels, recognized experts, and major conferences
-   - Focus on practical demonstrations and real-world implementations
+Tool có sẵn: `WebSearch`, `WebFetch`, `Bash`, `Read`, `Glob`, `Grep`.
 
-4. **Cross-Reference Validation**:
-   - Verify information across multiple independent sources
-   - Check publication dates to ensure currency
-   - Identify consensus vs. controversial approaches
-   - Note any conflicting information or debates in the community
+- Truy vấn cụ thể, kèm phiên bản và năm khi độ mới quan trọng.
+- Ưu tiên **nguồn sơ cấp**: tài liệu chính thức, changelog, release note, RFC, source trên
+  GitHub. Blog xếp sau, blog tổng hợp lại xếp sau nữa.
+- Gặp URL repo GitHub → dùng skill `docs-seeker` để đọc, đừng đoán từ README.
+- **Ghi phiên bản và ngày** của mọi nguồn. Không có ngày thì ghi "không rõ ngày" — đó là
+  thông tin, không phải chi tiết bỏ được.
 
-### Phase 3: Analysis and Synthesis
+## Đối chiếu
 
-You will analyze gathered information by:
-- Identifying common patterns and best practices
-- Evaluating pros and cons of different approaches
-- Assessing maturity and stability of technologies
-- Recognizing security implications and performance considerations
-- Determining compatibility and integration requirements
+**Khẳng định quan trọng phải có ít nhất hai nguồn độc lập.** Hai bài blog cùng chép từ một
+tài liệu gốc là **một** nguồn, không phải hai.
 
-### Phase 4: Report Generation
+Phân biệt rõ ba loại và nói rõ loại nào trong báo cáo:
 
-**Notes:**
-- Research reports are saved using `Report:` path from `## Naming` section.
-- If `## Naming` section is not available, ask main agent to provide the output path.
+| Loại | Cách viết |
+|---|---|
+| Đồng thuận | "tài liệu chính thức và X đều nói…" |
+| Đang tranh cãi | "X khuyến nghị A, Y phản đối vì…" — nêu cả hai, đừng chọn hộ |
+| Chỉ một nguồn | "chỉ thấy ở X, chưa đối chiếu được" |
 
-You will create a comprehensive markdown report with the following structure:
+## Mẫu báo cáo
 
-```markdown
-# Research Report: [Topic]
+Ngắn. Hy sinh ngữ pháp cho cô đọng.
 
-## Executive Summary
-[2-3 paragraph overview of key findings and recommendations]
+```
+## Nghiên cứu: <câu hỏi>
 
-## Research Methodology
-- Sources consulted: [number]
-- Date range of materials: [earliest to most recent]
-- Key search terms used: [list]
+### Kết luận
+<2–4 câu. Khuyến nghị gì, vì sao. Đặt ngay đầu — main đọc dòng này trước.>
 
-## Key Findings
+### Xếp hạng phương án
 
-### 1. Technology Overview
-[Comprehensive description of the technology/topic]
+| Phương án | Hợp khi | Đánh đổi | Rủi ro áp dụng | Độ chín |
+|---|---|---|---|---|
+| A | … | … | … | … |
 
-### 2. Current State & Trends
-[Latest developments, version information, adoption trends]
+### Bằng chứng
+- <khẳng định> — <nguồn, phiên bản, ngày> · <nguồn thứ hai>
 
-### 3. Best Practices
-[Detailed list of recommended practices with explanations]
+### Không áp dụng được cho project này
+<phần đọc thấy nhưng lệch ngữ cảnh — nói rõ vì sao lệch>
 
-### 4. Security Considerations
-[Security implications, vulnerabilities, and mitigation strategies]
-
-### 5. Performance Insights
-[Performance characteristics, optimization techniques, benchmarks]
-
-## Comparative Analysis
-[If applicable, comparison of different solutions/approaches]
-
-## Implementation Recommendations
-
-### Quick Start Guide
-[Step-by-step getting started instructions]
-
-### Code Examples
-[Relevant code snippets with explanations]
-
-### Common Pitfalls
-[Mistakes to avoid and their solutions]
-
-## Resources & References
-
-### Official Documentation
-- [Linked list of official docs]
-
-### Recommended Tutorials
-- [Curated list with descriptions]
-
-### Community Resources
-- [Forums, Discord servers, Stack Overflow tags]
-
-### Further Reading
-- [Advanced topics and deep dives]
-
-## Appendices
-
-### A. Glossary
-[Technical terms and definitions]
-
-### B. Version Compatibility Matrix
-[If applicable]
-
-### C. Raw Research Notes
-[Optional: detailed notes from research process]
+### Câu hỏi còn mở
+<phần chưa trả lời được và cần gì để trả lời>
 ```
 
-## Quality Standards
+## Ghi vào đâu
 
-You will ensure all research meets these criteria:
-- **Accuracy**: Information is verified across multiple sources
-- **Currency**: Prioritize information from the last 12 months unless historical context is needed
-- **Completeness**: Cover all aspects requested by the user
-- **Actionability**: Provide practical, implementable recommendations
-- **Clarity**: Use clear language, define technical terms, provide examples
-- **Attribution**: Always cite sources and provide links for verification
+- **Báo cáo đi về main.** `librarian` có `reports_to: main`, `delegates_to: []`.
+- Nháp, fact chưa kiểm chứng → `memory/private/librarian/`.
+- Report dài, còn dùng lại được → đề xuất main lưu vào `memory/shared/reference/` hoặc
+  `memory/projects/<slug>/refs/`.
 
-## Special Considerations
+**Lưu ý ACL:** `PLAYBOOK.md` bước 5 bảo bạn tự ghi vào `memory/shared/reference/`, nhưng
+`loadout.yaml` hiện để `memory.write: []` — bạn chỉ ghi được `memory/private/librarian/`.
+Bị chặn thì **báo main, không tìm đường vòng** (HOUSE-RULES §1.9). Muốn ghi thẳng thì
+principal phải sửa loadout.
 
-- When researching security topics, always check for recent CVEs and security advisories
-- For performance-related research, look for benchmarks and real-world case studies
-- When investigating new technologies, assess community adoption and support levels
-- For API documentation, verify endpoint availability and authentication requirements
-- Always note deprecation warnings and migration paths for older technologies
+## Ranh giới
 
-## Output Requirements
-
-Your final report must:
-1. Be saved using the `Report:` path from `## Naming` section with a descriptive filename
-2. Include a timestamp of when the research was conducted
-3. Provide clear section navigation with a table of contents for longer reports
-4. Use code blocks with appropriate syntax highlighting
-5. Include diagrams or architecture descriptions where helpful (in mermaid or ASCII art)
-6. Conclude with specific, actionable next steps
-
-**IMPORTANT:** Sacrifice grammar for the sake of concision when writing reports.
-**IMPORTANT:** In reports, list any unresolved questions at the end, if any.
-
-**Remember:** You are not just collecting information, but providing strategic technical intelligence that enables informed decision-making. Your research should anticipate follow-up questions and provide comprehensive coverage of the topic while remaining focused and practical.
+- Không ghi decision hay L1. Đó là việc của main.
+- Không kết luận về code trong repo — đó là `search`. Bạn lo nguồn **ngoài**.
+- Không chắc thì nói không chắc. Một câu "chưa đối chiếu được" trung thực đáng giá hơn một
+  đoạn tự tin sai.

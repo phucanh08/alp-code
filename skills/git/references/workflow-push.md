@@ -1,52 +1,62 @@
-# Push Workflow
+# Quy trình push
 
-Execute via `git-manager` subagent.
+**Push là hành động khó đảo ngược** — ra khỏi máy, người khác thấy ngay. Phải được
+principal duyệt **trong phiên này** (HOUSE-RULES §1.2). Không có "lần trước đã duyệt rồi".
 
-## Pre-Push Checklist
-1. All changes committed
-2. Secrets scanned (see `safety-protocols.md`)
-3. Branch pushed to remote
+## 1. Kiểm tra trạng thái
 
-## Tool 1: Verify State
 ```bash
 git status && \
-git log origin/$(git rev-parse --abbrev-ref HEAD)..HEAD --oneline 2>/dev/null || echo "NO_UPSTREAM"
+git log origin/$(git rev-parse --abbrev-ref HEAD)..HEAD --oneline 2>/dev/null || echo "CHƯA_CÓ_UPSTREAM"
 ```
 
-**If uncommitted changes:** Warn user, suggest commit first.
-**If NO_UPSTREAM:** Use `git push -u origin HEAD`.
+- Còn thay đổi chưa commit → báo principal, đề xuất commit trước.
+- `CHƯA_CÓ_UPSTREAM` → dùng `git push -u origin HEAD`.
 
-## Tool 2: Push
+Đọc danh sách commit sắp push **trước khi push**. Push nhầm một commit chứa `memory/` là
+đẩy dữ liệu cục bộ của principal lên remote.
+
+## 2. Push
+
 ```bash
 git push origin HEAD
 ```
 
-**On success:** Report commit hashes pushed.
+**Không push lên `main`/`master`.** Nhánh chính chỉ principal đụng.
 
-## Error Handling
+## Xử lý lỗi
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `rejected - non-fast-forward` | Remote has newer commits | `git pull --rebase`, resolve conflicts, push again |
-| `no upstream branch` | Branch not tracked | `git push -u origin HEAD` |
-| `Authentication failed` | Invalid credentials | Check `gh auth status` or SSH keys |
-| `Repository not found` | Wrong remote URL | Verify `git remote -v` |
-| `Permission denied` | No write access | Check repository permissions |
+| Lỗi | Nguyên nhân | Làm gì |
+|---|---|---|
+| `rejected - non-fast-forward` | remote có commit mới hơn | đề xuất `git pull --rebase` — **hỏi trước khi chạy**, rebase viết lại commit của bạn |
+| `no upstream branch` | nhánh chưa track | `git push -u origin HEAD` |
+| `Authentication failed` | sai credential | kiểm `gh auth status` hoặc SSH key — báo principal, đừng tự đổi cấu hình auth |
+| `Repository not found` | sai remote | kiểm `git remote -v` |
+| `Permission denied` | không có quyền ghi | báo principal |
 
-## Force Push (DANGER)
+## Force push
 
-**NEVER force push to main/master/production branches.**
+**Không bao giờ force push lên `main`/`master`/nhánh production.** Không có ngoại lệ.
 
-If user explicitly requests force push on feature branch:
+Trên nhánh feature, chỉ khi principal nói thẳng:
+
 ```bash
-git push -f origin HEAD
+git push --force-with-lease origin HEAD
 ```
 
-**Warn user:** "Force push rewrites history. Collaborators may lose work."
+Dùng `--force-with-lease`, **không** dùng `-f` trần: `--force-with-lease` từ chối ghi đè
+nếu remote có commit bạn chưa thấy. `-f` thì ghi đè bất chấp — đó là cách xoá việc của
+người khác mà không ai biết.
 
-## Output Format
+Cảnh báo principal trước: force push viết lại lịch sử, ai đang làm trên nhánh đó có thể mất
+việc.
+
+## Báo cáo
+
 ```
-✓ pushed: N commits to origin/{branch}
-  - abc123 feat(auth): add login
-  - def456 fix(api): resolve timeout
+✓ pushed: N commit → origin/<nhánh>
+  - abc123 feat(acl): …
+  - def456 fix(hooks): …
 ```
+
+Không push thì nói rõ chưa push và vì sao.

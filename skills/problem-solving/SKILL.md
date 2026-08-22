@@ -1,96 +1,86 @@
 ---
 name: problem-solving
-description: Apply systematic problem-solving techniques when stuck. Use for complexity spirals, innovation blocks, recurring patterns, assumption constraints, simplification cascades, scale uncertainty.
-version: 2.0.0
+description: Sáu kỹ thuật gỡ bế tắc có hệ thống — dùng khi độ phức tạp phình ra, khi giải pháp thông thường không đủ, khi cùng một vấn đề lặp ở nhiều nơi, khi bị ép vào "chỉ có một cách", hoặc khi không rõ có chịu nổi quy mô thật.
 ---
 
-# Problem-Solving Techniques
+# problem-solving — gỡ bế tắc có hệ thống
 
-Systematic approaches for different types of stuck-ness. Each technique targets specific problem patterns.
+Skill của vai **oracle**. Main gọi bạn khi *đã* thử và *đã* bế tắc — nên việc của skill này
+không phải nghĩ chăm hơn, mà là **đổi kiểu nghĩ**.
 
-## When to Use
+Mỗi kỹ thuật nhắm một dạng bế tắc khác nhau. Chẩn đoán sai dạng thì kỹ thuật vô dụng, nên
+bước 1 là bước quan trọng nhất.
 
-Apply when encountering:
-- **Complexity spiraling** - Multiple implementations, growing special cases, excessive branching
-- **Innovation blocks** - Conventional solutions inadequate, need breakthrough thinking
-- **Recurring patterns** - Same issue across domains, reinventing solutions
-- **Assumption constraints** - Forced into "only way", can't question premise
-- **Scale uncertainty** - Production readiness unclear, edge cases unknown
-- **General stuck-ness** - Unsure which technique applies
+## Chẩn đoán trước
 
-## Quick Dispatch
+| Triệu chứng main mô tả | Kỹ thuật | Đọc |
+|---|---|---|
+| cùng một thứ triển khai 5 kiểu, special case cứ mọc thêm | **Thác đơn giản hoá** | `references/simplification-cascades.md` |
+| cách thông thường không đủ, cần đột phá | **Vùng va chạm** | `references/collision-zone-thinking.md` |
+| cùng một vấn đề ở nhiều chỗ khác nhau, phát minh lại bánh xe | **Nhận mẫu meta** | `references/meta-pattern-recognition.md` |
+| giải pháp thấy gượng, "buộc phải làm thế này" | **Bài tập đảo ngược** | `references/inversion-exercise.md` |
+| chạy thật có chịu nổi không, edge case chưa rõ | **Trò chơi quy mô** | `references/scale-game.md` |
+| không rõ dùng cái nào | **Khi bế tắc** | `references/when-stuck.md` |
 
-**Match symptom to technique:**
+## Sáu kỹ thuật
 
-| Stuck Symptom | Technique | Reference |
-|---------------|-----------|-----------|
-| Same thing implemented 5+ ways, growing special cases | **Simplification Cascades** | `references/simplification-cascades.md` |
-| Conventional solutions inadequate, need breakthrough | **Collision-Zone Thinking** | `references/collision-zone-thinking.md` |
-| Same issue in different places, reinventing wheels | **Meta-Pattern Recognition** | `references/meta-pattern-recognition.md` |
-| Solution feels forced, "must be done this way" | **Inversion Exercise** | `references/inversion-exercise.md` |
-| Will this work at production? Edge cases unclear? | **Scale Game** | `references/scale-game.md` |
-| Unsure which technique to use | **When Stuck** | `references/when-stuck.md` |
+### 1. Thác đơn giản hoá
+Tìm **một** nhận định xoá được nhiều thành phần cùng lúc: "nếu điều này đúng thì không cần
+X, Y, Z nữa."
 
-## Core Techniques
+Cốt lõi: mọi thứ đang có đều là trường hợp riêng của một mẫu chung chưa được đặt tên.
+Cờ đỏ: "chỉ cần thêm một case nữa thôi" — lặp mãi không hết.
 
-### 1. Simplification Cascades
-Find one insight eliminating multiple components. "If this is true, we don't need X, Y, Z."
+### 2. Vùng va chạm
+Ép hai khái niệm không liên quan vào nhau để lộ tính chất mới: "nếu coi X như Y thì sao?"
 
-**Key insight:** Everything is a special case of one general pattern.
+Cốt lõi: ý tưởng đột phá đến từ trộn ẩn dụ có chủ đích, không từ nghĩ chăm hơn trong cùng
+một khung.
+Cờ đỏ: "tôi thử hết cách trong mảng này rồi."
 
-**Red flag:** "Just need to add one more case..." (repeating forever)
+### 3. Nhận mẫu meta
+Tìm mẫu xuất hiện ở 3+ lĩnh vực khác nhau để rút ra nguyên lý dùng chung được.
 
-### 2. Collision-Zone Thinking
-Force unrelated concepts together to discover emergent properties. "What if we treated X like Y?"
+Cốt lõi: mẫu về **cách các mẫu hình thành** cho ra trừu tượng tái dùng được.
+Cờ đỏ: "vấn đề này là đặc thù, không giống ai" — hầu như luôn sai.
 
-**Key insight:** Revolutionary ideas from deliberate metaphor-mixing.
+### 4. Bài tập đảo ngược
+Lật giả định lõi để lộ ràng buộc ngầm: "nếu ngược lại thì sao?"
 
-**Red flag:** "I've tried everything in this domain"
+Cốt lõi: đảo ngược *hợp lệ* cho thấy "luật" thật ra chỉ đúng trong một ngữ cảnh.
+Cờ đỏ: "chỉ có một cách làm thôi."
 
-### 3. Meta-Pattern Recognition
-Spot patterns appearing in 3+ domains to find universal principles.
+### 5. Trò chơi quy mô
+Thử ở cực trị: lớn gấp 1000, nhỏ đi 1000, tức thì, kéo dài một năm.
 
-**Key insight:** Patterns in how patterns emerge reveal reusable abstractions.
+Cốt lõi: thứ chạy tốt ở quy mô này hỏng ở quy mô khác — và cực trị lộ ra đâu là bản chất,
+đâu là ngẫu nhiên.
+Cờ đỏ: "chắc scale được thôi" mà chưa thử.
 
-**Red flag:** "This problem is unique" (probably not)
+### 6. Khi bế tắc
+Cây quyết định để chọn năm cái trên. Dùng khi chẩn đoán không ra dạng bế tắc.
 
-### 4. Inversion Exercise
-Flip core assumptions to reveal hidden constraints. "What if the opposite were true?"
+## Cách áp dụng
 
-**Key insight:** Valid inversions reveal context-dependence of "rules."
+1. **Chẩn đoán dạng bế tắc** từ mô tả của main — bảng trên.
+2. **Đọc file reference** của kỹ thuật đó. SKILL.md này chỉ là bảng điều phối; quy trình
+   thật nằm trong reference.
+3. **Áp dụng theo đúng quy trình**, không rút gọn. Rút gọn là quay lại kiểu nghĩ cũ.
+4. **Ghi lại cái gì hiệu quả, cái gì không.** Bài học về chính cách bạn làm việc →
+   `identity/oracle/journal/YYYY-MM.md`. Fact về project → báo main, main quyết định ghi
+   vào `memory/`.
 
-**Red flag:** "There's only one way to do this"
+## Kết hợp
 
-### 5. Scale Game
-Test at extremes (1000x bigger/smaller, instant/year-long) to expose fundamental truths.
+- **Đơn giản hoá + Nhận mẫu meta** — tìm mẫu trước, rồi đơn giản hoá mọi thể hiện của nó.
+- **Va chạm + Đảo ngược** — ép ẩn dụ, rồi lật giả định của chính ẩn dụ đó.
+- **Quy mô + Đơn giản hoá** — cực trị cho thấy nên bỏ cái gì.
+- **Nhận mẫu meta + Quy mô** — nguyên lý chung đem thử ở cực trị.
 
-**Key insight:** What works at one scale fails at another.
+## Ranh giới
 
-**Red flag:** "Should scale fine" (without testing)
+`oracle` có `Read, Glob, Grep, Bash, WebSearch, WebFetch` — đọc và tra cứu được, **không
+sửa được gì**. Kết quả là một khuyến nghị gửi main, không phải một thay đổi trong code.
 
-## Application Process
-
-1. **Identify stuck-type** - Match symptom to technique above
-2. **Load detailed reference** - Read specific technique from `references/`
-3. **Apply systematically** - Follow technique's process
-4. **Document insights** - Record what worked/failed
-5. **Combine if needed** - Some problems need multiple techniques
-
-## Combining Techniques
-
-Powerful combinations:
-- **Simplification + Meta-pattern** - Find pattern, then simplify all instances
-- **Collision + Inversion** - Force metaphor, then invert its assumptions
-- **Scale + Simplification** - Extremes reveal what to eliminate
-- **Meta-pattern + Scale** - Universal patterns tested at extremes
-
-## References
-
-Load detailed guides as needed:
-- `references/when-stuck.md` - Dispatch flowchart and decision tree
-- `references/simplification-cascades.md` - Cascade detection and extraction
-- `references/collision-zone-thinking.md` - Metaphor collision process
-- `references/meta-pattern-recognition.md` - Pattern abstraction techniques
-- `references/inversion-exercise.md` - Assumption flipping methodology
-- `references/scale-game.md` - Extreme testing procedures
-- `references/attribution.md` - Source and adaptation notes
+Không giao việc cho vai khác (`delegates_to: []`). Cần dữ liệu bạn không lấy được → nói rõ
+cần gì, main sẽ giao `search` hoặc `librarian`.

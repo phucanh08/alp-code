@@ -1,58 +1,89 @@
-# Commit Workflow
+# Quy trình commit
 
-Execute via `git-manager` subagent.
+Main tự chạy. Không có subagent nào để đẩy output sang.
 
-## Tool 1: Stage + Analyze
+## 1. Stage và phân nhóm
+
 ```bash
 git add -A && \
-echo "=== STAGED ===" && git diff --cached --stat && \
-echo "=== SECURITY ===" && \
-git diff --cached | grep -c -iE "(api[_-]?key|token|password|secret|credential)" | awk '{print "SECRETS:"$1}' && \
-echo "=== GROUPS ===" && \
+echo "=== ĐÃ STAGE ===" && git diff --cached --stat && \
+echo "=== SECRET ===" && \
+git diff --cached | grep -c -iE '(api[_-]?key|token|password|secret|credential)' | awk '{print "SECRET:"$1}' && \
+echo "=== NHÓM ===" && \
 git diff --cached --name-only | awk -F'/' '{
-  if ($0 ~ /\.(md|txt)$/) print "docs:"$0
+  if ($0 ~ /^memory\//) print "CẤM:"$0
+  else if ($0 ~ /^identity\/[^\/]+\/\.claude\//) print "CẤM:"$0
+  else if ($0 ~ /\.(md|txt)$/) print "docs:"$0
   else if ($0 ~ /test|spec/) print "test:"$0
-  else if ($0 ~ /\.claude/) print "config:"$0
+  else if ($0 ~ /^(scripts|hooks)\//) print "code:"$0
   else if ($0 ~ /package\.json|lock/) print "deps:"$0
   else print "code:"$0
 }'
 ```
 
-**If SECRETS > 0:** STOP, show matches, block commit.
+**SECRET > 0** → DỪNG, in các dòng khớp, chặn commit, báo principal.
 
-## Tool 2: Split Decision
+**Có dòng `CẤM:`** → `.gitignore` đang hỏng. Hai thứ này không bao giờ được vào commit:
 
-NOTE: 
-- Search for related issues on GitHub and add to body.
-- Only use `feat`, `fix`, or `perf` prefixes for files in `.claude` directory (do not use `docs`).
+| Đường dẫn | Vì sao |
+|---|---|
+| `memory/**` | trí nhớ là dữ liệu cục bộ từng máy, không đi theo git |
+| `identity/*/.claude/**` | sản phẩm của `compile-acl`, chứa path tuyệt đối của máy này |
 
-**From groups, decide:**
+Báo principal. **Không tự `git rm`** — xoá nhầm trí nhớ là mất thật.
 
-**A) Single commit:** Same type/scope, FILES ≤ 3, LINES ≤ 50
+## 2. Quyết định tách
 
-**B) Multi commit:** Mixed types/scopes, group by:
-- Group 1: `config:` → `chore(config): ...`
-- Group 2: `deps:` → `chore(deps): ...`
-- Group 3: `test:` → `test: ...`
-- Group 4: `code:` → `feat|fix: ...`
-- Group 5: `docs:` → `docs: ...`
+**Một commit:** cùng type và scope, ≤ 3 file, ≤ 50 dòng.
 
-## Tool 3: Commit
+**Nhiều commit:** trộn type/scope → tách theo nhóm, commit theo thứ tự này:
 
-**Single:**
+| Thứ tự | Nhóm | Prefix |
+|---|---|---|
+| 1 | deps | `chore(deps): …` |
+| 2 | code | `feat|fix|refactor(scope): …` |
+| 3 | test | `test: …` |
+| 4 | docs | `docs: …` |
+
+Deps trước code vì code có thể phụ thuộc deps mới — commit ngược thứ tự thì có một commit
+ở giữa không build được.
+
+Scope trong alp-code lấy theo vùng thật: `acl`, `herdr`, `installer`, `hooks`, `skills`,
+`identity`. Xem `git log --oneline -20` để theo scope đã dùng, đừng tự đặt scope mới.
+
+## 3. Commit
+
+Một commit:
+
 ```bash
-git commit -m "type(scope): description"
+git commit -m "type(scope): mô tả"
 ```
 
-**Multi (sequential):**
-```bash
-git reset && git add file1 file2 && git commit -m "type(scope): desc"
-```
-Repeat for each group.
+Nhiều commit — làm tuần tự, mỗi nhóm một lần:
 
-## Tool 4: Push (if requested)
 ```bash
-git push && echo "✓ pushed: yes" || echo "✓ pushed: no"
+git reset && git add <file…> && git commit -m "type(scope): mô tả"
 ```
 
-**Only push if user explicitly requested** ("push", "commit and push").
+`git reset` ở đây chỉ bỏ stage, **không** đụng working tree. Đừng nhầm với
+`git reset --hard`.
+
+## 4. Push
+
+```bash
+git push
+```
+
+**Chỉ push khi principal nói thẳng trong phiên này** — "push", "commit rồi push".
+Được duyệt lần trước không tính cho lần này (HOUSE-RULES §1.2).
+
+Không push lên `main`/`master`. Không `--force`.
+
+## Báo cáo
+
+```
+✓ staged: N file (+X/−Y dòng)
+✓ secret: sạch
+✓ commit: <hash> type(scope): mô tả
+✗ push: CHƯA — chờ principal duyệt
+```

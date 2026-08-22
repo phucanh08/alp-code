@@ -1,58 +1,70 @@
-# Pull Request Workflow
+# Quy trình mở Pull Request
 
-Execute via `git-manager` subagent.
+Mở PR là **đưa việc ra ngoài** — cần principal duyệt như push (HOUSE-RULES §1.2).
 
-## Variables
-- TO_BRANCH: target (defaults to `main`)
-- FROM_BRANCH: source (defaults to current branch)
+Biến: `BASE` = nhánh đích (mặc định `main`) · `HEAD` = nhánh nguồn (mặc định nhánh hiện tại).
 
-## CRITICAL: Use REMOTE diff
-PRs based on remote branches. Local diff includes unpushed changes.
+## Luật lõi: so bằng diff REMOTE
 
-## Tool 1: Sync + Analyze
+PR dựng trên nhánh **trên remote**. Diff local có cả thứ chưa push, nên mô tả PR viết theo
+diff local sẽ kể những thay đổi mà người review không nhìn thấy.
 
-**IMPORTANT: Always merge `main` (or any default branch) to current branch first.**
+**Không dùng để soạn nội dung PR:** `git diff main...HEAD` · `git diff --cached` ·
+`git status`. Ba lệnh này đều so với working tree local.
+
+## 1. Đồng bộ và phân tích
 
 ```bash
 git fetch origin && \
-git push -u origin HEAD 2>/dev/null || true && \
-BASE=${BASE_BRANCH:-main} && \
+BASE=${BASE:-main} && \
 HEAD=$(git rev-parse --abbrev-ref HEAD) && \
 echo "=== PR: $HEAD → $BASE ===" && \
-echo "=== COMMITS ===" && \
+echo "=== COMMIT ===" && \
 git log origin/$BASE...origin/$HEAD --oneline && \
-echo "=== FILES ===" && \
+echo "=== FILE ===" && \
 git diff origin/$BASE...origin/$HEAD --stat
 ```
 
-**If "Branch not on remote":** Push first, retry.
+Báo "nhánh chưa có trên remote" → push trước (cần duyệt), rồi chạy lại.
 
-## Tool 2: Generate Content
-**Title:** Conventional commit format, <72 chars, NO version numbers
-**Body:** Summary bullets + Test plan checklist
+Diff rỗng → dừng, báo principal "không có thay đổi nào để mở PR". Đừng mở PR rỗng.
 
-## Tool 3: Create PR
+## 2. Soạn nội dung
+
+**Tiêu đề:** conventional commit, dưới 72 ký tự, tiếng Việt cho phần mô tả, **không** kèm
+số phiên bản.
+
+**Thân:** tóm tắt gạch đầu dòng + checklist kiểm chứng. Trả lời *vì sao*, không phải *làm
+gì* — diff đã nói làm gì.
+
+## 3. Tạo PR
+
 ```bash
-gh pr create --base $BASE --head $HEAD --title "..." --body "$(cat <<'EOF'
-## Summary
-- Bullet points
+gh pr create --base "$BASE" --head "$HEAD" --title "…" --body "$(cat <<'EOF'
+## Tóm tắt
+- …
 
-## Test plan
-- [ ] Test item
+## Kiểm chứng
+- [ ] …
+
+## Câu hỏi còn mở
+- …
 EOF
 )"
 ```
 
-## DO NOT use (local comparison)
-- ❌ `git diff main...HEAD`
-- ❌ `git diff --cached`
-- ❌ `git status`
+Mở **draft PR** (`--draft`) khi việc chưa xong hẳn — rẻ hơn nhiều so với mở PR thật rồi
+phải đóng.
 
-## Error Handling
+## Xử lý lỗi
 
-| Error | Action |
-|-------|--------|
-| Branch not on remote | `git push -u origin HEAD`, retry |
-| Empty diff | Warn: "No changes for PR" |
-| Push rejected | `git pull --rebase`, resolve, push |
-| No upstream | `git push -u origin HEAD` |
+| Lỗi | Làm gì |
+|---|---|
+| nhánh chưa có trên remote | push trước (xin duyệt), rồi chạy lại |
+| diff rỗng | dừng, báo principal |
+| push bị từ chối | `git pull --rebase` — hỏi trước |
+| `gh` chưa đăng nhập | `gh auth status`; báo principal, đừng tự đăng nhập |
+
+## Sau khi tạo
+
+Báo principal **URL của PR**. Không tự merge PR vừa mở — xem `workflow-merge.md`.

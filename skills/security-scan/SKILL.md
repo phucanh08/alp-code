@@ -1,141 +1,101 @@
 ---
 name: security-scan
-description: "Scan codebase for security vulnerabilities, hardcoded secrets, dependency issues, and OWASP patterns. Use when asked to 'security scan', 'check for secrets', 'audit security', or before major releases."
-argument-hint: "[scope] [--secrets-only] [--deps-only] [--full]"
-metadata:
-  author: anhlpkit
-  version: "1.0.0"
+description: Quét bảo mật bằng Grep + shell — secret lộ, phụ thuộc có CVE, mẫu lỗ hổng phổ biến, .env bị track. Kích hoạt khi main giao concern security, khi nghi có credential trong code, hoặc trước khi chốt một thay đổi chạm xác thực hay dữ liệu.
 ---
 
-# Security Scan
+# security-scan — quét lỗ hổng cơ học
 
-Lightweight security scanner using Claude's reasoning + shell tools. No external dependencies required.
+Skill của vai **review**, dùng cho concern `security`. Đây là bước **quét**, không phải bước
+kết luận: nó tìm chỗ đáng ngờ nhanh và đầy đủ, còn xác định có thật là lỗ hổng hay không
+vẫn là việc đọc code của bạn.
 
-## Usage
+Không cần cài gì thêm — chỉ `Grep`, `Glob` và `Bash`, đúng bộ tool `review` đang có.
 
-```
-/security-scan              # Full scan of current project
-/security-scan --secrets-only   # Only secret/credential detection
-/security-scan --deps-only      # Only dependency audit
-/security-scan src/api/         # Scan specific directory
-```
+## Thứ tự chạy
 
-## Scan Categories
+Chạy đúng thứ tự này. Secret trước vì nó là loại phát hiện **khẩn cấp nhất** — một key lộ
+cần xoay ngay, không đợi hết báo cáo.
 
-| Category | Method | Speed | Reference |
-|----------|--------|-------|-----------|
-| Secrets | Grep regex patterns | Fast | `references/secret-patterns.md` |
-| Dependencies | `npm audit` / `pip audit` | Medium | Built-in |
-| Code patterns | Grep + Claude analysis | Medium | `references/vulnerability-patterns.md` |
+### 1. Nhận diện loại project
 
-## Workflow
+`package.json` → Node · `requirements.txt`/`pyproject.toml` → Python · `go.mod` → Go ·
+`Cargo.toml` → Rust. Không nhận ra thì bỏ bước audit phụ thuộc, nói rõ trong báo cáo.
 
-### 1. Detect Project Type
+### 2. Quét secret — luôn chạy
 
-```
-- Check for package.json → Node.js
-- Check for requirements.txt / pyproject.toml → Python
-- Check for go.mod → Go
-- Check for Cargo.toml → Rust
-```
+Mẫu regex: `references/secret-patterns.md`.
 
-### 2. Secret Scanning (Always runs first)
+Bỏ qua: `.env.example`, fixture test, tài liệu, `node_modules/`, `dist/`, `vendor/`.
 
-Load `references/secret-patterns.md` for regex patterns.
+Mỗi khớp phải tự hỏi: đây là secret thật hay placeholder (`YOUR_API_KEY`, `xxx`, `changeme`)?
+Placeholder mà báo CHẶN là cách nhanh nhất để lần sau không ai đọc báo cáo của bạn nữa.
 
-Use Grep tool to search for each pattern category:
-- API keys and tokens (AWS, GitHub, Stripe, etc.)
-- Private keys and certificates
-- Database connection strings with credentials
-- Hardcoded passwords in code
-
-**Exclude**: `.env.example`, test fixtures, documentation, `node_modules/`, `dist/`
-
-For each match:
-- Verify it's a real secret (not a placeholder like `YOUR_API_KEY`)
-- Rate severity: CRITICAL (exposed prod key), HIGH (real credential), MEDIUM (possible credential)
-
-### 3. Dependency Audit (If applicable)
-
-Run the appropriate command:
-```bash
-# Node.js
-npm audit --json 2>/dev/null || echo '{"error":"npm audit failed"}'
-
-# Python (if pip-audit available)
-pip audit --format json 2>/dev/null || echo '{"error":"pip audit unavailable"}'
-```
-
-Parse output, categorize by severity (critical/high/moderate/low).
-
-### 4. Code Pattern Analysis
-
-Load `references/vulnerability-patterns.md` for patterns.
-
-Use Grep tool to search for dangerous patterns:
-- SQL injection (string concatenation in queries)
-- XSS (innerHTML, dangerouslySetInnerHTML without sanitization)
-- Command injection (exec/spawn with unsanitized input)
-- Path traversal (user input in file paths)
-- Insecure randomness (Math.random for security)
-- eval() / Function() with dynamic input
-
-For each match:
-- Read surrounding code context (5-10 lines)
-- Use Claude reasoning to determine if it's a real vulnerability or false positive
-- Rate severity and suggest fix
-
-### 5. .env Exposure Check
+### 3. Audit phụ thuộc
 
 ```bash
-# Check if .env files are tracked by git
+npm audit --json 2>/dev/null || echo 'npm audit không chạy được'
+pip-audit --format json 2>/dev/null || echo 'pip-audit không có'
+```
+
+Không chạy được thì ghi "chưa audit được vì …" — **không** suy ra là sạch.
+
+### 4. Mẫu lỗ hổng trong code
+
+Mẫu: `references/vulnerability-patterns.md`. Grep xong thì **đọc 5–10 dòng quanh chỗ khớp**
+rồi mới kết luận. Grep một mình chỉ ra chỗ đáng nhìn, không ra lỗ hổng.
+
+Nhóm chính: SQL injection (nối chuỗi vào query), XSS (`innerHTML`,
+`dangerouslySetInnerHTML` không sanitize), command injection (`exec`/`spawn` với input
+chưa lọc), path traversal, randomness không an toàn (`Math.random` cho mục đích bảo mật),
+`eval()`/`Function()` với input động.
+
+### 5. Kiểm tra .env bị track
+
+```bash
 git ls-files --error-unmatch .env .env.local .env.production 2>/dev/null
-# Check .gitignore for .env patterns
-grep -n "\.env" .gitignore 2>/dev/null
+grep -n '\.env' .gitignore 2>/dev/null
 ```
 
-### 6. Generate Report
+## Luật cứng khi xử lý secret
 
-Output a markdown report directly in chat:
+- **Không bao giờ in giá trị secret thật ra báo cáo.** Che còn 4 ký tự đầu + 2 ký tự cuối.
+- **Không chạy, không dùng, không thử** credential tìm được. Kể cả để "kiểm chứng xem có
+  thật không" — dùng thử một key thật là hành động khó đảo ngược (HOUSE-RULES §1.2).
+- Tìm thấy credential thật → khuyến nghị **xoay ngay**, và nói rõ nó đã nằm trong lịch sử
+  git thì xoá file không đủ.
+- Không tự sửa code. `review` không có `Edit`/`Write`, và cũng không nên có.
 
-```markdown
-# Security Scan Report
+## Mẫu báo cáo
 
-**Project:** {name}
-**Scanned:** {date}
-**Files checked:** {count}
+Dùng đúng ba mức của `code-review` để main không phải quy đổi thang.
 
-## Summary
-| Category | Critical | High | Medium | Low |
-|----------|----------|------|--------|-----|
-| Secrets  | X | X | X | - |
-| Deps     | X | X | X | X |
-| Code     | X | X | X | - |
+```
+## Quét bảo mật: <scope>
 
-## Findings
+Đã chạy: <lệnh nào chạy được, lệnh nào không>
+File đã quét: <số>
 
-### CRITICAL
-1. **[SECRET]** Hardcoded AWS key in `src/config.js:42`
-   - Pattern: `AKIA[0-9A-Z]{16}`
-   - Fix: Move to environment variable
+Tổng: CHẶN n · NÊN SỬA n · GHI NHẬN n
 
-### HIGH
-...
+### CHẶN
+- [SECRET] `src/config.js:42` — AWS key, khớp `AKIA[0-9A-Z]{16}`, giá trị `AKIA…4F`
+  Sửa: xoay key ngay, chuyển sang biến môi trường. Key đã vào lịch sử git.
+- [SQLi] `src/db/user.ts:88` — nối trực tiếp `req.query.id` vào câu SQL
+  Bằng chứng: <đoạn code>
 
-## Recommendations
-1. ...
+### NÊN SỬA
+- …
+
+### GHI NHẬN
+- …
+
+### Chưa kiểm chứng được
+<phần grep khớp nhưng chưa đọc đủ ngữ cảnh để kết luận, và vì sao>
 ```
 
-If `--auto` mode active in cook workflow: save report to `{ALP_REPORTS_PATH}` or `plans/reports/security-scan-{date}.md`.
+## Phạm vi
 
-## Scope Declaration
+**Làm:** phát hiện secret, audit phụ thuộc, mẫu lỗ hổng phổ biến, `.env` bị track.
 
-This skill handles: Secret detection, dependency auditing, common vulnerability patterns.
-This skill does NOT handle: Penetration testing, runtime security analysis, infrastructure security, compliance audits.
-
-## Security Policy
-
-- NEVER output actual secret values in reports — redact to first 4 + last 2 chars
-- NEVER execute secrets or credentials found during scanning
-- NEVER modify code automatically — only report findings with fix suggestions
-- If a real credential is found, recommend immediate rotation
+**Không làm:** pentest, phân tích lúc chạy, bảo mật hạ tầng, audit tuân thủ. Việc đó vượt
+quá thứ đọc code tĩnh trả lời được — gặp thì báo main, đừng giả vờ kết luận.

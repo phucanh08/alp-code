@@ -1,90 +1,90 @@
 ---
 name: gkg
-description: Semantic code analysis with GitLab Knowledge Graph. Use for go-to-definition, find-usages, impact analysis, architecture visualization. Supports Ruby, Java, Kotlin, Python, TypeScript/JavaScript.
+description: Điều hướng code theo ngữ nghĩa bằng GitLab Knowledge Graph — tìm định nghĩa, tìm mọi chỗ gọi, phân tích ảnh hưởng trước khi refactor. Kích hoạt khi ripgrep trả quá nhiều kết quả trùng tên hoặc khi cần chắc đã tìm hết call-site.
 ---
 
-# GitLab Knowledge Graph (GKG)
+# gkg — tìm theo ngữ nghĩa, không theo chuỗi
 
-Semantic code analysis engine using AST parsing and KuzuDB graph database. Enables IDE-like code navigation for AI assistants.
+Skill của vai **search**. Đây là công cụ **bổ sung** cho `rg`/`Grep`, không thay thế.
 
-**Status**: Public beta | **Requires**: Git repository | **Storage**: `~/.gkg/`
+Khi nào nó hơn `rg`: tên symbol trùng với từ thông thường, cùng tên ở nhiều module, hoặc
+main hỏi "sửa chỗ này thì vỡ những đâu" — `rg` trả chuỗi khớp, `gkg` trả quan hệ thật trong
+AST.
 
-## When to Use
+Khi nào `rg` đủ và nhanh hơn: tên đủ hiếm, tìm trong một thư mục, tìm chuỗi trong config
+hay tài liệu. **Mặc định vẫn là `rg`** — `gkg` phải index trước, và index tốn thời gian.
 
-- Find all usages of a function/class across codebase
-- Go-to-definition for symbols
-- Impact analysis before refactoring
-- Generate architecture diagrams
-- RAG-enhanced code understanding
-
-**Use repomix instead** for: quick context dumps, any-language support, remote repos, token counting.
-
-## Quick Start
+## Kiểm tra trước khi dùng
 
 ```bash
-# Check installation
 gkg --version
-
-# Index current repo
-gkg index
-
-# Start server (for API/MCP)
-gkg server start
-
-# Stop before re-indexing
-gkg server stop
 ```
 
-## Installation
+Chưa cài thì **báo main, đừng tự cài**. Cài phần mềm là hành động khó đảo ngược
+(HOUSE-RULES §1.2), và `search` không có quyền quyết định việc đó. Cứ trả lời bằng `rg` và
+nói rõ trong báo cáo là chưa có `gkg`.
+
+Cài (chỉ khi main đã duyệt):
 
 ```bash
-# macOS/Linux
 curl -fsSL https://gitlab.com/gitlab-org/rust/knowledge-graph/-/raw/main/install.sh | bash
-
-# Windows (PowerShell)
-irm https://gitlab.com/gitlab-org/rust/knowledge-graph/-/raw/main/install.ps1 | iex
 ```
 
-## Core Workflows
+## Quy trình
 
-### Index and Query
 ```bash
-gkg index /path/to/project --stats
-gkg server start
-# Query via HTTP API at http://localhost:27495
+gkg index <đường dẫn workspace> --stats   # index — chỉ workspace trong loadout
+gkg server start                          # bật server để query
+# query qua HTTP API: http://localhost:27495
+gkg server stop                           # PHẢI dừng trước khi index lại
 ```
 
-### Find Symbol Usages
-1. Index project: `gkg index`
-2. Start server: `gkg server start`
-3. Use MCP tool `get_references` or HTTP API `/api/graph/search`
+**Chỉ index workspace có trong `workspaces.read` của `loadout.yaml`.** Index một repo ngoài
+danh sách là đọc thứ mình không được đọc, kể cả khi filesystem không chặn.
 
-### Impact Analysis
-1. Index affected repos
-2. Query `get_references` for changed symbols
-3. Review all call sites before refactoring
+Dữ liệu index nằm ở `~/.gkg/` — ngoài repo, nên nó sống qua nhiều phiên. Index lại khi code
+đã đổi nhiều, đừng index mỗi phiên.
 
-## Language Support
+## Ba việc chính
 
-| Language | Cross-file Refs |
-|----------|-----------------|
-| Ruby | ✅ Full |
-| Java | ✅ Full |
-| Kotlin | ✅ Full |
-| Python | 🚧 In progress |
-| TypeScript | 🚧 In progress |
-| JavaScript | 🚧 In progress |
+| Việc | Cách |
+|---|---|
+| Tìm định nghĩa | index → `server start` → query symbol |
+| Tìm mọi chỗ gọi | query `get_references` cho symbol đó |
+| Phân tích ảnh hưởng | `get_references` cho từng symbol sắp đổi, đọc hết call-site trước khi kết luận |
 
-## References
+Phân tích ảnh hưởng là chỗ skill này đáng giá nhất: main sắp refactor và cần biết vỡ những
+đâu. Trả lời "tôi grep thấy 3 chỗ" khi thật ra có 11 chỗ gọi gián tiếp là kiểu sai đắt nhất
+mà `search` có thể gây ra.
 
-- [CLI Commands](./references/cli-commands.md) - `gkg index`, `gkg server`, `gkg remove`, `gkg clean`
-- [MCP Tools](./references/mcp-tools.md) - 7 tools for AI integration
-- [HTTP API](./references/http-api.md) - REST endpoints for querying
-- [Language Details](./references/language-support.md) - Supported features per language
+## Hỗ trợ ngôn ngữ — đọc kỹ trước khi tin kết quả
 
-## Key Constraints
+| Ngôn ngữ | Tham chiếu chéo file |
+|---|---|
+| Ruby, Java, Kotlin | đầy đủ |
+| Python, TypeScript, JavaScript | **chưa xong** |
 
-- Must stop server before re-indexing
-- Requires initialized Git repository
-- Languages not connected across repos (yet)
-- TS/JS/Python cross-file refs incomplete
+Với TS/JS/Python, `gkg` **có thể bỏ sót** call-site chéo file. Dùng thì phải đối chiếu thêm
+bằng `rg`, và trong báo cáo phải ghi rõ là kết quả chưa chắc đầy đủ. Đây là beta công khai,
+không phải công cụ đã chín.
+
+## Ràng buộc
+
+- Phải `server stop` trước khi index lại.
+- Cần repo đã `git init`.
+- Chưa nối tham chiếu **giữa các repo**.
+- Không có MCP trong phiên `search` (`tools: [Read, Glob, Grep, Bash]`) — dùng HTTP API qua
+  `Bash`, không dùng MCP tool.
+
+## Tham chiếu
+
+| File | Nội dung |
+|---|---|
+| `references/cli-commands.md` | `gkg index`, `gkg server`, `gkg remove`, `gkg clean` |
+| `references/http-api.md` | REST endpoint để query |
+| `references/language-support.md` | chi tiết từng ngôn ngữ |
+
+## Báo cáo
+
+Như mọi việc của `search`: kết luận ngắn, bằng chứng `path:line`, và **nói rõ phần chưa
+chắc**. Thêm một dòng: tìm bằng `gkg` hay bằng `rg`, vì độ tin cậy hai đường khác nhau.

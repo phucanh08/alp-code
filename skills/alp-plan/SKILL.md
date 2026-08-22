@@ -1,209 +1,126 @@
 ---
 name: alp-plan
-description: "Plan implementations, design architectures, create technical roadmaps with detailed phases. Use for feature planning, system design, solution architecture, implementation strategy, phase documentation."
-argument-hint: "[task] OR [archive|red-team|validate]"
-license: MIT
-metadata:
-  author: anhlpkit
-  version: "1.0.0"
+description: Lập kế hoạch triển khai — thách thức phạm vi, thu thập bối cảnh, thiết kế giải pháp, chia phase, viết plan vào plans/. Kích hoạt khi principal giao một việc đủ lớn để cần chia bước, khi phải chốt kiến trúc trước lúc viết code, hoặc khi cần rà kế hoạch cũ trước khi mở kế hoạch mới.
 ---
 
-# Planning
+# alp-plan — chốt kiến trúc trước khi gõ code
 
-Create detailed technical implementation plans through research, codebase analysis, solution design, and comprehensive documentation.
+Skill của vai **main**. Bạn là người điều phối, nên kế hoạch cũng là hợp đồng bạn ký với
+principal — và là thứ các vai khác đọc để biết mình được giao gì.
 
-**IMPORTANT:** Before you start, scan unfinished plans in the current project at `./plans/` directory, read the `plan.md`, if there are relevant plans with your upcoming plan, update them as well. If you're unsure or need more clarifications, use `AskUserQuestion` tool to ask the user.
+**Không viết code trong lúc lập kế hoạch.** Ra plan, principal duyệt, rồi mới làm.
 
-### Cross-Plan Dependency Detection
+## Trước khi mở kế hoạch mới
 
-During the pre-creation scan, detect and mark blocking relationships between plans:
+1. **Quét `plans/` tìm kế hoạch chưa xong.** Đọc frontmatter `status:` của từng `plan.md`.
+   Kế hoạch dở dang trùng phạm vi mà không ai biết là cách chắc chắn nhất để làm hai lần
+   cùng một việc theo hai hướng khác nhau.
 
-1. **Scan** — Read `plan.md` frontmatter of each unfinished plan (status != `completed`/`cancelled`)
-2. **Compare scope** — Check overlapping files, shared dependencies, same feature area
-3. **Classify relationship:**
-   - New plan needs output of existing plan → new plan `blockedBy: [existing-plan-dir]`
-   - New plan changes something existing plan depends on → existing plan `blockedBy: [new-plan-dir]`, new plan `blocks: [existing-plan-dir]`
-   - Mutual dependency → both plans reference each other in `blockedBy`/`blocks`
-4. **Bidirectional update** — When relationship detected, update BOTH `plan.md` files' frontmatter
-5. **Ambiguous?** → Use `AskUserQuestion` with header "Plan Dependency", present detected overlap, ask user to confirm relationship type (blocks/blockedBy/none)
+2. **Phát hiện quan hệ chặn.** So phạm vi: file đụng nhau, phụ thuộc chung, cùng vùng tính năng.
 
-**Frontmatter fields** (relative plan dir paths):
+   | Quan hệ | Ghi vào frontmatter |
+   |---|---|
+   | kế hoạch mới cần kết quả của kế hoạch cũ | mới: `blockedBy: [<dir cũ>]` |
+   | kế hoạch mới đổi thứ kế hoạch cũ đang dựa vào | cũ: `blockedBy: [<dir mới>]` · mới: `blocks: [<dir cũ>]` |
+   | phụ thuộc hai chiều | cả hai cùng ghi |
+
+   **Cập nhật cả hai file.** Ghi một chiều thì lần quét sau chỉ thấy một nửa quan hệ.
+
+3. **Không rõ thì hỏi principal.** Main nói chuyện trực tiếp với principal — hỏi một câu
+   ngắn rẻ hơn nhiều so với lập sai cả kế hoạch.
+
+## Bốn bước
+
+### 0. Thách thức phạm vi
+
+`references/scope-challenge.md`. **Bỏ qua nếu:** việc nhỏ rõ ràng (sửa một file, mô tả dưới
+20 từ).
+
+Câu hỏi đắt nhất hỏi ở đây: *không làm gì thì sao?* Và: *phần nào của yêu cầu này là thật
+sự cần, phần nào là mình tự thêm?* YAGNI áp dụng cho kế hoạch trước khi áp dụng cho code.
+
+### 1. Thu thập bối cảnh
+
+Bạn **không tự đi đọc hết**. Giao đúng vai — đó là lý do chúng tồn tại, và là cách giữ
+context của bạn sạch:
+
+| Cần gì | Giao ai | Cách |
+|---|---|---|
+| code hiện tại nằm đâu, ai gọi ai | `search` | `scripts/run-role.sh search` |
+| thư viện/cách làm bên ngoài | `librarian` | `scripts/run-role.sh librarian` |
+| đã từng quyết định gì về việc này | `read-thread` | `scripts/run-role.sh read-thread` |
+
+Giao được nhiều vai **song song** thì giao — chúng độc lập với nhau. Quản nhiều phiên cùng
+lúc: skill `herdr`.
+
+**Bỏ qua bước này nếu** principal đã đưa sẵn report, hoặc việc quá nhỏ.
+
+Chi tiết: `references/research-phase.md`, `references/codebase-understanding.md`.
+
+### 2. Thiết kế giải pháp
+
+`references/solution-design.md`.
+
+Rủi ro cao, khó đảo ngược, hoặc nhiều phương án cạnh tranh → **giao `oracle`** chạy
+`alp-predict` trước khi chốt. Phán quyết DỪNG của oracle nghĩa là thiết kế lại, không phải
+ghi chú thêm một dòng rủi ro rồi đi tiếp.
+
+### 3. Viết kế hoạch
+
+`references/plan-organization.md` và `references/output-standards.md`.
+
+## Định dạng — theo đúng repo
+
+```
+plans/{YYMMDD}-{HHMM}-{slug}/
+  plan.md              tổng quan, nguyên tắc, ngoài phạm vi
+  phase-0-<tên>.md     từng phase một file
+  phase-1-<tên>.md
+```
+
+Báo cáo: `plans/reports/{loại}-{YYMMDD}-{HHMM}-{slug}.md`.
+
+Frontmatter bắt buộc của `plan.md`:
 
 ```yaml
-blockedBy: [260301-1200-auth-system] # This plan waits on these plans
-blocks: [260228-0900-user-dashboard] # This plan blocks these plans
+---
+status: draft | in-progress | completed | cancelled
+created: YYYY-MM-DD
+slug: <kebab>
+source: plans/reports/<report sinh ra kế hoạch này>.md
+blockedBy: []
+blocks: []
+---
 ```
 
-**Status interaction:** A plan with `blockedBy` entries where ANY blocker is not `completed` → plan status should note `blocked` in its overview. When all blockers complete, the blocked plan becomes unblocked automatically on next scan.
+`plan.md` phải có mục **Ngoài phạm vi**. Không có mục đó thì phạm vi sẽ tự phình trong lúc
+làm, và không ai chỉ ra được lúc nào nó phình.
 
-## Default (No Arguments)
+Mỗi file phase mở đầu bằng **Mục tiêu** một câu và **Phụ thuộc** (phase nào phải xong trước).
 
-If invoked with a task description, proceed with planning workflow. If invoked WITHOUT arguments or with unclear intent, use `AskUserQuestion` to present available operations:
+## Chất lượng
 
-| Operation   | Description                           |
-| ----------- | ------------------------------------- |
-| `(default)` | Create implementation plan for a task |
-| `archive`   | Write journal entry & archive plans   |
-| `red-team`  | Adversarial plan review               |
-| `validate`  | Critical questions interview          |
+- Đủ chi tiết để một vai khác đọc và làm được mà không hỏi lại.
+- Nêu rõ **cách kiểm chứng** từng phase đã xong — không có tiêu chí thì phase không bao giờ
+  đóng được.
+- Nêu failure mode và cách giảm thiểu. Phase nào chưa nêu được thì chưa duyệt được.
+- Trong kế hoạch, ghi rõ phase nào **bắt buộc phải hỏi principal** trước khi chạy (thao tác
+  khó đảo ngược — HOUSE-RULES §1.2).
+- Tôn trọng YAGNI, KISS, DRY. Thẳng, phũ, ngắn.
 
-Present as options via `AskUserQuestion` with header "Planning Operation", question "What would you like to do?".
+## Sau khi viết xong
 
-## Workflow Modes
+1. **Rà đối kháng** — giao `oracle`, hoặc tự chạy `references/red-team-workflow.md`.
+2. **Phỏng vấn kiểm chứng** — `references/validate-workflow.md`.
+3. **Báo principal**: đường dẫn plan + tóm tắt + **câu hỏi còn mở ở cuối**.
+4. **Không tự bắt tay làm.** Principal duyệt rồi mới chạy.
 
-Default: `--auto` (analyze task complexity and auto-pick mode).
+Kế hoạch xong hẳn → `references/archive-workflow.md`: đổi `status: completed`, ghi bài học
+vào `identity/main/journal/YYYY-MM.md`.
 
-| Flag         | Mode           | Research       | Red Team        | Validation      | Cook Flag    |
-| ------------ | -------------- | -------------- | --------------- | --------------- | ------------ |
-| `--auto`     | Auto-detect    | Follows mode   | Follows mode    | Follows mode    | Follows mode |
-| `--fast`     | Fast           | Skip           | Skip            | Skip            | `--auto`     |
-| `--hard`     | Hard           | 2 researchers  | Yes             | Optional        | (none)       |
-| `--parallel` | Parallel       | 2 researchers  | Yes             | Optional        | `--parallel` |
-| `--two`      | Two approaches | 2+ researchers | After selection | After selection | (none)       |
+## Ranh giới
 
-Add `--no-tasks` to skip task hydration in any mode.
-
-Load: `references/workflow-modes.md` for auto-detection logic, per-mode workflows, context reminders.
-
-## When to Use
-
-- Planning new feature implementations
-- Architecting system designs
-- Evaluating technical approaches
-- Creating implementation roadmaps
-- Breaking down complex requirements
-
-## Core Responsibilities & Rules
-
-Always honoring **YAGNI**, **KISS**, and **DRY** principles.
-**Be honest, be brutal, straight to the point, and be concise.**
-
-### 0. Scope Challenge
-
-Load: `references/scope-challenge.md`
-**Skip if:** `--fast` mode or trivial task (single file fix, <20 word description)
-
-### 1. Research & Analysis
-
-Load: `references/research-phase.md`
-**Skip if:** Fast mode or provided with researcher reports
-
-### 2. Codebase Understanding
-
-Load: `references/codebase-understanding.md`
-**Skip if:** Provided with scout reports
-
-### 3. Solution Design
-
-Load: `references/solution-design.md`
-
-### 4. Plan Creation & Organization
-
-Load: `references/plan-organization.md`
-
-### 5. Task Breakdown & Output Standards
-
-Load: `references/output-standards.md`
-
-## Process Flow (Authoritative)
-
-```mermaid
-flowchart TD
-    A[Pre-Creation Check] --> B[Cross-Plan Scan]
-    B --> C[Scope Challenge]
-    C --> D[Mode Detection]
-    D -->|fast| E[Skip Research]
-    D -->|hard/parallel/two| F[Spawn Researchers]
-    E --> G[Codebase Analysis]
-    F --> G
-    G --> H[Write Plan via Planner]
-    H --> I{Red Team?}
-    I -->|Yes| J[Red Team Review]
-    I -->|No| K{Validate?}
-    J --> K
-    K -->|Yes| L[Validation Interview]
-    K -->|No| M[Hydrate Tasks]
-    L --> M
-    M --> N[Output Cook Command]
-    N --> O[Journal]
-```
-
-**This diagram is the authoritative workflow.** Prose sections below provide detail for each node.
-
-## Workflow Process
-
-1. **Pre-Creation Check** → Check Plan Context for active/suggested/none
-   1b. **Cross-Plan Scan** → Scan unfinished plans, detect `blockedBy`/`blocks` relationships, update both plans
-   1c. **Scope Challenge** → Run Step 0 scope questions, select mode (see `references/scope-challenge.md`)
-   **Skip if:** `--fast` mode or trivial task
-2. **Mode Detection** → Auto-detect or use explicit flag (see `workflow-modes.md`)
-3. **Research Phase** → Spawn researchers (skip in fast mode)
-4. **Codebase Analysis** → Read docs, scout if needed
-5. **Plan Documentation** → Write comprehensive plan via planner subagent
-6. **Red Team Review** → Run `/alp-plan red-team {plan-path}` (hard/parallel/two modes)
-7. **Post-Plan Validation** → Run `/alp-plan validate {plan-path}` (hard/parallel/two modes)
-8. **Hydrate Tasks** → Create Claude Tasks from phases (default on, `--no-tasks` to skip)
-9. **Context Reminder** → Output cook command with absolute path (MANDATORY)
-10. **Journal** → Run `/alp:journal` to write a concise technical journal entry upon completion
-
-## Output Requirements
-
-**IMPORTANT:** Invoke "/alp:project-organization" skill to organize the outputs.
-
-- DO NOT implement code - only create plans
-- Respond with plan file path and summary
-- Ensure self-contained plans with necessary context
-- Include code snippets/pseudocode when clarifying
-- Fully respect the `./docs/development-rules.md` file
-
-## Task Management
-
-Plan files = persistent. Tasks = session-scoped. Hydration bridges the gap.
-
-**Default:** Auto-hydrate tasks after plan files are written. Skip with `--no-tasks`.
-**3-Task Rule:** <3 phases → skip task creation.
-**Fallback:** Task tools (`TaskCreate`/`TaskUpdate`/`TaskGet`/`TaskList`) are CLI-only — unavailable in VSCode extension. If they error, use `TodoWrite` for tracking. Plan files remain the source of truth; hydration is an optimization, not a requirement.
-
-Load: `references/task-management.md` for hydration pattern, TaskCreate patterns, cook handoff protocol.
-
-### Hydration Workflow
-
-1. Write plan.md + phase files (persistent layer)
-2. TaskCreate per phase with `addBlockedBy` chain (skip if Task tools unavailable)
-3. TaskCreate for critical/high-risk steps within phases (skip if Task tools unavailable)
-4. Metadata: phase, priority, effort, planDir, phaseFile
-5. Cook picks up via TaskList (same session) or re-hydrates (new session)
-
-## Active Plan State
-
-Check `## Plan Context` injected by hooks:
-
-- **"Plan: {path}"** → Active plan. Ask "Continue? [Y/n]"
-- **"Suggested: {path}"** → Branch hint only. Ask if activate or create new.
-- **"Plan: none"** → Create new using `Plan dir:` from `## Naming`
-
-After creating plan: `node .claude/scripts/set-active-plan.cjs {plan-dir}`
-Reports: Active plans → plan-specific path. Suggested → default path.
-
-### Important
-
-**DO NOT** create plans or reports in USER directory.
-**MUST** create plans or reports in **THE CURRENT WORKING PROJECT DIRECTORY**.
-
-## Subcommands
-
-| Subcommand          | Reference                         | Purpose                                         |
-| ------------------- | --------------------------------- | ----------------------------------------------- |
-| `/alp-plan archive`  | `references/archive-workflow.md`  | Archive plans + write journal entries           |
-| `/alp-plan red-team` | `references/red-team-workflow.md` | Adversarial plan review with hostile reviewers  |
-| `/alp-plan validate` | `references/validate-workflow.md` | Validate plan with critical questions interview |
-
-## Quality Standards
-
-- Thorough and specific, consider long-term maintainability
-- Research thoroughly when uncertain
-- Address security and performance concerns
-- Detailed enough for junior developers
-- Validate against existing codebase patterns
-
-**Remember:** Plan quality determines implementation success. Be comprehensive and consider all solution aspects.
+- Không tạo plan hay report ngoài `plans/` của repo này.
+- Không có `Task` tool — mọi việc giao đi đều qua `run-role`/`herdr`, là **phiên riêng**,
+  không phải subagent. Phiên riêng nghĩa là nó không thấy context của bạn: brief phải đủ.
+- Không có `AskUserQuestion`. Hỏi principal bằng cách hỏi thẳng trong phiên.

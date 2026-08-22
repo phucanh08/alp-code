@@ -1,123 +1,92 @@
 ---
 name: alp-debug
-description: "Debug systematically with root cause analysis before fixes. Use for bugs, test failures, unexpected behavior, performance issues, call stack tracing, multi-layer validation, log analysis, CI/CD failures, database diagnostics, system investigation."
-languages: all
-argument-hint: "[error or issue description]"
-metadata:
-  author: anhlpkit
-  version: "4.0.0"
+description: Điều tra sự cố có hệ thống — truy nguyên nhân gốc trước khi bàn cách sửa, phân tích log và CI/CD, chẩn đoán hiệu năng, kiểm chứng bằng bằng chứng. Kích hoạt khi main bế tắc với một bug, test fail, hành vi lạ, pipeline hỏng, hoặc hệ chậm bất thường.
 ---
 
-# Debugging & System Investigation
+# alp-debug — điều tra trước, kết luận sau
 
-Comprehensive framework combining systematic debugging, root cause tracing, defense-in-depth validation, verification protocols, and system-level investigation (logs, CI/CD, databases, performance).
+Skill của vai **oracle**. Main gọi bạn khi **đã có giả thuyết và bằng chứng mà vẫn bế tắc**
+(`PLAYBOOK.md` dòng 1) — nên đừng bắt đầu lại từ đầu, hãy hỏi main đã thử gì rồi.
 
-## Core Principle
+## Luật cứng
 
-**NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST**
+**KHÔNG KẾT LUẬN KHI CHƯA TRUY RA NGUYÊN NHÂN GỐC.**
 
-Random fixes waste time and create new bugs. Find root cause, fix at source, validate at every layer, verify before claiming success.
+Đoán rồi sửa là cách tạo bug mới trong lúc giấu bug cũ. Và trong alp-code luật này còn dễ
+giữ hơn ở nơi khác: `oracle` **không sửa được gì** — tool chỉ có `Read, Glob, Grep, Bash,
+WebSearch, WebFetch`. Bạn giao nguyên nhân gốc cho main, main sửa.
 
-## When to Use
+Hệ quả: sản phẩm của bạn là **chuỗi bằng chứng**, không phải bản vá. Một chuỗi bằng chứng
+tốt phải để main tự đi lại được và tới cùng kết luận.
 
-**Code-level:** Test failures, bugs, unexpected behavior, build failures, integration problems
-**System-level:** Server errors, CI/CD pipeline failures, performance degradation, database issues, log analysis
-**Always:** Before claiming work complete
-
-## Techniques
-
-### 1. Systematic Debugging (`references/systematic-debugging.md`)
-
-Four-phase framework: Root Cause Investigation → Pattern Analysis → Hypothesis Testing → Implementation. Complete each phase before proceeding. No fixes without Phase 1.
-
-**Load when:** Any bug/issue requiring investigation and fix
-
-### 2. Root Cause Tracing (`references/root-cause-tracing.md`)
-
-Trace bugs backward through call stack to find original trigger. Fix at source, not symptom. Includes `scripts/find-polluter.sh` for bisecting test pollution.
-
-**Load when:** Error deep in call stack, unclear where invalid data originated
-
-### 3. Defense-in-Depth (`references/defense-in-depth.md`)
-
-Validate at every layer: Entry validation → Business logic → Environment guards → Debug instrumentation
-
-**Load when:** After finding root cause, need comprehensive validation
-
-### 4. Verification (`references/verification.md`)
-
-**Iron law:** NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE. Run command. Read output. Then claim result.
-
-**Load when:** About to claim work complete, fixed, or passing
-
-### 5. Investigation Methodology (`references/investigation-methodology.md`)
-
-Five-step structured investigation for system-level issues: Initial Assessment → Data Collection → Analysis → Root Cause ID → Solution Development
-
-**Load when:** Server incidents, system behavior analysis, multi-component failures
-
-### 6. Log & CI/CD Analysis (`references/log-and-ci-analysis.md`)
-
-Collect and analyze logs from servers, CI/CD pipelines (GitHub Actions), application layers. Tools: `gh` CLI, structured log queries, correlation across sources.
-
-**Load when:** CI/CD pipeline failures, server errors, deployment issues
-
-### 7. Performance Diagnostics (`references/performance-diagnostics.md`)
-
-Identify bottlenecks, analyze query performance, develop optimization strategies. Covers database queries, API response times, resource utilization.
-
-**Load when:** Performance degradation, slow queries, high latency, resource exhaustion
-
-### 8. Reporting Standards (`references/reporting-standards.md`)
-
-Structured diagnostic reports: Executive Summary → Technical Analysis → Recommendations → Evidence
-
-**Load when:** Need to produce investigation report or diagnostic summary
-
-### 9. Task Management (`references/task-management-debugging.md`)
-
-Track investigation pipelines via Claude Native Tasks (TaskCreate, TaskUpdate, TaskList). Hydration pattern for multi-step investigations with dependency chains and parallel evidence collection. **Fallback:** Task tools are CLI-only — if unavailable (VSCode extension), use `TodoWrite` for tracking. Debug workflow remains fully functional.
-
-**Load when:** Multi-component investigation (3+ steps), parallel log collection, coordinating debugger subagents
-
-### 10. Frontend Verification (`references/frontend-verification.md`)
-
-Visual verification of frontend implementations via Chrome MCP (Claude Chrome Extension) or `alp:chrome-devtools` skill fallback. Detect if frontend-related → check Chrome MCP availability → screenshot + console error check → report. Skip if not frontend.
-
-**Load when:** Implementation touches frontend files (tsx/jsx/vue/svelte/html/css), UI bugs, visual regressions
-
-## Quick Reference
+## Chọn kỹ thuật
 
 ```
-Code bug       → systematic-debugging.md (Phase 1-4)
-  Deep in stack  → root-cause-tracing.md (trace backward)
-  Found cause    → defense-in-depth.md (add layers)
-  Claiming done  → verification.md (verify first)
+Bug trong code      → systematic-debugging.md      (4 pha, không nhảy pha)
+  sâu trong stack     → root-cause-tracing.md      (lần ngược tới chỗ phát sinh)
+  đã ra nguyên nhân   → defense-in-depth.md        (khuyến nghị chốt chặn từng lớp)
+  sắp kết luận        → verification.md            (bằng chứng mới, không dùng lại cũ)
 
-System issue   → investigation-methodology.md (5 steps)
-  CI/CD failure  → log-and-ci-analysis.md
-  Slow system    → performance-diagnostics.md
-  Need report    → reporting-standards.md
-
-Frontend fix   → frontend-verification.md (Chrome/devtools)
+Sự cố mức hệ       → investigation-methodology.md  (5 bước)
+  CI/CD hỏng          → log-and-ci-analysis.md     (`gh` CLI)
+  chậm bất thường     → performance-diagnostics.md
+  cần viết báo cáo    → reporting-standards.md
 ```
 
-## Tools Integration
+| # | Kỹ thuật | Đọc khi |
+|---|---|---|
+| 1 | **Gỡ lỗi có hệ thống** | mọi bug cần điều tra — 4 pha: truy nguyên nhân → phân tích mẫu → thử giả thuyết → kết luận. Xong pha này mới sang pha kia |
+| 2 | **Lần ngược nguyên nhân** | lỗi nổ sâu trong call stack, chưa rõ dữ liệu hỏng sinh ra từ đâu. Có `scripts/find-polluter.sh` để bisect test bị nhiễm |
+| 3 | **Phòng thủ nhiều lớp** | đã ra nguyên nhân, cần chỉ cho main chốt ở những lớp nào: chặn ở cửa vào → nghiệp vụ → guard môi trường → chỗ đặt log |
+| 4 | **Kiểm chứng** | sắp nói "đã tìm ra" hoặc "đã hết" |
+| 5 | **Phương pháp điều tra** | sự cố nhiều thành phần: đánh giá ban đầu → thu thập dữ liệu → phân tích → xác định gốc → phương án |
+| 6 | **Phân tích log và CI/CD** | pipeline hỏng, lỗi phía server, sự cố deploy |
+| 7 | **Chẩn đoán hiệu năng** | truy vấn chậm, độ trễ cao, cạn tài nguyên |
+| 8 | **Chuẩn báo cáo** | cần xuất báo cáo chẩn đoán có cấu trúc |
 
-- **Database:** `psql` for PostgreSQL queries and diagnostics
-- **CI/CD:** `gh` CLI for GitHub Actions logs and pipeline debugging
-- **Codebase:** `docs-seeker` skill for package/plugin docs; `repomix` skill for codebase summary
-- **Scouting:** `/scout` or `/scout ext` for finding relevant files
-- **Frontend:** Chrome browser or `alp:chrome-devtools` skill for visual verification (screenshots, console, network)
-- **Skills:** Activate `problem-solving` skill when stuck on complex issues
+## Công cụ có sẵn
 
-## Red Flags
+- **Database:** `psql` cho PostgreSQL.
+- **CI/CD:** `gh` CLI cho log GitHub Actions.
+- **Bế tắc thật sự:** skill `problem-solving` — đổi kiểu nghĩ, không nghĩ chăm hơn.
 
-Stop and follow process if thinking:
-- "Quick fix for now, investigate later"
-- "Just try changing X and see if it works"
-- "It's probably X, let me fix that"
-- "Should work now" / "Seems fixed"
-- "Tests pass, we're done"
+Cần thứ bạn không lấy được (tìm code diện rộng, tra tài liệu ngoài) → **nói rõ cần gì và
+báo main**. `oracle` có `delegates_to: []`, main mới là người giao cho `search` hoặc
+`librarian`.
 
-**All mean:** Return to systematic process.
+## Cờ đỏ — dừng lại nếu bắt gặp mình đang nghĩ
+
+- "sửa tạm đã, điều tra sau"
+- "cứ thử đổi X xem sao"
+- "chắc là do X, sửa chỗ đó"
+- "chắc hết rồi" · "nhìn có vẻ ổn"
+- "test xanh rồi, xong"
+
+Tất cả đều nghĩa là: quay lại quy trình. Và với `oracle` thì còn một cờ đỏ nữa —
+**"để tôi sửa luôn"**: bạn không có `Edit`, đề xuất cách sửa thì viết ra, đừng tìm đường
+vòng qua `Bash` (HOUSE-RULES §1.9).
+
+## Bàn giao
+
+Báo cáo về main gồm đúng bốn phần:
+
+```
+## Điều tra: <triệu chứng>
+
+### Nguyên nhân gốc
+<một câu. Chưa ra thì ghi "chưa xác định được" — không thay bằng nguyên nhân gần nhất>
+
+### Chuỗi bằng chứng
+1. <quan sát> — `path:line` hoặc output lệnh
+2. <suy ra> — vì sao bước 1 dẫn tới đây
+...
+
+### Đã loại trừ
+<giả thuyết nào đã thử và bị bác, bằng gì — để main không đi lại đường cũ>
+
+### Đề xuất sửa
+<sửa ở đâu, vì sao ở đó chứ không phải chỗ triệu chứng nổ ra>
+```
+
+Nháp và giả thuyết chưa kiểm chứng → `memory/private/oracle/`. Chỉ kết luận đã có bằng
+chứng mới đi vào báo cáo.
