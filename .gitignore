@@ -3,6 +3,10 @@ identity/*/.claude/settings.json
 identity/*/.claude/.acl-stamp
 identity/*/.claude/session-state/
 
+# Session state ở gốc repo — sinh ra khi mở `claude` trần trong một checkout alp-code
+# (dev clone). Cùng loại scratch với dòng trên, chỉ khác chỗ đứng.
+/.claude/session-state/
+
 # Trí nhớ là dữ liệu CỤC BỘ của từng máy — không bao giờ đẩy lên remote.
 # Đồng bộ giữa máy sẽ do Agent runtime lo, không phải git.
 # Khung rỗng để dựng lại `memory/` trên máy mới nằm ở `scaffold/memory/` (tracked),
