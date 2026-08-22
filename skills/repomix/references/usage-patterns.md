@@ -1,232 +1,106 @@
-# Usage Patterns
+# Mẫu sử dụng
 
-Practical workflows and patterns for using Repomix in different scenarios.
+## Bốn việc repomix làm tốt
 
-## AI Analysis Workflows
+### 1. Đánh giá thư viện bên thứ ba
 
-### Full Repository
+Việc đáng dùng repomix nhất: hiểu nhanh một thư viện lạ trước khi quyết định có dùng không.
+
 ```bash
-repomix --remove-comments --style markdown -o full-repo.md
+npx repomix --remote https://github.com/owner/repo --token-count-tree
+npx repomix --remote https://github.com/owner/repo \
+  --include "README.md,docs/**,src/index.*" --style markdown
 ```
-**Use:** New codebase, architecture review, complete LLM context, planning
-**Tips:** Remove comments, use markdown, check token limits, review before sharing
 
-### Focused Module
+Đọc `README`, `docs/`, và entry point là đủ để đánh giá. Không cần cả `src/`.
+
+### 2. Hiểu một module cụ thể
+
 ```bash
-repomix --include "src/auth/**,src/api/**" -o modules.xml
+repomix --include "src/auth/**" --remove-comments -o auth.md --style markdown
 ```
-**Use:** Feature analysis, debugging specific areas, targeted refactoring
-**Tips:** Include related files only, stay within token limits, use XML for AI
 
-### Incremental Analysis
+Khoanh đúng module, không gói cả repo.
+
+### 3. Chuẩn bị audit bảo mật
+
 ```bash
-git checkout feature-branch && repomix --include "src/**" -o feature.xml
-git checkout main && repomix --include "src/**" -o main.xml
+repomix --include "src/**/*.{ts,js}" -i "**/*.test.*" --style xml
 ```
-**Use:** Feature branch review, change impact, before/after comparison, migration planning
 
-### Cross-Repository
+Giữ quét secret **bật**. Xem lại output trước khi đưa đi đâu.
+
+### 4. Rút bối cảnh cho tài liệu
+
 ```bash
-npx repomix --remote org/repo1 -o repo1.xml
-npx repomix --remote org/repo2 -o repo2.xml
+repomix --include "src/api/**,docs/**" --style markdown -o api-context.md
 ```
-**Use:** Microservices, library comparisons, consistency checks, integration analysis
 
-## Security Audit
+## Khi KHÔNG dùng repomix
 
-### Third-Party Library
+| Việc | Dùng gì thay |
+|---|---|
+| tìm một symbol, một hàm | `rg` / `Grep` — giao `search` |
+| biết đổi chỗ này thì vỡ đâu | `gkg` phân tích ảnh hưởng — giao `search` |
+| đọc tài liệu một thư viện | `docs-seeker` — giao `librarian` |
+| trả lời một câu hỏi cụ thể về code | `search` trả `path:line` |
+
+repomix đổ hàng chục nghìn token vào context. Dùng nó để trả lời một câu hỏi nhỏ là phá
+đúng nguyên tắc "boot set ≤ 7 nguồn" của CHARTER §2.6.
+
+## Xử lý sự cố
+
+### Output quá lớn
+
 ```bash
-npx repomix --remote vendor/library --style xml -o audit.xml
+repomix --token-count-tree                                    # xem token ở đâu
+repomix -i "node_modules/**,dist/**,coverage/**" \
+        --include "src/core/**" --remove-comments --no-line-numbers
 ```
-**Workflow:** Package library → enable security checks → review vulnerabilities → check suspicious patterns → AI analysis
-**Check for:** API keys, hardcoded credentials, network calls, obfuscation, malicious patterns
 
-### Pre-Deployment
+Cắt `--include` cho tới khi vừa ngân sách. Đừng gói rồi mới lo cắt sau.
+
+### Thiếu file mong đợi
+
 ```bash
-repomix --include "src/**,config/**" --style xml -o pre-deploy-audit.xml
-```
-**Checklist:** No sensitive data, no test credentials, env vars correct, security practices, no debug code
-
-### Dependency Audit
-```bash
-repomix --include "**/package.json,**/package-lock.json" -o deps.md --style markdown
-repomix --include "node_modules/suspicious-package/**" -o dep-audit.xml
-```
-**Use:** Suspicious dependency, security advisory, license compliance, vulnerability assessment
-
-### Compliance
-```bash
-repomix --include "src/**,LICENSE,README.md,docs/**" --style markdown -o compliance.md
-```
-**Include:** Source, licenses, docs, configs. **Exclude:** Test data, dependencies
-
-## Documentation
-
-### Doc Context
-```bash
-repomix --include "src/**,docs/**,*.md" --style markdown -o doc-context.md
-```
-**Use:** API docs, architecture docs, user guides, onboarding
-**Tips:** Include existing docs, include source, use markdown
-
-### API Documentation
-```bash
-repomix --include "src/api/**,src/routes/**,src/controllers/**" --remove-comments -o api-context.xml
-```
-**Include:** Routes, controllers, schemas, middleware
-**Workflow:** Package → AI → OpenAPI/Swagger → endpoint docs → examples
-
-### Architecture
-```bash
-repomix --include "src/**/*.ts,*.md" -i "**/*.test.ts" --style markdown -o architecture.md
-```
-**Focus:** Module structure, dependencies, design patterns, data flow
-
-### Examples
-```bash
-repomix --include "examples/**,demos/**,*.example.js" --style markdown -o examples.md
-```
-
-## Library Evaluation
-
-### Quick Assessment
-```bash
-npx repomix --remote owner/library --style markdown -o library-eval.md
-```
-**Evaluate:** Code quality, architecture, dependencies, tests, docs, maintenance
-
-### Feature Comparison
-```bash
-npx repomix --remote owner/lib-a --style xml -o lib-a.xml
-npx repomix --remote owner/lib-b --style xml -o lib-b.xml
-```
-**Compare:** Features, API design, performance, bundle size, dependencies, maintenance
-
-### Integration Feasibility
-```bash
-npx repomix --remote vendor/library --include "src/**,*.md" -o library.xml
-repomix --include "src/integrations/**" -o our-integrations.xml
-```
-Analyze compatibility between target library and your integration points
-
-### Migration Planning
-```bash
-repomix --include "node_modules/old-lib/**" -o old-lib.xml
-npx repomix --remote owner/new-lib -o new-lib.xml
-```
-Compare current vs target library, analyze usage patterns
-
-## Workflow Integration
-
-### CI/CD
-```yaml
-# GitHub Actions
-- name: Generate Snapshot
-  run: |
-    npm install -g repomix
-    repomix --style markdown -o release-snapshot.md
-- name: Upload Artifact
-  uses: actions/upload-artifact@v3
-  with: {name: repo-snapshot, path: release-snapshot.md}
-```
-**Use:** Release docs, compliance archives, change tracking, audit trails
-
-### Git Hooks
-```bash
-#!/bin/bash
-# .git/hooks/pre-commit
-git diff --cached --name-only > staged-files.txt
-repomix --include "$(cat staged-files.txt | tr '\n' ',')" -o .context/latest.xml
-```
-
-### IDE (VS Code)
-```json
-{"version": "2.0.0", "tasks": [{"label": "Package for AI", "type": "shell", "command": "repomix --include 'src/**' --remove-comments --copy"}]}
-```
-
-### Claude Code
-```bash
-repomix --style markdown --copy  # Then paste into Claude
-```
-
-## Language-Specific Patterns
-
-### TypeScript
-```bash
-repomix --include "**/*.ts,**/*.tsx" --remove-comments --no-line-numbers
-```
-**Exclude:** `**/*.test.ts`, `dist/`, `coverage/`
-
-### React
-```bash
-repomix --include "src/**/*.{js,jsx,ts,tsx},public/**" -i "build/,*.test.*"
-```
-**Include:** Components, hooks, utils, public assets
-
-### Node.js Backend
-```bash
-repomix --include "src/**/*.js,config/**" -i "node_modules/,logs/,tmp/"
-```
-**Focus:** Routes, controllers, models, middleware, configs
-
-### Python
-```bash
-repomix --include "**/*.py,requirements.txt,*.md" -i "**/__pycache__/,venv/"
-```
-**Exclude:** `__pycache__/`, `*.pyc`, `venv/`, `.pytest_cache/`
-
-### Monorepo
-```bash
-repomix --include "packages/*/src/**" -i "packages/*/node_modules/,packages/*/dist/"
-```
-**Consider:** Package-specific patterns, shared deps, cross-package refs, workspace structure
-
-## Troubleshooting
-
-### Output Too Large
-**Problem:** Exceeds LLM token limits
-**Fix:**
-```bash
-repomix -i "node_modules/**,dist/**,coverage/**" --include "src/core/**" --remove-comments --no-line-numbers
-```
-
-### Missing Files
-**Problem:** Expected files not included
-**Debug:**
-```bash
-cat .gitignore .repomixignore  # Check ignore patterns
+cat .gitignore .repomixignore                    # xem mẫu nào đang chặn
 repomix --no-gitignore --no-default-patterns --verbose
 ```
 
-### Sensitive Data Warnings
-**Problem:** Security scanner flags secrets
-**Actions:** Review files → add to `.repomixignore` → remove sensitive data → use env vars
+Lệnh thứ hai **chỉ để chẩn đoán**, không phải để gói thật — tắt `.gitignore` là mở đường
+cho `.env` và dữ liệu cục bộ lọt vào.
+
+### Cảnh báo dữ liệu nhạy cảm
+
+Đúng thứ tự: xem lại file → thêm vào `.repomixignore` → bỏ dữ liệu nhạy cảm khỏi code →
+chuyển sang biến môi trường.
+
 ```bash
-repomix --no-security-check  # Use carefully for false positives
+repomix --no-security-check     # CHỈ khi đã xác nhận là báo nhầm, và principal đã biết
 ```
 
-### Performance Issues
-**Problem:** Slow on large repo
-**Optimize:**
+Tắt quét secret rồi đổ file vào context là cách lộ credential mà không ai nhìn thấy.
+
+### Repo từ xa
+
 ```bash
-repomix --include "src/**/*.ts" -i "node_modules/**,dist/**,vendor/**"
+npx repomix --remote https://github.com/owner/repo
+npx repomix --remote https://github.com/owner/repo/commit/abc123   # đúng commit
 ```
 
-### Remote Access
-**Problem:** Cannot access remote repo
-**Fix:**
-```bash
-npx repomix --remote https://github.com/owner/repo  # Full URL
-npx repomix --remote https://github.com/owner/repo/commit/abc123  # Specific commit
-# For private: clone first, run locally
-```
+Repo private: clone về trước rồi chạy cục bộ — và clone là tải mã nguồn lạ, báo principal.
 
-## Best Practices
+Ghi lại **commit hoặc tag đã gói**. Không có nó thì kết quả không tái lập được, và không
+đối chiếu được khi thư viện ra bản mới.
 
-**Planning:** Define scope → identify files → check token limits → consider security
+## Quy trình
 
-**Execution:** Start broad, refine narrow → use appropriate format → enable security checks → monitor tokens
+**Trước:** khoanh phạm vi → xác định file cần → chạy `--token-count-tree` → nghĩ tới rủi ro
+bảo mật.
 
-**Review:** Verify no sensitive data → check completeness → validate format → test with LLM
+**Trong:** bắt đầu hẹp rồi mở dần, không làm ngược → chọn định dạng đúng mục đích → giữ
+quét secret bật.
 
-**Iteration:** Refine patterns → adjust format → optimize tokens → document patterns
+**Sau:** xác nhận không có gì nhạy cảm → kiểm đã đủ chưa → **dọn file `repomix-output.*`**.
+
+Bước dọn hay bị quên, và file gói sót lại rất dễ lọt vào commit sau đó.

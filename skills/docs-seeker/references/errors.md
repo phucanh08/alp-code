@@ -1,68 +1,72 @@
-# Error Handling & Fallback Strategies
+# Lỗi và chuỗi dự phòng
 
-## Error Codes
+## Loại lỗi
 
-**404 Not Found**
-- Topic-specific URL not available
-- Library not on context7.com
-- llms.txt doesn't exist
+| Lỗi | Nghĩa thường là |
+|---|---|
+| **404** | URL theo chủ đề không có · thư viện không có trên context7 · không có `llms.txt` |
+| **Timeout** | mạng · repo lớn khi clone · API chậm |
+| **Phản hồi hỏng** | `llms.txt` sai định dạng · nội dung rỗng · URL không hợp lệ |
 
-**Timeout**
-- Network issues
-- Large repository clone
-- Slow API response
+**404 không có nghĩa là thư viện không tồn tại.** Nó chỉ nghĩa là context7 không có bản
+index cho đường dẫn đó. Kiểm lại tên repo trong `context7-patterns.md` trước khi bỏ cuộc —
+tên thông dụng thường khác đường dẫn repo (`next.js` → `vercel/next.js`).
 
-**Invalid Response**
-- Malformed llms.txt
-- Empty content
-- Invalid URLs
+## Chuỗi dự phòng
 
-## Fallback Chain
-
-### For Topic-Specific Queries
+### Hỏi chủ đề cụ thể
 
 ```
-1. Try topic-specific URL
-   https://context7.com/{library}/llms.txt?topic={keyword}
+1. URL theo chủ đề     context7.com/{lib}/llms.txt?topic={từ khoá}
    ↓ 404
-2. Try general library URL
-   https://context7.com/{library}/llms.txt
+2. URL cả thư viện     context7.com/{lib}/llms.txt
    ↓ 404
-3. WebSearch for llms.txt
-   "[library] llms.txt site:[official domain]"
-   ↓ Not found
-4. Repository analysis
-   Use Repomix on GitHub repo
+3. WebSearch           "{lib} llms.txt site:{domain chính thức}"
+   ↓ không có
+4. Đọc thẳng repo      workflows/repo-analysis.md
 ```
 
-### For General Library Queries
+### Hỏi cả thư viện
 
 ```
-1. Try context7.com
-   https://context7.com/{library}/llms.txt
+1. context7.com/{lib}/llms.txt
    ↓ 404
-2. WebSearch for llms.txt
-   "[library] llms.txt"
-   ↓ Not found
-3. Repository analysis
-   Clone + Repomix
-   ↓ No repo
-4. Research agents
-   Deploy multiple Researcher agents
+2. WebSearch "{lib} llms.txt"
+   ↓ không có
+3. Đọc thẳng repo
+   ↓ không có repo
+4. Nguồn thứ cấp — và PHẢI ghi rõ là thứ cấp
 ```
 
-## Timeout Handling
+Bước 4 trong bản gốc là "chia cho nhiều Researcher agent". `librarian` có
+`delegates_to: []` nên bước đó không áp dụng: tự gom nguồn thứ cấp, đối chiếu hai nguồn
+độc lập, và nói rõ trong báo cáo rằng không có nguồn sơ cấp.
 
-**Set limits:**
-- WebFetch: 60s
-- Repository clone: 5min
-- Repomix: 10min
+## Timeout
 
-**Fail fast:** Don't retry failed methods
+| Thao tác | Giới hạn |
+|---|---|
+| `WebFetch` | 60s |
+| clone repo | 5 phút |
+| `repomix` | 10 phút |
 
-## Empty Results
+**Hỏng thì bỏ, đừng thử lại cách vừa hỏng.** Chuyển sang bước dự phòng kế tiếp. Thử lại
+cùng một URL 404 ba lần chỉ tốn ngân sách — `research` chỉ có 5 lượt.
 
-**If llms.txt has 0 URLs:**
-→ Note in report
-→ Try repository analysis
-→ Check official website manually
+## Kết quả rỗng
+
+`llms.txt` trả về 0 URL:
+
+1. **Ghi vào báo cáo** — rỗng là thông tin, không phải "không có gì để nói".
+2. Thử đọc thẳng repo.
+3. Kiểm site chính thức bằng tay.
+
+Đừng để kết quả rỗng biến thành im lặng. Main không phân biệt được "đã tìm và không có" với
+"quên tìm" nếu bạn không nói.
+
+## Script hỏng
+
+Script trong `scripts/` lỗi thì **sửa rồi chạy lại cho tới khi được** — đó là luật của repo.
+Đừng bỏ script rồi tự dựng URL bằng tay: script có sẵn chuỗi fallback, làm tay là mất nó.
+
+Sửa không được thì báo main, kèm lỗi nguyên văn.

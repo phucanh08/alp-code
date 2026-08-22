@@ -1,91 +1,90 @@
-# Repository Analysis (No llms.txt)
+# Đọc thẳng repo — khi không có llms.txt
 
-**Use when:** llms.txt not available on context7.com or official site
+**Đường cuối cùng.** Chậm (5–10 phút), tốn context nhất. Chỉ dùng khi
+`topic-search.md` và `library-search.md` đều không ra.
 
-**Speed:** ⚡⚡⚡ Slower (5-10min)
-**Token usage:** 🔴 High
-**Accuracy:** 🔍 Code-based
+## Khi nào
 
-## When to Use
+- Thư viện không có trên context7.com.
+- Site chính thức không có `llms.txt`.
+- Tài liệu tồn tại nhưng thiếu, phải đọc code mới rõ.
 
-- Library not on context7.com
-- No llms.txt on official site
-- Need to analyze code structure
-- Documentation incomplete
+## Quy trình
 
-## Workflow
+### 1. Tìm repo
 
-```
-1. Find repository
-   → WebSearch: "[library] github repository"
-   → Verify: Official, active, has docs/
+`WebSearch`: `"{thư viện} github repository"`
 
-2. Clone repository
-   → Bash: git clone [repo-url] /tmp/docs-analysis
-   → Optional: checkout specific version/tag
+**Xác minh trước khi clone:** đúng repo chính thức chưa (không phải fork), còn hoạt động
+không (commit gần đây), có `docs/` không. Clone nhầm một fork bỏ hoang rồi kết luận theo nó
+là sai nguồn.
 
-3. Install Repomix (if needed)
-   → Bash: npm install -g repomix
+### 2. Clone
 
-4. Pack repository
-   → Bash: cd /tmp/docs-analysis && repomix --output repomix-output.xml
-   → Repomix creates AI-friendly single file
-
-5. Read packed file
-   → Read: /tmp/docs-analysis/repomix-output.xml
-   → Extract: README, docs/, examples/, API files
-
-6. Analyze structure
-   → Identify: Documentation sections
-   → Extract: Installation, usage, API, examples
-   → Note: Code patterns, best practices
-
-7. Present findings
-   → Source: Repository analysis
-   → Caveat: Based on code, not official docs
-   → Include: Repository health (stars, activity)
-```
-
-## Example
-
-**Obscure library without llms.txt:**
 ```bash
-# 1. Find
-WebSearch: "MyLibrary github repository"
-# Found: https://github.com/org/mylibrary
-
-# 2. Clone
-git clone https://github.com/org/mylibrary /tmp/docs-analysis
-
-# 3. Pack with Repomix
-cd /tmp/docs-analysis
-repomix --output repomix-output.xml
-
-# 4. Read
-Read: /tmp/docs-analysis/repomix-output.xml
-# Single XML file with entire codebase
-
-# 5. Extract documentation
-- README.md: Installation, overview
-- docs/: Usage guides, API reference
-- examples/: Code samples
-- src/: Implementation patterns
-
-# 6. Present
-Source: Repository analysis (no llms.txt)
-Health: 1.2K stars, active
+git clone <repo-url> /tmp/docs-analysis
 ```
 
-## Repomix Benefits
+Cần đúng một phiên bản thì `git checkout <tag>`. **Luôn ghi lại tag/commit đã đọc** —
+`research` yêu cầu ghi phiên bản kèm ngày cho mọi nguồn.
 
-✅ Entire repo in single file
-✅ Preserves directory structure
-✅ AI-optimized format
-✅ Includes metadata
+Clone về máy là tải mã nguồn lạ. Repo lớn hoặc không rõ nguồn gốc → **báo main trước**.
 
-## Alternative
+### 3. Đóng gói
 
-If no GitHub repo exists:
-→ Deploy multiple Researcher agents
-→ Gather: Official site, blog posts, tutorials, Stack Overflow
-→ Note: Quality varies, cross-reference sources
+```bash
+repomix --version || echo "chưa cài"
+cd /tmp/docs-analysis
+repomix --token-count-tree           # XEM TRƯỚC token nằm ở đâu
+repomix --include "README.md,docs/**,examples/**" -o repomix-output.xml
+```
+
+Chưa cài `repomix` thì báo main, đừng tự `npm install -g` (HOUSE-RULES §1.2).
+
+**Chạy `--token-count-tree` trước và lọc bằng `--include`.** Gói cả repo rồi mới phát hiện
+nó 200k token là hỏng cả phiên. Thứ bạn cần gần như luôn nằm ở `README.md`, `docs/`,
+`examples/` — không phải toàn bộ `src/`.
+
+### 4. Đọc và rút
+
+Đọc file đã gói, rút theo thứ tự:
+
+| Nguồn trong repo | Cho biết |
+|---|---|
+| `README.md` | cài đặt, tổng quan, ví dụ tối thiểu |
+| `docs/` | hướng dẫn dùng, API reference |
+| `examples/` | mẫu code thật |
+| `CHANGELOG.md` | breaking change, phiên bản |
+| `src/` | chỉ khi tài liệu không trả lời được |
+
+`CHANGELOG.md` hay bị bỏ qua mà nó là nguồn tốt nhất cho câu hỏi "bản này có gì đổi".
+
+### 5. Dọn
+
+```bash
+rm -rf /tmp/docs-analysis
+```
+
+Bỏ bước này thì lần sau clone đè lên bản cũ và bạn đọc nhầm phiên bản.
+
+## Ghi rõ khi báo cáo
+
+Kết quả từ đường này **không phải tài liệu chính thức**. Bắt buộc ghi:
+
+```
+Nguồn: đọc repo <org/repo> tại <tag hoặc commit>, ngày <…>
+Lưu ý: rút từ code và README, không phải tài liệu chính thức
+Sức khoẻ repo: <số sao, commit gần nhất>
+```
+
+Dòng "sức khoẻ repo" quan trọng cho việc đánh giá của `research`: một thư viện không có
+commit nào 18 tháng là thông tin, kể cả khi code của nó tốt.
+
+## Không có repo nào
+
+Không tìm được repo thì nói thẳng với main: không có nguồn sơ cấp. Những gì gom được từ
+blog, tutorial, Stack Overflow là **nguồn thứ cấp** — chất lượng không đều, phải đối chiếu
+ít nhất hai nguồn độc lập, và phải ghi rõ là thứ cấp trong báo cáo.
+
+Bản gốc của workflow này gợi ý "chia cho nhiều Researcher agent" — bỏ qua, `librarian` có
+`delegates_to: []`.

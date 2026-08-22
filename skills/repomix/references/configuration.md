@@ -1,10 +1,8 @@
-# Configuration Reference
+# Cấu hình repomix
 
-Detailed configuration options for Repomix.
+## File cấu hình
 
-## Configuration File
-
-Create `repomix.config.json` in project root:
+Đặt `repomix.config.json` ở gốc project:
 
 ```json
 {
@@ -19,7 +17,7 @@ Create `repomix.config.json` in project root:
   "ignore": {
     "useGitignore": true,
     "useDefaultPatterns": true,
-    "customPatterns": ["additional-folder", "**/*.log", "**/tmp/**"]
+    "customPatterns": ["**/*.log", "**/tmp/**"]
   },
   "security": {
     "enableSecurityCheck": true
@@ -27,185 +25,110 @@ Create `repomix.config.json` in project root:
 }
 ```
 
-### Output Options
+Tạo file config trong repo người khác là **sửa repo đó** — hỏi principal trước. Dùng một
+lần thì truyền cờ ở dòng lệnh, đừng để lại file.
 
-- `filePath`: Output file path (default: `repomix-output.xml`)
-- `style`: Format - `xml`, `markdown`, `json`, `plain` (default: `xml`)
-- `removeComments`: Strip comments (default: `false`). Supports HTML, CSS, JS/TS, Vue, Svelte, Python, PHP, Ruby, C, C#, Java, Go, Rust, Swift, Kotlin, Dart, Shell, YAML
-- `showLineNumbers`: Include line numbers (default: `true`)
-- `copyToClipboard`: Auto-copy output (default: `false`)
+### Đầu ra
 
-### Include/Ignore
+| Khoá | Nghĩa | Mặc định |
+|---|---|---|
+| `filePath` | file kết quả | `repomix-output.xml` |
+| `style` | `xml` · `markdown` · `json` · `plain` | `xml` |
+| `removeComments` | bỏ comment | `false` |
+| `showLineNumbers` | kèm số dòng | `true` |
+| `copyToClipboard` | tự copy | `false` |
 
-- `include`: Glob patterns for files to include (default: `["**/*"]`)
-- `useGitignore`: Respect .gitignore (default: `true`)
-- `useDefaultPatterns`: Use default ignore patterns (default: `true`)
-- `customPatterns`: Additional ignore patterns (same format as .gitignore)
+Giữ `showLineNumbers: true` khi mục đích là để trích dẫn — không có số dòng thì không dẫn
+được `path:line`, mà đó là dạng bằng chứng repo này yêu cầu.
 
-### Security
+### Lọc file
 
-- `enableSecurityCheck`: Scan for sensitive data with Secretlint (default: `true`)
-- Detects: API keys, passwords, credentials, private keys, AWS secrets, DB connections
+| Khoá | Nghĩa |
+|---|---|
+| `include` | glob các file lấy vào (mặc định `["**/*"]`) |
+| `useGitignore` | tôn trọng `.gitignore` (mặc định `true`) |
+| `useDefaultPatterns` | dùng bộ mẫu bỏ qua mặc định (mặc định `true`) |
+| `customPatterns` | mẫu bỏ qua thêm, cú pháp như `.gitignore` |
 
-## Glob Patterns
+**Không tắt `useGitignore`.** Nó là lớp bảo vệ đầu tiên chống việc gói nhầm `.env`, secret,
+và dữ liệu cục bộ.
 
-**Wildcards:**
-- `*` - Any chars except `/`
-- `**` - Any chars including `/`
-- `?` - Single char
-- `[abc]` - Char from set
-- `{js,ts}` - Either extension
+### Bảo mật
 
-**Examples:**
-- `**/*.ts` - All TypeScript
-- `src/**` - Specific dir
-- `**/*.{js,jsx,ts,tsx}` - Multiple extensions
-- `!**/*.test.ts` - Exclude tests
+`enableSecurityCheck` (mặc định `true`) — quét bằng Secretlint: API key, mật khẩu,
+credential, private key, secret AWS, chuỗi kết nối DB.
 
-### CLI Options
+**Không tắt.** Xem phần cuối `SKILL.md`.
 
-```bash
-# Include patterns
-repomix --include "src/**/*.ts,*.md"
+## Glob
 
-# Ignore patterns
-repomix -i "tests/**,*.test.js"
+| Ký hiệu | Khớp |
+|---|---|
+| `*` | mọi ký tự trừ `/` |
+| `**` | mọi ký tự kể cả `/` |
+| `?` | một ký tự |
+| `[abc]` | một ký tự trong tập |
+| `{js,ts}` | một trong các phần mở rộng |
 
-# Disable .gitignore
-repomix --no-gitignore
+### Thứ tự ưu tiên
 
-# Disable defaults
-repomix --no-default-patterns
-```
+Cao xuống thấp:
 
-### .repomixignore File
+1. Cờ `-i` ở dòng lệnh
+2. File `.repomixignore`
+3. `customPatterns` trong config
+4. `.gitignore` (nếu bật)
+5. Bộ mẫu mặc định (nếu bật)
 
-Create `.repomixignore` for Repomix-specific patterns (same format as .gitignore):
+Cờ dòng lệnh thắng tất cả — tiện, nhưng cũng nghĩa là một cờ `-i` sai chỗ vô hiệu hoá cả
+bộ lọc bạn đã cấu hình kỹ.
 
-```
-# Build artifacts
-dist/
-build/
-*.min.js
-out/
+### Mẫu theo loại project
 
-# Test files
-**/*.test.ts
-**/*.spec.ts
-coverage/
-__tests__/
-
-# Dependencies
-node_modules/
-vendor/
-packages/*/node_modules/
-
-# Large files
-*.mp4
-*.zip
-*.tar.gz
-*.iso
-
-# Sensitive files
-.env*
-secrets/
-*.key
-*.pem
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-
-# Logs
-logs/
-**/*.log
-```
-
-### Pattern Precedence
-
-Order (highest to lowest priority):
-1. CLI ignore patterns (`-i`)
-2. `.repomixignore` file
-3. Custom patterns in config
-4. `.gitignore` (if enabled)
-5. Default patterns (if enabled)
-
-### Pattern Examples
-
-**TypeScript:**
 ```json
+// TypeScript
 {"include": ["**/*.ts", "**/*.tsx"], "ignore": {"customPatterns": ["**/*.test.ts", "dist/"]}}
-```
 
-**React:**
-```json
+// React
 {"include": ["src/**/*.{js,jsx,ts,tsx}", "*.md"], "ignore": {"customPatterns": ["build/"]}}
-```
 
-**Monorepo:**
-```json
+// Monorepo
 {"include": ["packages/*/src/**"], "ignore": {"customPatterns": ["packages/*/dist/"]}}
 ```
 
-## Output Formats
+## Định dạng ra
 
-### XML (Default)
-```bash
-repomix --style xml
-```
-Structured AI consumption. Features: tags, hierarchy, metadata, AI-optimized separators.
-Use for: LLMs, structured analysis, programmatic parsing.
+| Định dạng | Dùng khi |
+|---|---|
+| `xml` (mặc định) | đưa cho LLM đọc — có tag, phân cấp, metadata |
+| `markdown` | người đọc, review, chia sẻ |
+| `json` | xử lý bằng script |
+| `plain` | nối đơn giản, ít overhead nhất |
 
-### Markdown
-```bash
-repomix --style markdown
-```
-Human-readable with syntax highlighting. Features: syntax highlighting, headers, TOC.
-Use for: documentation, code review, sharing.
+Với alp-code, mục đích gần như luôn là đưa cho LLM → giữ `xml`.
 
-### JSON
-```bash
-repomix --style json
-```
-Programmatic processing. Features: structured data, easy parsing, metadata.
-Use for: API integration, custom tooling, data analysis.
-
-### Plain Text
-```bash
-repomix --style plain
-```
-Simple concatenation. Features: no formatting, minimal overhead.
-Use for: simple analysis, minimal processing.
-
-## Advanced Options
+## Cờ nâng cao
 
 ```bash
-# Verbose - show processing details
-repomix --verbose
-
-# Custom config file
-repomix -c /path/to/custom-config.json
-
-# Initialize config
-repomix --init
-
-# Disable line numbers - smaller output
-repomix --no-line-numbers
+repomix --verbose                 # xem nó đang xử lý gì
+repomix -c /đường/dẫn/config.json # config riêng
+repomix --init                    # tạo repomix.config.json
+repomix --no-line-numbers         # output nhỏ hơn, nhưng mất khả năng dẫn path:line
 ```
 
-### Performance
+## Giảm kích thước
 
-**Worker Threads:** Parallel processing handles large codebases efficiently (e.g., facebook/react: 29x faster, 123s → 4s)
+Đây là phần quan trọng nhất khi dùng trong một phiên agent — output quá lớn là hỏng cả phiên.
 
-**Optimization:**
 ```bash
-# Exclude unnecessary files
-repomix -i "node_modules/**,dist/**,*.min.js"
-
-# Specific directories only
-repomix --include "src/**/*.ts"
-
-# Remove comments, disable line numbers
-repomix --remove-comments --no-line-numbers
+repomix --token-count-tree                        # LUÔN chạy trước
+repomix -i "node_modules/**,dist/**,*.min.js"     # loại thứ vô ích
+repomix --include "src/**/*.ts"                   # chỉ lấy phần cần
+repomix --remove-comments --no-line-numbers       # ép nhỏ tối đa
 ```
+
+Thứ tự đúng: chạy cây token → xem token nằm ở đâu → chốt `--include` → gói. Gói trước rồi
+mới đo là làm ngược.
+
+Xử lý song song nên repo lớn vẫn nhanh (facebook/react: 123s → 4s). **Nhanh không có nghĩa
+là nên gói cả repo** — giới hạn thật là ngân sách context, không phải thời gian chạy.

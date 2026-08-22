@@ -1,87 +1,73 @@
-# General Library Documentation Search
+# Tìm tài liệu cả thư viện
 
-**Use when:** User asks about entire library/framework
+**Dùng khi:** câu hỏi rộng về cả một thư viện/framework, hoặc khi tìm theo chủ đề trả 404.
 
-**Speed:** ⚡⚡ Moderate (30-60s)
-**Token usage:** 🟡 Medium
-**Accuracy:** 📚 Comprehensive
+Chậm hơn và tốn context hơn `topic-search.md`. **Thử đường chủ đề trước.**
 
-## Trigger Patterns
+## Nhận dạng
 
-- "Documentation for [LIBRARY]"
-- "[LIBRARY] getting started"
-- "How to use [LIBRARY]"
-- "[LIBRARY] API reference"
+- "tài liệu {thư viện}"
+- "bắt đầu với {thư viện}"
+- "{thư viện} dùng thế nào"
+- "API reference của {thư viện}"
 
-## Workflow (Script-First)
+## Quy trình
 
 ```bash
-# STEP 1: Execute detect-topic.js script
-node scripts/detect-topic.js "<user query>"
-# Returns: {"isTopicSpecific": false} for general queries
+# 1. Phân loại
+node .claude/skills/docs-seeker/scripts/detect-topic.js "<câu hỏi>"
+# → {"isTopicSpecific": false}
 
-# STEP 2: Execute fetch-docs.js script (handles URL construction)
-node scripts/fetch-docs.js "<user query>"
-# Script constructs context7.com URL automatically
-# Script handles GitHub/website URL patterns
-# Returns: llms.txt content with 5-20+ URLs
+# 2. Lấy llms.txt
+node .claude/skills/docs-seeker/scripts/fetch-docs.js "<câu hỏi>"
+# → nội dung llms.txt, thường 5–20+ URL
 
-# STEP 3: Execute analyze-llms-txt.js script
-cat llms.txt | node scripts/analyze-llms-txt.js -
-# Groups URLs: critical, important, supplementary
-# Recommends: agent distribution strategy
-# Returns: {totalUrls, grouped, distribution}
-
-# STEP 4: Deploy agents based on script recommendation
-# - 1-3 URLs: Single agent or direct WebFetch
-# - 4-10 URLs: Deploy 3-5 Explorer agents
-# - 11+ URLs: Deploy 7 agents or phased approach
-
-# STEP 5: Aggregate and present
-# Synthesize findings: installation, concepts, API, examples
+# 3. Xếp hạng URL — BƯỚC KHÔNG ĐƯỢC BỎ
+cat llms.txt | node .claude/skills/docs-seeker/scripts/analyze-llms-txt.js -
+# → {totalUrls, grouped: {critical, important, supplementary}, distribution}
 ```
 
-## Examples
+Bước 3 là bước quyết định. 20 URL mà đọc hết thì phá ngân sách context của cả phiên. Script
+xếp chúng thành ba nhóm — đọc `critical` trước, `important` nếu còn ngân sách, bỏ qua
+`supplementary` trừ khi câu hỏi cần đúng phần đó.
 
-**Astro framework:**
+## Đọc bao nhiêu
+
+Script có trường `distribution` gợi ý chia việc cho nhiều agent song song. **Bỏ qua trường
+đó** — `librarian` có `delegates_to: []`, không giao việc cho ai.
+
+Dùng thứ tự đọc thay cho chia agent:
+
+| Số URL | Cách làm |
+|---|---|
+| 1–3 | đọc hết bằng `WebFetch` |
+| 4–10 | đọc nhóm `critical`, rồi `important` nếu còn ngân sách |
+| 11+ | **chỉ** nhóm `critical`; báo main là đã cắt và cắt theo tiêu chí nào |
+
+Cắt bớt thì phải nói rõ đã cắt gì. Im lặng cắt rồi trình bày như đã đọc hết là báo cáo sai.
+
+## Ví dụ — Astro
+
 ```bash
-# Execute scripts (no manual URL construction)
-node scripts/detect-topic.js "Documentation for Astro"
+node .claude/skills/docs-seeker/scripts/detect-topic.js "tài liệu Astro"
 # {"isTopicSpecific": false}
 
-node scripts/fetch-docs.js "Documentation for Astro"
-# Script fetches: context7.com/withastro/astro/llms.txt
-# Returns: llms.txt with 8 URLs
+node .claude/skills/docs-seeker/scripts/fetch-docs.js "tài liệu Astro"
+# script gọi: context7.com/withastro/astro/llms.txt → 8 URL
 
-node scripts/analyze-llms-txt.js < llms.txt
-# {totalUrls: 8, distribution: "3-agents", grouped: {...}}
-
-# Deploy 3 Explorer agents as recommended:
-# Agent 1: Getting started, installation, setup
-# Agent 2: Core concepts, components, layouts
-# Agent 3: Configuration, API reference
-
-# Aggregate and present comprehensive report
+node .claude/skills/docs-seeker/scripts/analyze-llms-txt.js < llms.txt
+# {totalUrls: 8, grouped: {critical: [...], important: [...], ...}}
 ```
 
-## Agent Distribution
+Đọc `critical` (bắt đầu, cài đặt), rồi `important` (khái niệm lõi, component) nếu ngân
+sách còn.
 
-**1-3 URLs:** Single agent
-**4-10 URLs:** 3-5 agents (2-3 URLs each)
-**11-20 URLs:** 7 agents (balanced)
-**21+ URLs:** Two-phase (critical first, then important)
+## Khi không ra
 
-## Known Libraries
+Script tự fallback theo thứ tự:
 
-- Next.js: `vercel/next.js`
-- Astro: `withastro/astro`
-- Remix: `remix-run/remix`
-- shadcn/ui: `shadcn-ui/ui`
-- Better Auth: `better-auth/better-auth`
+1. `fetch-docs.js` thử context7.com.
+2. 404 → gợi ý dùng `WebSearch` tìm `llms.txt` của dự án.
+3. Vẫn không có → `repo-analysis.md` (đọc thẳng repo GitHub).
 
-## Fallback
-
-Scripts handle fallback automatically:
-1. `fetch-docs.js` tries context7.com
-2. If 404, script suggests WebSearch for llms.txt
-3. If still unavailable: [Repository Analysis](./repo-analysis.md)
+Script lỗi thì **sửa rồi chạy lại cho tới khi được**, đừng bỏ script rồi tự đoán URL.

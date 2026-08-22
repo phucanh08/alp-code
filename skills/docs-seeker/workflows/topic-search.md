@@ -1,77 +1,69 @@
-# Topic-Specific Documentation Search
+# Tìm tài liệu theo chủ đề cụ thể
 
-**Use when:** User asks about specific feature/component/concept
+**Dùng khi:** cần tài liệu về một tính năng / component / khái niệm cụ thể.
 
-**Speed:** ⚡ Fastest (10-15s)
-**Token usage:** 🟢 Minimal
-**Accuracy:** 🎯 Highly targeted
+Nhanh nhất (10–15s), tốn ít token nhất, kết quả trúng đích nhất. **Đây là đường mặc định** —
+chỉ chuyển sang tìm cả thư viện khi đường này không ra.
 
-## Trigger Patterns
+## Nhận dạng
 
-- "How do I use [FEATURE] in [LIBRARY]?"
-- "[LIBRARY] [COMPONENT] documentation"
-- "Implement [FEATURE] with [LIBRARY]"
-- "[LIBRARY] [CONCEPT] guide"
+- "dùng {tính năng} trong {thư viện} thế nào?"
+- "tài liệu {component} của {thư viện}"
+- "triển khai {tính năng} bằng {thư viện}"
 
-## Workflow (Script-First)
+## Quy trình
+
+Đường dẫn tính từ CWD của phiên (`identity/librarian/`), qua symlink skill.
 
 ```bash
-# STEP 1: Execute detect-topic.js script
-node scripts/detect-topic.js "<user query>"
-# Returns: {"topic": "X", "library": "Y", "isTopicSpecific": true}
+# 1. Phân loại truy vấn
+node .claude/skills/docs-seeker/scripts/detect-topic.js "<câu hỏi>"
+# → {"topic": "X", "library": "Y", "isTopicSpecific": true}
 
-# STEP 2: Execute fetch-docs.js script (handles URL construction automatically)
-node scripts/fetch-docs.js "<user query>"
-# Script constructs: context7.com/{library}/llms.txt?topic={topic}
-# Script handles fallback if topic URL fails
-# Returns: llms.txt content with 1-5 URLs
-
-# STEP 3: Process results based on URL count
-# - 1-3 URLs: Read directly with WebFetch tool
-# - 4-5 URLs: Deploy 2-3 Explorer agents in parallel
-
-# STEP 4: Present findings
-# Focus on specific feature: installation, usage, examples
+# 2. Lấy tài liệu — script tự dựng URL và tự fallback
+node .claude/skills/docs-seeker/scripts/fetch-docs.js "<câu hỏi>"
+# script gọi: context7.com/{library}/llms.txt?topic={topic}
+# → nội dung llms.txt, thường 1–5 URL
 ```
 
-## Examples
+Rồi đọc URL bằng `WebFetch`.
 
-**shadcn date picker:**
+**1–5 URL thì đọc thẳng.** Bản gốc của workflow này có bước "chia cho 2–3 Explorer agent
+song song" — bỏ qua: `librarian` có `delegates_to: []`, không giao việc cho ai. Đọc tuần
+tự, trong ngân sách 5 lượt của `research`.
+
+## Ví dụ
+
+**Date picker của shadcn**
+
 ```bash
-# Execute script (automatic URL construction)
-node scripts/detect-topic.js "How do I use date picker in shadcn?"
+node .claude/skills/docs-seeker/scripts/detect-topic.js "dùng date picker trong shadcn thế nào?"
 # {"topic": "date", "library": "shadcn/ui", "isTopicSpecific": true}
 
-node scripts/fetch-docs.js "How do I use date picker in shadcn?"
-# Script fetches: context7.com/shadcn-ui/ui/llms.txt?topic=date
-# Returns: 2-3 date-specific URLs
-
-# Read URLs directly with WebFetch
-# Present date picker documentation
+node .claude/skills/docs-seeker/scripts/fetch-docs.js "dùng date picker trong shadcn thế nào?"
+# script gọi: context7.com/shadcn-ui/ui/llms.txt?topic=date
+# → 2–3 URL về date
 ```
 
-**Next.js caching:**
+**Cache của Next.js**
+
 ```bash
-# Execute scripts (no manual URL needed)
-node scripts/detect-topic.js "Next.js caching strategies"
+node .claude/skills/docs-seeker/scripts/detect-topic.js "Next.js caching strategies"
 # {"topic": "cache", "library": "next.js", "isTopicSpecific": true}
-
-node scripts/fetch-docs.js "Next.js caching strategies"
-# Script fetches: context7.com/vercel/next.js/llms.txt?topic=cache
-# Returns: 3-4 URLs
-
-# Process URLs via 2 Explorer agents
-# Present caching strategies
+# script gọi: context7.com/vercel/next.js/llms.txt?topic=cache
 ```
 
-## Benefits
+## Vì sao đường này đáng ưu tiên
 
-✅ 10x faster than full docs
-✅ No filtering needed
-✅ Minimal context load
-✅ Best user experience
+Trả về **chỉ tài liệu liên quan**, không phải toàn bộ thư viện. Nhanh hơn nhiều lần và
+không phải lọc — quan trọng với `librarian` vì lý do tồn tại của vai là giữ context của
+main sạch.
 
-## Fallback
+## Khi không ra
 
-If topic URL returns 404:
-→ Fallback to [General Library Search](./library-search.md)
+URL theo chủ đề trả 404 → chuyển sang `library-search.md` (tìm cả thư viện).
+
+context7 không có thư viện đó → `repo-analysis.md` (đọc thẳng repo GitHub).
+
+Cả ba đều không ra → nói thẳng với main là không tìm được tài liệu sơ cấp, và những gì tìm
+được là nguồn thứ cấp. Đừng lấp bằng blog rồi trình bày như tài liệu chính thức.
