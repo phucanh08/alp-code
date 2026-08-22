@@ -1,80 +1,89 @@
-# Validation Question Framework
+# Khung câu hỏi kiểm chứng
 
-## Question Categories
+## Nhóm câu hỏi
 
-| Category | Keywords to detect |
-|----------|-------------------|
-| **Architecture** | "approach", "pattern", "design", "structure", "database", "API" |
-| **Assumptions** | "assume", "expect", "should", "will", "must", "default" |
-| **Tradeoffs** | "tradeoff", "vs", "alternative", "option", "choice", "either/or" |
-| **Risks** | "risk", "might", "could fail", "dependency", "blocker", "concern" |
-| **Scope** | "phase", "MVP", "future", "out of scope", "nice to have" |
+Quét kế hoạch tìm những từ này — chúng đánh dấu chỗ kế hoạch đang **quyết thay principal**:
 
-## Question Format Rules
+| Nhóm | Từ khoá cần soi |
+|---|---|
+| **Kiến trúc** | "cách tiếp cận", "mẫu", "thiết kế", "cấu trúc", "database", "API" |
+| **Giả định** | "giả sử", "kỳ vọng", "sẽ", "phải", "mặc định" |
+| **Đánh đổi** | "đánh đổi", "so với", "phương án", "hoặc" |
+| **Rủi ro** | "rủi ro", "có thể hỏng", "phụ thuộc", "chặn", "lo ngại" |
+| **Phạm vi** | "phase", "bản tối thiểu", "sau này", "ngoài phạm vi", "có thì tốt" |
 
-- Each question must have 2-4 concrete options
-- Mark recommended option with "(Recommended)" suffix
-- "Other" option is automatic
-- Questions should surface implicit decisions
+Từ **"mặc định"** và **"giả sử"** đáng soi nhất: chúng thường đánh dấu một quyết định đã
+được đưa ra mà không ai để ý là đã có quyết định.
 
-## Example Questions
+## Luật soạn câu hỏi
 
-Category: Architecture
-Question: "How should the validation results be persisted?"
-Options:
-1. Save to plan.md frontmatter (Recommended)
-2. Create validation-answers.md
-3. Don't persist
+- Mỗi câu **2–4 phương án cụ thể**, không hỏi mở.
+- Đánh dấu phương án bạn đề nghị, kèm một câu vì sao.
+- Câu hỏi phải làm **lộ ra một quyết định ngầm**, không phải hỏi cho có.
+- **Chỉ hỏi điểm quyết định thật.** Tự trả lời được từ code, từ `CHARTER.md`, hay từ quy
+  ước sẵn có thì đừng hỏi — đó là đẩy việc ngược về principal.
 
-Category: Assumptions
-Question: "The plan assumes API rate limiting is not needed. Is this correct?"
-Options:
-1. Yes, not needed for MVP
-2. No, add basic rate limiting now (Recommended)
-3. Defer to Phase 2
+## Ví dụ
 
-## Validation Log Format
+**Kiến trúc**
+
+> Kết quả kiểm chứng lưu ở đâu?
+> 1. Thêm mục vào `plan.md` *(đề nghị — plan là nguồn sự thật duy nhất, CHARTER §2.3)*
+> 2. Tạo file `validation-answers.md` riêng
+> 3. Không lưu
+
+**Giả định**
+
+> Kế hoạch đang giả định không cần giới hạn tần suất. Đúng không?
+> 1. Đúng, bản đầu chưa cần
+> 2. Không, thêm mức cơ bản ngay *(đề nghị — thêm sau tốn hơn nhiều)*
+> 3. Hoãn sang phase 2
+
+## Mẫu nhật ký kiểm chứng
 
 ```markdown
-## Validation Log
+## Nhật ký kiểm chứng
 
-### Session {N} — {YYYY-MM-DD}
-**Trigger:** {what prompted this validation}
-**Questions asked:** {count}
+### Lượt {N} — {YYYY-MM-DD}
+**Vì sao kiểm chứng:** {cái gì dẫn tới lượt này}
+**Số câu hỏi:** {n}
 
-#### Questions & Answers
+#### Hỏi và đáp
 
-1. **[{Category}]** {full question text}
-   - Options: {A} | {B} | {C}
-   - **Answer:** {user's choice}
-   - **Custom input:** {verbatim "Other" text if applicable}
-   - **Rationale:** {why this decision matters}
+1. **[{Nhóm}]** {nguyên văn câu hỏi}
+   - Phương án: {A} | {B} | {C}
+   - **Principal chọn:** {đáp án}
+   - **Nguyên văn nếu principal trả lời khác:** {chép đúng chữ}
+   - **Vì sao quan trọng:** {quyết định này ảnh hưởng gì}
 
-#### Confirmed Decisions
-- {decision}: {choice} — {brief why}
+#### Quyết định đã chốt
+- {quyết định}: {lựa chọn} — {vì sao}
 
-#### Action Items
-- [ ] {specific change needed}
+#### Việc phải làm
+- [ ] {thay đổi cụ thể}
 
-#### Impact on Phases
-- Phase {N}: {what needs updating and why}
+#### Ảnh hưởng tới phase
+- Phase {N}: {phải sửa gì, vì sao}
 ```
 
-## Recording Rules
+## Luật ghi
 
-- **Full question text**: exact question, not summary
-- **All options**: every option presented
-- **Verbatim custom input**: record "Other" text exactly
-- **Rationale**: explain why decision affects implementation
-- **Session numbering**: increment from last session
-- **Trigger**: state what prompted validation
+- **Nguyên văn câu hỏi**, không tóm tắt.
+- **Đủ mọi phương án đã trình** — để sau này biết principal đã chọn giữa những gì.
+- **Chép đúng chữ** nếu principal trả lời ngoài các phương án. Diễn giải lại là bóp méo.
+- **Ghi vì sao** quyết định đó ảnh hưởng tới cách triển khai.
+- **Đánh số lượt** tăng dần.
 
-## Section Mapping for Phase Propagation
+## Lan quyết định xuống phase
 
-| Change Type | Target Section |
-|-------------|----------------|
-| Requirements | Requirements |
-| Architecture | Architecture |
-| Scope | Overview / Implementation Steps |
-| Risk | Risk Assessment |
-| Unknown | Key Insights (new subsection) |
+| Loại thay đổi | Sửa vào mục nào của phase |
+|---|---|
+| yêu cầu | Việc phải làm |
+| kiến trúc | Kiến trúc / Việc phải làm |
+| phạm vi | Mục tiêu, và **Ngoài phạm vi** của `plan.md` |
+| rủi ro | Rủi ro |
+| chưa rõ thuộc đâu | thêm mục mới, đừng nhét bừa |
+
+Bước lan xuống phase là bước hay bị bỏ nhất và đắt nhất: người thực thi đọc **phase**, chứ
+không đọc `plan.md`. Ghi quyết định vào `plan.md` rồi quên sửa phase nghĩa là quyết định đó
+không tồn tại.

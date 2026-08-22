@@ -1,88 +1,90 @@
-# Branch Management
+# Quản lý nhánh
 
-## Naming Convention
+## Đặt tên
 
-**Format:** `<type>/<descriptive-name>`
+**Dạng:** `<type>/<mô-tả-kebab>`
 
-| Type | Purpose | Example |
-|------|---------|---------|
-| `feature/` | New features | `feature/oauth-login` |
-| `fix/` | Bug fixes | `fix/db-timeout` |
-| `refactor/` | Code restructure | `refactor/api-cleanup` |
-| `docs/` | Documentation | `docs/api-reference` |
-| `test/` | Test improvements | `test/integration-suite` |
-| `chore/` | Maintenance | `chore/deps-update` |
-| `hotfix/` | Production fixes | `hotfix/payment-crash` |
+| Type | Dùng cho | Ví dụ |
+|---|---|---|
+| `feature/` | tính năng mới | `feature/oauth-login` |
+| `fix/` | sửa lỗi | `fix/session-repo-root` |
+| `refactor/` | đổi cấu trúc | `refactor/api-cleanup` |
+| `docs/` | tài liệu | `docs/api-reference` |
+| `test/` | test | `test/integration-suite` |
+| `chore/` | bảo trì | `chore/deps-update` |
+| `hotfix/` | sửa gấp trên production | `hotfix/payment-crash` |
 
-## Branch Lifecycle
+Xem `git branch -a` trước khi đặt tên mới — theo mẫu đang có, đừng tự nghĩ dạng mới.
 
-### Create
+## Vòng đời
+
+### Tạo
+
 ```bash
 git checkout main
 git pull origin main
-git checkout -b feature/new-feature
+git checkout -b feature/ten-nhanh
 ```
 
-### During Development
-```bash
-# Regular commits
-git add <files> && git commit -m "feat(scope): description"
+Luôn tạo từ `main` **đã pull mới**. Tạo từ một nhánh cũ thì diff sẽ dính cả thay đổi của
+người khác, và PR sau đó không đọc được.
 
-# Stay current with main
+### Trong lúc làm
+
+```bash
+git add <file> && git commit -m "type(scope): mô tả"
+
 git fetch origin
-git rebase origin/main
+git rebase origin/main      # HỎI TRƯỚC — rebase viết lại commit của bạn
 ```
 
-### Before Merge
+### Trước khi merge
+
 ```bash
-# Push final state
-git push origin feature/new-feature
-
-# Or after rebase (feature branches only)
-git push -f origin feature/new-feature
+git push origin feature/ten-nhanh
 ```
 
-### After Merge
+Sau rebase thì phải force — **chỉ trên nhánh feature của mình**, và dùng
+`--force-with-lease`:
+
 ```bash
-# Delete local
-git branch -d feature/new-feature
-
-# Delete remote
-git push origin --delete feature/new-feature
+git push --force-with-lease origin feature/ten-nhanh
 ```
 
-## Branch Strategies
+### Sau khi merge
 
-### Simple (small teams)
-```
-main (production)
-  └─ feature/* (development)
-```
-
-### Git Flow (releases)
-```
-main (production)
-develop (staging)
-  ├─ feature/*
-  ├─ bugfix/*
-  ├─ hotfix/*
-  └─ release/*
+```bash
+git branch -d feature/ten-nhanh                    # xoá local (an toàn: -d từ chối nếu chưa merge)
+git push origin --delete feature/ten-nhanh         # xoá remote — HỎI TRƯỚC
 ```
 
-### Trunk-Based (CI/CD)
-```
-main (always deployable)
-  └─ short-lived feature branches
-```
+Dùng `-d`, **không** dùng `-D`. `-d` từ chối xoá nhánh chưa merge; `-D` xoá bất chấp và đó
+là cách mất việc.
 
-## Quick Commands
+## Worktree trong alp-code
 
-| Task | Command |
-|------|---------|
-| List branches | `git branch -a` |
-| Current branch | `git rev-parse --abbrev-ref HEAD` |
-| Switch branch | `git checkout <branch>` |
-| Create + switch | `git checkout -b <branch>` |
-| Delete local | `git branch -d <branch>` |
-| Delete remote | `git push origin --delete <branch>` |
-| Rename | `git branch -m <old> <new>` |
+Repo này dùng worktree cho nhánh triển khai cô lập (`.worktrees/` đã trong `.gitignore`).
+
+Điều dễ nhầm: **nhánh là dùng chung giữa mọi worktree, chỉ working tree là riêng.** Một
+nhánh đang được checkout ở worktree khác thì không checkout lại được ở đây — đó là tính
+năng, không phải lỗi.
+
+Stash stack cũng dùng chung. Xem phần cuối `safety-protocols.md`.
+
+## Nhánh trong alp-code
+
+`main` là nhánh chính. **Không push thẳng lên `main`** — làm trên nhánh, mở PR, principal
+quyết định merge.
+
+## Lệnh nhanh
+
+| Việc | Lệnh |
+|---|---|
+| liệt kê nhánh | `git branch -a` |
+| nhánh hiện tại | `git rev-parse --abbrev-ref HEAD` |
+| chuyển nhánh | `git checkout <nhánh>` |
+| tạo và chuyển | `git checkout -b <nhánh>` |
+| xoá local | `git branch -d <nhánh>` |
+| xoá remote | `git push origin --delete <nhánh>` |
+| đổi tên | `git branch -m <cũ> <mới>` |
+| liệt kê worktree | `git worktree list` |
