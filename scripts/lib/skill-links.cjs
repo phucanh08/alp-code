@@ -1,9 +1,9 @@
-// skill-links.cjs — loadout.skills → `identity/<role>/.claude/skills/<tên>` (symlink).
+// skill-links.cjs — loadout.skills → symlink trong thư mục skill của TỪNG runtime.
 //
-// VÌ SAO CẦN FILE NÀY. `skills/` ở gốc repo KHÔNG runtime nào tự thấy. Claude Code chỉ nạp
-// skill từ `<cwd>/.claude/skills/`, mà CWD của phiên là `identity/<role>/` (CHARTER §7).
-// Trước khi có module này, `skills:` trong loadout chỉ là một dòng chữ in ra trong thẻ
-// danh tính — không vai nào thật sự nạp được skill nào.
+// VÌ SAO CẦN FILE NÀY. `skills/` ở gốc repo KHÔNG runtime nào tự thấy. Cả Claude Code lẫn
+// Codex chỉ quét thư mục skill tính từ CWD của phiên, mà CWD là `identity/<role>/`
+// (CHARTER §7). Trước khi có module này, `skills:` trong loadout chỉ là một dòng chữ in ra
+// trong thẻ danh tính — không vai nào thật sự nạp được skill nào.
 //
 // VÌ SAO SYMLINK, KHÔNG COPY. `skills/` là nguồn sự thật duy nhất. Copy sang 8 vai = 8 bản
 // trôi lệch âm thầm, đúng thứ CHARTER §2.3 cấm. Symlink hỏng thì hỏng to và thấy ngay.
@@ -14,13 +14,26 @@
 //
 // VÌ SAO TARGET TƯƠNG ĐỐI. Symlink tuyệt đối chết khi repo bị clone sang máy/đường dẫn
 // khác — cùng lớp lỗi với path tuyệt đối trong `workspaces:` đã sửa trước đó.
+//
+// VÌ SAO HAI THƯ MỤC. Hai runtime quét hai chỗ khác nhau, cùng tính từ CWD của phiên:
+//   Claude Code → `.claude/skills/`
+//   Codex       → `.agents/skills/` (và `.codex/skills/`, `$CODEX_HOME/skills/`)
+// Cả hai đều ĐI THEO symlink của **thư mục** skill. Đo bằng `codex debug prompt-input`.
+// BẪY đã đo: symlink riêng `SKILL.md` bên trong một thư mục thật thì Codex BỎ QUA —
+// skill là package (kèm `scripts/`, `references/`), phải link nguyên thư mục.
 
 const fs = require("fs");
 const path = require("path");
 
-/** Thư mục chứa symlink của một vai. */
-function linkDir(repoRoot, role) {
-  return path.join(repoRoot, "identity", role, ".claude", "skills");
+/** Thư mục quét skill của từng runtime, tính từ `identity/<role>/`. */
+const RUNTIME_DIRS = [
+  [".claude", "skills"],   // Claude Code
+  [".agents", "skills"],   // Codex
+];
+
+/** Mọi thư mục chứa symlink của một vai — một cái cho mỗi runtime. */
+function linkDirs(repoRoot, role) {
+  return RUNTIME_DIRS.map((seg) => path.join(repoRoot, "identity", role, ...seg));
 }
 
 /**
@@ -37,14 +50,13 @@ function availableSkills(repoRoot) {
     .sort();
 }
 
-/** Target tương đối từ `identity/<role>/.claude/skills/` ngược về `skills/<tên>`. */
+/** Target tương đối từ `identity/<role>/<runtime>/skills/` ngược về `skills/<tên>`. */
 function relativeTarget(name) {
   return path.join("..", "..", "..", "..", "skills", name);
 }
 
-/** Trạng thái hiện tại của thư mục link: tên → target đang trỏ (null nếu không phải symlink). */
-function currentLinks(repoRoot, role) {
-  const dir = linkDir(repoRoot, role);
+/** Trạng thái một thư mục link: tên → target đang trỏ (null nếu không phải symlink). */
+function currentLinks(dir) {
   if (!fs.existsSync(dir)) return null;
   const out = {};
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -53,18 +65,12 @@ function currentLinks(repoRoot, role) {
   return out;
 }
 
-/**
- * Đồng bộ thư mục link của một vai về đúng `loadout.skills`.
- * Trả `{ created, removed }` để caller in ra — im lặng sửa filesystem là cách chắc chắn
- * nhất để không ai biết một link đã biến mất.
- */
-function syncSkillLinks(repoRoot, role, loadout) {
-  const dir = linkDir(repoRoot, role);
-  const want = [...new Set(loadout.skills || [])].sort();
+/** Đồng bộ MỘT thư mục runtime về đúng `want`. */
+function syncOne(dir, want) {
   const created = [];
   const removed = [];
 
-  // Vai không có skill nào: dọn sạch thư mục thay vì để lại link cũ của lần compile trước.
+  // Vai không có skill nào: dọn sạch thay vì để lại link cũ của lần compile trước.
   if (!want.length) {
     if (fs.existsSync(dir)) {
       for (const name of fs.readdirSync(dir)) {
@@ -72,13 +78,16 @@ function syncSkillLinks(repoRoot, role, loadout) {
         removed.push(name);
       }
       fs.rmdirSync(dir);
+      // Dọn cả thư mục cha (`.agents/`) nếu nó rỗng — `.claude/` thì không, nó còn
+      // `settings.json`. `rmdirSync` tự ném khi thư mục không rỗng, nên bọc try.
+      try { fs.rmdirSync(path.dirname(dir)); } catch {}
     }
     return { created, removed };
   }
 
   fs.mkdirSync(dir, { recursive: true });
 
-  const existing = currentLinks(repoRoot, role) || {};
+  const existing = currentLinks(dir) || {};
   for (const name of Object.keys(existing)) {
     if (!want.includes(name) || existing[name] !== relativeTarget(name)) {
       fs.rmSync(path.join(dir, name), { recursive: true, force: true });
@@ -95,25 +104,48 @@ function syncSkillLinks(repoRoot, role, loadout) {
   return { created, removed };
 }
 
+/**
+ * Đồng bộ link của một vai cho MỌI runtime.
+ * Trả `{ created, removed }` — mỗi phần tử là `<runtime>/<tên skill>` để caller in ra.
+ * Im lặng sửa filesystem là cách chắc chắn nhất để không ai biết một link đã biến mất.
+ */
+function syncSkillLinks(repoRoot, role, loadout) {
+  const want = [...new Set(loadout.skills || [])].sort();
+  const created = [];
+  const removed = [];
+  for (const dir of linkDirs(repoRoot, role)) {
+    const label = path.basename(path.dirname(dir));
+    const r = syncOne(dir, want);
+    created.push(...r.created.map((n) => `${label}/skills/${n}`));
+    removed.push(...r.removed.map((n) => `${label}/skills/${n}`));
+  }
+  return { created, removed };
+}
+
 /** Mô tả chỗ lệch giữa filesystem và loadout. Rỗng = khớp. Dùng cho `--check` và doctor. */
 function checkSkillLinks(repoRoot, role, loadout) {
   const want = [...new Set(loadout.skills || [])].sort();
-  const have = currentLinks(repoRoot, role);
-
-  if (have === null) {
-    return want.length ? [`thiếu identity/${role}/.claude/skills/ — ${want.length} skill chưa link`] : [];
-  }
-
   const issues = [];
-  for (const name of want) {
-    if (!(name in have)) issues.push(`thiếu link \`${name}\``);
-    else if (have[name] !== relativeTarget(name))
-      issues.push(`link \`${name}\` trỏ sai: ${have[name] || "(không phải symlink)"}`);
-  }
-  for (const name of Object.keys(have)) {
-    if (!want.includes(name)) issues.push(`thừa link \`${name}\` — không có trong \`skills:\``);
+
+  for (const dir of linkDirs(repoRoot, role)) {
+    const label = path.basename(path.dirname(dir));
+    const have = currentLinks(dir);
+
+    if (have === null) {
+      if (want.length)
+        issues.push(`thiếu identity/${role}/${label}/skills/ — ${want.length} skill chưa link`);
+      continue;
+    }
+    for (const name of want) {
+      if (!(name in have)) issues.push(`${label}/skills: thiếu link \`${name}\``);
+      else if (have[name] !== relativeTarget(name))
+        issues.push(`${label}/skills: link \`${name}\` trỏ sai: ${have[name] || "(không phải symlink)"}`);
+    }
+    for (const name of Object.keys(have)) {
+      if (!want.includes(name)) issues.push(`${label}/skills: thừa link \`${name}\` — không có trong \`skills:\``);
+    }
   }
   return issues;
 }
 
-module.exports = { availableSkills, linkDir, relativeTarget, syncSkillLinks, checkSkillLinks };
+module.exports = { availableSkills, linkDirs, relativeTarget, syncSkillLinks, checkSkillLinks };

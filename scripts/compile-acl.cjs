@@ -110,8 +110,8 @@ for (const role of roles) {
   // Symlink skill sinh CÙNG lúc với settings, không phải bước riêng: hai artifact cùng
   // derive từ một loadout, tách ra là mở đường cho chúng lệch nhau.
   const links = K.syncSkillLinks(repoRoot, role, L.loadLoadout(repoRoot, role));
-  for (const name of links.removed) console.log(`UNLINK   identity/${role}/.claude/skills/${name}`);
-  for (const name of links.created) console.log(`LINK     identity/${role}/.claude/skills/${name}`);
+  for (const name of links.removed) console.log(`UNLINK   identity/${role}/${name}`);
+  for (const name of links.created) console.log(`LINK     identity/${role}/${name}`);
 }
 
 if (checkOnly) {

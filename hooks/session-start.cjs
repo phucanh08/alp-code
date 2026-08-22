@@ -129,17 +129,21 @@ function identityCard(lo, role, grants, workspaces) {
 }
 
 /**
- * Danh sách skill KÈM ĐƯỜNG DẪN. Chỉ in tên là vô dụng với phiên Codex: Codex không có
- * hệ skill, nó chỉ đọc file — không có path thì không biết tìm ở đâu. Phiên Claude tự nạp
- * qua `.claude/skills/`, nên với nó dòng này chỉ là xác nhận thừa, không hại.
- * Không in `description`: boot đã ~3.8k token, sát trần CHARTER §2.6.
+ * Skill của vai. KHÔNG in đường dẫn: cả hai runtime đã tự inject `tên — mô tả — path` từ
+ * thư mục link (`.claude/skills/` cho Claude, `.agents/skills/` cho Codex), in lại là thừa.
+ *
+ * Dòng này tồn tại vì lý do khác: **khẳng định cái gì KHÔNG phải của bạn.** Codex chen
+ * thêm skill hệ thống của chính nó (`~/.codex/skills/.system/*` — skill-creator,
+ * skill-installer, imagegen…) vào MỌI phiên, ngoài tầm với của loadout. Không có dòng này
+ * thì vai không phân biệt được skill mình được cấp với skill lọt vào từ runtime.
  */
 function skillRow(lo) {
   const skills = lo.skills || [];
-  if (!skills.length) return "\n- **Skill:** _(không có)_";
+  if (!skills.length)
+    return "\n- **Skill:** _(không có)_ — thấy skill nào trong phiên cũng là của runtime, không phải của bạn";
   return (
-    "\n- **Skill:** đọc `SKILL.md` khi việc chạm đúng phần nó mô tả — không đọc sẵn cả loạt\n" +
-    skills.map((s) => `  - \`${s}\` → \`.claude/skills/${s}/SKILL.md\``).join("\n")
+    `\n- **Skill:** ${skills.map((s) => `\`${s}\``).join(" · ")}` +
+    "\n  Đúng bấy nhiêu. Skill khác xuất hiện trong phiên là của runtime, **không** phải quyền của bạn."
   );
 }
 

@@ -34,7 +34,7 @@ const lo = (skills) => ({
   tools: skills.length ? ["Read", "Skill"] : ["Read"],
   skills,
 });
-const linkPath = (name) => path.join(root, "identity", "probe", ".claude", "skills", name);
+const linkPath = (name, rt = ".claude") => path.join(root, "identity", "probe", rt, "skills", name);
 
 // --- danh sách skill có thật ------------------------------------------------------
 ok("thư mục thiếu SKILL.md không tính là skill",
@@ -42,7 +42,13 @@ ok("thư mục thiếu SKILL.md không tính là skill",
 
 // --- sinh link --------------------------------------------------------------------
 K.syncSkillLinks(root, "probe", lo(["agent-memory", "code-review"]));
-ok("sinh đúng số link", fs.readdirSync(path.dirname(linkPath("x"))).length === 2);
+ok("sinh link cho CẢ HAI runtime",
+  fs.readdirSync(path.dirname(linkPath("x", ".claude"))).length === 2 &&
+  fs.readdirSync(path.dirname(linkPath("x", ".agents"))).length === 2);
+// Codex bỏ qua symlink trỏ file — skill là package, phải link nguyên thư mục.
+ok("link Codex là symlink của THƯ MỤC, không phải của SKILL.md",
+  fs.lstatSync(linkPath("code-review", ".agents")).isSymbolicLink() &&
+  fs.statSync(linkPath("code-review", ".agents")).isDirectory());
 ok("link là symlink, không phải bản sao", fs.lstatSync(linkPath("code-review")).isSymbolicLink());
 ok("link resolve tới skills/ của repo",
   fs.readFileSync(path.join(linkPath("code-review"), "SKILL.md"), "utf8").includes("name: code-review"));
@@ -59,18 +65,24 @@ ok("chạy lại không tạo/xoá gì", again.created.length === 0 && again.rem
 // --- bỏ skill khỏi loadout thì link phải BIẾN MẤT ----------------------------------
 // Link thừa nguy hiểm hơn link thiếu: vai nạp được skill principal đã gỡ mà không ai biết.
 const shrunk = K.syncSkillLinks(root, "probe", lo(["agent-memory"]));
-ok("gỡ skill khỏi loadout thì link bị dọn", shrunk.removed.includes("code-review") && !fs.existsSync(linkPath("code-review")));
+ok("gỡ skill khỏi loadout thì link bị dọn ở cả hai runtime",
+  shrunk.removed.includes(".claude/skills/code-review") &&
+  shrunk.removed.includes(".agents/skills/code-review") &&
+  !fs.existsSync(linkPath("code-review", ".claude")) &&
+  !fs.existsSync(linkPath("code-review", ".agents")));
 
 // --- loadout rỗng thì dọn sạch cả thư mục ------------------------------------------
 K.syncSkillLinks(root, "probe", lo([]));
-ok("skills rỗng → không còn thư mục link", !fs.existsSync(path.dirname(linkPath("x"))));
+ok("skills rỗng → không còn thư mục link ở cả hai runtime",
+  !fs.existsSync(path.dirname(linkPath("x", ".claude"))) &&
+  !fs.existsSync(path.dirname(linkPath("x", ".agents"))));
 ok("skills rỗng → không báo lệch", K.checkSkillLinks(root, "probe", lo([])).length === 0);
 
 // --- phát hiện lệch ---------------------------------------------------------------
 K.syncSkillLinks(root, "probe", lo(["agent-memory", "code-review"]));
-fs.rmSync(linkPath("code-review"));
-ok("thiếu link → báo lệch", K.checkSkillLinks(root, "probe", lo(["agent-memory", "code-review"]))
-  .some((m) => m.includes("thiếu link `code-review`")));
+fs.rmSync(linkPath("code-review", ".agents"));
+ok("thiếu link ở runtime Codex → báo lệch", K.checkSkillLinks(root, "probe", lo(["agent-memory", "code-review"]))
+  .some((m) => m.includes(".agents/skills: thiếu link `code-review`")));
 
 K.syncSkillLinks(root, "probe", lo(["agent-memory", "code-review"]));
 fs.rmSync(linkPath("code-review"));
