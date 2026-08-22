@@ -136,9 +136,9 @@ Thêm mấy điều hay sai:
 
 ## Xin phép hay không
 
-**Miễn hỏi** — spawn 7 vai trong `delegates_to` của `main`. Đó là công việc của vai điều
-phối; hỏi từng lần thì "tự delegate" chỉ là đổi chỗ cho principal gõ lệnh. Báo **một dòng**
-trước khi chạy (`→ giao Search: tìm call-site auth`) và liệt kê vai đã gọi ở cuối lượt.
+**Miễn hỏi** — spawn các vai trong `delegates_to` của loadout bạn. Đó là công việc của vai
+điều phối; hỏi từng lần thì "tự delegate" chỉ là đổi chỗ cho principal gõ lệnh. Báo **một
+dòng** trước khi chạy (`→ giao <vai>: tìm call-site auth`) và liệt kê vai đã gọi ở cuối lượt.
 
 Spawn vai qua launcher, **không** gõ `agent start` tay — nó lo chờ shell, seq, prompt nhiều
 dòng và trust-gate của hook:

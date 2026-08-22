@@ -14,6 +14,7 @@
 
 const path = require("path");
 const L = require("./loadout.cjs");
+const K = require("./skill-links.cjs");
 
 // Claude Code 2.1.238 chỉ nhận Read(path) cho mọi file-read tool và Edit(path)
 // cho mọi file-write tool. Glob/Grep/Write/NotebookEdit(path) bị bỏ qua và in warning.
@@ -119,7 +120,7 @@ function hooks(repoRoot) {
  */
 function buildSettings(repoRoot, role, allRoles, loadout) {
   const lo = loadout || L.loadLoadout(repoRoot, role);
-  const errs = L.validate(lo, role, allRoles);
+  const errs = L.validate(lo, role, allRoles, K.availableSkills(repoRoot));
   if (errs.length) {
     const e = new Error(`loadout.yaml của \`${role}\` không hợp lệ`);
     e.issues = errs;

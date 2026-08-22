@@ -21,9 +21,9 @@ memory:
 
 # --- workspace code ngoài alp-code (viết dạng `~/...`) ---
 workspaces:
-  read:  [~/StudioProjects/alp-plugin]
+  read:  []
   write: []
 
 # --- công cụ & skill ---
-tools:  [Read, Glob, Grep, Bash]
-skills: [agent-memory, alp:scout]
+tools:  [Read, Glob, Grep, Bash, Skill]
+skills: [agent-memory, gkg]

@@ -16,13 +16,13 @@ delegates_to: []
 # private/librarian/** tự thêm vào cả read lẫn write — không cần khai.
 memory:
   read:  [shared/**, projects/**]
-  write: []
+  write: [shared/reference/**, projects/**/refs/**]
 
 # --- workspace code ngoài alp-code (viết dạng `~/...`) ---
 workspaces:
-  read:  [~/StudioProjects/alp-plugin]
+  read:  []
   write: []
 
 # --- công cụ & skill ---
-tools:  [Read, Glob, Grep, Bash, WebSearch, WebFetch]
-skills: [agent-memory, alp:research, alp:docs-seeker]
+tools:  [Read, Glob, Grep, Bash, WebSearch, WebFetch, Skill]
+skills: [agent-memory, research, docs-seeker]

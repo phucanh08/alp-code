@@ -24,5 +24,5 @@ workspaces:
   write: []
 
 # --- công cụ & skill ---
-tools:  [Read, Glob, Grep]
+tools:  [Read, Glob, Grep, Skill]
 skills: [agent-memory]

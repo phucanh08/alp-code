@@ -23,6 +23,7 @@ const T = require("./lib/trust.cjs");
 const PC = require("./lib/project-config.cjs");
 const P = require("./lib/codex-profile.cjs");
 const F = require("./lib/herdr-fleet.cjs");
+const K = require("./lib/skill-links.cjs");
 
 const quiet = process.argv.includes("--quiet");
 const repoRoot = L.findRepoRoot(__dirname);
@@ -206,7 +207,12 @@ function checkIdentityFiles() {
       signal("IDENTITY-MISSING", `${role} thiếu memory/private/${role}/`, `mkdir -p memory/private/${role}`);
 
     const lo = L.loadLoadout(repoRoot, role);
-    if (lo) for (const e of L.validate(lo, role, roles)) signal("ACL-INVALID", e, FIX.loadout(role));
+    if (lo) for (const e of L.validate(lo, role, roles, K.availableSkills(repoRoot)))
+      signal("ACL-INVALID", e, FIX.loadout(role));
+    // Link skill lệch loadout = vai boot lên thiếu đúng thứ PLAYBOOK bảo nó dùng, mà không
+    // báo gì. Cùng hạng với ACL-DRIFT nên cùng chỗ sửa.
+    if (lo) for (const e of K.checkSkillLinks(repoRoot, role, lo))
+      signal("SKILL-DRIFT", `${role}: ${e}`, FIX.loadout(role));
     // Vai chạy Codex cần AGENTS.md (Codex đọc file đó, không đọc CLAUDE.md).
     // Xét CẢ `codex_model` — main khai `model: claude-opus-5` cho runtime chính nhưng vẫn
     // có đường phụ Codex, và chỉ soi `model` thì bỏ lọt đúng vai đó.

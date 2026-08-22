@@ -3,6 +3,11 @@ identity/*/.claude/settings.json
 identity/*/.claude/.acl-stamp
 identity/*/.claude/session-state/
 
+# Symlink skill, cũng do compile-acl.sh sinh từ `skills:` trong loadout. Nguồn sự thật là
+# `skills/` + loadout; commit symlink = commit một bản sao thứ hai của cùng thông tin.
+identity/*/.claude/skills/
+identity/*/.agents/
+
 # Session state ở gốc repo — sinh ra khi mở `claude` trần trong một checkout alp-code
 # (dev clone). Cùng loại scratch với dòng trên, chỉ khác chỗ đứng.
 /.claude/session-state/

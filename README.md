@@ -211,7 +211,13 @@ alp-code/
 │   ├── projects/           Project Layer 3 tầng
 │   └── private/<role>/     nháp riêng, cách ly hai chiều
 ├── scaffold/memory/        khung RỖNG của memory/ — bootstrap chép sang cái còn thiếu
-├── skills/                 agent-memory (luật ghi trí nhớ) · herdr (quản fleet)
+├── skills/                 15 skill dùng chung — nguồn sự thật DUY NHẤT của skill
+│                           riêng của hệ: agent-memory (luật ghi trí nhớ) · herdr (quản fleet)
+│                           nhúng từ alp-plugin: alp-plan · alp-debug · alp-predict ·
+│                           alp-scenario · code-review · docs-seeker · git · gkg ·
+│                           problem-solving · repomix · research · scout · security-scan
+│                           compile-acl link đúng phần `skills:` của mỗi vai sang
+│                           identity/<role>/.claude/skills/ — vai không thấy skill ngoài loadout
 ├── hooks/                  session-start · acl-guard · session-end
 ├── scripts/                alp · compile-acl · new-role · doctor · trust-role · test-isolation
 │   └── lib/                loadout (parser + checkPath) · claude-settings · codex-profile
@@ -245,13 +251,14 @@ alp-code/
 | `scripts/install-project.ps1 <path>` | đăng ký project code có sẵn (Windows PowerShell) |
 | `scripts/run-role.sh <role> [--pane\|--exec]` | giao việc cho một vai; `--release <pane>` trả quyền khi xong |
 | `scripts/trust-role.sh [role]` | đánh dấu workspace trusted trong `~/.claude.json` |
-| `scripts/doctor.sh` | kiểm toàn vẹn: DRIFT · ACL-* · TRUST-MISSING\* · CODEX-PROFILE-\* · PROJECT-CONFIG-STALE · HERDR-VERSION · ORPHAN-PANE |
+| `scripts/doctor.sh` | kiểm toàn vẹn: DRIFT · ACL-* · SKILL-DRIFT · TRUST-MISSING\* · CODEX-PROFILE-\* · PROJECT-CONFIG-STALE · HERDR-VERSION · ORPHAN-PANE |
 | `scripts/test-communication.sh` | kiểm topology giao tiếp và contract main-only |
 | `scripts/test-agent-routing.sh` | kiểm model, effort và delegation route của các vai Codex |
 | `scripts/test-isolation.sh` | cách ly giữa các vai + chống đệ quy (nhanh, qua hook) · `--live` chạy `claude -p` thật |
 | `scripts/test-delegation.cjs` | contract ủy nhiệm · luật định tuyến pane/exec · seq |
 | `scripts/test-project-config.cjs` | nghiệm thu `alp init`: idempotent · uninstall sạch · cwd lạ chỉ-đọc |
 | `scripts/test-cli-link.cjs` | cài lệnh + PATH: macOS/Linux profile · Windows shim/User PATH · idempotent |
+| `scripts/test-skill-links.cjs` | symlink skill: sinh · dọn link thừa · target tương đối · validate `skills:` |
 | `scripts/sync-project-index.sh --write` | sinh lại L0 từ frontmatter L1 |
 
 ## Trí nhớ không đi theo git

@@ -43,8 +43,8 @@ const CASES = [
 
   // --- Nhóm CHO PHÉP, từ phiên librarian ---
   ["librarian", "ALLOW", "Read", { file_path: R("memory/shared/reference/deepseek-harness.md") }, "Read shared/reference"],
-  ["librarian", "DENY", "Write", { file_path: R("memory/shared/reference/moi.md") }, "không tự ghi shared/reference"],
-  ["librarian", "DENY", "Write", { file_path: R("memory/projects", SLUG, "refs/moi.md") }, "không tự ghi projects/*/refs"],
+  ["librarian", "ALLOW", "Write", { file_path: R("memory/shared/reference/moi.md") }, "ghi shared/reference theo grant"],
+  ["librarian", "ALLOW", "Write", { file_path: R("memory/projects", SLUG, "refs/moi.md") }, "ghi projects/*/refs theo grant"],
   ["librarian", "ALLOW", "Bash", { command: "touch ../../memory/private/librarian/nhap.md" }, "ghi private của mình"],
   ["librarian", "ALLOW", "Read", { file_path: R("memory/projects/INDEX.md") }, "Read L0"],
   ["librarian", "ALLOW", "Read", { file_path: R("identity/_shared/PRINCIPAL.md") }, "Read PRINCIPAL"],
@@ -233,6 +233,7 @@ const SYMLINK = path.join("/tmp", "acl-symlink-probe");
 function setupFixtures() {
   write(R("memory/private/main/x.md"), "nháp của main\n");
   write(R("memory/private/librarian/y.md"), "nháp của librarian\n");
+  write(R("memory/projects", SLUG, "PROJECT.md"), "---\nslug: acl-test-project\n---\n");
 
   // Symlink cho ca 5. Fixture hỏng KHÔNG được biến thành ca "pass" —
   // với một test bảo mật, im lặng bỏ qua là chế độ hỏng tệ nhất có thể.
@@ -255,6 +256,8 @@ function cleanupFixtures() {
   try {
     fs.rmSync(SYMLINK, { force: true });
   } catch {}
+  if (SLUG === ".acl-test-project")
+    fs.rmSync(R("memory/projects", SLUG), { recursive: true, force: true });
 }
 
 function write(p, body) {
@@ -269,8 +272,7 @@ function firstProjectSlug() {
     .filter((e) => e.isDirectory() && !e.name.startsWith("_"))
     .map((e) => e.name)
     .sort()[0];
-  if (!found) die("không có project nào trong memory/projects/ để test");
-  return found;
+  return found || ".acl-test-project";
 }
 
 function die(m) {

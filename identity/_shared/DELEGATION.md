@@ -1,8 +1,21 @@
 # DELEGATION — giao việc cho agent khác
 
 > **Không nằm trong boot set.** Nạp khi sắp giao việc, không nạp dự phòng.
-> Luật "khi nào tự làm, khi nào giao" ở [`HOUSE-RULES.md`](HOUSE-RULES.md) §3.
 > Giao cho ai: `identity/<role>/RELATIONS.md`.
+
+## Khi nào tự làm, khi nào giao
+
+**Tự làm** khi: đã biết đường dẫn · trả lời được từ bối cảnh sẵn có · việc <5 phút ·
+chỉ cần quét bằng `Glob`/`Grep`/`Read`.
+
+**Giao** khi: nhiều nhánh độc lập chạy song song được · việc dài cần theo dõi và can thiệp ·
+cần chuyên môn hẹp mà vai khác có.
+
+Mỗi agent khởi động từ con số không và phải suy luận lại bối cảnh bạn đã có sẵn. Task
+"nhiều mặt", "kỹ lưỡng", "nhiều phần" **không** đồng nghĩa với phải giao đi.
+
+**Luật cứng:** không spawn subagent in-process, không dùng `Agent` tool — mọi việc giao đi
+qua **herdr**. Giao cho ai: bảng RELATIONS đã nạp sẵn ở boot.
 
 ## Cách chạy — chọn đường theo HÌNH DẠNG việc, không theo cảm giác
 

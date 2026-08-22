@@ -207,9 +207,13 @@ function writeWorkspaces(repoRoot, role, read, write) {
 
 // ---------------------------------------------------------------- validate
 
+// `Skill` phải có mặt ở đây thì `denyRules` mới deny được nó cho vai không khai.
+// BẪY: Claude Code surface skill dự án QUA chính tool này. Vai có `skills:` mà thiếu
+// `Skill` trong `tools:` sẽ bị deny và không nạp được cả skill của chính nó — nên
+// `validate` bắt buộc hai khoá đi cùng nhau, đừng tách.
 const KNOWN_TOOLS = [
   "Read", "Write", "Edit", "Glob", "Grep", "Bash",
-  "WebSearch", "WebFetch", "NotebookEdit", "Task",
+  "WebSearch", "WebFetch", "NotebookEdit", "Task", "Skill",
 ];
 const REASONING_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"];
 
@@ -220,8 +224,12 @@ const KNOWN_KEYS = [
   "reports_to", "delegates_to", "memory", "workspaces", "tools", "skills",
 ];
 
-/** Trả về mảng thông báo lỗi. Rỗng = hợp lệ. */
-function validate(loadout, role, allRoles) {
+/**
+ * Trả về mảng thông báo lỗi. Rỗng = hợp lệ.
+ * `knownSkills` — tên mọi skill có thật trong `skills/` (xem `lib/skill-links.cjs`). Bỏ trống
+ * thì bỏ qua phần kiểm skill; caller nào sinh ra artifact thật thì PHẢI truyền vào.
+ */
+function validate(loadout, role, allRoles, knownSkills) {
   const errs = [];
   const add = (m) => errs.push(`${role}: ${m}`);
 
@@ -279,6 +287,28 @@ function validate(loadout, role, allRoles) {
 
   for (const t of loadout.tools || []) {
     if (!KNOWN_TOOLS.includes(t)) add(`tool lạ trong \`tools:\`: ${t}`);
+  }
+
+  // `skills:` và tool `Skill` phải đi cùng nhau, cả hai chiều:
+  //   có skill, thiếu tool  → deny chặn luôn skill của chính vai đó, hỏng câm
+  //   có tool, không skill  → mở cửa sang skill user/plugin ngoài repo, đúng thứ ACL cấm
+  const hasSkillTool = (loadout.tools || []).includes("Skill");
+  const hasSkills = (loadout.skills || []).length > 0;
+  if (hasSkills && !hasSkillTool)
+    add("khai `skills:` nhưng thiếu `Skill` trong `tools:` — vai sẽ bị deny chính skill của mình");
+  if (hasSkillTool && !hasSkills)
+    add("có `Skill` trong `tools:` nhưng `skills:` rỗng — mở cửa sang skill ngoài repo");
+
+  // Skill không có thật thì hỏng IM LẶNG: compile vẫn chạy, thẻ danh tính vẫn in tên đó,
+  // chỉ có link là không bao giờ sinh ra. Cùng lý do với `KNOWN_KEYS` — tên sai = lỗi.
+  if (knownSkills) {
+    const known = new Set(knownSkills);
+    const seen = new Set();
+    for (const s of loadout.skills || []) {
+      if (!known.has(s)) add(`skill lạ trong \`skills:\`: ${s} — không có \`skills/${s}/SKILL.md\``);
+      if (seen.has(s)) add(`skill trùng trong \`skills:\`: ${s}`);
+      seen.add(s);
+    }
   }
 
   return errs;
