@@ -90,3 +90,74 @@ phải hồi quy**:
    `memory.write: []`. Vai sẽ bị chặn ở đúng bước cuối quy trình của nó.
 5. **`titling` thừa grant**: có `workspaces.read` nhưng `tools: []` → không đọc được gì.
 6. **`~/StudioProjects/alp-plugin` không tồn tại** trên máy; 6/8 vai đang khai workspace này.
+
+---
+
+# Phần 2 — Custom skill cho alp-code (2026-08-22)
+
+Commit `84fa7de` → `22c5e75`. Dịch tiếng Việt + viết lại theo quy trình alp-code.
+
+## Vì sao phải viết lại, không chỉ dịch
+
+Skill nhúng từ alp-plugin giả định một môi trường alp-code không có:
+
+| Giả định | Thực tế alp-code |
+|---|---|
+| `AskUserQuestion` tool | không có. Main nói chuyện trực tiếp với principal |
+| slash command `/alp-plan`, `/scout`, `/alp:cook` | không có hệ command |
+| spawn subagent qua `Task` | **không vai nào có `Task`**. Giao việc qua `run-role`/herdr = phiên riêng |
+| `TaskCreate`/`TaskUpdate`/`TodoWrite` | không có hệ task. `plan.md` là nguồn sự thật |
+| hook inject `## Naming`, `## Plan Context` | hook alp-code chỉ inject thẻ danh tính + PROJECTS L0 + tín hiệu doctor |
+| `.claude/.alp.json`, `docs/development-rules.md` | không tồn tại |
+| `node scripts/…` (tương đối theo cwd) | CWD phiên là `identity/<role>/` → phải `.claude/skills/<tên>/scripts/…` |
+| `set-active-plan.cjs`, `ck plan create` | không có |
+
+## Nguyên tắc viết lại
+
+**Mỗi skill giờ chỉ thuộc đúng một vai** (theo `skills:` trong loadout), nên viết thẳng cho
+vai đó thay vì viết chung chung — kèm ranh giới ACL thật của vai:
+
+| Vai | Skill | Ranh giới ghi vào skill |
+|---|---|---|
+| review | code-review · alp-scenario · security-scan | không `Edit`/`Write`, `delegates_to: []`, một concern mỗi phiên |
+| oracle | alp-predict · problem-solving · alp-debug | không sửa được gì → sản phẩm là khuyến nghị, không phải bản vá |
+| search | gkg | chỉ index workspace trong loadout, không MCP |
+| librarian | research · docs-seeker | ngân sách 5 lượt tìm, `memory.write: []` |
+| main | alp-plan · git | vai duy nhất có `Write`; cổng chặn commit/push/merge |
+
+**Thống nhất thang mức** CHẶN / NÊN SỬA / GHI NHẬN giữa `code-review`, `alp-scenario`,
+`security-scan`, `red-team-personas` — main không phải quy đổi giữa bốn báo cáo.
+
+## Xoá
+
+| Xoá | Vì sao |
+|---|---|
+| skill `scout` | toàn bộ tiền đề là spawn agent song song chia thư mục. Không vai nào có `Task`, và vai `search` **chính là** scout của hệ này. Giữ lại là mời một vai đi thử thứ nó không làm được |
+| `alp-plan/references/task-management.md` | không có hệ task |
+| `alp-plan/references/workflow-modes.md` | mode `--parallel`/`--two` dựa trên spawn researcher |
+| `alp-debug/references/task-management-debugging.md` | như trên |
+| `alp-debug/references/frontend-verification.md` | cần `chrome-devtools` + `mcp-management`, chưa nhúng |
+| `code-review/references/requesting-code-review.md` | `review` **thực hiện** review, không đi xin |
+| `gkg/references/mcp-tools.md` | `search` không có MCP |
+
+## Sửa theo thực tế repo, không theo tài liệu gốc
+
+- **`commit-standards.md`**: bản gốc **cấm** attribution AI. alp-code có `Co-Authored-By`
+  ở 5/8 commit gần nhất → sửa theo lịch sử repo. Lịch sử là nguồn sự thật, không phải tài liệu.
+- **`gh-cli-guide.md`**: **bỏ** hai mẫu của bản gốc — `gh pr create --fill && gh pr merge
+  --auto --squash` và đóng hàng loạt PR bằng `xargs`. Cả hai vi phạm HOUSE-RULES §1.2:
+  thao tác khó đảo ngược, hàng loạt, không có bước dừng.
+- **`plan-organization.md`**: viết lại theo format **thật** của repo
+  (`plans/YYMMDD-HHMM-slug/`, frontmatter 6 trường) thay vì format 12 trường của alp-plugin.
+  Bỏ `priority`/`effort`/`tags`/`branch`/`issue` — chúng chỉ có nghĩa khi có dashboard đọc.
+
+## Con số
+
+71/71 file `.md` đã dịch và custom. 12 SKILL.md + 46 reference/workflow còn lại sau khi
+xoá 7 file.
+
+## Kiểm chứng
+
+`doctor` sạch · `test-skill-links` 18 ca · 7/7 test khác xanh. `compile-acl --check` báo 8
+`PROFILE-DRIFT` — **đúng như mong đợi**: `~/.codex/*.config.toml` đã được khôi phục trỏ về
+checkout chính, nên nhìn từ worktree thì lệch. Không có `ACL-DRIFT` hay `SKILL-DRIFT` nào.
