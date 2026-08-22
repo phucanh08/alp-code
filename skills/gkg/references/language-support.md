@@ -1,57 +1,54 @@
-# GKG Language Support
+# Hỗ trợ ngôn ngữ của gkg
 
-## Support Matrix
+## Bảng
 
-| Language | Definitions | Imports | Intra-file Refs | Cross-file Refs |
-|----------|-------------|---------|-----------------|-----------------|
+| Ngôn ngữ | Định nghĩa | Import | Tham chiếu trong file | Tham chiếu chéo file |
+|---|---|---|---|---|
 | Ruby | ✅ | ✅ | ✅ | ✅ |
 | Java | ✅ | ✅ | ✅ | ✅ |
 | Kotlin | ✅ | ✅ | ✅ | ✅ |
-| Python | ✅ | ✅ | ✅ | 🚧 |
-| TypeScript | ✅ | ✅ | ✅ | 🚧 |
-| JavaScript | ✅ | ✅ | ✅ | 🚧 |
+| Python | ✅ | ✅ | ✅ | **chưa xong** |
+| TypeScript | ✅ | ✅ | ✅ | **chưa xong** |
+| JavaScript | ✅ | ✅ | ✅ | **chưa xong** |
 
-## Feature Definitions
+## Bốn năng lực nghĩa là gì
 
-**Definitions**: Classes, functions, methods, constants, interfaces extracted from AST.
+| Năng lực | Nội dung |
+|---|---|
+| **Định nghĩa** | class, hàm, method, hằng, interface — rút từ AST |
+| **Import** | theo dõi import module/package để dựng đồ thị phụ thuộc |
+| **Tham chiếu trong file** | chỗ dùng symbol nằm cùng file |
+| **Tham chiếu chéo file** | chỗ dùng symbol định nghĩa ở file khác — **đây là cái quyết định phân tích ảnh hưởng** |
 
-**Imports**: Module/package imports tracked for dependency analysis.
+Cột cuối là cột duy nhất thật sự quan trọng với việc của `search`. Ba cột đầu `rg` cũng làm
+gần được.
 
-**Intra-file Refs**: References to symbols within same file.
+## Ruby / Java / Kotlin — dùng tự tin
 
-**Cross-file Refs**: References to symbols defined in other files. Critical for impact analysis.
+Phân tích ngữ nghĩa đầy đủ: tìm định nghĩa chéo file · tìm mọi chỗ gọi · đồ thị phụ thuộc
+đầy đủ · phân tích ảnh hưởng trước refactor.
 
-## Fully Supported (Ruby, Java, Kotlin)
+## Python / TS / JS — dùng có điều kiện
 
-Complete semantic analysis:
-- Go-to-definition across files
-- Find all usages across codebase
-- Full dependency graph
-- Impact analysis for refactoring
+Chạy được: rút định nghĩa, theo dõi import, tham chiếu trong cùng file.
 
-## Partially Supported (Python, TS/JS)
+**Không đầy đủ:**
 
-Current capabilities:
-- Definition extraction works
-- Import tracking works
-- Same-file reference tracking works
+- `get_references` chéo file **có thể bỏ sót** chỗ dùng.
+- `get_definition` có thể không giải được symbol từ bên ngoài.
 
-Limitations:
-- Cross-file `get_references` may miss some usages
-- `get_definition` may not resolve all external symbols
-- Use with awareness of gaps
+Đây là điểm quan trọng nhất của cả file này. Với TS/JS/Python:
 
-## Best Practices
+1. **Luôn đối chiếu thêm bằng `rg`.** `gkg` cho quan hệ, `rg` cho độ phủ — cần cả hai.
+2. **Ghi rõ trong báo cáo là kết quả chưa chắc đầy đủ.**
+3. Việc quan trọng (main sắp refactor) thì kiểm tay thêm những chỗ then chốt.
 
-### For Full Support Languages
-Use all MCP tools confidently for complete analysis.
+Trả lời "có 3 chỗ gọi" khi thật ra có 11 là kiểu sai đắt nhất `search` có thể gây ra — main
+sẽ refactor dựa trên con số đó.
 
-### For Partial Support Languages
-1. Verify critical refactoring impacts manually
-2. Use `search_codebase_definitions` for discovery
-3. Cross-reference with `grep` for completeness
-4. Supplement with repomix for context dumps
+## Đây là beta công khai
 
-## Future Plans
+Không phải công cụ đã chín. Hỗ trợ tham chiếu chéo file cho Python/TS/JS đang được làm —
+xem https://gitlab.com/gitlab-org/rust/knowledge-graph để biết trạng thái mới.
 
-Cross-file reference support for Python/TS/JS under active development. Check [GitLab Knowledge Graph](https://gitlab.com/gitlab-org/rust/knowledge-graph) for updates.
+Đến khi nào cột cuối của TS/JS chuyển thành ✅ thì luật đối chiếu bằng `rg` vẫn còn hiệu lực.

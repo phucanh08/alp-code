@@ -1,106 +1,94 @@
-# GKG CLI Commands
+# Lệnh CLI của gkg
 
-## gkg index
+## `gkg index`
 
-Index repositories into knowledge graph.
+Đưa repo vào knowledge graph.
 
 ```bash
-# Index current directory
-gkg index
-
-# Index specific path
-gkg index /path/to/workspace
-
-# With statistics output
-gkg index --stats
-
-# Save stats as JSON
-gkg index --stats stats.json
-
-# Verbose logging
-gkg index -v
-
-# Control thread count (default: CPU cores)
-gkg index --threads 4
+gkg index                      # thư mục hiện tại
+gkg index /đường/dẫn           # đường dẫn cụ thể
+gkg index --stats              # kèm thống kê
+gkg index --stats stats.json   # ghi thống kê ra JSON
+gkg index -v                   # log chi tiết
+gkg index --threads 4          # số luồng (mặc định = số nhân CPU)
 ```
 
-**Auto-detection**: Detects if path is workspace (multiple repos) or single repository.
+**Chỉ index workspace có trong `workspaces.read` của `loadout.yaml`.** Index repo ngoài
+danh sách là đọc thứ mình không được đọc, kể cả khi filesystem không chặn.
 
-**Output location**: `~/.gkg/{workspace_hash}/{project_hash}/`
+Tự nhận diện: đường dẫn là workspace (nhiều repo) hay một repo đơn.
 
-## gkg server
+Dữ liệu ra: `~/.gkg/{workspace_hash}/{project_hash}/` — **ngoài repo**, nên nó sống qua
+nhiều phiên. Index lại khi code đã đổi nhiều, đừng index mỗi phiên.
 
-Start HTTP server for API and MCP access.
+## `gkg server`
 
 ```bash
-# Start server (default: http://localhost:27495)
-gkg server start
-
-# Start with MCP endpoints
+gkg server start          # mặc định http://localhost:27495
 gkg server start --register-mcp
-
-# Stop server
 gkg server stop
-
-# Check status
 gkg server status
 ```
 
-**Port**: 27495 (0x6b67 = "kg" in hex). Falls back to unused port if busy.
+Cổng 27495 (`0x6b67` = "kg"). Bận thì tự rơi sang cổng khác — nên **luôn chạy
+`gkg server status`** để biết cổng thật trước khi gọi API.
 
-**Important**: Stop server before re-indexing: `gkg server stop`
+**Phải `gkg server stop` trước khi index lại.**
 
-## gkg remove
+`--register-mcp` không dùng trong phiên `search`: `tools: [Read, Glob, Grep, Bash]`, không
+có MCP. Gọi HTTP API qua `Bash`.
 
-Remove indexed data.
+## `gkg remove`
 
 ```bash
-# Remove entire workspace
-gkg remove --workspace /path/to/workspace
-
-# Remove single project
-gkg remove --project /path/to/project --workspace-folder /path/to/workspace
+gkg remove --workspace /đường/dẫn
+gkg remove --project /đường/dẫn --workspace-folder /workspace
 ```
 
-## gkg clean
+Xoá dữ liệu đã index. **Khó đảo ngược** (index lại tốn thời gian) — báo main trước, đừng
+tự dọn.
 
-Clean orphaned or corrupted data.
+## `gkg clean`
 
 ```bash
-# Clean all orphaned data
-gkg clean
-
-# Dry run (preview only)
-gkg clean --dry-run
+gkg clean --dry-run     # xem trước — CHẠY CÁI NÀY TRƯỚC
+gkg clean               # dọn thật
 ```
 
-## Common Workflows
+Luôn `--dry-run` trước. Xem nó định xoá gì rồi mới chạy thật.
 
-### Initial Setup
+## Quy trình thường dùng
+
+**Lần đầu**
+
 ```bash
-cd /my/project
 gkg index --stats
 gkg server start
 ```
 
-### Re-index After Changes
+**Index lại sau khi code đổi**
+
 ```bash
 gkg server stop
 gkg index
 gkg server start
 ```
 
-### Multi-repo Workspace
+**Workspace nhiều repo** — index thư mục cha:
+
 ```bash
-# Index parent directory containing multiple repos
-gkg index /path/to/workspace
+gkg index /đường/tới/workspace
 ```
 
-## Troubleshooting
+## Xử lý sự cố
 
-| Issue | Solution |
-|-------|----------|
-| High memory | Reduce `--threads` |
-| Slow indexing | Increase `--threads` or use `-v` |
-| Server conflict | Run `gkg server stop` first |
-| Stale data | Run `gkg clean` |
+| Vấn đề | Cách |
+|---|---|
+| tốn nhiều bộ nhớ | giảm `--threads` |
+| index chậm | tăng `--threads`, hoặc `-v` để xem nó đang làm gì |
+| xung đột cổng | `gkg server stop` trước |
+| dữ liệu cũ, kết quả lạ | `gkg clean --dry-run` rồi `gkg clean` |
+
+Chạy lâu bất thường hoặc lỗi lặp lại → **báo main**, đừng ngồi thử đi thử lại. `search`
+chạy ở effort thấp, giá trị nằm ở tốc độ; kẹt thì trả lời bằng `rg` và nói rõ `gkg` không
+dùng được.
