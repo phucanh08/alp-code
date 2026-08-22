@@ -6,7 +6,7 @@
 // FAIL-SAFE: hook lỗi → exit 0 với additionalContext rỗng + cảnh báo lên systemMessage.
 // Hook chết KHÔNG được làm chết phiên. (Ngược với acl-guard.cjs — fail-closed.)
 //
-// NGÂN SÁCH: 9 nguồn, ≤ BOOT_BUDGET ký tự (~5k token). Vượt thì cảnh báo, không cắt —
+// NGÂN SÁCH: ≤ BOOT_BUDGET ký tự (~4k token). Vượt thì cảnh báo, không cắt —
 // cắt thầm lặng nguy hiểm hơn: agent tưởng mình đã đọc đủ.
 
 const fs = require("fs");
@@ -16,15 +16,12 @@ const L = require(path.join(__dirname, "..", "scripts", "lib", "loadout.cjs"));
 // Ngân sách boot. CHARTER §2.6 đặt mục tiêu ~4k token; tiếng Việt có dấu tốn khoảng
 // 3.5 ký tự/token. Ngưỡng theo KÝ TỰ vì hook không có tokenizer và không được phép gọi mạng.
 //
-// 18000 ký tự ≈ 5.1k token. Con số cũ là 15000 nhưng ĐO RA CHƯA BAO GIỜ ĐẠT: boot set của
-// main đã là 16686 trước khi thêm RELATIONS — ngưỡng cũ là ước lượng trên giấy, không phải
-// phép đo. Giữ một ngưỡng luôn đỏ thì cảnh báo thành tiếng ồn và không ai còn đọc nó.
-// 18000 = mức đo thật (17556) cộng chỗ thở; muốn về 4k token thì phải rút gọn
-// HOUSE-RULES/SOUL/PLAYBOOK, không phải hạ ngưỡng tiếp.
+// 14000 ký tự ≈ 4k token. Boot set phải được rút gọn để giữ ngưỡng này có ý nghĩa;
+// không nới ngân sách cho vừa hiện trạng.
 //
 // Vượt ngưỡng thì CẢNH BÁO chứ không cắt: cắt thầm lặng nguy hiểm hơn nhiều —
 // agent tưởng mình đã đọc đủ trong khi thiếu mất nửa bộ luật.
-const BOOT_BUDGET = 18000;
+const BOOT_BUDGET = 14000;
 
 main();
 
@@ -87,14 +84,16 @@ function buildContext(warnings) {
 
   push("Bạn là ai", identityCard(loadout, role, grants, workspaces));
   push("IDENTITY", read(path.join(roleDir, "IDENTITY.md"), warnings));
-  push("VOICE (chung mọi vai)", read(path.join(sharedDir, "VOICE.md"), warnings));
-  push("SOUL", read(path.join(roleDir, "SOUL.md"), warnings));
-  push("HOUSE-RULES (chung mọi vai)", read(path.join(sharedDir, "HOUSE-RULES.md"), warnings));
-  push("PLAYBOOK", read(path.join(roleDir, "PLAYBOOK.md"), warnings));
-  // Sau PLAYBOOK, trước PRINCIPAL: "làm việc thế nào" → "giao cho ai" → "phục vụ ai".
-  // Vai phụ vốn đã được nạp RELATIONS qua launcher; main thì chưa — nó là vai DUY NHẤT
-  // thực sự cần bảng định tuyến, mà lại là vai không có.
-  push("RELATIONS", read(path.join(roleDir, "RELATIONS.md"), warnings));
+  push("VOICE + SOUL", joinDocs([
+    ["VOICE (chung mọi vai)", read(path.join(sharedDir, "VOICE.md"), warnings)],
+    ["SOUL", read(path.join(roleDir, "SOUL.md"), warnings)],
+  ]));
+  // Một nhóm vận hành: luật chung → quy trình riêng → định tuyến quan hệ.
+  push("HOUSE-RULES + PLAYBOOK + RELATIONS", joinDocs([
+    ["HOUSE-RULES (chung mọi vai)", read(path.join(sharedDir, "HOUSE-RULES.md"), warnings)],
+    ["PLAYBOOK", read(path.join(roleDir, "PLAYBOOK.md"), warnings)],
+    ["RELATIONS", read(path.join(roleDir, "RELATIONS.md"), warnings)],
+  ]));
   push("PRINCIPAL", read(path.join(sharedDir, "PRINCIPAL.md"), warnings));
   push("MEMORY INDEX (đã lọc theo quyền của bạn)", stripDocHeader(filteredIndex(repoRoot, grants, warnings)));
   push("PROJECTS L0", stripDocHeader(read(
@@ -103,9 +102,17 @@ function buildContext(warnings) {
   )));
 
   const signals = runDoctor(repoRoot);
-  if (signals) push("TÍN HIỆU TỪ doctor.sh", "```\n" + signals + "\n```");
+  if (signals) warnings.push(`doctor.sh:\n${signals}`);
 
   return parts.join("\n\n---\n\n") + "\n";
+}
+
+/** Ghép các file cùng một nhóm boot mà vẫn giữ ranh giới nguồn rõ ràng. */
+function joinDocs(docs) {
+  return docs
+    .filter(([, body]) => body)
+    .map(([title, body]) => `### ${title}\n\n${body.trim()}`)
+    .join("\n\n");
 }
 
 function identityCard(lo, role, grants, workspaces) {

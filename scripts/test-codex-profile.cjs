@@ -32,7 +32,7 @@ for (const role of roles) {
 // --- model: main khai model Claude, profile Codex phải lấy codex_model -------------
 const mainToml = P.buildProfile(L.loadLoadout(repoRoot, "main"), "main", repoRoot);
 assert.match(mainToml, /^model = "gpt-5\.6-sol"$/m, "main dùng codex_model cho Codex");
-assert(!/claude/.test(mainToml), "model Claude không được lọt vào profile Codex");
+assert(!/^model = ".*claude.*"$/mi.test(mainToml), "model Claude không được lọt vào profile Codex");
 
 // --- effort chỉ xuất hiện khi có khai --------------------------------------------
 const search = P.buildProfile(L.loadLoadout(repoRoot, "search"), "search", repoRoot);

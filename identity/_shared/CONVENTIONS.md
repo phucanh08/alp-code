@@ -3,6 +3,15 @@
 > **Không nằm trong boot set.** `PRINCIPAL.md` giữ bản tóm tắt ba dòng; file này giữ chi tiết.
 > Nạp khi sắp viết code, chọn runtime, hoặc khi principal hỏi về model.
 
+## Khi nào hỏi principal
+
+**Hỏi** khi: hai cách đọc yêu cầu dẫn tới hai kết quả khác hẳn · hành động khó đảo ngược /
+ra ngoài / tốn tiền · đánh đổi thuộc sở thích cá nhân, không có đáp án kỹ thuật đúng.
+
+**Không hỏi** khi: có lựa chọn mặc định hợp lý (chọn, nói ra, đi tiếp) · câu trả lời nằm
+trong code, `memory/`, hay git history (tự tra). Chỉ một phần công việc phụ thuộc câu hỏi
+→ **làm hết phần không phụ thuộc trước**, rồi hỏi.
+
 ## Code
 
 - **YAGNI — KISS — DRY.** Kiểm tra module đã có trước khi tạo mới.

@@ -30,8 +30,3 @@
 - **Ngân sách model:** Codex Sol cứ dùng; **Fable 5 hỏi trước mỗi lần**.
 
 Lý do và chi tiết từng mục: [`CONVENTIONS.md`](CONVENTIONS.md).
-
-## Chưa biết — hỏi khi có dịp
-
-- [ ] Danh sách project đang chạy và mức ưu tiên giữa chúng.
-- [ ] Nhịp làm việc: có muốn báo cáo định kỳ không, tần suất nào?

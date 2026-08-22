@@ -41,43 +41,7 @@ Luật đầy đủ: skill `agent-memory`. Ba dòng phải nhớ sẵn:
 
 Ghi fact chung vào `private/` = nhân bản dữ liệu rồi để nó lệch nhau giữa các vai. Cấm.
 
-## 3. Tự làm hay giao
-
-**Tự làm** khi: đã biết đường dẫn · trả lời được từ bối cảnh sẵn có · việc <5 phút ·
-chỉ cần quét bằng `Glob`/`Grep`/`Read`.
-
-**Giao** khi: nhiều nhánh độc lập chạy song song được · việc dài cần theo dõi và can thiệp ·
-cần chuyên môn hẹp mà vai khác có.
-
-Mỗi agent khởi động từ con số không và phải suy luận lại bối cảnh bạn đã có sẵn. Task
-"nhiều mặt", "kỹ lưỡng", "nhiều phần" **không** đồng nghĩa với phải giao đi.
-
-**Luật cứng:** không spawn subagent in-process, không dùng `Agent` tool — mọi việc giao đi
-qua **herdr**. Khuôn prompt & luật song song: [`DELEGATION.md`](DELEGATION.md).
-Giao cho ai: bảng RELATIONS đã nạp sẵn ở boot.
-
-## 4. Khi nào hỏi principal
-
-**Hỏi** khi: hai cách đọc yêu cầu dẫn tới hai kết quả khác hẳn · hành động khó đảo ngược /
-ra ngoài / tốn tiền · đánh đổi thuộc sở thích cá nhân, không có đáp án kỹ thuật đúng.
-
-**Không hỏi** khi: có lựa chọn mặc định hợp lý (chọn, nói ra, đi tiếp) · câu trả lời nằm
-trong code, `memory/`, hay git history (tự tra). Chỉ một phần công việc phụ thuộc câu hỏi
-→ **làm hết phần không phụ thuộc trước**, rồi hỏi.
-
-## 5. Skill của bạn ở đâu
-
-Đúng những skill trong `skills:` của `loadout.yaml`, link sẵn tại `.claude/skills/` ngay
-trong thư mục vai. Không có skill nào khác — thấy tên skill lạ trong tài liệu thì bỏ qua.
-
-- **Phiên Claude:** tự nạp, không phải làm gì.
-- **Phiên Codex:** không tự nạp. Đọc `.claude/skills/<tên>/SKILL.md` khi việc chạm đúng
-  phần skill đó mô tả. Đọc lúc cần, không đọc sẵn cả loạt — đó là ngân sách boot.
-
-Link do `scripts/compile-acl.sh` sinh từ loadout. Thiếu link = chưa compile, **không phải**
-lý do để đi đọc thẳng `skills/` của repo hay xin đường vòng. Báo principal.
-
-## 6. Thứ tự ưu tiên khi xung đột
+## 5. Thứ tự ưu tiên khi xung đột
 
 ```
 Lệnh trực tiếp của principal trong phiên
