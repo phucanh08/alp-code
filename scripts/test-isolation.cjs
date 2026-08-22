@@ -165,6 +165,17 @@ function assertGeneratedSettings() {
 
 // ---------------------------------------------------------------- chế độ nhanh
 
+/**
+ * Env nền cho mọi lần gọi guard: `ALP_ROLE` của PHIÊN ĐANG CHẠY TEST phải bị gỡ.
+ *
+ * `sessionIdentity` cho `ALP_ROLE` thắng cwd — đúng với phiên delegation, nhưng ở đây nó
+ * là lỗ rò: chạy bộ test từ trong một phiên `alp` (luôn có `ALP_ROLE`) thì MỌI ca không tự
+ * khai vai bị chấm theo vai của phiên, không phải vai trong ca. Đo được: chạy dưới
+ * `ALP_ROLE=main` cho 17/29 với 12 ca librarian sai — báo động giả "cách ly thủng" trong
+ * khi ACL nguyên vẹn. Ca nào cần vai từ env thì tự truyền qua `opts.env`.
+ */
+const { ALP_ROLE: _ambientRole, ...BASE_ENV } = process.env;
+
 /** Gọi thẳng acl-guard.cjs với payload hook y như Claude Code gửi. */
 function runHook(role, tool, input, opts = {}) {
   const payload = JSON.stringify({
@@ -176,7 +187,7 @@ function runHook(role, tool, input, opts = {}) {
   const res = spawnSync("node", [R("hooks/acl-guard.cjs")], {
     input: payload,
     encoding: "utf8",
-    env: { ...process.env, ...opts.env },
+    env: { ...BASE_ENV, ...opts.env },
   });
   const out = (res.stdout || "").trim();
   if (!out) return "ALLOW";
@@ -204,6 +215,7 @@ function runLive(role, tool, input) {
   try {
     const out = execFileSync("claude", ["-p", prompt], {
       cwd: R("identity", role),
+      env: BASE_ENV, // cùng lý do với runHook: vai đến từ cwd, không từ phiên gọi test
       encoding: "utf8",
       timeout: 200000,
       stdio: ["ignore", "pipe", "pipe"],
