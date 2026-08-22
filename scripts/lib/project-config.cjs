@@ -29,8 +29,10 @@ const P = require("./codex-profile.cjs");
 const MARKER = "alp init";
 const BACKUP_SUFFIX = ".alp-backup";
 
-const EXCLUDE_BEGIN = "# >>> alp-code (alp init) — gỡ bằng: alp init --uninstall";
+const EXCLUDE_BEGIN = "# >>> alp-code (alp init) — gỡ bằng: alp deinit";
 const EXCLUDE_END = "# <<< alp-code";
+/** Khớp cả marker cũ (`alp init --uninstall`): khối đã ghi ra ngoài kia vẫn phải gỡ được. */
+const EXCLUDE_BEGIN_RE = "# >>> alp-code \\(alp init\\)[^\\n]*";
 
 function paths(projectPath) {
   return {
@@ -61,7 +63,7 @@ function claudeSettings(repoRoot, role, projectPath, allRoles, loadout) {
 
   settings.$comment =
     `GENERATED bởi \`${MARKER}\` từ identity/${role}/loadout.yaml — KHÔNG SỬA TAY. ` +
-    `Sinh lại: \`alp init\` · gỡ: \`alp init --uninstall\`. ` +
+    `Sinh lại: \`alp init\` · gỡ: \`alp deinit\`. ` +
     "Absolute path trong permission rule dùng TIỀN TỐ HAI GẠCH `//`.";
   settings.$generatedBy = MARKER;
   settings.$alpRepo = repoRoot;
@@ -98,7 +100,7 @@ function codexConfig(repoRoot, role, projectPath, loadout) {
     sandboxMode: isRegistered(lo, projectPath) ? "workspace-write" : "read-only",
     header: [
       `# GENERATED bởi \`${MARKER}\` từ ${path.join(repoRoot, "identity", role, "loadout.yaml")} — KHÔNG SỬA TAY.`,
-      `# Sinh lại: \`alp init\` · gỡ: \`alp init --uninstall\``,
+      `# Sinh lại: \`alp init\` · gỡ: \`alp deinit\``,
     ],
   });
 }
@@ -195,7 +197,7 @@ function setGitExclude(projectPath, on) {
 
   const current = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
   const stripped = current.replace(
-    new RegExp(`\\n?${escapeRe(EXCLUDE_BEGIN)}[\\s\\S]*?${escapeRe(EXCLUDE_END)}\\n?`, "g"),
+    new RegExp(`\\n?${EXCLUDE_BEGIN_RE}[\\s\\S]*?${escapeRe(EXCLUDE_END)}\\n?`, "g"),
     "\n"
   );
   const next = on

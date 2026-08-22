@@ -184,7 +184,7 @@ function effectiveWorkspaces(loadout) {
 }
 
 /**
- * Ghi lại khối `workspaces:` của một vai. `alp init` thêm cwd, `alp init --uninstall`
+ * Ghi lại khối `workspaces:` của một vai. `alp init` thêm cwd, `alp deinit`
  * bỏ ra — hai chiều của cùng một phép sửa, nên chỉ có MỘT nơi biết cách viết khối này.
  * Trả về true nếu file thực sự đổi (idempotent: gọi lại với cùng input không ghi lại).
  */
