@@ -207,9 +207,13 @@ function writeWorkspaces(repoRoot, role, read, write) {
 
 // ---------------------------------------------------------------- validate
 
+// `Skill` phải có mặt ở đây thì `denyRules` mới deny được nó cho vai không khai.
+// BẪY: Claude Code surface skill dự án QUA chính tool này. Vai có `skills:` mà thiếu
+// `Skill` trong `tools:` sẽ bị deny và không nạp được cả skill của chính nó — nên
+// `validate` bắt buộc hai khoá đi cùng nhau, đừng tách.
 const KNOWN_TOOLS = [
   "Read", "Write", "Edit", "Glob", "Grep", "Bash",
-  "WebSearch", "WebFetch", "NotebookEdit", "Task",
+  "WebSearch", "WebFetch", "NotebookEdit", "Task", "Skill",
 ];
 const REASONING_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"];
 
@@ -284,6 +288,16 @@ function validate(loadout, role, allRoles, knownSkills) {
   for (const t of loadout.tools || []) {
     if (!KNOWN_TOOLS.includes(t)) add(`tool lạ trong \`tools:\`: ${t}`);
   }
+
+  // `skills:` và tool `Skill` phải đi cùng nhau, cả hai chiều:
+  //   có skill, thiếu tool  → deny chặn luôn skill của chính vai đó, hỏng câm
+  //   có tool, không skill  → mở cửa sang skill user/plugin ngoài repo, đúng thứ ACL cấm
+  const hasSkillTool = (loadout.tools || []).includes("Skill");
+  const hasSkills = (loadout.skills || []).length > 0;
+  if (hasSkills && !hasSkillTool)
+    add("khai `skills:` nhưng thiếu `Skill` trong `tools:` — vai sẽ bị deny chính skill của mình");
+  if (hasSkillTool && !hasSkills)
+    add("có `Skill` trong `tools:` nhưng `skills:` rỗng — mở cửa sang skill ngoài repo");
 
   // Skill không có thật thì hỏng IM LẶNG: compile vẫn chạy, thẻ danh tính vẫn in tên đó,
   // chỉ có link là không bao giờ sinh ra. Cùng lý do với `KNOWN_KEYS` — tên sai = lỗi.

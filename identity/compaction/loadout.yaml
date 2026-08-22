@@ -21,7 +21,7 @@ memory:
 
 # --- workspace code ngoài alp-code (viết dạng `~/...`) ---
 workspaces:
-  read:  [~/StudioProjects/alp-plugin]
+  read:  []
   write: []
 
 # --- công cụ & skill ---

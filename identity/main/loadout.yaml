@@ -22,9 +22,9 @@ memory:
   write: [shared/**, projects/**]
 
 workspaces:
-  read:  [~/StudioProjects/alp-plugin]
-  write: [~/StudioProjects/alp-plugin]
+  read:  []
+  write: []
 
 # --- công cụ & skill ---
-tools:  [Read, Write, Edit, Glob, Grep, Bash, WebSearch, WebFetch]
+tools:  [Read, Write, Edit, Glob, Grep, Bash, WebSearch, WebFetch, Skill]
 skills: [agent-memory, herdr, alp-plan, git]

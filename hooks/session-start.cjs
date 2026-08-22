@@ -119,12 +119,27 @@ function identityCard(lo, role, grants, workspaces) {
     ["Ghi được", grants.write.map((g) => `memory/${g}`).join(" · ") || "_(chỉ private của mình)_"],
     ["Workspace đọc", workspaces.read.join(" · ") || "_(chưa đăng ký)_"],
     ["Workspace ghi", workspaces.write.join(" · ") || "_(không có)_"],
-    ["Skill", (lo.skills || []).join(", ")],
   ];
   return (
     rows.map(([k, v]) => `- **${k}:** ${v}`).join("\n") +
+    skillRow(lo) +
     "\n\nĐó là toàn bộ quyền bạn có. Bị chặn thì báo cáo, **không** tìm đường vòng." +
     "\nCần thêm quyền → xin principal sửa `loadout.yaml`; chỉ principal sửa được."
+  );
+}
+
+/**
+ * Danh sách skill KÈM ĐƯỜNG DẪN. Chỉ in tên là vô dụng với phiên Codex: Codex không có
+ * hệ skill, nó chỉ đọc file — không có path thì không biết tìm ở đâu. Phiên Claude tự nạp
+ * qua `.claude/skills/`, nên với nó dòng này chỉ là xác nhận thừa, không hại.
+ * Không in `description`: boot đã ~3.8k token, sát trần CHARTER §2.6.
+ */
+function skillRow(lo) {
+  const skills = lo.skills || [];
+  if (!skills.length) return "\n- **Skill:** _(không có)_";
+  return (
+    "\n- **Skill:** đọc `SKILL.md` khi việc chạm đúng phần nó mô tả — không đọc sẵn cả loạt\n" +
+    skills.map((s) => `  - \`${s}\` → \`.claude/skills/${s}/SKILL.md\``).join("\n")
   );
 }
 

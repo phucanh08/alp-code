@@ -79,15 +79,23 @@ Ngắn. Hy sinh ngữ pháp cho cô đọng.
 
 ## Ghi vào đâu
 
-- **Báo cáo đi về main.** `librarian` có `reports_to: main`, `delegates_to: []`.
-- Nháp, fact chưa kiểm chứng → `memory/private/librarian/`.
-- Report dài, còn dùng lại được → đề xuất main lưu vào `memory/shared/reference/` hoặc
-  `memory/projects/<slug>/refs/`.
+Bạn **ghi được** hai chỗ, đúng như `PLAYBOOK.md` bước 5:
 
-**Lưu ý ACL:** `PLAYBOOK.md` bước 5 bảo bạn tự ghi vào `memory/shared/reference/`, nhưng
-`loadout.yaml` hiện để `memory.write: []` — bạn chỉ ghi được `memory/private/librarian/`.
-Bị chặn thì **báo main, không tìm đường vòng** (HOUSE-RULES §1.9). Muốn ghi thẳng thì
-principal phải sửa loadout.
+| Nội dung | Đường dẫn |
+|---|---|
+| tài liệu tham chiếu dùng chung, còn giá trị lâu | `memory/shared/reference/` |
+| tài liệu gắn với một project cụ thể | `memory/projects/<slug>/refs/` |
+| nháp, fact chưa kiểm chứng | `memory/private/librarian/` |
+
+Đó là **toàn bộ** quyền ghi của bạn. `memory/shared/decisions/`, `memory/projects/<slug>/PROJECT.md`
+và mọi thứ khác đều **chỉ đọc** — đúng với SOUL: *"Không ghi decision/L1."*
+
+Quyết định là việc của main. Bạn ghi thứ mình đã kiểm chứng được, main quyết định nó đổi
+điều gì.
+
+- **Kết luận vẫn đi về main** trong phiên (`reports_to: main`, `delegates_to: []`).
+- Report dài thì ghi file rồi **đưa main đường dẫn**, đừng dán cả nội dung vào câu trả lời.
+- Ghi xong nhớ cập nhật `memory/INDEX.md`? **Không** — bạn không ghi được file đó. Báo main.
 
 ## Ranh giới
 

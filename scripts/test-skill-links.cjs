@@ -28,7 +28,12 @@ for (const name of ["agent-memory", "code-review", "chua-dung"]) {
 fs.mkdirSync(path.join(root, "skills", "rac"), { recursive: true });
 fs.mkdirSync(path.join(root, "identity", "probe"), { recursive: true });
 
-const lo = (skills) => ({ role: "probe", name: "Probe", memory: { read: [], write: [] }, skills });
+// `Skill` phải có trong tools mỗi khi `skills:` không rỗng — xem invariant ở loadout.cjs.
+const lo = (skills) => ({
+  role: "probe", name: "Probe", memory: { read: [], write: [] },
+  tools: skills.length ? ["Read", "Skill"] : ["Read"],
+  skills,
+});
 const linkPath = (name) => path.join(root, "identity", "probe", ".claude", "skills", name);
 
 // --- danh sách skill có thật ------------------------------------------------------
@@ -89,6 +94,19 @@ ok("skill trùng → lỗi", L.validate(lo(["agent-memory", "agent-memory"]), "p
 // Bỏ trống `knownSkills` = caller cũ chưa truyền; không được vì thế mà báo lỗi giả.
 ok("không truyền knownSkills → bỏ qua phần kiểm skill",
   L.validate(lo(["khong-ton-tai"]), "probe", ["probe"]).length === 0);
+
+// --- invariant `skills:` ⟺ tool `Skill` ------------------------------------------
+// Hai chiều đều hỏng câm nếu không chặn: thiếu tool thì vai bị deny chính skill của mình;
+// thừa tool thì vai với thấy được skill user/plugin nằm ngoài repo.
+const bare = (tools, skills) => ({ role: "probe", name: "Probe", memory: { read: [], write: [] }, tools, skills });
+ok("có skill mà thiếu tool Skill → lỗi",
+  L.validate(bare(["Read"], ["agent-memory"]), "probe", ["probe"], known)
+    .some((m) => m.includes("thiếu `Skill`")));
+ok("có tool Skill mà không skill nào → lỗi",
+  L.validate(bare(["Read", "Skill"], []), "probe", ["probe"], known)
+    .some((m) => m.includes("`skills:` rỗng")));
+ok("không skill, không tool Skill → hợp lệ",
+  L.validate(bare(["Read"], []), "probe", ["probe"], known).length === 0);
 
 fs.rmSync(root, { recursive: true, force: true });
 console.log(`OK               skill links: ${pass} ca đều xanh`);
