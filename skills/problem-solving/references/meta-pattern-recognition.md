@@ -1,87 +1,80 @@
-# Meta-Pattern Recognition
+# Nhận mẫu meta
 
-Spot patterns appearing in 3+ domains to find universal principles.
+Tìm mẫu xuất hiện ở **3+ lĩnh vực** để rút ra nguyên lý dùng chung được.
 
-## Core Principle
+## Nguyên lý
 
-**Find patterns in how patterns emerge.** When the same pattern appears in 3+ domains, it's likely a universal principle worth extracting.
+**Tìm mẫu trong cách các mẫu hình thành.** Cùng một hình dạng xuất hiện ở 3 lĩnh vực không
+liên quan thì nhiều khả năng nó là nguyên lý phổ quát, đáng rút ra.
 
-## When to Use
+## Khi nào dùng
 
-| Symptom | Action |
-|---------|--------|
-| Same issue in different places | Extract the abstract form |
-| Déjà vu in problem-solving | Find the universal pattern |
-| Reinventing wheels across domains | Identify the meta-pattern |
-| "Haven't we done this before?" | Yes, find and reuse it |
+| Triệu chứng | Việc phải làm |
+|---|---|
+| cùng vấn đề ở nhiều chỗ khác nhau | rút dạng trừu tượng |
+| cảm giác đã gặp bài này rồi | tìm mẫu phổ quát |
+| phát minh lại bánh xe ở nhiều mảng | nhận diện mẫu meta |
+| "hình như mình làm cái này rồi?" | rồi — tìm lại và dùng lại |
 
-## Quick Reference
+## Mẫu tham chiếu
 
-| Pattern Appears In | Abstract Form | Where Else? |
-|-------------------|---------------|-------------|
-| CPU/DB/HTTP/DNS caching | Store frequently-accessed data closer | LLM prompt caching, CDN |
-| Layering (network/storage/compute) | Separate concerns into abstraction levels | Architecture, org structure |
-| Queuing (message/task/request) | Decouple producer from consumer with buffer | Event systems, async |
-| Pooling (connection/thread/object) | Reuse expensive resources | Memory mgmt, governance |
+| Mẫu xuất hiện ở | Dạng trừu tượng | Còn ở đâu nữa |
+|---|---|---|
+| cache CPU / DB / HTTP / DNS | đưa dữ liệu hay dùng lại gần chỗ dùng | cache prompt LLM, CDN |
+| phân lớp (mạng / lưu trữ / tính toán) | tách mối quan tâm thành các tầng trừu tượng | kiến trúc, cơ cấu tổ chức |
+| hàng đợi (message / task / request) | tách người sản xuất khỏi người tiêu thụ bằng bộ đệm | hệ sự kiện, bất đồng bộ |
+| pool (kết nối / thread / object) | dùng lại tài nguyên đắt | quản lý bộ nhớ |
 
-## Process
+## Quy trình
 
-1. **Spot repetition** - See same shape in 3+ places
-2. **Extract abstract form** - Describe independent of any domain
-3. **Identify variations** - How does it adapt per domain?
-4. **Check applicability** - Where else might this help?
-5. **Document pattern** - Make it reusable
+1. **Thấy lặp lại** — cùng một hình dạng ở 3+ chỗ.
+2. **Rút dạng trừu tượng** — mô tả nó mà **không nhắc tới lĩnh vực nào**.
+3. **Nhận điểm biến thiên** — mỗi lĩnh vực thích nghi khác nhau ở chỗ nào?
+4. **Kiểm khả dụng** — còn chỗ nào dùng được nữa?
+5. **Ghi lại mẫu** cho lần sau.
 
-## Detailed Example
+Bước 2 là bài kiểm tra thật: **mô tả được mà không nhắc lĩnh vực nào không?** Không mô tả
+được nghĩa là bạn đang thấy ba thứ giống nhau bề ngoài, không phải một mẫu.
 
-**Pattern spotted:** Rate limiting appears in:
-- API throttling (requests per minute)
-- Traffic shaping (packets per second)
-- Circuit breakers (failures per window)
-- Admission control (concurrent connections)
+## Ví dụ
 
-**Abstract form:** Bound resource consumption to prevent exhaustion
+**Mẫu:** giới hạn tần suất xuất hiện ở —
 
-**Variation points:**
-- What resource (requests, packets, failures, connections)
-- What limit (per time window, concurrent, cumulative)
-- What happens when exceeded (reject, queue, degrade)
+- throttle API (request mỗi phút)
+- định hình lưu lượng mạng (gói tin mỗi giây)
+- cầu dao (số lỗi trong một cửa sổ)
+- kiểm soát nạp vào (số kết nối đồng thời)
 
-**New application:** LLM token budgets
-- Same pattern: prevent context window exhaustion
-- Resource: tokens
-- Limit: context window size
-- Action: truncate or reject
+**Dạng trừu tượng:** chặn mức tiêu thụ tài nguyên để tránh cạn kiệt.
 
-## 3+ Domain Rule
+**Điểm biến thiên:** tài nguyên gì · giới hạn theo cửa sổ thời gian hay đồng thời hay tích
+luỹ · vượt thì làm gì (từ chối, xếp hàng, xuống cấp).
 
-**Why 3 domains?**
-- 1 occurrence = coincidence
-- 2 occurrences = possible pattern
-- 3+ occurrences = likely universal
+**Ứng dụng mới:** ngân sách token cho LLM — cùng mẫu, tài nguyên là token, giới hạn là
+kích thước cửa sổ context, vượt thì cắt bớt hoặc từ chối.
 
-**Domain independence test:**
-Can you describe the pattern without mentioning specific domains?
+Ngân sách 5 lượt tìm của `librarian` và giới hạn "boot set ≤ 7 nguồn" của CHARTER §2.6
+cũng là cùng mẫu này.
 
-## Red Flags
+## Luật 3 lĩnh vực
 
-Signs you're missing meta-patterns:
-- "This problem is unique" (probably not)
-- Multiple teams solving "different" problems identically
-- Reinventing wheels across domains
-- "Haven't we done something like this?" (yes, find it)
+| Số lần thấy | Nghĩa |
+|---|---|
+| 1 | trùng hợp |
+| 2 | có thể là mẫu |
+| 3+ | nhiều khả năng phổ quát |
 
-## Benefits of Meta-Patterns
+Rút mẫu từ 2 lần thấy là trừu tượng hoá sớm — và trừu tượng sai đắt hơn trùng lặp.
 
-- **Battle-tested** - Proven across multiple domains
-- **Reusable** - Apply to new situations
-- **Universal** - Domain-independent solutions
-- **Documented** - Known variations and trade-offs
+## Cờ đỏ — đang bỏ lỡ mẫu meta
 
-## Remember
+- "vấn đề này đặc thù, không giống ai" — hầu như luôn sai.
+- Nhiều người đang giải những bài "khác nhau" theo cách giống hệt nhau.
+- Phát minh lại bánh xe ở các mảng khác nhau.
 
-- 3+ domains = likely universal
-- Abstract form reveals new applications
-- Variations show adaptation points
-- Universal patterns save time
-- Document for future reuse
+## Nhớ
+
+- Dạng trừu tượng cho thấy **ứng dụng mới** — đó mới là giá trị, không phải việc đặt tên.
+- Điểm biến thiên cho biết mẫu thích nghi ở đâu, và ở đâu thì gãy.
+- Ghi lại để lần sau khỏi tìm lại — với alp-code, fact loại này thuộc `memory/shared/`,
+  và main là người ghi.

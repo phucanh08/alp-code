@@ -1,72 +1,76 @@
-# When Stuck - Problem-Solving Dispatch
+# Khi bế tắc — chọn kỹ thuật
 
-Different stuck-types need different techniques. Match stuck-symptom to technique.
+Mỗi dạng bế tắc cần một kỹ thuật khác. Chẩn đoán sai dạng thì kỹ thuật vô dụng.
 
-## Dispatch Flowchart
+## Cây quyết định
 
 ```
-YOU'RE STUCK
+BẾ TẮC
 │
-├─ Complexity spiraling? Same thing 5+ ways? Growing special cases?
-│  └─→ USE: Simplification Cascades
+├─ Độ phức tạp phình? Cùng một thứ làm 5 kiểu? Special case mọc thêm mãi?
+│  └─→ Thác đơn giản hoá
 │
-├─ Can't find fitting approach? Conventional solutions inadequate?
-│  └─→ USE: Collision-Zone Thinking
+├─ Không tìm được cách hợp? Cách thông thường không đủ?
+│  └─→ Vùng va chạm
 │
-├─ Same issue different places? Reinventing wheels? Feels familiar?
-│  └─→ USE: Meta-Pattern Recognition
+├─ Cùng vấn đề ở nhiều chỗ? Phát minh lại bánh xe? Thấy quen quen?
+│  └─→ Nhận mẫu meta
 │
-├─ Solution feels forced? "Must be done this way"? Stuck on assumptions?
-│  └─→ USE: Inversion Exercise
+├─ Giải pháp thấy gượng? "Buộc phải làm thế này"? Kẹt vì một giả định?
+│  └─→ Bài tập đảo ngược
 │
-├─ Will this work at production? Edge cases unclear? Unsure of limits?
-│  └─→ USE: Scale Game
+├─ Chạy thật có chịu nổi không? Edge case chưa rõ? Không rõ giới hạn?
+│  └─→ Trò chơi quy mô
 │
-└─ Code broken? Wrong behavior? Test failing?
-   └─→ USE: Debugging skill (systematic-debugging)
+└─ Code hỏng? Hành vi sai? Test fail?
+   └─→ KHÔNG phải bế tắc tư duy. Dùng skill `alp-debug`
 ```
 
-## Stuck-Type → Technique Map
+Nhánh cuối quan trọng: bug không phải bế tắc. Bug là thiếu bằng chứng. Đừng đem kỹ thuật
+gỡ bế tắc ra dùng khi thứ bạn cần chỉ là đọc thêm log.
 
-| How You're Stuck | Symptom Details | Use This |
-|------------------|-----------------|----------|
-| **Complexity spiraling** | Same thing 5+ ways, growing special cases, excessive if/else | simplification-cascades.md |
-| **Need innovation** | Conventional inadequate, can't find fitting approach, need breakthrough | collision-zone-thinking.md |
-| **Recurring patterns** | Same issue different places, reinventing wheels, déjà vu feeling | meta-pattern-recognition.md |
-| **Forced by assumptions** | "Must be done this way", can't question premise, forced solution | inversion-exercise.md |
-| **Scale uncertainty** | Production unclear, edge cases unknown, unsure of limits | scale-game.md |
-| **Code broken** | Wrong behavior, test failing, unexpected output | debugging skill |
+## Bảng chẩn đoán
 
-## Process
+| Kiểu bế tắc | Triệu chứng cụ thể | Đọc |
+|---|---|---|
+| **Phức tạp phình** | cùng một thứ 5 kiểu, special case mọc thêm, if/else chồng chất | `simplification-cascades.md` |
+| **Cần đột phá** | cách thông thường không đủ, không tìm được hướng hợp | `collision-zone-thinking.md` |
+| **Mẫu lặp lại** | cùng vấn đề ở nhiều nơi, cảm giác đã gặp rồi | `meta-pattern-recognition.md` |
+| **Kẹt vì giả định** | "buộc phải thế này", không dám chất vấn tiền đề | `inversion-exercise.md` |
+| **Không rõ quy mô** | chạy thật thế nào chưa biết, edge case chưa rõ | `scale-game.md` |
+| **Code hỏng** | hành vi sai, test fail | skill `alp-debug` |
 
-1. **Identify stuck-type** - What symptom matches above?
-2. **Load that technique** - Read the specific reference file
-3. **Apply technique** - Follow its process
-4. **Document attempt** - What worked/failed?
-5. **If still stuck** - Try different technique or combine
+## Cách làm
 
-## Combining Techniques
+1. **Chẩn đoán dạng bế tắc** — khớp triệu chứng ở bảng trên.
+2. **Đọc đúng file kỹ thuật đó.**
+3. **Áp dụng theo quy trình, không rút gọn.** Rút gọn là quay về kiểu nghĩ cũ — đúng thứ
+   đang làm bạn bế tắc.
+4. **Ghi lại đã thử gì, kết quả sao.**
+5. **Vẫn tắc** → đổi kỹ thuật khác, hoặc kết hợp.
 
-Some problems need multiple techniques:
+**Một kỹ thuật một lúc.** Trộn hai kỹ thuật ngay từ đầu thì không biết cái nào có tác dụng.
 
-- **Simplification + Meta-pattern** - Find pattern → simplify all instances
-- **Collision + Inversion** - Force metaphor → invert assumptions
-- **Scale + Simplification** - Test extremes → reveal what to eliminate
-- **Meta-pattern + Scale** - Universal pattern → test at extremes
+## Kết hợp
 
-## When Nothing Works
+- **Đơn giản hoá + Nhận mẫu meta** — tìm mẫu trước, rồi đơn giản hoá mọi thể hiện.
+- **Va chạm + Đảo ngược** — ép ẩn dụ, rồi lật giả định của chính ẩn dụ đó.
+- **Quy mô + Đơn giản hoá** — cực trị cho thấy nên bỏ cái gì.
+- **Nhận mẫu meta + Quy mô** — nguyên lý chung đem thử ở cực trị.
 
-If no technique helps:
-1. **Reframe problem** - Are you solving the right problem?
-2. **Get fresh perspective** - Explain to someone else
-3. **Take break** - Distance often reveals solution
-4. **Simplify scope** - Solve smaller version first
-5. **Question constraints** - Are they real or assumed?
+## Khi không kỹ thuật nào ăn thua
 
-## Remember
+1. **Đóng khung lại vấn đề** — có đang giải đúng bài toán không?
+2. **Giải thích cho người khác** — main đang chờ báo cáo; viết ra cho main thường tự lộ chỗ hổng.
+3. **Thu nhỏ phạm vi** — giải bản nhỏ hơn trước.
+4. **Chất vấn ràng buộc** — ràng buộc đó có thật, hay chỉ là giả định?
 
-- Match symptom to technique
-- One technique at a time
-- Combine if first doesn't work
-- Document what you tried
-- Not stuck forever, just temporarily
+Vẫn không ra thì **nói thẳng với main là chưa ra**, kèm những gì đã loại trừ. Một câu
+"chưa xác định được, đã loại trừ A, B, C" đáng giá hơn một khuyến nghị đoán bừa —
+`oracle` được gọi vì độ tin cậy, không vì tốc độ.
+
+## Nhớ
+
+- Khớp triệu chứng với kỹ thuật, đừng chọn theo cái mình quen.
+- Ghi lại đã thử gì — để main không đi lại đường cũ.
+- Bế tắc là tạm thời, không phải vĩnh viễn.

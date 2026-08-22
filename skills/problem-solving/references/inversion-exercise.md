@@ -1,91 +1,88 @@
-# Inversion Exercise
+# Bài tập đảo ngược
 
-Flip core assumptions to reveal hidden constraints and alternative approaches. "What if the opposite were true?"
+Lật giả định lõi để lộ ràng buộc ngầm: **"nếu ngược lại thì sao?"**
 
-## Core Principle
+## Nguyên lý
 
-**Inversion exposes hidden assumptions.** Sometimes the opposite reveals the truth.
+**Đảo ngược làm lộ giả định chưa ai nói ra.** Đôi khi cái ngược lại mới là câu trả lời —
+nhưng kể cả khi không, việc lật cũng cho thấy vì sao cái đang có là đúng.
 
-## When to Use
+## Khi nào dùng
 
-| Symptom | Action |
-|---------|--------|
-| "There's only one way" | Flip the assumption |
-| Solution feels forced | Invert the constraints |
-| Can't articulate why necessary | Question the "must" |
-| "This is just how it's done" | Try the opposite |
+| Triệu chứng | Việc phải làm |
+|---|---|
+| "chỉ có một cách thôi" | lật giả định đó |
+| giải pháp thấy gượng | lật ràng buộc |
+| không nói được vì sao nó bắt buộc | chất vấn chữ "phải" |
+| "xưa nay vẫn làm thế" | thử làm ngược |
 
-## Quick Reference
+## Đảo ngược mẫu
 
-| Normal Assumption | Inverted | What It Reveals |
-|-------------------|----------|-----------------|
-| Cache to reduce latency | Add latency to enable caching | Debouncing patterns |
-| Pull data when needed | Push data before needed | Prefetching, eager loading |
-| Handle errors when occur | Make errors impossible | Type systems, contracts |
-| Build features users want | Remove features users don't need | Simplicity >> addition |
-| Optimize for common case | Optimize for worst case | Resilience patterns |
+| Giả định thường | Lật lại | Lộ ra |
+|---|---|---|
+| cache để giảm độ trễ | thêm độ trễ để cache được | mẫu debounce |
+| kéo dữ liệu khi cần | đẩy dữ liệu trước khi cần | prefetch, nạp sớm |
+| xử lý lỗi khi lỗi xảy ra | làm cho lỗi không thể xảy ra | hệ kiểu, contract |
+| thêm tính năng người dùng muốn | bỏ tính năng người dùng không cần | đơn giản > bổ sung |
+| tối ưu cho ca phổ biến | tối ưu cho ca tệ nhất | mẫu chịu lỗi |
 
-## Process
+## Quy trình
 
-1. **List core assumptions** - What "must" be true?
-2. **Invert each systematically** - "What if opposite were true?"
-3. **Explore implications** - What would we do differently?
-4. **Find valid inversions** - Which actually work somewhere?
-5. **Document insights** - What did we learn?
+1. **Liệt kê giả định lõi** — cái gì đang được coi là "phải" đúng?
+2. **Lật từng cái** — "nếu ngược lại thì sao?"
+3. **Truy hệ quả** — làm khác đi thế nào?
+4. **Tìm đảo ngược hợp lệ** — cái nào thật sự chạy được ở đâu đó?
+5. **Ghi nhận định.**
 
-## Detailed Example
+## Ví dụ
 
-**Problem:** Users complain app is slow
+**Vấn đề:** người dùng kêu app chậm.
 
-**Normal approach:** Make everything faster
-- Add caching
-- Optimize queries
-- Use CDN
-- Reduce bundle size
+**Cách thường:** làm mọi thứ nhanh hơn — cache, tối ưu truy vấn, CDN, giảm bundle.
 
-**Inverted approach:** Make things intentionally slower in some places
-- **Debounce search** - Add latency → enable better results (wait for full query)
-- **Rate limit requests** - Add friction → prevent abuse, improve for others
-- **Lazy load content** - Delay loading → reduce initial load time
-- **Progressive rendering** - Show slower → perceived performance
+**Lật lại:** cố tình làm chậm ở vài chỗ.
 
-**Insight:** Strategic slowness can improve UX
+- **Debounce ô tìm kiếm** — thêm độ trễ → kết quả tốt hơn (đợi gõ xong).
+- **Giới hạn tần suất** — thêm ma sát → chặn lạm dụng, người khác được phục vụ tốt hơn.
+- **Lazy load** — hoãn tải → thời gian tải đầu ngắn lại.
+- **Render dần** — hiện chậm hơn nhưng hiện sớm → *cảm giác* nhanh hơn.
 
-## Valid vs Invalid Inversions
+**Nhận định:** chậm có chiến lược cải thiện trải nghiệm. Cái người dùng cảm nhận không phải
+tổng thời gian, mà là thời gian phải chờ trước khi thấy gì đó.
 
-**Valid inversion example:**
-- Normal: "Store data in database"
-- Inverted: "Derive data on-demand instead of storing"
-- Valid when: Computation cheaper than storage, data changes frequently
+## Đảo ngược hợp lệ và không hợp lệ
 
-**Invalid inversion example:**
-- Normal: "Validate user input"
-- Inverted: "Trust all user input"
-- Invalid because: Security vulnerability, not context-dependent
+**Hợp lệ:**
+- Thường: "lưu dữ liệu vào database."
+- Lật: "tính lại khi cần thay vì lưu."
+- Hợp lệ khi: tính rẻ hơn lưu, dữ liệu đổi liên tục.
 
-**Test validity:** Does the inversion work in ANY context? If yes, it's valid somewhere.
+**Không hợp lệ:**
+- Thường: "kiểm dữ liệu người dùng nhập."
+- Lật: "tin mọi dữ liệu nhập vào."
+- Không hợp lệ vì: đó là lỗ bảo mật, không phụ thuộc ngữ cảnh nào cả.
 
-## Common Inversions
+**Cách thử:** đảo ngược này có chạy được trong **bất kỳ** ngữ cảnh nào không? Có → nó hợp
+lệ ở đâu đó, đáng khám phá. Không → bỏ, đừng cố.
 
-- **Eager → Lazy** (or vice versa)
-- **Push → Pull** (or vice versa)
-- **Store → Compute** (or vice versa)
-- **Optimize → Simplify** (or vice versa)
-- **Add features → Remove features** (or vice versa)
+## Cặp hay lật
 
-## Red Flags
+Sớm ↔ lười · đẩy ↔ kéo · lưu ↔ tính · tối ưu ↔ đơn giản hoá · thêm ↔ bớt.
 
-You need inversion exercise when:
-- "There's only one way to do this"
-- Forcing solution that feels wrong
-- Can't articulate why approach is necessary
-- "This is just how it's done"
-- Stuck on unquestioned assumptions
+## Với alp-code
 
-## Remember
+Repo này có sẵn vài giả định đáng lật khi bế tắc:
 
-- Not all inversions work (test boundaries)
-- Valid inversions reveal context-dependence
-- Sometimes opposite is the answer
-- Question "must be" statements
-- Document both successful and failed inversions
+- "ACL phải do harness enforce" ↔ "nếu hook không chạy thì sao?" — chính câu hỏi này sinh
+  ra thiết kế fail đóng hiện tại.
+- "mỗi vai một phiên riêng" ↔ "nếu gộp thì sao?" — lật để thấy vì sao tách là đúng.
+
+Lật một nguyên tắc trong `CHARTER.md` là bài tập tư duy hợp lệ. **Đề xuất đổi nó thì phải
+qua principal** — chỉ principal sửa CHARTER (CHARTER §8).
+
+## Nhớ
+
+- Không phải đảo ngược nào cũng chạy. Thử biên.
+- Đảo ngược hợp lệ cho thấy "luật" thật ra chỉ đúng trong một ngữ cảnh.
+- Ghi lại cả lần lật thất bại — nó chứng minh vì sao cách hiện tại đúng, và đó là thứ đáng
+  ghi vào plan.

@@ -1,79 +1,71 @@
-# Collision-Zone Thinking
+# Vùng va chạm
 
-Force unrelated concepts together to discover emergent properties. "What if we treated X like Y?"
+Ép hai khái niệm không liên quan vào nhau để lộ tính chất mới: **"nếu coi X như Y thì sao?"**
 
-## Core Principle
+## Nguyên lý
 
-Revolutionary insights from deliberate metaphor-mixing. Treat X like Y and see what emerges.
+Đột phá đến từ **trộn ẩn dụ có chủ đích**, không từ nghĩ chăm hơn trong cùng một khung.
+Nghĩ chăm hơn trong khung cũ chỉ cho ra cải tiến từng bước.
 
-## When to Use
+## Khi nào dùng
 
-| Symptom | Action |
-|---------|--------|
-| Stuck in conventional thinking | Force wild domain collision |
-| Solutions feel incremental | Need breakthrough, not optimization |
-| "Tried everything in this domain" | Import concepts from elsewhere |
-| Need innovation, not iteration | Deliberately mix unrelated ideas |
+| Triệu chứng | Việc phải làm |
+|---|---|
+| kẹt trong lối nghĩ thông thường | ép va chạm với một lĩnh vực xa |
+| giải pháp nào cũng chỉ nhích thêm chút | cần đột phá, không phải tối ưu |
+| "thử hết cách trong mảng này rồi" | nhập khái niệm từ nơi khác |
 
-## Quick Reference Collisions
+## Va chạm mẫu
 
-| Treat This | Like This | Discovers |
-|------------|-----------|-----------|
-| Code organization | DNA/genetics | Mutation testing, evolutionary algorithms |
-| Service architecture | Lego bricks | Composable microservices, plug-and-play |
-| Data management | Water flow | Streaming, data lakes, flow-based systems |
-| Request handling | Postal mail | Message queues, async processing |
-| Error handling | Circuit breakers | Fault isolation, graceful degradation |
+| Coi cái này | Như cái này | Lộ ra |
+|---|---|---|
+| tổ chức code | DNA / di truyền | mutation testing, thuật toán tiến hoá |
+| kiến trúc dịch vụ | gạch Lego | microservice ghép được, cắm-là-chạy |
+| quản lý dữ liệu | dòng nước | streaming, data lake, hệ theo luồng |
+| xử lý request | thư bưu điện | hàng đợi, xử lý bất đồng bộ |
+| xử lý lỗi | cầu dao điện | cô lập sự cố, xuống cấp có kiểm soát |
 
-## Process
+## Quy trình
 
-1. **Pick two unrelated concepts** from different domains
-2. **Force combination** - "What if we treated [A] like [B]?"
-3. **Explore emergent properties** - What new capabilities appear?
-4. **Test boundaries** - Where does the metaphor break?
-5. **Extract insight** - What did we learn?
+1. **Chọn hai khái niệm không liên quan**, từ hai lĩnh vực khác nhau.
+2. **Ép ghép** — "nếu coi A như B thì sao?"
+3. **Khai thác tính chất mới** — xuất hiện năng lực nào chưa từng nghĩ tới?
+4. **Thử biên** — ẩn dụ gãy ở đâu?
+5. **Rút nhận định.**
 
-## Detailed Example
+**Bước 4 là bước không được bỏ.** Ẩn dụ nào cũng gãy ở đâu đó; biết nó gãy chỗ nào mới là
+phần dùng được. Đem một ẩn dụ đi quá biên của nó là cách sinh ra kiến trúc sai một cách
+thanh lịch.
 
-**Problem:** Complex distributed system with cascading failures
+## Ví dụ chi tiết
 
-**Collision:** "What if we treated services like electrical circuits?"
+**Vấn đề:** hệ phân tán, lỗi lan dây chuyền.
 
-**Emergent properties:**
-- Circuit breakers (disconnect on overload)
-- Fuses (one-time failure protection)
-- Ground faults (error isolation)
-- Load balancing (current distribution)
-- Voltage regulation (rate limiting)
+**Va chạm:** "nếu coi service như mạch điện?"
 
-**Where it works:** Preventing cascade failures, fault isolation
+**Tính chất mới:**
+- cầu dao (ngắt khi quá tải)
+- cầu chì (bảo vệ một lần)
+- nối đất (cô lập lỗi)
+- cân tải (phân bổ dòng)
+- ổn áp (giới hạn tần suất)
 
-**Where it breaks:** Circuits don't have retry logic, healing mechanisms
+**Chỗ ẩn dụ đúng:** chặn lỗi lan, cô lập sự cố.
 
-**Insight gained:** Failure isolation patterns from electrical engineering
+**Chỗ ẩn dụ gãy:** mạch điện không có retry, không tự lành.
 
-## Best Source Domains
+**Nhận định rút ra:** mẫu cô lập sự cố mượn được từ kỹ thuật điện; mẫu tự phục hồi thì
+phải lấy từ chỗ khác — sinh học chẳng hạn.
 
-Rich domains for concept mining:
-- **Physics** - Forces, thermodynamics, relativity
-- **Biology** - Evolution, ecosystems, immune systems
-- **Economics** - Markets, incentives, game theory
-- **Psychology** - Cognition, behavior, motivation
-- **Architecture** - Structure, flow, space utilization
+## Lĩnh vực nguồn tốt
 
-## Red Flags
+**Vật lý** (lực, nhiệt động, tương đối) · **Sinh học** (tiến hoá, hệ sinh thái, miễn dịch)
+· **Kinh tế** (thị trường, động lực, lý thuyết trò chơi) · **Tâm lý** (nhận thức, hành vi)
+· **Kiến trúc** (kết cấu, luồng di chuyển, tổ chức không gian).
 
-You need collision-zone thinking when:
-- "I've tried everything in this domain"
-- Solutions feel incremental, not breakthrough
-- Stuck in conventional thinking
-- Need innovation, not optimization
-- "Standard approach isn't working"
+## Nhớ
 
-## Remember
-
-- Wild combinations often yield best insights
-- Test metaphor boundaries rigorously
-- Document even failed collisions (they teach)
-- Breakthrough > incremental improvement
-- Question: "What would [domain expert] do?"
+- Ghép càng lạ càng hay ra nhận định tốt. Ghép an toàn thì chỉ ra thứ đã biết.
+- Ghi lại cả va chạm **thất bại** — chỗ ẩn dụ gãy cũng là thông tin.
+- Câu hỏi mở khoá: **"người giỏi nhất ở lĩnh vực kia sẽ làm gì với bài toán này?"**
+- Đem về cho main dưới dạng khuyến nghị kèm biên của ẩn dụ, đừng đem về một ẩn dụ trần.

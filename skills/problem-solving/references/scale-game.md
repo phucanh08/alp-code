@@ -1,95 +1,82 @@
-# Scale Game
+# Trò chơi quy mô
 
-Test at extremes (1000x bigger/smaller, instant/year-long) to expose fundamental truths hidden at normal scales.
+Thử ở cực trị — lớn gấp 1000, nhỏ đi 1000, tức thì, kéo dài một năm — để lộ ra bản chất bị
+che ở quy mô bình thường.
 
-## Core Principle
+## Nguyên lý
 
-**Extremes expose fundamentals.** What works at one scale fails at another.
+**Cực trị làm lộ bản chất.** Thứ chạy tốt ở quy mô này hỏng ở quy mô khác, và chỗ nó hỏng
+cho biết cái gì là thiết yếu, cái gì chỉ là ngẫu nhiên.
 
-## When to Use
+## Khi nào dùng
 
-| Symptom | Action |
-|---------|--------|
-| "Should scale fine" (without testing) | Test at extremes |
-| Uncertain about production behavior | Scale up 1000x |
-| Edge cases unclear | Test minimum and maximum |
-| Architecture validation needed | Extreme testing |
+| Triệu chứng | Việc phải làm |
+|---|---|
+| "chắc scale được" mà chưa thử | thử ở cực trị |
+| không rõ chạy thật sẽ thế nào | nhân lên 1000 lần |
+| edge case chưa rõ | thử cả tối thiểu lẫn tối đa |
+| cần thẩm định kiến trúc | thử cực trị trước khi chốt |
 
-## Quick Reference
+## Các chiều
 
-| Scale Dimension | Test At Extremes | What It Reveals |
-|-----------------|------------------|-----------------|
-| **Volume** | 1 item vs 1B items | Algorithmic complexity limits |
-| **Speed** | Instant vs 1 year | Async requirements, caching needs |
-| **Users** | 1 user vs 1B users | Concurrency issues, resource limits |
-| **Duration** | Milliseconds vs years | Memory leaks, state growth |
-| **Failure rate** | Never fails vs always fails | Error handling adequacy |
+| Chiều | Thử ở cực trị | Lộ ra |
+|---|---|---|
+| **Khối lượng** | 1 phần tử ↔ 1 tỷ | giới hạn độ phức tạp thuật toán |
+| **Tốc độ** | tức thì ↔ một năm | nhu cầu bất đồng bộ, nhu cầu cache |
+| **Người dùng** | 1 ↔ 1 tỷ | vấn đề đồng thời, giới hạn tài nguyên |
+| **Thời lượng** | mili giây ↔ nhiều năm | rò bộ nhớ, trạng thái phình |
+| **Tỷ lệ lỗi** | không bao giờ lỗi ↔ luôn lỗi | xử lý lỗi có đủ không |
 
-## Process
+## Quy trình
 
-1. **Pick dimension** - What could vary extremely?
-2. **Test minimum** - What if 1000x smaller/faster/fewer?
-3. **Test maximum** - What if 1000x bigger/slower/more?
-4. **Note what breaks** - Where do limits appear?
-5. **Note what survives** - What's fundamentally sound?
-6. **Design for reality** - Use insights to validate architecture
+1. **Chọn chiều** — cái gì có thể biến thiên cực đoan?
+2. **Thử cực tiểu** — nhỏ/nhanh/ít đi 1000 lần thì sao?
+3. **Thử cực đại** — lớn/chậm/nhiều lên 1000 lần thì sao?
+4. **Ghi cái gì vỡ** — giới hạn nằm ở đâu?
+5. **Ghi cái gì sống** — phần nào vững về bản chất?
+6. **Thiết kế cho thực tế** — dùng nhận định để thẩm định kiến trúc.
 
-## Detailed Examples
+## Ví dụ
 
-### Example 1: Error Handling
-- **Normal scale:** "Handle errors when they occur" works fine
-- **At 1B scale:** Error volume overwhelms logging, crashes system
-- **Reveals:** Need to make errors impossible (type systems) or expect them (chaos engineering)
-- **Action:** Design error handling for volume, not just occurrence
+**Xử lý lỗi.** Quy mô thường: "có lỗi thì xử lý" — ổn. Ở 1 tỷ: lượng lỗi làm ngập hệ log,
+sập hệ. → Phải làm cho lỗi **không thể xảy ra** (hệ kiểu), hoặc **coi lỗi là bình thường**
+(thiết kế chịu lỗi). Thiết kế xử lý lỗi theo *khối lượng*, không chỉ theo *sự kiện*.
 
-### Example 2: Synchronous APIs
-- **Normal scale:** Direct function calls work, < 100ms latency
-- **At global scale:** Network latency makes synchronous unusable (200-500ms)
-- **Reveals:** Async/messaging becomes survival requirement, not optimization
-- **Action:** Design async-first from start
+**API đồng bộ.** Quy mô thường: gọi trực tiếp, dưới 100ms — ổn. Quy mô toàn cầu: độ trễ
+mạng 200–500ms làm đồng bộ không dùng được. → Bất đồng bộ trở thành điều kiện sống, không
+phải tối ưu.
 
-### Example 3: In-Memory State
-- **Normal duration:** Works for hours/days in development
-- **At years:** Memory grows unbounded, eventual crash (weeks → months → years)
-- **Reveals:** Need persistence or periodic cleanup, can't rely on memory forever
-- **Action:** Design for stateless or externalized state
+**Trạng thái trong bộ nhớ.** Chạy vài giờ/vài ngày: ổn. Chạy nhiều năm: bộ nhớ phình vô
+hạn, sập. → Cần lưu ra ngoài hoặc dọn định kỳ.
 
-### Example 4: Single vs Million Users
-- **Normal scale:** Session in memory works for 100 users
-- **At 1M scale:** Memory exhausted, server crashes
-- **Reveals:** Need distributed session store (Redis, database)
-- **Action:** Design for horizontal scaling from start
+## Chiều nhỏ cũng quan trọng
 
-## Both Directions Matter
+Thử **nhỏ lại** hay bị bỏ qua, mà nó lộ ra over-engineering:
 
-**Test smaller too:**
-- What if only 1 user? Does complexity make sense?
-- What if only 10 items? Is optimization premature?
-- What if instant response? What becomes unnecessary?
+- Nếu chỉ có 1 người dùng thì độ phức tạp này còn hợp lý không?
+- Nếu chỉ có 10 phần tử thì tối ưu kia có sớm quá không?
+- Nếu phản hồi tức thì thì cái gì trở thành không cần?
 
-Often reveals over-engineering or premature optimization.
+Với alp-code, chiều nhỏ là chiều đúng để thử: hệ này có **8 vai và một principal**. Đề xuất
+nào chỉ có nghĩa ở quy mô hàng trăm agent thì là over-engineering ở đây — và YAGNI là luật
+thành văn của repo.
 
-## Red Flags
+## Cờ đỏ
 
-You need scale game when:
-- "It works in dev" (but will it work in production?)
-- No idea where limits are
-- "Should scale fine" (without evidence)
-- Surprised by production behavior
-- Architecture feels arbitrary
+- "chạy được ở máy tôi" — nhưng chạy thật thì sao?
+- Không biết giới hạn nằm ở đâu.
+- "chắc scale được" mà không có bằng chứng.
+- Bị bất ngờ bởi hành vi lúc chạy thật.
+- Kiến trúc thấy tuỳ tiện, không có lý do cho các lựa chọn.
 
-## Success Metrics
+## Xong thì phải biết
 
-After scale game, you should know:
-- Where system breaks (exact limits)
-- What survives (fundamentally sound parts)
-- What needs redesign (scale-dependent)
-- Production readiness (validated architecture)
+- Hệ vỡ ở đâu — **giới hạn cụ thể**, không phải cảm giác.
+- Cái gì sống sót — phần vững về bản chất.
+- Cái gì phải thiết kế lại — phần phụ thuộc quy mô.
 
-## Remember
+## Nhớ
 
-- Extremes reveal fundamentals hidden at normal scales
-- What works at one scale fails at another
-- Test BOTH directions (bigger AND smaller)
-- Use insights to validate architecture early
-- Don't guess - test at extremes
+- Thử **cả hai chiều**, lớn và nhỏ.
+- Đừng đoán — thử. Với `oracle`, "chắc là" không phải kết luận.
+- Nhận định rút ra đi vào khuyến nghị cho main, kèm con số cụ thể chứ không kèm tính từ.

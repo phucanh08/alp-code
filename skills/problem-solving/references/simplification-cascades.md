@@ -1,80 +1,83 @@
-# Simplification Cascades
+# Thác đơn giản hoá
 
-Find one insight eliminating multiple components. "If this is true, we don't need X, Y, Z."
+Tìm **một** nhận định xoá được nhiều thành phần cùng lúc: "nếu điều này đúng thì không cần
+X, Y, Z nữa."
 
-## Core Principle
+## Nguyên lý
 
-**Everything is a special case of...** collapses complexity dramatically.
+**"Mọi thứ đều là trường hợp riêng của…"** — vế sau câu này, khi điền đúng, làm sập cả một
+mảng phức tạp.
 
-One powerful abstraction > ten clever hacks.
+Một trừu tượng mạnh hơn mười thủ thuật khéo.
 
-## When to Use
+## Khi nào dùng
 
-| Symptom | Action |
-|---------|--------|
-| Same thing implemented 5+ ways | Abstract the common pattern |
-| Growing special case list | Find the general case |
-| Complex rules with exceptions | Find rule with no exceptions |
-| Excessive config options | Find defaults working for 95% |
+| Triệu chứng | Việc phải làm |
+|---|---|
+| cùng một thứ triển khai 5 kiểu | trừu tượng hoá mẫu chung |
+| danh sách special case cứ dài ra | tìm trường hợp tổng quát |
+| luật phức tạp kèm nhiều ngoại lệ | tìm luật không có ngoại lệ |
+| quá nhiều tuỳ chọn config | tìm mặc định đúng cho 95% |
 
-## The Pattern
+## Cách tìm
 
-**Look for:**
-- Multiple implementations of similar concepts
-- Special case handling everywhere
-- "We need to handle A, B, C, D differently..."
-- Complex rules with many exceptions
+Tìm dấu hiệu: nhiều bản triển khai của những khái niệm na ná nhau · xử lý special case rải
+khắp nơi · câu "cần xử lý A, B, C, D theo cách khác nhau" · luật nhiều ngoại lệ.
 
-**Ask:** "What if they're all the same thing underneath?"
+Rồi hỏi: **"nếu bên dưới chúng là cùng một thứ thì sao?"**
 
-## Examples
+## Ví dụ
 
-### Example 1: Stream Abstraction
-- **Before:** Separate handlers for batch/real-time/file/network data
-- **Insight:** "All inputs are streams - just different sources"
-- **After:** One stream processor, multiple stream sources
-- **Eliminated:** 4 separate implementations
+**Trừu tượng stream**
+- Trước: handler riêng cho dữ liệu batch / thời gian thực / file / mạng.
+- Nhận định: "mọi đầu vào đều là stream, chỉ khác nguồn."
+- Sau: một bộ xử lý stream, nhiều nguồn stream.
+- Xoá được: 4 bản triển khai.
 
-### Example 2: Resource Governance
-- **Before:** Session tracking, rate limiting, file validation, connection pooling (all separate)
-- **Insight:** "All are per-entity resource limits"
-- **After:** One ResourceGovernor with 4 resource types
-- **Eliminated:** 4 custom enforcement systems
+**Quản trị tài nguyên**
+- Trước: theo dõi session, giới hạn tần suất, kiểm file, pool kết nối — bốn hệ riêng.
+- Nhận định: "tất cả đều là giới hạn tài nguyên theo từng thực thể."
+- Sau: một `ResourceGovernor`, bốn loại tài nguyên.
 
-### Example 3: Immutability
-- **Before:** Defensive copying, locking, cache invalidation, temporal coupling
-- **Insight:** "Treat everything as immutable data + transformations"
-- **After:** Functional programming patterns
-- **Eliminated:** Entire classes of synchronization problems
+**Bất biến**
+- Trước: copy phòng thủ, khoá, huỷ cache, phụ thuộc thứ tự thời gian.
+- Nhận định: "coi mọi thứ là dữ liệu bất biến + phép biến đổi."
+- Xoá được: cả một lớp bài toán đồng bộ.
 
-## Process
+## Quy trình
 
-1. **List variations** - What's implemented multiple ways?
-2. **Find essence** - What's the same underneath?
-3. **Extract abstraction** - What's the domain-independent pattern?
-4. **Test fit** - Do all cases fit cleanly?
-5. **Measure cascade** - How many things become unnecessary?
+1. **Liệt kê biến thể** — cái gì đang được làm nhiều kiểu?
+2. **Tìm bản chất** — bên dưới chúng giống nhau ở đâu?
+3. **Rút trừu tượng** — mẫu đó, bỏ hết chi tiết nghiệp vụ, là gì?
+4. **Thử khớp** — mọi trường hợp hiện có có vừa không? Có cái nào phải gượng ép không?
+5. **Đo thác** — bao nhiêu thứ trở thành không cần thiết?
 
-## Red Flags
+Bước 4 là bước quyết định. Một trừu tượng phải **gượng ép** mới nhét vừa một trường hợp thì
+nó chưa đúng — và nó sẽ đẻ ra special case mới ngay sau khi bạn áp dụng.
 
-Signs you're missing a cascade:
-- "Just need to add one more case..." (repeating forever)
-- "These are similar but different" (maybe they're the same?)
-- Refactoring feels like whack-a-mole (fix one, break another)
-- Growing configuration file
-- "Don't touch that, it's complicated" (complexity hiding pattern)
+## Cờ đỏ — đang bỏ lỡ một thác
 
-## Success Metrics
+- "chỉ cần thêm một case nữa thôi" — lặp mãi không dứt.
+- "chúng giống nhau nhưng khác nhau" — có thể chúng giống thật?
+- Refactor như đập chuột: sửa chỗ này vỡ chỗ kia.
+- File config cứ dài ra.
+- "Đừng đụng vào đó, phức tạp lắm" — phức tạp đang che một mẫu chưa được nhận ra.
 
-- **10x wins, not 10% improvements**
-- Measure in "how many things can we delete?"
-- Lines of code removed > lines added
-- Configuration options eliminated
-- Special cases unified
+## Thước đo
 
-## Remember
+- **Thắng 10 lần, không phải 10%.** Cải thiện 10% thì không phải thác.
+- Đo bằng "xoá được bao nhiêu thứ", không phải "thêm được bao nhiêu".
+- Số dòng xoá > số dòng thêm.
+- Số tuỳ chọn config biến mất.
 
-- The pattern is usually already there, just needs recognition
-- Valid cascades feel obvious in retrospect
-- Test with "can this handle all existing cases?"
-- Document the insight for future reference
+## Với alp-code
+
+Repo này đã có sẵn nguyên tắc cùng hướng — `README.md`: `scripts/lib/` là **"MỘT nguồn cho
+mỗi loại config"**. Khi đề xuất một thác, kiểm xem nó có đang dựng thêm nguồn thứ hai cho
+cùng một loại dữ liệu không. Nếu có thì đó không phải thác, đó là mảnh vỡ mới.
+
+## Nhớ
+
+- Mẫu thường **đã có sẵn**, chỉ chưa ai gọi tên nó.
+- Thác đúng thì nhìn lại thấy hiển nhiên. Nghe hiển nhiên không phải là dấu hiệu tầm thường.
+- Ghi lại nhận định — nó có giá trị hơn bản refactor nó sinh ra.

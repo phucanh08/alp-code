@@ -1,69 +1,48 @@
-# Problem-Solving Skills - Attribution
+# Nguồn gốc
 
-These skills were derived from agent patterns in the Microsoft Amplifier project.
+Các kỹ thuật trong skill này bắt nguồn từ mẫu agent của dự án Microsoft Amplifier, qua hai
+lần thích nghi.
 
-## Source Repository
+## Nguồn gốc
 
-- **Name:** Amplifier
-- **URL:** https://github.com/microsoft/amplifier
-- **Commit:** 2adb63f858e7d760e188197c8e8d4c1ef721e2a6
-- **Date:** 2025-10-10
+- **Dự án:** Amplifier — https://github.com/microsoft/amplifier
+- **Commit:** `2adb63f858e7d760e188197c8e8d4c1ef721e2a6` (2025-10-10)
+- **Giấy phép:** MIT
 
-## Skills Derived from Amplifier Agents
+## Chuỗi thích nghi
 
-### From insight-synthesizer agent:
-- **simplification-cascades** - Finding insights that eliminate multiple components
-- **collision-zone-thinking** - Forcing unrelated concepts together for breakthroughs
-- **meta-pattern-recognition** - Spotting patterns across 3+ domains
-- **inversion-exercise** - Flipping assumptions to reveal alternatives
-- **scale-game** - Testing at extremes to expose fundamental truths
+```
+Amplifier (agent JSON)  →  alp-plugin (skill tra cứu)  →  alp-code (vai oracle)
+```
 
-### From ambiguity-guardian agent:
-- **preserving-productive-tensions** - Preserving multiple valid approaches (in architecture skill)
+### Lần 1 — Amplifier → alp-plugin
 
-### From knowledge-archaeologist agent:
-- **tracing-knowledge-lineages** - Understanding how ideas evolved (in research skill)
+Từ agent `insight-synthesizer`: `simplification-cascades` · `collision-zone-thinking` ·
+`meta-pattern-recognition` · `inversion-exercise` · `scale-game`.
 
-### Dispatch pattern:
-- **when-stuck** - Maps stuck-symptoms to appropriate technique
+Mẫu điều phối: `when-stuck` — khớp triệu chứng bế tắc với kỹ thuật.
 
-## What Was Adapted
+Đổi: agent sống lâu, xuất JSON có cấu trúc → tài liệu tra cứu quét được bằng mắt, dùng
+được ngay, không cần công cụ riêng.
 
-The Amplifier agents are specialized long-lived agents with structured JSON output. These skills extract the core problem-solving techniques and adapt them as:
+### Lần 2 — alp-plugin → alp-code (2026-08)
 
-- **Scannable quick-reference guides** (~60-80 lines each)
-- **Symptom-based discovery** via when_to_use descriptions
-- **Immediate application** without special tooling
-- **Composable patterns** through dispatch system
-- **Progressive disclosure** via SKILL.md + references structure
+Đổi:
 
-## Core Insight
+- Dịch sang tiếng Việt, khớp `CHARTER.md` và `HOUSE-RULES.md`.
+- Gắn vào vai **`oracle`** cụ thể, thay vì viết cho một agent chung chung.
+- Thêm ranh giới thật của vai: `oracle` chỉ có `Read, Glob, Grep, Bash, WebSearch,
+  WebFetch` — **không sửa được gì**, không giao việc cho ai. Sản phẩm là khuyến nghị gửi
+  main, không phải thay đổi trong code.
+- Thêm ví dụ lấy từ chính alp-code ở chỗ ví dụ gốc quá xa ngữ cảnh.
+- Tách rõ "bế tắc tư duy" (dùng skill này) khỏi "thiếu bằng chứng" (dùng `alp-debug`).
 
-Agent capabilities are domain-agnostic patterns. Whether packaged as "amplifier agent" or "problem-solving skill", the underlying technique is the same.
+**Giữ nguyên:** năm kỹ thuật lõi, mẫu nhận diện, quy trình áp dụng, và luật 3 lĩnh vực.
 
-We extracted the techniques and made them:
-- Portable across contexts
-- Immediately applicable
-- Token-efficient through progressive disclosure
-- Discoverable through symptom-matching
-- Combinable for complex problems
+## Nhận định nền
 
-## License
+Năng lực của một agent thực ra là **mẫu tư duy không phụ thuộc lĩnh vực**. Gói nó thành
+"agent Amplifier", "skill alp-plugin" hay "kỹ thuật của vai oracle" thì kỹ thuật bên dưới
+vẫn là một.
 
-Original Amplifier project uses MIT License. These adapted skills maintain attribution and follow the same open spirit.
-
-## Adaptation Notes
-
-**Changes from original:**
-- Converted from long-lived agent to scannable reference
-- Added symptom-based dispatch system
-- Removed JSON output requirements
-- Focused on immediate application
-- Added concrete examples
-- Structured for progressive disclosure
-
-**Preserved from original:**
-- Core problem-solving techniques
-- Recognition patterns
-- Application processes
-- Fundamental insights
+Đó cũng chính là `meta-pattern-recognition` áp dụng lên chính nó.
