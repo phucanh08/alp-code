@@ -3,17 +3,16 @@
 Base URL: `http://localhost:27495` — nhưng **kiểm cổng thật trước** bằng
 `gkg server status`, vì cổng bận thì server tự rơi sang cổng khác.
 
-Phiên `search` không có MCP (`tools: [Read, Glob, Grep, Bash]`), nên gọi API bằng `curl`
-qua `Bash`.
+Loadout không cấp MCP thì gọi API bằng `curl` qua `Bash`.
 
 ## Chỉ dùng endpoint ĐỌC
 
 | Loại | Endpoint | Dùng |
 |---|---|---|
 | **Đọc** | `GET /api/info`, `/api/workspace/list`, `/api/graph/*`, `/api/events` | tự do |
-| **Ghi / xoá** | `POST /api/workspace/index`, mọi `DELETE` | **không tự gọi** — báo main |
+| **Ghi / xoá** | `POST /api/workspace/index`, mọi `DELETE` | **không tự gọi** — báo lại |
 
-`search` là vai truy xuất, không phải vai quản trị dữ liệu index. Cần index lại thì dùng
+Đây là việc truy xuất, không phải quản trị dữ liệu index. Cần index lại thì dùng
 `gkg index` ở CLI (xem `cli-commands.md`), và chỉ với workspace có trong loadout.
 
 ## Thông tin server

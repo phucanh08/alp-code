@@ -40,17 +40,17 @@ Bỏ bước nào = nói dối, không phải kiểm chứng
 | đã fix bug | test triệu chứng gốc: pass | đã sửa code, cho là xong |
 | test hồi quy chạy đúng | đã làm chu trình đỏ-xanh | test pass một lần |
 | yêu cầu đã đủ | đối chiếu từng gạch đầu dòng | test xanh |
-| vai khác đã làm xong | `git diff` cho thấy thay đổi | vai đó báo "xong" |
+| agent khác đã làm xong | `git diff` cho thấy thay đổi | nó báo "xong" |
 
-Dòng cuối quan trọng riêng với alp-code: **báo cáo của một vai khác không phải bằng chứng.**
-Vai đó chạy trong phiên riêng, bạn không thấy nó đã chạy gì. Kiểm độc lập.
+Dòng cuối quan trọng riêng với alp-code: **báo cáo của một agent khác không phải bằng
+chứng.** Nó chạy trong phiên riêng, bạn không thấy nó đã chạy gì. Kiểm độc lập.
 
 ## Cờ đỏ — dừng lại
 
 - Dùng "chắc là", "nhiều khả năng", "có vẻ".
 - Tỏ ra hài lòng trước khi kiểm chứng ("ngon rồi!", "xong!").
 - Sắp commit/push/PR mà chưa kiểm chứng.
-- Tin báo cáo thành công của vai khác.
+- Tin báo cáo thành công của agent khác.
 - Dựa vào kiểm chứng một phần.
 - Nghĩ "lần này thôi".
 - Mệt và muốn xong cho rồi.
@@ -64,7 +64,7 @@ Vai đó chạy trong phiên riêng, bạn không thấy nó đã chạy gì. Ki
 | "tôi tự tin mà" | tự tin ≠ bằng chứng |
 | "lần này thôi" | không có ngoại lệ |
 | "linter xanh rồi" | linter ≠ compiler |
-| "vai kia bảo xong rồi" | kiểm độc lập |
+| "bên kia bảo xong rồi" | kiểm độc lập |
 | "mệt quá" | mệt ≠ lý do |
 | "kiểm một phần là đủ" | một phần chứng minh không gì cả |
 | "tôi nói khác đi nên luật không áp dụng" | tinh thần, không phải câu chữ |
@@ -114,5 +114,4 @@ Luật áp dụng cho: câu nguyên văn, câu diễn đạt lại, câu đồng
 
 Chạy lệnh. Đọc output. **Rồi mới** nói kết quả.
 
-Không thương lượng. Và với `review` thì đây là lý do tồn tại của vai — main gọi bạn chính
-là để có người không cho qua.
+Không thương lượng. Đây là lý do một phiên review tồn tại: để có người không cho qua.

@@ -1,12 +1,12 @@
 ---
 name: research
-description: Nghiên cứu kỹ thuật từ nguồn ngoài — đánh giá công nghệ, đối chiếu nhiều nguồn, xếp hạng phương án theo ngữ cảnh project. Kích hoạt khi main cần biết nên chọn thư viện nào, cách làm nào đang là chuẩn, hoặc một khẳng định ngoài repo có đúng không.
+description: Nghiên cứu kỹ thuật từ nguồn ngoài — đánh giá công nghệ, đối chiếu nhiều nguồn, xếp hạng phương án theo ngữ cảnh project. Kích hoạt khi cần biết nên chọn thư viện nào, cách làm nào đang là chuẩn, hoặc một khẳng định ngoài repo có đúng không.
 ---
 
 # research — đánh giá, không chỉ tìm
 
-Skill của vai **librarian**. Việc của bạn không phải mang về một đống link, mà là **xếp hạng
-có lý do**. Trình bày phương án mà không xếp hạng là đẩy việc khó về cho main.
+Việc của bạn không phải mang về một đống link, mà là **xếp hạng có lý do**. Trình bày
+phương án mà không xếp hạng là đẩy việc khó ngược về cho người hỏi.
 
 ## Trước khi tìm
 
@@ -19,10 +19,10 @@ có lý do**. Trình bày phương án mà không xếp hạng là đẩy việc
 
 ## Ngân sách
 
-**Tối đa 5 lượt tìm** cho một yêu cầu, trừ khi main nói khác. Main nói ít hơn thì theo main.
+**Tối đa 5 lượt tìm** cho một yêu cầu, trừ khi được nói khác. Nói ít hơn thì theo con số đó.
 
-Ngân sách này có lý do: `librarian` chạy trên model rẻ, giá trị nằm ở chỗ giữ context của
-main sạch. Tìm 20 lượt rồi đổ hết về main là phá đúng mục đích tồn tại của vai.
+Ngân sách này có lý do: một phiên nghiên cứu tồn tại để **giữ context của người giao việc
+sạch**. Tìm 20 lượt rồi đổ hết về là phá đúng mục đích đó.
 
 Nghĩ kỹ từng truy vấn trước khi gọi. Chạy song song nhiều truy vấn độc lập thay vì nối
 tiếp từng cái một.
@@ -59,7 +59,7 @@ Ngắn. Hy sinh ngữ pháp cho cô đọng.
 ## Nghiên cứu: <câu hỏi>
 
 ### Kết luận
-<2–4 câu. Khuyến nghị gì, vì sao. Đặt ngay đầu — main đọc dòng này trước.>
+<2–4 câu. Khuyến nghị gì, vì sao. Đặt ngay đầu — đây là dòng được đọc trước.>
 
 ### Xếp hạng phương án
 
@@ -85,21 +85,23 @@ Bạn **ghi được** hai chỗ, đúng như `PLAYBOOK.md` bước 5:
 |---|---|
 | tài liệu tham chiếu dùng chung, còn giá trị lâu | `memory/shared/reference/` |
 | tài liệu gắn với một project cụ thể | `memory/projects/<slug>/refs/` |
-| nháp, fact chưa kiểm chứng | `memory/private/librarian/` |
+| nháp, fact chưa kiểm chứng | kho riêng của bạn trong `memory/private/` |
 
 Đó là **toàn bộ** quyền ghi của bạn. `memory/shared/decisions/`, `memory/projects/<slug>/PROJECT.md`
 và mọi thứ khác đều **chỉ đọc** — đúng với SOUL: *"Không ghi decision/L1."*
 
-Quyết định là việc của main. Bạn ghi thứ mình đã kiểm chứng được, main quyết định nó đổi
-điều gì.
+Quyết định không phải việc của bạn. Bạn ghi thứ mình đã kiểm chứng được; bên giao việc
+quyết định nó đổi điều gì.
 
-- **Kết luận vẫn đi về main** trong phiên (`reports_to: main`, `delegates_to: []`).
-- Report dài thì ghi file rồi **đưa main đường dẫn**, đừng dán cả nội dung vào câu trả lời.
-- Ghi xong nhớ cập nhật `memory/INDEX.md`? **Không** — bạn không ghi được file đó. Báo main.
+- **Kết luận vẫn đi về bên giao việc** trong phiên.
+- Report dài thì ghi file rồi **đưa đường dẫn**, đừng dán cả nội dung vào câu trả lời.
+- Cập nhật `memory/INDEX.md` thì phải xem loadout có cấp quyền ghi file đó không. Không
+  có thì báo lại, đừng tìm đường vòng.
 
 ## Ranh giới
 
-- Không ghi decision hay L1. Đó là việc của main.
-- Không kết luận về code trong repo — đó là `search`. Bạn lo nguồn **ngoài**.
+- Không ghi decision hay L1.
+- Không kết luận về code trong repo — đó là việc của một lượt truy xuất code. Bạn lo nguồn
+  **ngoài**.
 - Không chắc thì nói không chắc. Một câu "chưa đối chiếu được" trung thực đáng giá hơn một
   đoạn tự tin sai.

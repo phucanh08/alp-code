@@ -1,23 +1,22 @@
 ---
 name: alp-debug
-description: Điều tra sự cố có hệ thống — truy nguyên nhân gốc trước khi bàn cách sửa, phân tích log và CI/CD, chẩn đoán hiệu năng, kiểm chứng bằng bằng chứng. Kích hoạt khi main bế tắc với một bug, test fail, hành vi lạ, pipeline hỏng, hoặc hệ chậm bất thường.
+description: Điều tra sự cố có hệ thống — truy nguyên nhân gốc trước khi bàn cách sửa, phân tích log và CI/CD, chẩn đoán hiệu năng, kiểm chứng bằng bằng chứng. Kích hoạt khi bế tắc với một bug, test fail, hành vi lạ, pipeline hỏng, hoặc hệ chậm bất thường.
 ---
 
 # alp-debug — điều tra trước, kết luận sau
 
-Skill của vai **oracle**. Main gọi bạn khi **đã có giả thuyết và bằng chứng mà vẫn bế tắc**
-(`PLAYBOOK.md` dòng 1) — nên đừng bắt đầu lại từ đầu, hãy hỏi main đã thử gì rồi.
+Dùng khi **đã có giả thuyết và bằng chứng mà vẫn bế tắc** — nên đừng bắt đầu lại từ đầu,
+hãy hỏi đã thử những gì rồi.
 
 ## Luật cứng
 
 **KHÔNG KẾT LUẬN KHI CHƯA TRUY RA NGUYÊN NHÂN GỐC.**
 
-Đoán rồi sửa là cách tạo bug mới trong lúc giấu bug cũ. Và trong alp-code luật này còn dễ
-giữ hơn ở nơi khác: `oracle` **không sửa được gì** — tool chỉ có `Read, Glob, Grep, Bash,
-WebSearch, WebFetch`. Bạn giao nguyên nhân gốc cho main, main sửa.
+Đoán rồi sửa là cách tạo bug mới trong lúc giấu bug cũ. Và nếu loadout không cấp `Edit` thì luật
+này còn dễ giữ hơn: bạn **không sửa được gì**, chỉ giao nguyên nhân gốc cho người sửa.
 
 Hệ quả: sản phẩm của bạn là **chuỗi bằng chứng**, không phải bản vá. Một chuỗi bằng chứng
-tốt phải để main tự đi lại được và tới cùng kết luận.
+tốt phải để người đọc tự đi lại được và tới cùng kết luận.
 
 ## Chọn kỹ thuật
 
@@ -37,7 +36,7 @@ Sự cố mức hệ       → investigation-methodology.md  (5 bước)
 |---|---|---|
 | 1 | **Gỡ lỗi có hệ thống** | mọi bug cần điều tra — 4 pha: truy nguyên nhân → phân tích mẫu → thử giả thuyết → kết luận. Xong pha này mới sang pha kia |
 | 2 | **Lần ngược nguyên nhân** | lỗi nổ sâu trong call stack, chưa rõ dữ liệu hỏng sinh ra từ đâu. Có `scripts/find-polluter.sh` để bisect test bị nhiễm |
-| 3 | **Phòng thủ nhiều lớp** | đã ra nguyên nhân, cần chỉ cho main chốt ở những lớp nào: chặn ở cửa vào → nghiệp vụ → guard môi trường → chỗ đặt log |
+| 3 | **Phòng thủ nhiều lớp** | đã ra nguyên nhân, cần chỉ ra nên chốt ở những lớp nào: chặn ở cửa vào → nghiệp vụ → guard môi trường → chỗ đặt log |
 | 4 | **Kiểm chứng** | sắp nói "đã tìm ra" hoặc "đã hết" |
 | 5 | **Phương pháp điều tra** | sự cố nhiều thành phần: đánh giá ban đầu → thu thập dữ liệu → phân tích → xác định gốc → phương án |
 | 6 | **Phân tích log và CI/CD** | pipeline hỏng, lỗi phía server, sự cố deploy |
@@ -51,8 +50,7 @@ Sự cố mức hệ       → investigation-methodology.md  (5 bước)
 - **Bế tắc thật sự:** skill `problem-solving` — đổi kiểu nghĩ, không nghĩ chăm hơn.
 
 Cần thứ bạn không lấy được (tìm code diện rộng, tra tài liệu ngoài) → **nói rõ cần gì và
-báo main**. `oracle` có `delegates_to: []`, main mới là người giao cho `search` hoặc
-`librarian`.
+báo lại**. Loadout không cho giao việc thì đừng tự đi tìm đường vòng.
 
 ## Cờ đỏ — dừng lại nếu bắt gặp mình đang nghĩ
 
@@ -62,13 +60,13 @@ báo main**. `oracle` có `delegates_to: []`, main mới là người giao cho `
 - "chắc hết rồi" · "nhìn có vẻ ổn"
 - "test xanh rồi, xong"
 
-Tất cả đều nghĩa là: quay lại quy trình. Và với `oracle` thì còn một cờ đỏ nữa —
-**"để tôi sửa luôn"**: bạn không có `Edit`, đề xuất cách sửa thì viết ra, đừng tìm đường
-vòng qua `Bash` (HOUSE-RULES §1.9).
+Tất cả đều nghĩa là: quay lại quy trình. Và còn một cờ đỏ nữa — **"để tôi sửa luôn"**:
+nếu loadout không cấp `Edit` thì viết đề xuất ra, đừng tìm đường vòng qua `Bash`
+(HOUSE-RULES §1.9).
 
 ## Bàn giao
 
-Báo cáo về main gồm đúng bốn phần:
+Báo cáo gồm đúng bốn phần:
 
 ```
 ## Điều tra: <triệu chứng>
@@ -82,11 +80,11 @@ Báo cáo về main gồm đúng bốn phần:
 ...
 
 ### Đã loại trừ
-<giả thuyết nào đã thử và bị bác, bằng gì — để main không đi lại đường cũ>
+<giả thuyết nào đã thử và bị bác, bằng gì — để người đọc không đi lại đường cũ>
 
 ### Đề xuất sửa
 <sửa ở đâu, vì sao ở đó chứ không phải chỗ triệu chứng nổ ra>
 ```
 
-Nháp và giả thuyết chưa kiểm chứng → `memory/private/oracle/`. Chỉ kết luận đã có bằng
-chứng mới đi vào báo cáo.
+Nháp và giả thuyết chưa kiểm chứng → kho riêng của bạn trong `memory/private/`. Chỉ kết
+luận đã có bằng chứng mới đi vào báo cáo.

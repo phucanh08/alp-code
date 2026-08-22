@@ -68,4 +68,4 @@ phải lấy từ chỗ khác — sinh học chẳng hạn.
 - Ghép càng lạ càng hay ra nhận định tốt. Ghép an toàn thì chỉ ra thứ đã biết.
 - Ghi lại cả va chạm **thất bại** — chỗ ẩn dụ gãy cũng là thông tin.
 - Câu hỏi mở khoá: **"người giỏi nhất ở lĩnh vực kia sẽ làm gì với bài toán này?"**
-- Đem về cho main dưới dạng khuyến nghị kèm biên của ẩn dụ, đừng đem về một ẩn dụ trần.
+- Đem về dưới dạng khuyến nghị kèm biên của ẩn dụ, đừng đem về một ẩn dụ trần.

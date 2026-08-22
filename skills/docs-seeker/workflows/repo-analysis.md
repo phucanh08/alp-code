@@ -28,7 +28,7 @@ git clone <repo-url> /tmp/docs-analysis
 Cần đúng một phiên bản thì `git checkout <tag>`. **Luôn ghi lại tag/commit đã đọc** —
 `research` yêu cầu ghi phiên bản kèm ngày cho mọi nguồn.
 
-Clone về máy là tải mã nguồn lạ. Repo lớn hoặc không rõ nguồn gốc → **báo main trước**.
+Clone về máy là tải mã nguồn lạ. Repo lớn hoặc không rõ nguồn gốc → **báo lại trước**.
 
 ### 3. Đóng gói
 
@@ -39,7 +39,7 @@ repomix --token-count-tree           # XEM TRƯỚC token nằm ở đâu
 repomix --include "README.md,docs/**,examples/**" -o repomix-output.xml
 ```
 
-Chưa cài `repomix` thì báo main, đừng tự `npm install -g` (HOUSE-RULES §1.2).
+Chưa cài `repomix` thì báo lại, đừng tự `npm install -g` (HOUSE-RULES §1.2).
 
 **Chạy `--token-count-tree` trước và lọc bằng `--include`.** Gói cả repo rồi mới phát hiện
 nó 200k token là hỏng cả phiên. Thứ bạn cần gần như luôn nằm ở `README.md`, `docs/`,
@@ -82,9 +82,9 @@ commit nào 18 tháng là thông tin, kể cả khi code của nó tốt.
 
 ## Không có repo nào
 
-Không tìm được repo thì nói thẳng với main: không có nguồn sơ cấp. Những gì gom được từ
+Không tìm được repo thì nói thẳng: không có nguồn sơ cấp. Những gì gom được từ
 blog, tutorial, Stack Overflow là **nguồn thứ cấp** — chất lượng không đều, phải đối chiếu
 ít nhất hai nguồn độc lập, và phải ghi rõ là thứ cấp trong báo cáo.
 
-Bản gốc của workflow này gợi ý "chia cho nhiều Researcher agent" — bỏ qua, `librarian` có
-`delegates_to: []`.
+Bản gốc của workflow này gợi ý "chia cho nhiều Researcher agent" — bỏ qua nếu loadout
+không cho giao việc.

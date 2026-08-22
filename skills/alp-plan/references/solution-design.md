@@ -18,7 +18,8 @@ Ba nguyên tắc này là luật thành văn của repo, không phải khuyến 
 | B | … | … | … |
 
 Cột **chi phí đảo ngược** quan trọng nhất và hay bị bỏ: một quyết định sai mà đảo lại rẻ
-thì cứ chọn và đi tiếp; một quyết định sai mà đảo lại đắt thì đáng gọi `oracle` trước.
+thì cứ chọn và đi tiếp; một quyết định sai mà đảo lại đắt thì đáng mở một lượt phản biện
+trước.
 
 Cân: ngắn hạn và dài hạn · độ phức tạp và khả năng bảo trì · công sức và lợi ích thật.
 
@@ -41,8 +42,8 @@ khai tốn một phase.
 - Tài nguyên: bộ nhớ, CPU, mạng.
 
 **Quy mô thật của alp-code là 8 vai và một principal.** Thiết kế cho hàng trăm agent là
-over-engineering ở đây. Dùng `alp-predict` hoặc kỹ thuật quy mô của `oracle` để kiểm cả
-chiều nhỏ, không chỉ chiều lớn.
+over-engineering ở đây. Dùng `alp-predict` hoặc kỹ thuật quy mô của `problem-solving` để
+kiểm cả chiều nhỏ, không chỉ chiều lớn.
 
 ## Edge case và failure mode
 

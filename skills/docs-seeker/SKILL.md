@@ -5,8 +5,8 @@ description: Tìm tài liệu thư viện/framework qua chuẩn llms.txt (contex
 
 # docs-seeker — lấy tài liệu bằng script
 
-Skill của vai **librarian**. Dùng khi `research` cần **nguồn sơ cấp** của một thư viện cụ
-thể — tài liệu chính thức, không phải blog viết lại.
+Dùng khi cần **nguồn sơ cấp** của một thư viện cụ thể — tài liệu chính thức, không phải
+blog viết lại.
 
 Ba script làm hết phần dựng URL, chuỗi fallback và bắt lỗi. **Chạy script, đừng tự đoán
 URL context7** — đoán sai thì `WebFetch` trả 404 và bạn tốn một lượt trong ngân sách 5 lượt
@@ -14,7 +14,7 @@ của `research`.
 
 ## Đường dẫn
 
-CWD của phiên là `identity/librarian/`, nên script gọi qua symlink skill:
+CWD của phiên là thư mục vai (`identity/<vai>/`), nên script gọi qua symlink skill:
 
 ```
 .claude/skills/docs-seeker/scripts/<tên>.js
@@ -55,7 +55,7 @@ tự làm bằng tay.
 `analyze-llms-txt.js` để biết đọc cái nào trước.
 
 Với truy vấn tổng quát, `analyze-llms-txt.js` có gợi ý chia việc cho nhiều agent song song.
-**Bỏ qua gợi ý đó** — `librarian` có `delegates_to: []`, không giao việc cho ai. Dùng phần
+**Bỏ qua gợi ý đó** nếu loadout không cho giao việc. Dùng phần
 xếp hạng critical/important/supplementary để tự chọn thứ tự đọc, và đọc trong ngân sách.
 
 ## Khoá API
@@ -66,7 +66,7 @@ Ba khoá đều **tuỳ chọn**, không có vẫn chạy: `CONTEXT7_API_KEY` (r
 Script đọc theo thứ tự: `process.env` → `.env` trong thư mục skill → `.claude/.env`.
 
 **Không tự tạo file `.env` trong `skills/`** — `skills/` là hạ tầng đóng băng, chỉ principal
-sửa (CHARTER §8). Cần khoá thì báo main, principal sẽ đặt vào biến môi trường.
+sửa (CHARTER §8). Cần khoá thì báo lại; principal sẽ đặt vào biến môi trường.
 
 ## Tham chiếu
 

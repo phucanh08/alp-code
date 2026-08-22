@@ -6,7 +6,7 @@ description: Đóng gói cả repo thành một file cho AI đọc (XML, Markdow
 # repomix — gói repo thành một file
 
 **Chưa vai nào được cấp skill này** trong `loadout.yaml`. Nó nằm ở `skills/` để principal
-cấp khi cần — thường là cho `main` khi phải đánh giá một thư viện lạ.
+cấp khi cần — thường là khi phải đánh giá một thư viện lạ.
 
 ## Khi nào đáng dùng
 
@@ -14,7 +14,8 @@ Chỉ khi **thật sự cần cả repo**: đánh giá thư viện bên thứ ba
 đọc, chuẩn bị audit.
 
 Khi **không** nên dùng: tìm một symbol, đọc một luồng, trả lời một câu hỏi cụ thể về code.
-Việc đó giao `search` — nó trả `path:line`, còn repomix đổ hàng chục nghìn token vào context.
+Việc đó giao một lượt truy xuất code — nó trả `path:line`, còn repomix đổ hàng chục nghìn
+token vào context.
 Dùng nhầm chỗ là phá đúng nguyên tắc "boot set ≤ 7 nguồn" của CHARTER §2.6.
 
 ## Kiểm tra trước

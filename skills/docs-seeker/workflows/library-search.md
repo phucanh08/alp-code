@@ -34,7 +34,7 @@ xếp chúng thành ba nhóm — đọc `critical` trước, `important` nếu c
 ## Đọc bao nhiêu
 
 Script có trường `distribution` gợi ý chia việc cho nhiều agent song song. **Bỏ qua trường
-đó** — `librarian` có `delegates_to: []`, không giao việc cho ai.
+đó** nếu loadout không cho giao việc.
 
 Dùng thứ tự đọc thay cho chia agent:
 
@@ -42,7 +42,7 @@ Dùng thứ tự đọc thay cho chia agent:
 |---|---|
 | 1–3 | đọc hết bằng `WebFetch` |
 | 4–10 | đọc nhóm `critical`, rồi `important` nếu còn ngân sách |
-| 11+ | **chỉ** nhóm `critical`; báo main là đã cắt và cắt theo tiêu chí nào |
+| 11+ | **chỉ** nhóm `critical`; nói rõ là đã cắt và cắt theo tiêu chí nào |
 
 Cắt bớt thì phải nói rõ đã cắt gì. Im lặng cắt rồi trình bày như đã đọc hết là báo cáo sai.
 

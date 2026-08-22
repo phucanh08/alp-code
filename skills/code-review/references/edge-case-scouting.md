@@ -22,12 +22,12 @@ Bỏ qua được: sửa một file, tài liệu, config không có nhánh logic
 ### 1. Lấy danh sách file đổi
 
 ```bash
-git diff --name-only HEAD~1     # hoặc so với base main giao
+git diff --name-only HEAD~1     # hoặc so với base được giao
 ```
 
 ### 2. Tìm ngược ra ngoài diff
 
-`review` có `Grep`, `Glob`, `Bash` — tự làm, không giao ai (`delegates_to: []`).
+Tự làm bằng `Grep`/`Glob`/`Bash`, không giao đi.
 
 Với mỗi symbol công khai bị đổi trong diff:
 
@@ -44,8 +44,8 @@ Sáu thứ phải trả lời được:
 5. **Bất đồng bộ:** có race không, có thứ tự nào bị giả định ngầm không.
 6. **Trạng thái dùng chung:** biến module, cache, singleton bị sửa ở đâu.
 
-Cần đầy đủ tuyệt đối (trước một refactor lớn) → báo main, main giao `search` chạy `gkg`
-phân tích ảnh hưởng. `rg` khớp chuỗi, `gkg` đi theo quan hệ AST.
+Cần đầy đủ tuyệt đối (trước một refactor lớn) → báo bên giao việc để nhờ một lượt phân
+tích ảnh hưởng bằng `gkg`. `rg` khớp chuỗi, `gkg` đi theo quan hệ AST.
 
 Bổ có hệ thống hơn nữa: skill `alp-scenario` (12 chiều).
 
@@ -63,7 +63,7 @@ Bổ có hệ thống hơn nữa: skill `alp-scenario` (12 chiều).
 Kết quả quét **không** phải một mục riêng. Nó nhập vào báo cáo `code-review` theo đúng ba
 mức CHẶN / NÊN SỬA / GHI NHẬN.
 
-Riêng phần đã kiểm mà **không** thấy vấn đề thì vẫn nói — nó cho main biết phạm vi bạn đã
+Riêng phần đã kiểm mà **không** thấy vấn đề thì vẫn nói — nó cho bên giao việc biết phạm vi bạn đã
 phủ, và biết chỗ nào bạn chưa đụng tới:
 
 ```

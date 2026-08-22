@@ -2,7 +2,7 @@
 
 ## Tài liệu nhiều ngôn ngữ
 
-1. Xác định ngôn ngữ cần từ yêu cầu của main.
+1. Xác định ngôn ngữ cần từ yêu cầu được giao.
 2. Tìm `llms.txt` theo ngôn ngữ: `llms-es.txt`, `llms-ja.txt`, `llms-vi.txt`.
 3. Không có thì dùng bản tiếng Anh.
 4. **Ghi rõ đã dùng bản ngôn ngữ nào** — bản dịch thường chậm hơn bản gốc vài phiên bản.
@@ -30,9 +30,9 @@ cho việc đánh giá của `research`.
 Framework lõi + 50 plugin thì đừng tài liệu hoá hết.
 
 1. Đọc **lõi trước**.
-2. Hỏi main cần plugin nào.
+2. Hỏi lại xem cần plugin nào.
 3. Tìm riêng đúng plugin đó.
-4. Liệt kê tên các plugin có sẵn trong báo cáo, để main biết còn gì.
+4. Liệt kê tên các plugin có sẵn trong báo cáo, để bên đọc biết còn gì.
 
 Đọc hết 50 plugin là phá ngân sách context của cả phiên để trả lời một câu hỏi về hai
 plugin.
@@ -48,7 +48,7 @@ Cách làm:
 2. Kết hợp phần tài liệu có sẵn với đọc repo.
 3. Xem thư mục `tests/` và `examples/` — chúng thường chính xác hơn tài liệu vì chúng chạy.
 4. **Đánh dấu rõ phần nào là "suy ra từ code"**, không trộn lẫn với phần có tài liệu.
-5. Dẫn link issue liên quan để main theo dõi.
+5. Dẫn link issue liên quan để bên đọc theo dõi.
 
 ## Nguồn mâu thuẫn nhau
 
@@ -68,7 +68,7 @@ Thứ tự ưu tiên nguồn:
 5. Stack Overflow
 ```
 
-**Không chọn hộ main khi mâu thuẫn là thật** (hai bên cùng đúng trong hai ngữ cảnh khác
+**Không chọn hộ bên giao việc khi mâu thuẫn là thật** (hai bên cùng đúng trong hai ngữ cảnh khác
 nhau). Nêu cả hai, chỉ ra ngữ cảnh nào hợp với project. Đây là luật "đang tranh cãi" của
 `research`.
 
@@ -78,5 +78,5 @@ nhau). Nêu cả hai, chỉ ra ngữ cảnh nào hợp với project. Đây là 
   trong `skills/`** (thư mục đóng băng, CHARTER §8).
 - Bị giới hạn thì giãn dần thời gian giữa các lần gọi, đừng gọi dồn.
 - Nhớ kết quả đã lấy **trong phiên**, đừng gọi lại cùng một URL.
-- Vẫn bị chặn → dừng, báo main. Ngân sách 5 lượt của `research` không đủ để ngồi chờ
+- Vẫn bị chặn → dừng, báo lại. Ngân sách 5 lượt của `research` không đủ để ngồi chờ
   rate limit hồi.

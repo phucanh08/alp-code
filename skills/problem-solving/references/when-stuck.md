@@ -61,16 +61,16 @@ gỡ bế tắc ra dùng khi thứ bạn cần chỉ là đọc thêm log.
 ## Khi không kỹ thuật nào ăn thua
 
 1. **Đóng khung lại vấn đề** — có đang giải đúng bài toán không?
-2. **Giải thích cho người khác** — main đang chờ báo cáo; viết ra cho main thường tự lộ chỗ hổng.
+2. **Giải thích cho người khác** — viết ra thành báo cáo thường tự lộ chỗ hổng.
 3. **Thu nhỏ phạm vi** — giải bản nhỏ hơn trước.
 4. **Chất vấn ràng buộc** — ràng buộc đó có thật, hay chỉ là giả định?
 
-Vẫn không ra thì **nói thẳng với main là chưa ra**, kèm những gì đã loại trừ. Một câu
+Vẫn không ra thì **nói thẳng là chưa ra**, kèm những gì đã loại trừ. Một câu
 "chưa xác định được, đã loại trừ A, B, C" đáng giá hơn một khuyến nghị đoán bừa —
-`oracle` được gọi vì độ tin cậy, không vì tốc độ.
+Một lượt gỡ bế tắc được mở ra vì độ tin cậy, không vì tốc độ.
 
 ## Nhớ
 
 - Khớp triệu chứng với kỹ thuật, đừng chọn theo cái mình quen.
-- Ghi lại đã thử gì — để main không đi lại đường cũ.
+- Ghi lại đã thử gì — để người đọc không đi lại đường cũ.
 - Bế tắc là tạm thời, không phải vĩnh viễn.

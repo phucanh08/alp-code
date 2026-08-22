@@ -12,7 +12,7 @@ lần thích nghi.
 ## Chuỗi thích nghi
 
 ```
-Amplifier (agent JSON)  →  alp-plugin (skill tra cứu)  →  alp-code (vai oracle)
+Amplifier (agent JSON)  →  alp-plugin (skill tra cứu)  →  alp-code (skill của repo)
 ```
 
 ### Lần 1 — Amplifier → alp-plugin
@@ -30,10 +30,10 @@ Mẫu điều phối: `when-stuck` — khớp triệu chứng bế tắc với k
 Đổi:
 
 - Dịch sang tiếng Việt, khớp `CHARTER.md` và `HOUSE-RULES.md`.
-- Gắn vào vai **`oracle`** cụ thể, thay vì viết cho một agent chung chung.
-- Thêm ranh giới thật của vai: `oracle` chỉ có `Read, Glob, Grep, Bash, WebSearch,
-  WebFetch` — **không sửa được gì**, không giao việc cho ai. Sản phẩm là khuyến nghị gửi
-  main, không phải thay đổi trong code.
+- Viết cho **một lượt gỡ bế tắc**, không gắn với tên vai nào — vai nào được cấp skill này
+  là việc của `loadout.yaml`, không phải của nội dung skill.
+- Thêm ranh giới theo **loadout**, không theo tên vai: không cấp `Edit` thì sản phẩm là
+  khuyến nghị, không phải thay đổi trong code.
 - Thêm ví dụ lấy từ chính alp-code ở chỗ ví dụ gốc quá xa ngữ cảnh.
 - Tách rõ "bế tắc tư duy" (dùng skill này) khỏi "thiếu bằng chứng" (dùng `alp-debug`).
 
@@ -42,7 +42,7 @@ Mẫu điều phối: `when-stuck` — khớp triệu chứng bế tắc với k
 ## Nhận định nền
 
 Năng lực của một agent thực ra là **mẫu tư duy không phụ thuộc lĩnh vực**. Gói nó thành
-"agent Amplifier", "skill alp-plugin" hay "kỹ thuật của vai oracle" thì kỹ thuật bên dưới
-vẫn là một.
+"agent Amplifier", "skill alp-plugin" hay "một lượt gỡ bế tắc" thì kỹ thuật bên dưới vẫn
+là một.
 
 Đó cũng chính là `meta-pattern-recognition` áp dụng lên chính nó.

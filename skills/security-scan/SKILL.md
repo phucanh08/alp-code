@@ -1,15 +1,15 @@
 ---
 name: security-scan
-description: Quét bảo mật bằng Grep + shell — secret lộ, phụ thuộc có CVE, mẫu lỗ hổng phổ biến, .env bị track. Kích hoạt khi main giao concern security, khi nghi có credential trong code, hoặc trước khi chốt một thay đổi chạm xác thực hay dữ liệu.
+description: Quét bảo mật bằng Grep + shell — secret lộ, phụ thuộc có CVE, mẫu lỗ hổng phổ biến, .env bị track. Kích hoạt khi được giao concern security, khi nghi có credential trong code, hoặc trước khi chốt một thay đổi chạm xác thực hay dữ liệu.
 ---
 
 # security-scan — quét lỗ hổng cơ học
 
-Skill của vai **review**, dùng cho concern `security`. Đây là bước **quét**, không phải bước
+Dùng cho concern `security`. Đây là bước **quét**, không phải bước
 kết luận: nó tìm chỗ đáng ngờ nhanh và đầy đủ, còn xác định có thật là lỗ hổng hay không
 vẫn là việc đọc code của bạn.
 
-Không cần cài gì thêm — chỉ `Grep`, `Glob` và `Bash`, đúng bộ tool `review` đang có.
+Không cần cài gì thêm — chỉ `Grep`, `Glob` và `Bash`.
 
 ## Thứ tự chạy
 
@@ -63,11 +63,11 @@ grep -n '\.env' .gitignore 2>/dev/null
   thật không" — dùng thử một key thật là hành động khó đảo ngược (HOUSE-RULES §1.2).
 - Tìm thấy credential thật → khuyến nghị **xoay ngay**, và nói rõ nó đã nằm trong lịch sử
   git thì xoá file không đủ.
-- Không tự sửa code. `review` không có `Edit`/`Write`, và cũng không nên có.
+- Không tự sửa code, kể cả khi loadout có cấp `Edit`. Quét là việc đọc.
 
 ## Mẫu báo cáo
 
-Dùng đúng ba mức của `code-review` để main không phải quy đổi thang.
+Dùng đúng ba mức của `code-review` để bên giao việc không phải quy đổi thang.
 
 ```
 ## Quét bảo mật: <scope>
@@ -98,4 +98,4 @@ Tổng: CHẶN n · NÊN SỬA n · GHI NHẬN n
 **Làm:** phát hiện secret, audit phụ thuộc, mẫu lỗ hổng phổ biến, `.env` bị track.
 
 **Không làm:** pentest, phân tích lúc chạy, bảo mật hạ tầng, audit tuân thủ. Việc đó vượt
-quá thứ đọc code tĩnh trả lời được — gặp thì báo main, đừng giả vờ kết luận.
+quá thứ đọc code tĩnh trả lời được — gặp thì báo lại, đừng giả vờ kết luận.

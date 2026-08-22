@@ -10,8 +10,8 @@ KHÔNG ĐỀ XUẤT SỬA KHI CHƯA TRUY XONG NGUYÊN NHÂN GỐC
 
 Chưa xong Pha 1 thì không được đề xuất cách sửa.
 
-Với `oracle` luật này còn dễ giữ hơn: bạn **không sửa được gì** (`tools` không có `Edit`).
-Sản phẩm của bạn là nguyên nhân gốc kèm chuỗi bằng chứng, main mới là người sửa.
+Nếu loadout không cấp `Edit` thì luật này còn dễ giữ hơn: bạn **không sửa được gì**. Sản
+phẩm của bạn là nguyên nhân gốc kèm chuỗi bằng chứng; người khác mới là người sửa.
 
 ## Pha 1 — Truy nguyên nhân gốc
 
@@ -44,7 +44,7 @@ Chưa xong 5 bước này thì mọi giả thuyết đều là đoán.
 3. **Kiểm chứng trước khi đi tiếp.** Đúng → Pha 4. Sai → giả thuyết **mới**, không phải
    chồng thêm bản sửa.
 4. **Không biết thì nói không biết.** "Tôi chưa hiểu vì sao X" là câu hợp lệ. Giả vờ hiểu
-   là cách main đi sửa nhầm chỗ.
+   là cách để người đọc đi sửa nhầm chỗ.
 
 ## Pha 4 — Kết luận và bàn giao
 
@@ -57,7 +57,7 @@ Chưa xong 5 bước này thì mọi giả thuyết đều là đoán.
    - Dưới 3 → về Pha 1 với thông tin mới.
    - **Từ 3 trở lên → dừng và chất vấn kiến trúc.**
 5. **Ba lần thất bại nghĩa là gì.** Mẫu điển hình: mỗi lần sửa lại lộ ra một chỗ dùng chung
-   trạng thái hoặc coupling khác. Đó không còn là bug, đó là kiến trúc sai. Dừng, báo main,
+   trạng thái hoặc coupling khác. Đó không còn là bug, đó là kiến trúc sai. Dừng, báo lại,
    và cân nhắc `alp-predict` hoặc `problem-solving` thay vì thử tiếp.
 
 ## Cờ đỏ — dừng lại, quay về Pha 1
@@ -70,9 +70,9 @@ Chưa xong 5 bước này thì mọi giả thuyết đều là đoán.
 - "tôi chưa hiểu hết nhưng chắc cách này được"
 - "thử thêm một lần nữa thôi" — khi đã thử 2+ lần
 
-## Tín hiệu từ main báo bạn đang làm sai
+## Tín hiệu cho thấy bạn đang làm sai
 
-| Main nói | Nghĩa là |
+| Nghe câu này | Nghĩa là |
 |---|---|
 | "thế nó có xảy ra không?" | bạn đang giả định mà chưa kiểm |
 | "chạy cái đó có cho thấy gì không?" | lẽ ra phải thu bằng chứng trước |

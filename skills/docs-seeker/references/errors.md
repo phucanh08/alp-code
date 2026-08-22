@@ -38,9 +38,9 @@ tên thông dụng thường khác đường dẫn repo (`next.js` → `vercel/n
 4. Nguồn thứ cấp — và PHẢI ghi rõ là thứ cấp
 ```
 
-Bước 4 trong bản gốc là "chia cho nhiều Researcher agent". `librarian` có
-`delegates_to: []` nên bước đó không áp dụng: tự gom nguồn thứ cấp, đối chiếu hai nguồn
-độc lập, và nói rõ trong báo cáo rằng không có nguồn sơ cấp.
+Bước 4 trong bản gốc là "chia cho nhiều Researcher agent" — không áp dụng khi loadout
+không cho giao việc: tự gom nguồn thứ cấp, đối chiếu hai nguồn độc lập, và nói rõ trong
+báo cáo rằng không có nguồn sơ cấp.
 
 ## Timeout
 
@@ -61,7 +61,7 @@ cùng một URL 404 ba lần chỉ tốn ngân sách — `research` chỉ có 5 
 2. Thử đọc thẳng repo.
 3. Kiểm site chính thức bằng tay.
 
-Đừng để kết quả rỗng biến thành im lặng. Main không phân biệt được "đã tìm và không có" với
+Đừng để kết quả rỗng biến thành im lặng. Bên giao việc không phân biệt được "đã tìm và không có" với
 "quên tìm" nếu bạn không nói.
 
 ## Script hỏng
@@ -69,4 +69,4 @@ cùng một URL 404 ba lần chỉ tốn ngân sách — `research` chỉ có 5 
 Script trong `scripts/` lỗi thì **sửa rồi chạy lại cho tới khi được** — đó là luật của repo.
 Đừng bỏ script rồi tự dựng URL bằng tay: script có sẵn chuỗi fallback, làm tay là mất nó.
 
-Sửa không được thì báo main, kèm lỗi nguyên văn.
+Sửa không được thì báo lại, kèm lỗi nguyên văn.

@@ -1,10 +1,10 @@
 # Kiểm chứng trước khi kết luận
 
-`oracle` không sửa code, nên thứ bạn phải kiểm chứng không phải "đã làm xong chưa" mà là
-**"kết luận này có đứng vững không"**.
+Đây là việc chẩn đoán, không phải việc sửa. Nên thứ bạn phải kiểm chứng không phải "đã làm
+xong chưa" mà là **"kết luận này có đứng vững không"**.
 
-Nói sai nguyên nhân gốc còn tệ hơn nói không biết: main sẽ đi sửa nhầm chỗ, mất thời gian
-gấp đôi, và lần sau không tin bạn nữa.
+Nói sai nguyên nhân gốc còn tệ hơn nói không biết: người ta sẽ đi sửa nhầm chỗ, mất thời
+gian gấp đôi, và lần sau không tin bạn nữa.
 
 ## Luật sắt
 
@@ -52,7 +52,7 @@ Trộn ba mức này vào cùng một giọng khẳng định là lỗi hay gặ
 
 - Dùng "chắc là", "nhiều khả năng", "có vẻ" trong phần **Nguyên nhân gốc**.
 - Kết luận dựa trên đọc code mà chưa chạy gì.
-- Nhận báo cáo của vai khác làm bằng chứng — vai đó chạy phiên riêng, bạn không thấy nó đã
+- Nhận báo cáo của agent khác làm bằng chứng — nó chạy phiên riêng, bạn không thấy nó đã
   chạy gì.
 - Dừng ở nguyên nhân **gần nhất** vì nó đủ hợp lý.
 - Mệt và muốn xong cho rồi.
@@ -64,8 +64,8 @@ Trộn ba mức này vào cùng một giọng khẳng định là lỗi hay gặ
 | "đọc code là thấy ngay mà" | đọc code cho giả thuyết, không cho kết luận |
 | "tôi khá chắc" | chắc ≠ bằng chứng |
 | "không tái hiện được nhưng chắc đúng" | thì ghi là giả thuyết, đừng ghi là nguyên nhân gốc |
-| "main đang gấp" | kết luận sai làm main mất nhiều thời gian hơn |
-| "vai kia đã kiểm rồi" | kiểm độc lập, hoặc ghi rõ là dựa vào báo cáo của vai đó |
+| "đang gấp" | kết luận sai làm mất nhiều thời gian hơn |
+| "bên kia đã kiểm rồi" | kiểm độc lập, hoặc ghi rõ là dựa vào báo cáo của họ |
 
 ## Bài kiểm quyết định
 
@@ -76,11 +76,11 @@ Một nguyên nhân gốc chỉ được gọi là **đã xác nhận** khi tr�
    bằng chứng đã có.
 
 Không trả lời được câu 2 thì đó vẫn là giả thuyết mạnh, không phải nguyên nhân gốc. Nói
-đúng như vậy với main.
+đúng như vậy trong báo cáo.
 
 ## Chốt
 
 Chạy. Đọc output. **Rồi mới** kết luận.
 
 Chưa ra thì nói chưa ra, kèm danh sách đã loại trừ. Đó là câu trả lời hợp lệ và hữu ích —
-`oracle` được gọi vì độ tin cậy, không vì tốc độ.
+Một lượt chẩn đoán được mở ra vì độ tin cậy, không vì tốc độ.

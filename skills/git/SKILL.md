@@ -5,8 +5,8 @@ description: Thao tác git với conventional commit — stage, quét secret, t�
 
 # git — commit có kỷ luật
 
-Skill của vai **main**. Đây là vai duy nhất có `Write`/`Edit`, nên cũng là vai duy nhất
-chạm được git ở mức ghi.
+Skill này cần `Write`/`Edit` và `Bash`. Loadout không cấp đủ thì chỉ đọc được trạng thái
+repo, không commit được.
 
 ## Cổng chặn — đọc trước mọi thứ khác
 
@@ -116,7 +116,7 @@ của phiên khác. Cần cất việc tạm thì tạo commit WIP, đừng stas
 
 ## Ranh giới
 
-- Không có subagent nào để đẩy output dài sang. `main` không có `Task` trong `tools:`.
-  Output git dài thì lọc bằng `--stat`, `--oneline`, `-n`, đừng đổ nguyên vào context.
+- Không có subagent nào để đẩy output dài sang. Output git dài thì lọc bằng `--stat`,
+  `--oneline`, `-n`, đừng đổ nguyên vào context.
 - Không push lên `main`/`master`, không force-push, không merge — trừ khi principal nói
   thẳng, trong phiên này.

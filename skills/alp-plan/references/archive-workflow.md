@@ -20,7 +20,7 @@ Trước khi đóng, rút ra cái gì học được. Hai chỗ, đừng nhầm:
 
 | Loại | Ghi vào |
 |---|---|
-| bài học về **cách bạn làm việc** — quyết định nào sai, vì sao | `identity/main/journal/YYYY-MM.md` |
+| bài học về **cách bạn làm việc** — quyết định nào sai, vì sao | `identity/<vai>/journal/YYYY-MM.md` |
 | fact về **project / principal / thế giới** | `memory/shared/` hoặc `memory/projects/` |
 
 Đây là HOUSE-RULES §2 và CHARTER §2.4. Ghi fact chung vào journal riêng = nhân bản dữ liệu
@@ -31,7 +31,7 @@ P2 — lần sau spike trước khi chia phase" thì dùng được.
 
 ## 3. Hỏi principal trước khi đóng
 
-Main nói chuyện trực tiếp với principal — hỏi thẳng trong phiên. Ba câu:
+Hỏi thẳng trong phiên. Ba câu:
 
 1. Đóng kế hoạch nào — cụ thể, hay tất cả kế hoạch đã `completed`?
 2. Chuyển sang `plans/archive/` hay xoá hẳn?
@@ -68,7 +68,7 @@ sẽ bị chặn mãi mãi.
 | Kế hoạch | Trạng thái | Tạo ngày | Ghi chú |
 |---|---|---|---|
 
-Journal: identity/main/journal/YYYY-MM.md — <mục nào thêm mới>
+Journal: identity/<vai>/journal/YYYY-MM.md — <mục nào thêm mới>
 Quan hệ chặn đã gỡ: <kế hoạch nào>
 Commit: <hash hoặc "chưa — chờ principal">
 

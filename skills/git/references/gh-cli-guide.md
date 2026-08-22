@@ -114,8 +114,8 @@ gh pr view 123 --json commits,reviews
 gh issue list --json number,title --jq '.[].title'
 ```
 
-Dùng `--json` + `--jq` để **cắt output trước khi nó vào context**. `main` không có subagent
-để đẩy output dài sang, nên lọc là việc của bạn.
+Dùng `--json` + `--jq` để **cắt output trước khi nó vào context**. Không có subagent để
+đẩy output dài sang, nên lọc là việc của bạn.
 
 ## Mẫu KHÔNG dùng
 

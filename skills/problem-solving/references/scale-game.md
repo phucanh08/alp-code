@@ -78,5 +78,5 @@ thành văn của repo.
 ## Nhớ
 
 - Thử **cả hai chiều**, lớn và nhỏ.
-- Đừng đoán — thử. Với `oracle`, "chắc là" không phải kết luận.
-- Nhận định rút ra đi vào khuyến nghị cho main, kèm con số cụ thể chứ không kèm tính từ.
+- Đừng đoán — thử. "Chắc là" không phải kết luận.
+- Nhận định rút ra đi vào khuyến nghị, kèm con số cụ thể chứ không kèm tính từ.

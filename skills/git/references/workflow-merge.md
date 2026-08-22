@@ -1,7 +1,7 @@
 # Quy trình merge
 
 **Merge vào nhánh chính là hành động khó đảo ngược.** Phải được principal nói thẳng trong
-phiên này. Main không tự merge, kể cả khi thấy "rõ ràng là xong rồi".
+phiên này. Không tự merge, kể cả khi thấy "rõ ràng là xong rồi".
 
 Biến: `TO` = nhánh đích (mặc định `main`) · `FROM` = nhánh nguồn (mặc định nhánh hiện tại).
 

@@ -20,7 +20,7 @@
 | **Tham chiếu trong file** | chỗ dùng symbol nằm cùng file |
 | **Tham chiếu chéo file** | chỗ dùng symbol định nghĩa ở file khác — **đây là cái quyết định phân tích ảnh hưởng** |
 
-Cột cuối là cột duy nhất thật sự quan trọng với việc của `search`. Ba cột đầu `rg` cũng làm
+Cột cuối là cột duy nhất thật sự quan trọng khi truy xuất code. Ba cột đầu `rg` cũng làm
 gần được.
 
 ## Ruby / Java / Kotlin — dùng tự tin
@@ -41,10 +41,10 @@ Chạy được: rút định nghĩa, theo dõi import, tham chiếu trong cùng
 
 1. **Luôn đối chiếu thêm bằng `rg`.** `gkg` cho quan hệ, `rg` cho độ phủ — cần cả hai.
 2. **Ghi rõ trong báo cáo là kết quả chưa chắc đầy đủ.**
-3. Việc quan trọng (main sắp refactor) thì kiểm tay thêm những chỗ then chốt.
+3. Việc quan trọng (ai đó sắp refactor) thì kiểm tay thêm những chỗ then chốt.
 
-Trả lời "có 3 chỗ gọi" khi thật ra có 11 là kiểu sai đắt nhất `search` có thể gây ra — main
-sẽ refactor dựa trên con số đó.
+Trả lời "có 3 chỗ gọi" khi thật ra có 11 là kiểu sai đắt nhất một lượt truy xuất có thể
+gây ra — người ta sẽ refactor dựa trên con số đó.
 
 ## Đây là beta công khai
 

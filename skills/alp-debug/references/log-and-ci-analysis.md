@@ -14,7 +14,7 @@ Luôn bắt đầu bằng `--log-failed`. Tải log đầy đủ trước rồi 
 chìm context bằng hàng nghìn dòng xanh.
 
 `gh run rerun <run-id> --failed` chạy lại job hỏng — nhưng **đó là thao tác tốn tài nguyên
-và tác động ra ngoài**: báo main, đừng tự chạy để "xem thử có phải flaky không".
+và tác động ra ngoài**: báo lại, đừng tự chạy để "xem thử có phải flaky không".
 
 ### Mẫu hỏng thường gặp
 
@@ -56,8 +56,8 @@ psql -c "SELECT query, calls, mean_exec_time FROM pg_stat_statements ORDER BY me
 psql -c "SELECT count(*), state FROM pg_stat_activity GROUP BY state;"
 ```
 
-Chỉ chạy truy vấn **đọc**. `oracle` là vai chẩn đoán — `UPDATE`, `DELETE`, `ALTER` trên
-database thật là thao tác khó đảo ngược, phải qua main và principal.
+Chỉ chạy truy vấn **đọc**. `UPDATE`, `DELETE`, `ALTER` trên database thật là thao tác khó
+đảo ngược, phải xin principal duyệt.
 
 ### Đối chiếu chéo nguồn
 

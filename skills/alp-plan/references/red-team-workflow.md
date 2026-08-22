@@ -6,22 +6,22 @@ Tâm thế: như thuê một người ghét người viết kế hoạch, trả 
 
 ## Hai đường chạy — chọn theo rủi ro
 
-### A. Giao `oracle` — mặc định cho kế hoạch rủi ro cao
+### A. Giao đi một lượt phản biện độc lập — mặc định cho kế hoạch rủi ro cao
 
 ```bash
-scripts/run-role.sh oracle
+scripts/run-role.sh <vai>
 ```
 
-`oracle` có skill `alp-predict` (năm persona tranh luận) và `problem-solving`. Đây là vai
-sinh ra để phản biện độc lập — dùng nó thay vì tự phản biện chính kế hoạch mình vừa viết.
+Vai được giao có `alp-predict` (năm persona tranh luận) và `problem-solving`. Dùng nó thay
+vì tự phản biện chính kế hoạch mình vừa viết.
 
-Brief cho oracle phải có: đường dẫn `plan.md` và các `phase-*.md`, quyết định nào đang cần
-chốt, ràng buộc nào không đổi được.
+Brief phải có: đường dẫn `plan.md` và các `phase-*.md`, quyết định nào đang cần chốt,
+ràng buộc nào không đổi được.
 
-**Phán quyết DỪNG của oracle nghĩa là thiết kế lại.** Không phải thêm một dòng "rủi ro đã
+**Phán quyết DỪNG nghĩa là thiết kế lại.** Không phải thêm một dòng "rủi ro đã
 biết" rồi đi tiếp.
 
-### B. Tự rà — khi việc nhỏ hoặc oracle đang bận
+### B. Tự rà — khi việc nhỏ, hoặc không giao đi được
 
 Tự đọc kế hoạch qua từng lăng kính trong `red-team-personas.md`. Số lăng kính theo quy mô:
 
@@ -45,7 +45,7 @@ cùng một góc nhìn, và bài tập thành diễn.
 
 ## Hỏi principal
 
-Main nói chuyện trực tiếp với principal. Trình bày gọn:
+Trình bày gọn:
 
 - Tổng số phát hiện theo mức.
 - Phát hiện nào bạn đề nghị nhận, phát hiện nào bác — kèm lý do.
@@ -68,7 +68,7 @@ Mục đó tồn tại để sáu tháng sau còn trả lời được câu "sao
 
 ```
 Rà đối kháng: <đường dẫn kế hoạch>
-Đường chạy: oracle | tự rà
+Đường chạy: giao đi | tự rà
 Phát hiện: CHẶN n · NÊN SỬA n · GHI NHẬN n
 Nhận: n · Bác: n
 File đã sửa: <danh sách>

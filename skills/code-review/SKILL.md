@@ -1,12 +1,12 @@
 ---
 name: code-review
-description: Quy trình review code của vai review — một concern mỗi phiên, bằng chứng path:line, phân loại theo mức chặn. Kích hoạt khi main giao review diff/commit/PR, khi cần thẩm định một tuyên bố "đã xong", hoặc khi phải quyết định chặn hay cho qua.
+description: Review code có bằng chứng — một concern mỗi phiên, dẫn path:line, phân loại theo mức chặn. Kích hoạt khi được giao review một diff/commit/PR, khi cần thẩm định một tuyên bố "đã xong", hoặc khi phải quyết định chặn hay cho qua.
 ---
 
 # code-review — review có bằng chứng
 
-Skill của vai **review**. Bạn đọc code, không sửa code — `loadout.yaml` chỉ cho bạn
-`Read, Glob, Grep, Bash`. Kết quả đi về `main`, không đi đâu khác.
+Bạn đọc code, **không sửa code** — dù `loadout.yaml` có cấp `Edit` thì review vẫn là việc
+đọc. Kết quả đi về bên giao việc, không đi đâu khác.
 
 ## Nguyên tắc
 
@@ -17,7 +17,7 @@ Ba câu cấm nói: "có vẻ như", "chắc là", "nhìn thì ổn". Ba câu đ
 
 ## Hợp đồng phiên
 
-Main giao **đúng một concern** cho mỗi phiên. Không tự mở rộng sang concern khác — thấy
+Mỗi phiên nhận **đúng một concern**. Không tự mở rộng sang concern khác — thấy
 vấn đề ngoài concern thì ghi vào mục "Ngoài phạm vi" của báo cáo, không đi điều tra tiếp.
 
 | Concern | Tìm gì |
@@ -31,8 +31,8 @@ vấn đề ngoài concern thì ghi vào mục "Ngoài phạm vi" của báo cá
 
 `XÁC ĐỊNH SCOPE → ĐỌC DIFF → TRUY VẾT HÀNH VI → KIỂM CHỨNG → BÁO CÁO`
 
-1. **Scope.** `git diff --stat`, `git log --oneline -5`. Không rõ so với đâu thì hỏi main,
-   đừng tự đoán base.
+1. **Scope.** `git diff --stat`, `git log --oneline -5`. Không rõ so với đâu thì hỏi lại bên
+   giao việc, đừng tự đoán base.
 2. **Đọc diff.** Đọc cả file quanh chỗ sửa, không chỉ dòng đổi. Bug thường nằm ở chỗ
    *không* đổi mà lẽ ra phải đổi.
 3. **Truy vết.** Với mỗi thay đổi: ai gọi, gọi lúc nào, hỏng thì lan tới đâu. `Grep` tìm
@@ -44,11 +44,11 @@ vấn đề ngoài concern thì ghi vào mục "Ngoài phạm vi" của báo cá
 
 ## Phân loại — theo mức chặn, không theo cảm tính
 
-| Mức | Nghĩa | Main phải làm gì |
+| Mức | Nghĩa | Bên giao việc phải làm gì |
 |---|---|---|
 | **CHẶN** | mất dữ liệu, lỗ bảo mật, sai kết quả, phá tương thích | sửa trước khi đi tiếp |
 | **NÊN SỬA** | thiếu xử lý lỗi, race chưa chứng minh được là an toàn, thiếu test cho nhánh mới | sửa trong lần này |
-| **GHI NHẬN** | code smell, đặt tên, tài liệu lệch | tuỳ main, không chặn |
+| **GHI NHẬN** | code smell, đặt tên, tài liệu lệch | tuỳ bên giao việc, không chặn |
 
 Không có mức thứ tư. Không gộp "nit" vào báo cáo — nếu nó không thuộc ba mức trên thì bỏ.
 
@@ -70,7 +70,7 @@ Không có mức thứ tư. Không gộp "nit" vào báo cáo — nếu nó khô
 - …
 
 ### Ngoài phạm vi
-<vấn đề thấy được nhưng không thuộc concern này — main quyết có mở phiên khác không>
+<vấn đề thấy được nhưng không thuộc concern này — bên giao việc quyết có mở phiên khác không>
 
 ### Chưa chắc
 <phần không kiểm chứng được và vì sao>
@@ -80,7 +80,7 @@ Không có mục nào thì bỏ hẳn mục đó. Không viết "Không có vấ
 
 ## Cổng "đã xong"
 
-Khi main hỏi một tuyên bố hoàn thành có đứng vững không, luật là:
+Khi được hỏi một tuyên bố hoàn thành có đứng vững không, luật là:
 
 **KHÔNG CÓ BẰNG CHỨNG MỚI THÌ KHÔNG XÁC NHẬN.**
 
@@ -100,12 +100,12 @@ Báo cáo của agent khác **không phải** bằng chứng. Test xanh từ l�
 |---|---|
 | `references/edge-case-scouting.md` | concern correctness, cần quét có hệ thống |
 | `references/verification-before-completion.md` | thẩm định tuyên bố "đã xong" |
-| `references/code-review-reception.md` | main đưa lại phản hồi từ người/công cụ ngoài |
+| `references/code-review-reception.md` | nhận lại phản hồi từ người/công cụ ngoài |
 
 ## Ranh giới
 
-- **Không sửa code.** Không có `Edit`/`Write`. Đề xuất cách sửa thì viết trong báo cáo.
+- **Không sửa code.** Đề xuất cách sửa thì viết trong báo cáo, đừng tự áp dụng.
 - **Không commit, không push.** HOUSE-RULES §1.3.
-- **Không giao việc cho ai.** `delegates_to: []`. Cần thêm thông tin → hỏi main.
-- Nháp, giả thuyết chưa kiểm chứng → `memory/private/review/`. Kết luận đã kiểm chứng đi
-  vào báo cáo cho main, main quyết định có ghi vào `memory/` chung không.
+- **Không giao việc cho ai** nếu `delegates_to` rỗng. Cần thêm thông tin → hỏi bên giao việc.
+- Nháp, giả thuyết chưa kiểm chứng → kho riêng của bạn trong `memory/private/`. Kết luận
+  đã kiểm chứng đi vào báo cáo; bên giao việc quyết có ghi vào `memory/` chung không.

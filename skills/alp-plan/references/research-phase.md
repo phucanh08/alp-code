@@ -2,20 +2,23 @@
 
 **Bỏ qua khi:** principal đã đưa sẵn report, hoặc việc quá nhỏ.
 
-Nguyên tắc: **main không tự đọc hết**. Giao cho vai chuyên môn, gom kết quả, kiểm chứng
-trước khi tin. Đó vừa là lý do các vai tồn tại, vừa là cách giữ context của main sạch —
-CHARTER §2.6 giới hạn boot set ≤ 7 nguồn.
+Nguyên tắc: **đừng tự đọc hết**. Giao cho vai chuyên môn, gom kết quả, kiểm chứng trước
+khi tin. Đó vừa là lý do các vai chuyên môn tồn tại, vừa là cách giữ context của bạn sạch
+— CHARTER §2.6 giới hạn boot set ≤ 7 nguồn.
 
 ## Giao cho ai
 
-| Cần gì | Vai | Lệnh |
-|---|---|---|
-| code hiện tại nằm đâu, ai gọi ai, đổi thì vỡ đâu | `search` | `scripts/run-role.sh search` |
-| thư viện/framework bên ngoài, cách làm đang là chuẩn | `librarian` | `scripts/run-role.sh librarian` |
-| đã từng quyết định gì, thread nào còn hiệu lực | `read-thread` | `scripts/run-role.sh read-thread` |
-| phản biện một thiết kế rủi ro cao | `oracle` | `scripts/run-role.sh oracle` |
+| Cần gì | Giao cho vai chuyên |
+|---|---|
+| code hiện tại nằm đâu, ai gọi ai, đổi thì vỡ đâu | truy xuất code trong repo |
+| thư viện/framework bên ngoài, cách làm đang là chuẩn | nghiên cứu nguồn ngoài |
+| đã từng quyết định gì, thread nào còn hiệu lực | truy xuất trí nhớ |
+| phản biện một thiết kế rủi ro cao | phản biện độc lập |
 
-Ba vai đầu **độc lập với nhau** → giao song song. Quản nhiều phiên cùng lúc: skill `herdr`.
+Ai đảm nhận vai nào: `identity/REGISTRY.md` và `delegates_to` trong loadout của bạn.
+Lệnh: `scripts/run-role.sh <vai>`.
+
+Ba việc đầu **độc lập với nhau** → giao song song. Quản nhiều phiên cùng lúc: skill `herdr`.
 
 ## Viết brief cho vai được giao
 
@@ -28,13 +31,13 @@ Brief tối thiểu phải có:
    trong `src/` gọi `verifyToken`, và có chỗ nào bỏ qua kiểm hạn không" là câu hỏi.
 2. **Ranh giới** — thư mục nào, repo nào, tới đâu thì dừng.
 3. **Dạng kết quả mong muốn** — danh sách `path:line`, bảng so sánh, hay một kết luận.
-4. **Ngân sách** nếu muốn giới hạn (`librarian` mặc định tối đa 5 lượt tìm).
+4. **Ngân sách** nếu muốn giới hạn (một lượt nghiên cứu mặc định tối đa 5 lượt tìm).
 
 ## Tự làm phần nào
 
 Có vài thứ giao đi tốn hơn tự làm:
 
-- **Đọc GitHub:** `gh pr view`, `gh run view --log` — main có `Bash`, làm trực tiếp nhanh hơn.
+- **Đọc GitHub:** `gh pr view`, `gh run view --log` — có `Bash` thì làm trực tiếp nhanh hơn.
 - **Xem repo ngoài:** `npx repomix --remote <url>` cho một bản tóm tắt. Nhớ chạy
   `--token-count-tree` trước để không kéo về thứ vượt context.
 

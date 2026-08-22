@@ -4,17 +4,17 @@ Hy sinh ngữ pháp cho cô đọng. Sự kiện và bằng chứng, không kể
 
 ## Khi nào viết ra file
 
-Điều tra ngắn → trả lời thẳng cho main trong phiên, không tạo file.
+Điều tra ngắn → trả lời thẳng trong phiên, không tạo file.
 
-Viết file khi: điều tra nhiều bước còn dùng lại được, sự cố cần hậu kiểm, hoặc main yêu cầu.
+Viết file khi: điều tra nhiều bước còn dùng lại được, sự cố cần hậu kiểm, hoặc được yêu cầu.
 
-**Đường dẫn:** `plans/reports/oracle-{YYMMDD}-{HHMM}-{slug}.md`
+**Đường dẫn:** `plans/reports/{loại}-{YYMMDD}-{HHMM}-{slug}.md`
 
 Tự tính ngày giờ — alp-code không có hook nào inject đường dẫn.
 
-**Lưu ý ACL:** `oracle` có `tools: [Read, Glob, Grep, Bash, WebSearch, WebFetch]` — **không
-có `Write`**. Bạn không tự tạo được file báo cáo. Đưa nội dung cho main, main ghi. Đừng tìm
-đường vòng qua `Bash` để ghi file (HOUSE-RULES §1.9).
+**Lưu ý ACL:** loadout có thể không cấp `Write` — khi đó bạn không tự tạo được file báo
+cáo. Đưa nội dung cho bên giao việc để họ ghi. Đừng tìm đường vòng qua `Bash`
+(HOUSE-RULES §1.9).
 
 ## Cấu trúc
 
@@ -27,7 +27,7 @@ có `Write`**. Bạn không tự tạo được file báo cáo. Đưa nội dung
 - **Đề xuất sửa:** ở đâu, vì sao ở đó
 
 Chưa ra nguyên nhân gốc thì **ghi thẳng là chưa ra**. Thay bằng nguyên nhân gần nhất là
-cách main đi sửa nhầm chỗ.
+cách để người đọc đi sửa nhầm chỗ.
 
 ### 2. Phân tích
 
@@ -45,7 +45,7 @@ HH:MM — sự kiện
 2. <suy ra>    — vì sao bước 1 dẫn tới đây
 ```
 
-Main phải đi lại được chuỗi này và tới cùng kết luận. Bước nào không đi lại được thì bước
+Người đọc phải đi lại được chuỗi này và tới cùng kết luận. Bước nào không đi lại được thì bước
 đó là giả thuyết, phải ghi là giả thuyết.
 
 **Tách ba loại, đừng trộn:**
@@ -62,7 +62,7 @@ Nhầm tương quan thành nhân quả là lỗi hay gặp nhất trong báo cá
 
 Giả thuyết nào đã thử và **bị bác**, bằng bằng chứng gì.
 
-Mục này hay bị bỏ và nó đắt: không có nó, main sẽ đi lại đúng con đường bạn vừa đi.
+Mục này hay bị bỏ và nó đắt: không có nó, người đọc sẽ đi lại đúng con đường bạn vừa đi.
 
 ### 4. Khuyến nghị
 
@@ -79,8 +79,7 @@ production) thì đánh dấu rõ **cần principal duyệt**.
 
 ### 5. Câu hỏi còn mở
 
-Luôn có mục này. Phần chưa rõ, giả định cần kiểm chứng, thứ bạn không lấy được và cần main
-giao cho vai khác.
+Luôn có mục này. Phần chưa rõ, giả định cần kiểm chứng, và thứ bạn không tự lấy được.
 
 ## Mẫu
 

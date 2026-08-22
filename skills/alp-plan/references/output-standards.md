@@ -74,8 +74,8 @@ Trong plan, nói **vì sao chọn cách này** ở chỗ quyết định không 
 Đưa vào đây: chỗ cần principal làm rõ, quyết định kỹ thuật cần người quyết, ẩn số ảnh
 hưởng cách triển khai, đánh đổi cần quyết định nghiệp vụ.
 
-Hỏi principal thẳng trong phiên — main không có `AskUserQuestion`, và cũng không cần: bạn
-nói chuyện trực tiếp với principal. Có câu trả lời thì sửa lại plan và phase.
+Hỏi thẳng trong phiên — không có `AskUserQuestion`, và cũng không cần. Có câu trả lời thì
+sửa lại plan và phase.
 
 ## Chất lượng
 
@@ -83,7 +83,7 @@ nói chuyện trực tiếp với principal. Có câu trả lời thì sửa l�
   duyệt được.
 - **Bền:** ghi lý do quyết định. Tránh over-engineering — YAGNI áp dụng cho kế hoạch trước
   khi áp dụng cho code.
-- **Có căn cứ:** không chắc thì giao `librarian` hoặc `search`, đừng đoán rồi viết như thật.
+- **Có căn cứ:** không chắc thì giao đi một lượt tra cứu, đừng đoán rồi viết như thật.
 - **Bảo mật và hiệu năng:** nêu ngay ở phase liên quan, không dồn vào một phase "review"
   cuối.
 - **Khớp repo:** đối chiếu với mẫu đang có. Kế hoạch đúng kỹ thuật nhưng lệch quy ước thì

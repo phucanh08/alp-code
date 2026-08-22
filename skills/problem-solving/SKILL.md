@@ -5,15 +5,15 @@ description: Sáu kỹ thuật gỡ bế tắc có hệ thống — dùng khi đ
 
 # problem-solving — gỡ bế tắc có hệ thống
 
-Skill của vai **oracle**. Main gọi bạn khi *đã* thử và *đã* bế tắc — nên việc của skill này
-không phải nghĩ chăm hơn, mà là **đổi kiểu nghĩ**.
+Dùng khi *đã* thử và *đã* bế tắc — nên việc của skill này không phải nghĩ chăm hơn, mà là
+**đổi kiểu nghĩ**.
 
 Mỗi kỹ thuật nhắm một dạng bế tắc khác nhau. Chẩn đoán sai dạng thì kỹ thuật vô dụng, nên
 bước 1 là bước quan trọng nhất.
 
 ## Chẩn đoán trước
 
-| Triệu chứng main mô tả | Kỹ thuật | Đọc |
+| Triệu chứng | Kỹ thuật | Đọc |
 |---|---|---|
 | cùng một thứ triển khai 5 kiểu, special case cứ mọc thêm | **Thác đơn giản hoá** | `references/simplification-cascades.md` |
 | cách thông thường không đủ, cần đột phá | **Vùng va chạm** | `references/collision-zone-thinking.md` |
@@ -62,13 +62,13 @@ Cây quyết định để chọn năm cái trên. Dùng khi chẩn đoán khôn
 
 ## Cách áp dụng
 
-1. **Chẩn đoán dạng bế tắc** từ mô tả của main — bảng trên.
+1. **Chẩn đoán dạng bế tắc** từ mô tả của việc được giao — bảng trên.
 2. **Đọc file reference** của kỹ thuật đó. SKILL.md này chỉ là bảng điều phối; quy trình
    thật nằm trong reference.
 3. **Áp dụng theo đúng quy trình**, không rút gọn. Rút gọn là quay lại kiểu nghĩ cũ.
 4. **Ghi lại cái gì hiệu quả, cái gì không.** Bài học về chính cách bạn làm việc →
-   `identity/oracle/journal/YYYY-MM.md`. Fact về project → báo main, main quyết định ghi
-   vào `memory/`.
+   `identity/<vai>/journal/YYYY-MM.md`. Fact về project → báo lại; bên giao việc quyết
+   định ghi vào `memory/` chung hay không.
 
 ## Kết hợp
 
@@ -79,8 +79,8 @@ Cây quyết định để chọn năm cái trên. Dùng khi chẩn đoán khôn
 
 ## Ranh giới
 
-`oracle` có `Read, Glob, Grep, Bash, WebSearch, WebFetch` — đọc và tra cứu được, **không
-sửa được gì**. Kết quả là một khuyến nghị gửi main, không phải một thay đổi trong code.
+Đây là việc **đọc và suy luận**, không phải việc sửa. Kết quả là một khuyến nghị, không
+phải một thay đổi trong code — kể cả khi loadout có cấp `Edit`.
 
-Không giao việc cho vai khác (`delegates_to: []`). Cần dữ liệu bạn không lấy được → nói rõ
-cần gì, main sẽ giao `search` hoặc `librarian`.
+Cần dữ liệu bạn không tự lấy được → **nói rõ cần gì** rồi báo lại. Đừng đoán bù vào chỗ
+thiếu dữ liệu.

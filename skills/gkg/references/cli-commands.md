@@ -35,8 +35,7 @@ Cổng 27495 (`0x6b67` = "kg"). Bận thì tự rơi sang cổng khác — nên 
 
 **Phải `gkg server stop` trước khi index lại.**
 
-`--register-mcp` không dùng trong phiên `search`: `tools: [Read, Glob, Grep, Bash]`, không
-có MCP. Gọi HTTP API qua `Bash`.
+`--register-mcp` chỉ có nghĩa khi loadout cấp MCP. Không có thì gọi HTTP API qua `Bash`.
 
 ## `gkg remove`
 
@@ -45,7 +44,7 @@ gkg remove --workspace /đường/dẫn
 gkg remove --project /đường/dẫn --workspace-folder /workspace
 ```
 
-Xoá dữ liệu đã index. **Khó đảo ngược** (index lại tốn thời gian) — báo main trước, đừng
+Xoá dữ liệu đã index. **Khó đảo ngược** (index lại tốn thời gian) — báo lại trước, đừng
 tự dọn.
 
 ## `gkg clean`
@@ -89,6 +88,5 @@ gkg index /đường/tới/workspace
 | xung đột cổng | `gkg server stop` trước |
 | dữ liệu cũ, kết quả lạ | `gkg clean --dry-run` rồi `gkg clean` |
 
-Chạy lâu bất thường hoặc lỗi lặp lại → **báo main**, đừng ngồi thử đi thử lại. `search`
-chạy ở effort thấp, giá trị nằm ở tốc độ; kẹt thì trả lời bằng `rg` và nói rõ `gkg` không
-dùng được.
+Chạy lâu bất thường hoặc lỗi lặp lại → **báo lại**, đừng ngồi thử đi thử lại. Giá trị của
+một lượt truy xuất nằm ở tốc độ; kẹt thì trả lời bằng `rg` và nói rõ `gkg` không dùng được.

@@ -40,10 +40,10 @@ repomix --include "src/api/**,docs/**" --style markdown -o api-context.md
 
 | Việc | Dùng gì thay |
 |---|---|
-| tìm một symbol, một hàm | `rg` / `Grep` — giao `search` |
-| biết đổi chỗ này thì vỡ đâu | `gkg` phân tích ảnh hưởng — giao `search` |
-| đọc tài liệu một thư viện | `docs-seeker` — giao `librarian` |
-| trả lời một câu hỏi cụ thể về code | `search` trả `path:line` |
+| tìm một symbol, một hàm | `rg` / `Grep` |
+| biết đổi chỗ này thì vỡ đâu | `gkg` phân tích ảnh hưởng |
+| đọc tài liệu một thư viện | `docs-seeker` |
+| trả lời một câu hỏi cụ thể về code | một lượt truy xuất trả `path:line` |
 
 repomix đổ hàng chục nghìn token vào context. Dùng nó để trả lời một câu hỏi nhỏ là phá
 đúng nguyên tắc "boot set ≤ 7 nguồn" của CHARTER §2.6.

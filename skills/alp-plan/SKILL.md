@@ -5,8 +5,8 @@ description: Lập kế hoạch triển khai — thách thức phạm vi, thu th
 
 # alp-plan — chốt kiến trúc trước khi gõ code
 
-Skill của vai **main**. Bạn là người điều phối, nên kế hoạch cũng là hợp đồng bạn ký với
-principal — và là thứ các vai khác đọc để biết mình được giao gì.
+Kế hoạch là hợp đồng bạn ký với principal — và là thứ người thực thi đọc để biết mình
+được giao gì.
 
 **Không viết code trong lúc lập kế hoạch.** Ra plan, principal duyệt, rồi mới làm.
 
@@ -26,8 +26,7 @@ principal — và là thứ các vai khác đọc để biết mình được gi
 
    **Cập nhật cả hai file.** Ghi một chiều thì lần quét sau chỉ thấy một nửa quan hệ.
 
-3. **Không rõ thì hỏi principal.** Main nói chuyện trực tiếp với principal — hỏi một câu
-   ngắn rẻ hơn nhiều so với lập sai cả kế hoạch.
+3. **Không rõ thì hỏi.** Một câu hỏi ngắn rẻ hơn nhiều so với lập sai cả kế hoạch.
 
 ## Bốn bước
 
@@ -44,11 +43,14 @@ sự cần, phần nào là mình tự thêm?* YAGNI áp dụng cho kế hoạch
 Bạn **không tự đi đọc hết**. Giao đúng vai — đó là lý do chúng tồn tại, và là cách giữ
 context của bạn sạch:
 
-| Cần gì | Giao ai | Cách |
-|---|---|---|
-| code hiện tại nằm đâu, ai gọi ai | `search` | `scripts/run-role.sh search` |
-| thư viện/cách làm bên ngoài | `librarian` | `scripts/run-role.sh librarian` |
-| đã từng quyết định gì về việc này | `read-thread` | `scripts/run-role.sh read-thread` |
+| Cần gì | Giao cho vai chuyên |
+|---|---|
+| code hiện tại nằm đâu, ai gọi ai, đổi thì vỡ đâu | truy xuất code trong repo |
+| thư viện/cách làm bên ngoài | nghiên cứu nguồn ngoài |
+| đã từng quyết định gì về việc này | truy xuất trí nhớ |
+
+Ai đảm nhận vai nào: `identity/REGISTRY.md` và `delegates_to` trong loadout của bạn.
+Lệnh: `scripts/run-role.sh <vai>`.
 
 Giao được nhiều vai **song song** thì giao — chúng độc lập với nhau. Quản nhiều phiên cùng
 lúc: skill `herdr`.
@@ -61,8 +63,8 @@ Chi tiết: `references/research-phase.md`, `references/codebase-understanding.m
 
 `references/solution-design.md`.
 
-Rủi ro cao, khó đảo ngược, hoặc nhiều phương án cạnh tranh → **giao `oracle`** chạy
-`alp-predict` trước khi chốt. Phán quyết DỪNG của oracle nghĩa là thiết kế lại, không phải
+Rủi ro cao, khó đảo ngược, hoặc nhiều phương án cạnh tranh → **mở một lượt phản biện độc
+lập** (`alp-predict`) trước khi chốt. Phán quyết DỪNG nghĩa là thiết kế lại, không phải
 ghi chú thêm một dòng rủi ro rồi đi tiếp.
 
 ### 3. Viết kế hoạch
@@ -110,13 +112,13 @@ Mỗi file phase mở đầu bằng **Mục tiêu** một câu và **Phụ thu�
 
 ## Sau khi viết xong
 
-1. **Rà đối kháng** — giao `oracle`, hoặc tự chạy `references/red-team-workflow.md`.
+1. **Rà đối kháng** — `references/red-team-workflow.md`.
 2. **Phỏng vấn kiểm chứng** — `references/validate-workflow.md`.
 3. **Báo principal**: đường dẫn plan + tóm tắt + **câu hỏi còn mở ở cuối**.
 4. **Không tự bắt tay làm.** Principal duyệt rồi mới chạy.
 
 Kế hoạch xong hẳn → `references/archive-workflow.md`: đổi `status: completed`, ghi bài học
-vào `identity/main/journal/YYYY-MM.md`.
+vào `identity/<vai>/journal/YYYY-MM.md`.
 
 ## Ranh giới
 

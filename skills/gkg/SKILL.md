@@ -5,11 +5,11 @@ description: Điều hướng code theo ngữ nghĩa bằng GitLab Knowledge Gra
 
 # gkg — tìm theo ngữ nghĩa, không theo chuỗi
 
-Skill của vai **search**. Đây là công cụ **bổ sung** cho `rg`/`Grep`, không thay thế.
+Công cụ **bổ sung** cho `rg`/`Grep`, không thay thế.
 
 Khi nào nó hơn `rg`: tên symbol trùng với từ thông thường, cùng tên ở nhiều module, hoặc
-main hỏi "sửa chỗ này thì vỡ những đâu" — `rg` trả chuỗi khớp, `gkg` trả quan hệ thật trong
-AST.
+câu hỏi là "sửa chỗ này thì vỡ những đâu" — `rg` trả chuỗi khớp, `gkg` trả quan hệ thật
+trong AST.
 
 Khi nào `rg` đủ và nhanh hơn: tên đủ hiếm, tìm trong một thư mục, tìm chuỗi trong config
 hay tài liệu. **Mặc định vẫn là `rg`** — `gkg` phải index trước, và index tốn thời gian.
@@ -20,11 +20,10 @@ hay tài liệu. **Mặc định vẫn là `rg`** — `gkg` phải index trướ
 gkg --version
 ```
 
-Chưa cài thì **báo main, đừng tự cài**. Cài phần mềm là hành động khó đảo ngược
-(HOUSE-RULES §1.2), và `search` không có quyền quyết định việc đó. Cứ trả lời bằng `rg` và
-nói rõ trong báo cáo là chưa có `gkg`.
+Chưa cài thì **báo lại, đừng tự cài**. Cài phần mềm là hành động khó đảo ngược
+(HOUSE-RULES §1.2). Cứ trả lời bằng `rg` và nói rõ trong báo cáo là chưa có `gkg`.
 
-Cài (chỉ khi main đã duyệt):
+Cài (chỉ khi đã được duyệt):
 
 ```bash
 curl -fsSL https://gitlab.com/gitlab-org/rust/knowledge-graph/-/raw/main/install.sh | bash
@@ -53,9 +52,9 @@ Dữ liệu index nằm ở `~/.gkg/` — ngoài repo, nên nó sống qua nhi�
 | Tìm mọi chỗ gọi | query `get_references` cho symbol đó |
 | Phân tích ảnh hưởng | `get_references` cho từng symbol sắp đổi, đọc hết call-site trước khi kết luận |
 
-Phân tích ảnh hưởng là chỗ skill này đáng giá nhất: main sắp refactor và cần biết vỡ những
-đâu. Trả lời "tôi grep thấy 3 chỗ" khi thật ra có 11 chỗ gọi gián tiếp là kiểu sai đắt nhất
-mà `search` có thể gây ra.
+Phân tích ảnh hưởng là chỗ skill này đáng giá nhất: ai đó sắp refactor và cần biết vỡ
+những đâu. Trả lời "tôi grep thấy 3 chỗ" khi thật ra có 11 chỗ gọi gián tiếp là kiểu sai
+đắt nhất mà một lượt truy xuất có thể gây ra.
 
 ## Hỗ trợ ngôn ngữ — đọc kỹ trước khi tin kết quả
 
@@ -73,8 +72,7 @@ không phải công cụ đã chín.
 - Phải `server stop` trước khi index lại.
 - Cần repo đã `git init`.
 - Chưa nối tham chiếu **giữa các repo**.
-- Không có MCP trong phiên `search` (`tools: [Read, Glob, Grep, Bash]`) — dùng HTTP API qua
-  `Bash`, không dùng MCP tool.
+- Loadout không cấp MCP thì dùng HTTP API qua `Bash`, không dùng MCP tool.
 
 ## Tham chiếu
 
@@ -86,5 +84,4 @@ không phải công cụ đã chín.
 
 ## Báo cáo
 
-Như mọi việc của `search`: kết luận ngắn, bằng chứng `path:line`, và **nói rõ phần chưa
-chắc**. Thêm một dòng: tìm bằng `gkg` hay bằng `rg`, vì độ tin cậy hai đường khác nhau.
+Kết luận ngắn, bằng chứng `path:line`, và **nói rõ phần chưa chắc**. Thêm một dòng: tìm bằng `gkg` hay bằng `rg`, vì độ tin cậy hai đường khác nhau.

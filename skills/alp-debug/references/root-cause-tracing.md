@@ -80,9 +80,9 @@ npm test 2>&1 | grep 'DEBUG git init'
 Đọc stack trace tìm: tên file test · số dòng kích hoạt · mẫu lặp (cùng một test? cùng một
 tham số?).
 
-**Lưu ý ACL:** `oracle` không có `Edit` — không tự chèn được đoạn debug này. Mô tả chính
-xác chèn gì, vào file nào, dòng nào, rồi để main chèn và chạy. Đừng tìm đường vòng qua
-`Bash` để sửa file (HOUSE-RULES §1.9).
+**Lưu ý ACL:** loadout có thể không cấp `Edit` — khi đó bạn không tự chèn được đoạn debug
+này. Mô tả chính xác chèn gì, vào file nào, dòng nào, rồi để người có quyền chèn và chạy.
+Đừng tìm đường vòng qua `Bash` (HOUSE-RULES §1.9).
 
 ## Tìm test nào gây nhiễm
 
@@ -93,7 +93,7 @@ Có thứ xuất hiện trong lúc chạy test mà không biết test nào tạo
 ```
 
 Chạy từng test một, dừng ở test đầu tiên gây nhiễm. Đường dẫn tính từ CWD của phiên
-(`identity/oracle/`), qua symlink skill.
+(`identity/<vai>/`), qua symlink skill.
 
 ## Luật
 
@@ -130,5 +130,5 @@ Tìm được nguyên nhân trực tiếp rồi thì hỏi tiếp:
 | 3 | guard môi trường: từ chối `git init` ngoài thư mục tạm |
 | 4 | log stack trace trước khi `git init` |
 
-Chuỗi này là mẫu cho phần **Chuỗi bằng chứng** trong báo cáo — main phải đi lại được từng
-bước và tới cùng kết luận.
+Chuỗi này là mẫu cho phần **Chuỗi bằng chứng** trong báo cáo — người đọc phải đi lại được
+từng bước và tới cùng kết luận.

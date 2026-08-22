@@ -21,7 +21,7 @@ alp-code có nguyên tắc thành văn cho chuyện này — `README.md`: `scrip
 cho mỗi loại config". Kế hoạch dựng thêm một nguồn thứ hai cho cùng loại dữ liệu là kế
 hoạch sai, không phải kế hoạch lớn.
 
-Không chắc → giao `search` một lượt trước khi trả lời.
+Không chắc → giao đi một lượt truy xuất code trước khi trả lời.
 
 ### 2. Tập thay đổi tối thiểu là gì?
 
@@ -43,7 +43,7 @@ thích đi vào `plan.md`.
 
 ## Chốt phạm vi với principal
 
-Main nói chuyện trực tiếp với principal — hỏi thẳng, không cần tool nào.
+Hỏi thẳng trong phiên, không cần tool nào.
 
 Trình bày kết quả ba câu trên rồi hỏi chọn một trong ba hướng:
 

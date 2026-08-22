@@ -2,8 +2,8 @@
 
 Chốt chặn ở **mọi tầng** dữ liệu đi qua, để bug trở thành không thể xảy ra.
 
-`oracle` không tự thêm được chốt — không có `Edit`. File này dùng để **viết khuyến nghị**:
-chỉ ra main nên chặn ở đâu, mỗi chỗ chặn cái gì, và vì sao một chỗ là không đủ.
+Nếu loadout không cấp `Edit` thì bạn không tự thêm được chốt. File này dùng để **viết
+khuyến nghị**: chỉ ra nên chặn ở đâu, mỗi chỗ chặn cái gì, và vì sao một chỗ là không đủ.
 
 ## Nguyên lý
 
@@ -114,5 +114,5 @@ thủ nhiều lớp thì đừng hứa nhiều hơn mức nó làm được.
 
 ## Chốt
 
-Đừng dừng ở một chỗ kiểm. Và khi viết khuyến nghị cho main, nói rõ **mỗi tầng bắt được gì
+Đừng dừng ở một chỗ kiểm. Và khi viết khuyến nghị, nói rõ **mỗi tầng bắt được gì
 mà tầng khác bỏ lọt** — không có phần đó thì nó chỉ giống như bảo đi thêm việc.

@@ -38,8 +38,8 @@ Request → Mạng → Web server → Ứng dụng → Database → Filesystem
 
 ## Database — PostgreSQL
 
-Toàn bộ truy vấn dưới đây là **chỉ đọc**. `oracle` không chạy `UPDATE`/`ALTER`/`DELETE`
-trên database thật — đó là thao tác khó đảo ngược, phải qua main và principal.
+Toàn bộ truy vấn dưới đây là **chỉ đọc**. Không chạy `UPDATE`/`ALTER`/`DELETE` trên
+database thật — đó là thao tác khó đảo ngược, phải xin principal duyệt.
 
 ```sql
 -- truy vấn chậm (cần extension pg_stat_statements)

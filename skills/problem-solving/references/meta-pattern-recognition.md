@@ -53,7 +53,7 @@ luỹ · vượt thì làm gì (từ chối, xếp hàng, xuống cấp).
 **Ứng dụng mới:** ngân sách token cho LLM — cùng mẫu, tài nguyên là token, giới hạn là
 kích thước cửa sổ context, vượt thì cắt bớt hoặc từ chối.
 
-Ngân sách 5 lượt tìm của `librarian` và giới hạn "boot set ≤ 7 nguồn" của CHARTER §2.6
+Ngân sách 5 lượt tìm của `research` và giới hạn "boot set ≤ 7 nguồn" của CHARTER §2.6
 cũng là cùng mẫu này.
 
 ## Luật 3 lĩnh vực
@@ -77,4 +77,4 @@ Rút mẫu từ 2 lần thấy là trừu tượng hoá sớm — và trừu tư
 - Dạng trừu tượng cho thấy **ứng dụng mới** — đó mới là giá trị, không phải việc đặt tên.
 - Điểm biến thiên cho biết mẫu thích nghi ở đâu, và ở đâu thì gãy.
 - Ghi lại để lần sau khỏi tìm lại — với alp-code, fact loại này thuộc `memory/shared/`,
-  và main là người ghi.
+  và việc ghi thuộc về bên có quyền ghi.

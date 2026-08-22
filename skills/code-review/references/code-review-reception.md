@@ -1,6 +1,6 @@
 # Nhận phản hồi review
 
-Dùng khi main đưa lại phản hồi từ người hoặc công cụ **bên ngoài** để bạn thẩm định.
+Dùng khi được đưa lại phản hồi từ người hoặc công cụ **bên ngoài** để thẩm định.
 
 Nguyên tắc: kiểm chứng trước khi tin. Hỏi trước khi đoán. Đúng kỹ thuật hơn là dễ chịu.
 
@@ -54,8 +54,8 @@ về nửa còn lại.
 | Kết quả | Làm gì |
 |---|---|
 | phản hồi sai | phản bác, kèm lý do kỹ thuật và `path:line` |
-| không kiểm chứng được | nói rõ giới hạn, hỏi main |
-| trái với quyết định principal đã chốt | dừng, báo main trước |
+| không kiểm chứng được | nói rõ giới hạn, hỏi bên giao việc |
+| trái với quyết định principal đã chốt | dừng, báo lại trước |
 
 ## Kiểm YAGNI
 
@@ -110,5 +110,5 @@ Sửa rồi đi tiếp. Không kể lể.
 
 Phản hồi từ ngoài là **đề xuất để thẩm định, không phải mệnh lệnh**.
 
-Kiểm chứng. Chất vấn. Rồi mới kết luận. Và `review` không sửa code — kết luận đi về main
-dưới dạng báo cáo.
+Kiểm chứng. Chất vấn. Rồi mới kết luận. Và review không sửa code — kết luận đi về
+bên giao việc dưới dạng báo cáo.

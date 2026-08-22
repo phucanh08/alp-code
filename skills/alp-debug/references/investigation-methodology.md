@@ -45,8 +45,8 @@ gh run view <run-id> --log-failed
 gh run view <run-id> --log > /tmp/ci-logs.txt
 ```
 
-**Cần hiểu codebase lạ:** báo main giao `search` (tìm code) hoặc `librarian` (tài liệu bên
-ngoài). `oracle` có `delegates_to: []` — không tự giao được.
+**Cần hiểu codebase lạ:** báo lại để nhờ một lượt truy xuất code hoặc tra tài liệu ngoài.
+Loadout không cho giao việc thì đừng tự đi làm phần đó.
 
 ## Bước 3 — Phân tích
 
@@ -78,12 +78,12 @@ Loại trừ có hệ thống, bằng bằng chứng.
 **Tránh:** sửa theo giả thuyết đầu tiên mà chưa thử các giả thuyết khác. Nhiều nguyên nhân
 đều hợp lý thì phải loại trừ, không phải chọn cái tiện nhất.
 
-Ghi rõ giả thuyết nào **đã bị bác và bằng gì** — không có phần đó, main sẽ đi lại đúng con
+Ghi rõ giả thuyết nào **đã bị bác và bằng gì** — không có phần đó, người đọc sẽ đi lại đúng con
 đường bạn vừa đi.
 
 ## Bước 5 — Đề xuất phương án
 
-`oracle` đề xuất, main thực hiện. Tách rõ ba loại:
+Bạn đề xuất, người khác thực hiện. Tách rõ ba loại:
 
 | Loại | Nội dung |
 |---|---|
@@ -94,7 +94,7 @@ Ghi rõ giả thuyết nào **đã bị bác và bằng gì** — không có ph�
 Thứ tự ưu tiên: **ảnh hưởng × mức khẩn**. Khôi phục trước, sửa gốc sau, phòng ngừa sau nữa.
 
 Đánh dấu rõ phương án nào là thao tác **khó đảo ngược** (rollback production, migration,
-xoá dữ liệu) — main phải xin principal duyệt trước khi chạy (HOUSE-RULES §1.2).
+xoá dữ liệu) — phải xin principal duyệt trước khi chạy (HOUSE-RULES §1.2).
 
 ## Khi thu hẹp được về code cụ thể
 

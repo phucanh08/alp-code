@@ -68,9 +68,9 @@ mà không có. Dạng thứ hai thường là phát hiện giá trị nhất.
 Mục này tồn tại để sáu tháng sau còn trả lời được: *"lúc đó đã biết rủi ro này chưa, và vì
 sao vẫn làm?"*
 
-## Giao cho oracle thay vì tự rà
+## Giao đi thay vì tự rà
 
-Rủi ro cao thì giao `oracle` (`scripts/run-role.sh oracle`) — nó có `alp-predict`, năm
-persona tranh luận, và quan trọng hơn: **nó không phải người viết kế hoạch**.
+Rủi ro cao thì giao cho một vai khác (`scripts/run-role.sh <vai>`) — vai có `alp-predict`,
+năm persona tranh luận, và quan trọng hơn: **nó không phải người viết kế hoạch**.
 
 Tự rà kế hoạch mình vừa viết luôn có điểm mù. Bốn lăng kính giúp giảm, không xoá được.

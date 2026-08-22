@@ -1,6 +1,6 @@
 # Quy trình commit
 
-Main tự chạy. Không có subagent nào để đẩy output sang.
+Tự chạy. Không có subagent nào để đẩy output sang.
 
 ## 1. Stage và phân nhóm
 

@@ -1,6 +1,6 @@
 # Pha hiểu codebase
 
-**Bỏ qua khi:** `search` đã trả báo cáo đủ dùng.
+**Bỏ qua khi:** đã có báo cáo truy xuất code đủ dùng.
 
 ## Đọc luật trước, đọc code sau
 
@@ -11,7 +11,7 @@ Với alp-code, thứ tự bắt buộc:
 |---|---|---|
 | 1 | `CHARTER.md` | sáu nguyên tắc bất biến, ai sửa được gì. **Chỉ principal sửa** |
 | 2 | `identity/_shared/HOUSE-RULES.md` | luật cứng mọi vai, thứ tự ưu tiên khi xung đột |
-| 3 | `identity/main/PLAYBOOK.md` | quy trình của chính bạn |
+| 3 | `identity/<vai>/PLAYBOOK.md` | quy trình của chính bạn |
 | 4 | `README.md` | cây thư mục, bảng script |
 | 5 | `docs/` | tài liệu chuyên đề (delegation, ACL…) |
 
@@ -21,8 +21,8 @@ code, không phải trên quy ước đã ghi.
 
 ## Tìm code
 
-Giao `search` (`scripts/run-role.sh search`) — nó có `rg`, `Glob`, `Grep`, và `gkg` cho
-phân tích ảnh hưởng. Xem `research-phase.md` để biết cách viết brief.
+Giao cho vai chuyên truy xuất code (`scripts/run-role.sh <vai>`) — vai đó có `rg`, `Glob`,
+`Grep`, và `gkg` cho phân tích ảnh hưởng. Xem `research-phase.md` để biết cách viết brief.
 
 Tự tìm khi câu hỏi nhỏ và bạn đã biết đại khái file nào. Giao đi tốn một phiên; tự
 `rg` một lần tốn vài giây.
@@ -42,7 +42,7 @@ Trước khi thiết kế, trả lời được ba câu:
 ## Lập kế hoạch tích hợp
 
 - Tính năng mới nối vào kiến trúc hiện có ở đâu — đặt tên file, tên hàm cụ thể.
-- Đổi cái này thì vỡ những đâu. Không chắc → giao `search` phân tích ảnh hưởng bằng `gkg`.
+- Đổi cái này thì vỡ những đâu. Không chắc → giao đi một lượt phân tích ảnh hưởng bằng `gkg`.
 - Tương thích ngược: có ai đang phụ thuộc hành vi cũ không.
 - Có phải sinh lại artifact không (`compile-acl`), và ai chạy lệnh đó.
 

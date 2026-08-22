@@ -13,7 +13,7 @@ chỉ chuyển sang tìm cả thư viện khi đường này không ra.
 
 ## Quy trình
 
-Đường dẫn tính từ CWD của phiên (`identity/librarian/`), qua symlink skill.
+Đường dẫn tính từ CWD của phiên (`identity/<vai>/`), qua symlink skill.
 
 ```bash
 # 1. Phân loại truy vấn
@@ -29,8 +29,8 @@ node .claude/skills/docs-seeker/scripts/fetch-docs.js "<câu hỏi>"
 Rồi đọc URL bằng `WebFetch`.
 
 **1–5 URL thì đọc thẳng.** Bản gốc của workflow này có bước "chia cho 2–3 Explorer agent
-song song" — bỏ qua: `librarian` có `delegates_to: []`, không giao việc cho ai. Đọc tuần
-tự, trong ngân sách 5 lượt của `research`.
+song song" — bỏ qua nếu loadout không cho giao việc. Đọc tuần tự, trong ngân sách 5 lượt
+của `research`.
 
 ## Ví dụ
 
@@ -56,8 +56,8 @@ node .claude/skills/docs-seeker/scripts/detect-topic.js "Next.js caching strateg
 ## Vì sao đường này đáng ưu tiên
 
 Trả về **chỉ tài liệu liên quan**, không phải toàn bộ thư viện. Nhanh hơn nhiều lần và
-không phải lọc — quan trọng với `librarian` vì lý do tồn tại của vai là giữ context của
-main sạch.
+không phải lọc — quan trọng vì lý do một lượt tra cứu tồn tại là giữ context của bên giao
+việc sạch.
 
 ## Khi không ra
 
@@ -65,5 +65,5 @@ URL theo chủ đề trả 404 → chuyển sang `library-search.md` (tìm cả 
 
 context7 không có thư viện đó → `repo-analysis.md` (đọc thẳng repo GitHub).
 
-Cả ba đều không ra → nói thẳng với main là không tìm được tài liệu sơ cấp, và những gì tìm
+Cả ba đều không ra → nói thẳng là không tìm được tài liệu sơ cấp, và những gì tìm
 được là nguồn thứ cấp. Đừng lấp bằng blog rồi trình bày như tài liệu chính thức.

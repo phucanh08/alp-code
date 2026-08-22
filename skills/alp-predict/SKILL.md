@@ -1,12 +1,11 @@
 ---
 name: alp-predict
-description: Năm persona chuyên môn phân tích độc lập một đề xuất thay đổi rồi tranh luận để ra phán quyết GO/THẬN TRỌNG/DỪNG. Kích hoạt khi main cần phản biện trước quyết định rủi ro cao, khi so sánh nhiều phương án kiến trúc, hoặc khi một migration khó đảo ngược.
+description: Năm persona chuyên môn phân tích độc lập một đề xuất thay đổi rồi tranh luận để ra phán quyết GO/THẬN TRỌNG/DỪNG. Kích hoạt khi cần phản biện trước một quyết định rủi ro cao, khi so sánh nhiều phương án kiến trúc, hoặc khi một migration khó đảo ngược.
 ---
 
 # alp-predict — năm persona tranh luận
 
-Skill của vai **oracle**. Đây là công cụ chính khi main gọi bạn để **phản biện độc lập
-trước quyết định rủi ro cao** — đúng dòng đầu của `PLAYBOOK.md`.
+Công cụ chính cho việc **phản biện độc lập trước một quyết định rủi ro cao**.
 
 Giá trị nằm ở chỗ ép năm góc nhìn nói **trước khi** biết nhau nghĩ gì. Để chúng ảnh hưởng
 nhau ngay từ đầu thì cả năm hội tụ về ý kiến của cái đầu tiên, và bài tập thành diễn.
@@ -14,7 +13,7 @@ nhau ngay từ đầu thì cả năm hội tụ về ý kiến của cái đầu
 ## Khi nào dùng
 
 - Kiến trúc có nhiều đánh đổi, hoặc migration khó đảo ngược.
-- Main đã có phương án và cần người tìm cách bác nó.
+- Đã có phương án và cần người tìm cách bác nó.
 - Hai phương án cạnh tranh, cần so có cấu trúc chứ không so cảm tính.
 
 **Không dùng cho:** thay đổi nhỏ, việc đã chốt và chỉ còn triển khai, nâng phiên bản phụ
@@ -33,8 +32,8 @@ loãng giá trị của phán quyết DỪNG.
 
 ## Quy trình
 
-1. **Đọc đề xuất** main đưa. Không rõ ranh giới thì hỏi lại main — đoán sai phạm vi thì cả
-   năm persona phân tích nhầm thứ.
+1. **Đọc đề xuất** được đưa. Không rõ ranh giới thì hỏi lại — đoán sai phạm vi thì cả năm
+   persona phân tích nhầm thứ.
 2. **Đọc code liên quan** nếu có đường dẫn. `Grep` tìm vùng ảnh hưởng.
 3. **Từng persona phân tích độc lập.** Viết xong persona này mới sang persona kia; không
    sửa lại persona trước cho khớp.
@@ -87,13 +86,13 @@ DỪNG là phán quyết **đắt**. Dùng nó cho thứ thật sự phải dừ
 1. <hành động — vì sao>
 
 ### Chưa đủ thông tin để kết luận
-<phần nào cần main cung cấp thêm>
+<phần nào cần được cung cấp thêm>
 ```
 
 ## Sau đó
 
-- Phán quyết đi về **main**. `oracle` không giao việc cho ai (`delegates_to: []`).
-- Rủi ro cần bổ chi tiết thành edge case → main giao `review` chạy `alp-scenario`.
+- Phán quyết đi về **bên giao việc**, không đi đâu khác.
+- Rủi ro cần bổ chi tiết thành edge case → đề xuất một lượt `alp-scenario` riêng.
 - Giả định sai bị lật ra → nói thẳng nó làm hỏng phần nào của kế hoạch, đừng gói trong
-  ngôn ngữ lịch sự. Main gọi oracle chính là để nghe điều đó.
-- Nháp và giả thuyết chưa kiểm chứng → `memory/private/oracle/`.
+  ngôn ngữ lịch sự. Người ta mở một lượt phản biện chính là để nghe điều đó.
+- Nháp và giả thuyết chưa kiểm chứng → kho riêng của bạn trong `memory/private/`.

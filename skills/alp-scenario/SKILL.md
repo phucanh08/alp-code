@@ -1,12 +1,12 @@
 ---
 name: alp-scenario
-description: Sinh edge case có hệ thống bằng cách bổ một tính năng hoặc đường code theo 12 chiều. Kích hoạt khi review concern correctness, khi cần liệt kê rủi ro trước lúc chốt một thay đổi, hoặc khi phải trả lời "còn thiếu trường hợp nào".
+description: Sinh edge case có hệ thống bằng cách bổ một tính năng hoặc đường code theo 12 chiều. Kích hoạt khi review một thay đổi ở khía cạnh correctness, khi cần liệt kê rủi ro trước lúc chốt một thay đổi, hoặc khi phải trả lời "còn thiếu trường hợp nào".
 ---
 
 # alp-scenario — bổ theo 12 chiều
 
-Skill của vai **review**. Dùng khi cần chắc rằng mình đã quét hết, không phải khi cần
-nghĩ sâu — nghĩ sâu là việc của `oracle`.
+Dùng khi cần chắc rằng mình đã quét **hết**, không phải khi cần nghĩ **sâu**. Hai việc
+khác nhau: cái này cho độ phủ, không cho chiều sâu.
 
 Giá trị của skill này nằm ở chỗ nó **cưỡng bức tính đầy đủ**. Người review giỏi vẫn quên
 chiều mình không quen. Danh sách dưới không cho quên.
@@ -14,8 +14,8 @@ chiều mình không quen. Danh sách dưới không cho quên.
 ## Khi nào dùng
 
 - Concern `correctness` — sinh sẵn edge case rồi mới đọc diff.
-- Trước khi main chốt một thay đổi có trạng thái, có đồng thời, hoặc chạm dữ liệu.
-- Khi main hỏi "còn thiếu trường hợp nào" và cần câu trả lời có cấu trúc.
+- Trước khi chốt một thay đổi có trạng thái, có đồng thời, hoặc chạm dữ liệu.
+- Khi được hỏi "còn thiếu trường hợp nào" và cần câu trả lời có cấu trúc.
 
 **Không dùng cho:** đổi một dòng, sửa chính tả, đổi config không có nhánh logic. Bổ 12
 chiều cho một `const` là lãng phí ngân sách phiên.
@@ -42,7 +42,7 @@ Liệt kê 12 chiều rồi sinh bừa cho đủ là cách nhanh nhất biến b
 
 ## Quy trình
 
-1. **Đọc** file đích, hoặc phân tích mô tả tính năng main đưa.
+1. **Đọc** file đích, hoặc phân tích mô tả tính năng được đưa.
 2. **Lọc chiều** — đánh dấu chiều nào áp dụng, chiều nào không và vì sao.
 3. **Sinh 3–5 kịch bản** cho mỗi chiều còn lại.
 4. **Xếp mức** theo bảng dưới.
@@ -56,7 +56,7 @@ Liệt kê 12 chiều rồi sinh bừa cho đủ là cách nhanh nhất biến b
 | **NÊN SỬA** | hỏng với một nhóm người dùng, dữ liệu không nhất quán |
 | **GHI NHẬN** | UX xuống cấp, lỗi có thể phục hồi nhưng không báo cho người dùng |
 
-Ba mức này khớp với `code-review` — cùng một thang, để main không phải quy đổi.
+Ba mức này khớp với `code-review` — cùng một thang, để bên đọc không phải quy đổi.
 
 ## Mẫu xuất
 
@@ -80,6 +80,7 @@ Tổng: CHẶN n · NÊN SỬA n · GHI NHẬN n — trên x chiều
 Kịch bản là **đầu vào cho người khác**, không phải kết luận cuối:
 
 - Mức CHẶN → đưa vào phần CHẶN của báo cáo `code-review`, kèm bằng chứng nếu tái hiện được.
-- Rủi ro kiến trúc, đánh đổi khó đảo ngược → báo main, main quyết có gọi `oracle` không.
+- Rủi ro kiến trúc, đánh đổi khó đảo ngược → báo bên giao việc; việc có mở một lượt phản
+  biện sâu hay không là quyết định của họ.
 - Kịch bản chỉ là giả thuyết cho tới khi tái hiện được. Chưa tái hiện thì ghi ở mục
   "Chưa chắc", **không** ghi ở mục CHẶN.

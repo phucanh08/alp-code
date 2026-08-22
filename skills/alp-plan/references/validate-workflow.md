@@ -30,8 +30,7 @@ Ba câu đủ thì hỏi ba. Kế hoạch đơn giản mà hỏi tám câu là l
 
 ## 4. Hỏi
 
-Hỏi thẳng trong phiên. Main nói chuyện trực tiếp với principal — không có
-`AskUserQuestion`, và cũng không cần.
+Hỏi thẳng trong phiên — không có `AskUserQuestion`, và cũng không cần.
 
 Gom câu hỏi liên quan lại một lượt thay vì hỏi lắt nhắt từng câu.
 
@@ -77,8 +76,8 @@ Khuyến nghị: tiến hành | sửa lại kế hoạch
 
 Báo principal đường dẫn kế hoạch và tóm tắt. **Dừng ở đó.**
 
-Kế hoạch được duyệt thì mới triển khai — và main tự triển khai, alp-code không có bước bàn
-giao sang một vai "cook" nào cả.
+Kế hoạch được duyệt thì mới triển khai. alp-code không có bước bàn giao sang một vai
+"cook" nào cả.
 
 Sang phiên mới để triển khai thì nhớ: phiên mới **không thấy** gì của phiên này. Đường dẫn
 kế hoạch phải đưa đầy đủ, và `plan.md` phải tự đứng được một mình.
