@@ -96,8 +96,11 @@ function buildContext(warnings) {
   // thực sự cần bảng định tuyến, mà lại là vai không có.
   push("RELATIONS", read(path.join(roleDir, "RELATIONS.md"), warnings));
   push("PRINCIPAL", read(path.join(sharedDir, "PRINCIPAL.md"), warnings));
-  push("MEMORY INDEX (đã lọc theo quyền của bạn)", stripDocHeader(filteredIndex(repoRoot, grants)));
-  push("PROJECTS L0", stripDocHeader(read(path.join(repoRoot, "memory", "projects", "INDEX.md"), warnings)));
+  push("MEMORY INDEX (đã lọc theo quyền của bạn)", stripDocHeader(filteredIndex(repoRoot, grants, warnings)));
+  push("PROJECTS L0", stripDocHeader(read(
+    path.join(repoRoot, "memory", "projects", "INDEX.md"), warnings,
+    "chưa project nào đăng ký — `alp init <path>`"
+  )));
 
   const signals = runDoctor(repoRoot);
   if (signals) push("TÍN HIỆU TỪ doctor.sh", "```\n" + signals + "\n```");
@@ -129,9 +132,14 @@ function identityCard(lo, role, grants, workspaces) {
  * Lọc memory/INDEX.md: bỏ mọi dòng có link trỏ ra ngoài `grants.read`.
  * Agent không được thấy cả TÊN file nó không được đọc — rò rỉ metadata cũng là rò rỉ.
  */
-function filteredIndex(repoRoot, grants) {
+function filteredIndex(repoRoot, grants, warnings) {
   const file = path.join(repoRoot, "memory", "INDEX.md");
-  if (!fs.existsSync(file)) return null;
+  if (!fs.existsSync(file)) {
+    // Boot KHÔNG có mục lục trí nhớ mà im lặng thì hỏng nặng hơn boot thừa cảnh báo:
+    // agent tưởng mình không có gì để nhớ. Cùng lý do với BOOT_BUDGET — không cắt thầm.
+    warnings.push(`thiếu ${file} — phiên này boot KHÔNG có mục lục trí nhớ`);
+    return null;
+  }
 
   const linkRe = /\]\(([^)]+)\)/g;
   return fs
@@ -186,9 +194,12 @@ function runDoctor(repoRoot) {
   }
 }
 
-function read(file, warnings) {
+/** `note` mặc định hợp cho file persona; file khác truyền note riêng. */
+function read(file, warnings, note = "vai này chưa đủ bộ file") {
   if (!fs.existsSync(file)) {
-    warnings.push(`thiếu ${path.basename(file)} — vai này chưa đủ bộ file`);
+    // Path ĐẦY ĐỦ, không phải basename: khi hook nhận nhầm repo, "thiếu INDEX.md" không
+    // nói được là thiếu ở repo nào — đó chính là thứ làm chẩn đoán mất thời gian.
+    warnings.push(`thiếu ${file} — ${note}`);
     return null;
   }
   return fs.readFileSync(file, "utf8");

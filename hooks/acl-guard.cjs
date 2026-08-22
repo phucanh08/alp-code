@@ -25,9 +25,18 @@ const WRITE_TOOLS = new Set(["Edit", "Write", "NotebookEdit"]);
 const INDIRECTION =
   /(^|[^\w])eval[^\w]|`|\$\(|\bbase64\b|\bxxd\b|\bsh\s+-c\b|\bbash\s+-c\b|\bzsh\s+-c\b|\bpython3?\s+-c\b|\bperl\s+-e\b|\bnode\s+-e\b|\bruby\s+-e\b|\bxargs\b/;
 
-/** Dấu hiệu lệnh Bash có ý định GHI. Thiếu sót là chấp nhận được — read-check vẫn chạy. */
+/**
+ * Dấu hiệu lệnh Bash có ý định GHI. Thiếu sót là chấp nhận được — read-check vẫn chạy.
+ *
+ * Hai bẫy đã đo được, đừng gỡ:
+ *  - `(?<!&)>>?(?!&)` — `2>&1` và `>&2` là NHÂN BẢN FD, không ghi file. `>` trần bắt cả
+ *    chúng ⇒ mọi lệnh có `2>&1` bị write-check TOÀN BỘ token, kể cả `./scripts/doctor.sh`.
+ *    `&>file` vẫn phải bắt nên để riêng một nhánh. `1>file` vẫn bắt được.
+ *  - `install` phải đứng riêng như một lệnh: `\binstall\b` khớp cả trong đường dẫn
+ *    `scripts/install-project.cjs` (dấu `-` là ranh giới từ) ⇒ đọc file đó cũng bị chặn.
+ */
 const WRITE_INTENT =
-  /(>>?|\btee\b|\brm\b|\bmv\b|\bcp\b|\btouch\b|\bmkdir\b|\btruncate\b|\bdd\b|\bchmod\b|\bchown\b|\bln\b|\bsed\s+-i\b|\bpatch\b|\binstall\b)/;
+  /(&>|(?<!&)>>?(?!&)|\btee\b|\brm\b|\bmv\b|\bcp\b|\btouch\b|\bmkdir\b|\btruncate\b|\bdd\b|\bchmod\b|\bchown\b|\bln\b|\bsed\s+-i\b|\bpatch\b|(?:^|[\s;|&])install(?=[\s;|&]|$))/;
 
 /**
  * Thư mục mà PHIÊN NÀY chỉ được đọc, do launcher truyền vào (`alp` không tham số, và

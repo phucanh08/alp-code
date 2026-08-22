@@ -22,8 +22,8 @@ memory:
   write: [shared/**, projects/**]
 
 workspaces:
-  read:  [/Users/anhlp/StudioProjects/alp-plugin]
-  write: [/Users/anhlp/StudioProjects/alp-plugin]
+  read:  [~/StudioProjects/alp-plugin]
+  write: [~/StudioProjects/alp-plugin]
 
 # --- công cụ & skill ---
 tools:  [Read, Write, Edit, Glob, Grep, Bash, WebSearch, WebFetch]
