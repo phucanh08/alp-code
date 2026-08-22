@@ -1,122 +1,134 @@
-# Root Cause Tracing
+# Lần ngược nguyên nhân gốc
 
-Systematically trace bugs backward through call stack to find original trigger.
+Lần ngược call stack tới chỗ **phát sinh**, không dừng ở chỗ lỗi nổ ra.
 
-## Core Principle
+## Nguyên lý
 
-**Trace backward through call chain until finding original trigger, then fix at source.**
+Bug thường nổ **sâu** trong call stack. Bản năng là sửa ngay chỗ báo lỗi — đó là chữa
+triệu chứng. Giá trị sai đã đi qua nhiều tầng trước khi tới đó, và mỗi tầng đều là một cơ
+hội bị bỏ lỡ để chặn nó.
 
-Bugs often manifest deep in call stack (git init in wrong directory, file created in wrong location). Instinct is to fix where error appears, but that's treating symptom.
+## Khi nào dùng
 
-## When to Use
+- Lỗi xảy ra sâu trong luồng thực thi, không phải ở cửa vào.
+- Stack trace dài.
+- Chưa rõ dữ liệu sai sinh ra từ đâu.
+- Cần biết test nào hoặc đường code nào kích hoạt.
 
-**Use when:**
-- Error happens deep in execution (not at entry point)
-- Stack trace shows long call chain
-- Unclear where invalid data originated
-- Need to find which test/code triggers problem
+## Quy trình
 
-## The Tracing Process
+### 1. Quan sát triệu chứng
 
-### 1. Observe the Symptom
 ```
-Error: git init failed in /Users/jesse/project/packages/core
+Error: git init failed in /Users/oaidq/project/packages/core
 ```
 
-### 2. Find Immediate Cause
-What code directly causes this?
-```typescript
+### 2. Tìm nguyên nhân trực tiếp
+
+Dòng code nào gây ra nó?
+
+```js
 await execFileAsync('git', ['init'], { cwd: projectDir });
 ```
 
-### 3. Ask: What Called This?
-```typescript
+### 3. Hỏi: ai gọi dòng này?
+
+```
 WorktreeManager.createSessionWorktree(projectDir, sessionId)
-  → called by Session.initializeWorkspace()
-  → called by Session.create()
-  → called by test at Project.create()
+  ← Session.initializeWorkspace()
+  ← Session.create()
+  ← test tại Project.create()
 ```
 
-### 4. Keep Tracing Up
-What value was passed?
-- `projectDir = ''` (empty string!)
-- Empty string as `cwd` resolves to `process.cwd()`
-- That's the source code directory!
+### 4. Lần tiếp lên trên — giá trị nào được truyền vào?
 
-### 5. Find Original Trigger
-Where did empty string come from?
-```typescript
-const context = setupCoreTest(); // Returns { tempDir: '' }
-Project.create('name', context.tempDir); // Accessed before beforeEach!
+- `projectDir = ''` — chuỗi rỗng.
+- Chuỗi rỗng làm `cwd` thì rơi về `process.cwd()`.
+- Đó là thư mục source.
+
+### 5. Tìm chỗ phát sinh
+
+Chuỗi rỗng từ đâu ra?
+
+```js
+const context = setupCoreTest();       // trả { tempDir: '' }
+Project.create('name', context.tempDir); // đọc TRƯỚC khi beforeEach chạy
 ```
 
-## Adding Stack Traces
+**Nguyên nhân gốc:** biến ở tầng ngoài được khởi tạo khi giá trị chưa sẵn sàng.
+**Không phải** `git init`, cũng không phải `WorktreeManager`.
 
-When can't trace manually, add instrumentation:
+## Chèn stack trace khi lần tay không nổi
 
-```typescript
-async function gitInit(directory: string) {
-  const stack = new Error().stack;
+```js
+async function gitInit(directory) {
   console.error('DEBUG git init:', {
     directory,
     cwd: process.cwd(),
-    stack,
+    stack: new Error().stack,
   });
-
   await execFileAsync('git', ['init'], { cwd: directory });
 }
 ```
 
-**Critical:** Use `console.error()` in tests (not logger - may not show)
+Dùng `console.error()`, **không** dùng logger — logger trong test hay bị nuốt.
 
-**Run and capture:**
 ```bash
 npm test 2>&1 | grep 'DEBUG git init'
 ```
 
-**Analyze stack traces:**
-- Look for test file names
-- Find line number triggering call
-- Identify pattern (same test? same parameter?)
+Đọc stack trace tìm: tên file test · số dòng kích hoạt · mẫu lặp (cùng một test? cùng một
+tham số?).
 
-## Finding Which Test Causes Pollution
+**Lưu ý ACL:** `oracle` không có `Edit` — không tự chèn được đoạn debug này. Mô tả chính
+xác chèn gì, vào file nào, dòng nào, rồi để main chèn và chạy. Đừng tìm đường vòng qua
+`Bash` để sửa file (HOUSE-RULES §1.9).
 
-If something appears during tests but don't know which test:
+## Tìm test nào gây nhiễm
 
-Use bisection script: `scripts/find-polluter.sh`
+Có thứ xuất hiện trong lúc chạy test mà không biết test nào tạo ra:
 
 ```bash
-./scripts/find-polluter.sh '.git' 'src/**/*.test.ts'
+.claude/skills/alp-debug/scripts/find-polluter.sh '.git' 'src/**/*.test.ts'
 ```
 
-Runs tests one-by-one, stops at first polluter.
+Chạy từng test một, dừng ở test đầu tiên gây nhiễm. Đường dẫn tính từ CWD của phiên
+(`identity/oracle/`), qua symlink skill.
 
-## Key Principle
+## Luật
 
-**NEVER fix just where error appears.** Trace back to find original trigger.
+**Không bao giờ chỉ sửa ở chỗ lỗi nổ ra.**
 
-When found immediate cause:
-- Can trace one level up? → Trace backwards
-- Is this the source? → Fix at source
-- Then add validation at each layer (see defense-in-depth.md)
+Tìm được nguyên nhân trực tiếp rồi thì hỏi tiếp:
 
-## Real Example
+- Lần lên được một tầng nữa không? → lần tiếp.
+- Đây đúng là chỗ phát sinh? → đề xuất sửa ở đây.
+- Rồi đề xuất thêm chốt chặn ở từng tầng — `defense-in-depth.md`.
 
-**Symptom:** `.git` created in `packages/core/` (source code)
+## Ví dụ thật, đủ chuỗi
 
-**Trace chain:**
-1. `git init` runs in `process.cwd()` ← empty cwd parameter
-2. WorktreeManager called with empty projectDir
-3. Session.create() passed empty string
-4. Test accessed `context.tempDir` before beforeEach
-5. setupCoreTest() returns `{ tempDir: '' }` initially
+**Triệu chứng:** `.git` được tạo trong `packages/core/` (thư mục source).
 
-**Root cause:** Top-level variable initialization accessing empty value
+**Chuỗi lần ngược:**
 
-**Fix:** Made tempDir a getter that throws if accessed before beforeEach
+1. `git init` chạy trong `process.cwd()` ← tham số `cwd` rỗng
+2. `WorktreeManager` nhận `projectDir` rỗng
+3. `Session.create()` truyền chuỗi rỗng
+4. test đọc `context.tempDir` trước khi `beforeEach` chạy
+5. `setupCoreTest()` ban đầu trả `{ tempDir: '' }`
 
-**Also added defense-in-depth:**
-- Layer 1: Project.create() validates directory
-- Layer 2: WorkspaceManager validates not empty
-- Layer 3: NODE_ENV guard refuses git init outside tmpdir
-- Layer 4: Stack trace logging before git init
+**Nguyên nhân gốc:** khởi tạo biến ở tầng ngoài, đọc giá trị chưa sẵn sàng.
+
+**Sửa:** biến `tempDir` thành getter, ném lỗi nếu bị đọc trước `beforeEach`.
+
+**Chốt chặn thêm:**
+
+| Tầng | Chốt |
+|---|---|
+| 1 | `Project.create()` kiểm thư mục |
+| 2 | `WorkspaceManager` từ chối chuỗi rỗng |
+| 3 | guard môi trường: từ chối `git init` ngoài thư mục tạm |
+| 4 | log stack trace trước khi `git init` |
+
+Chuỗi này là mẫu cho phần **Chuỗi bằng chứng** trong báo cáo — main phải đi lại được từng
+bước và tới cùng kết luận.

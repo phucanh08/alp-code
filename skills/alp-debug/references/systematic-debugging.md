@@ -1,102 +1,93 @@
-# Systematic Debugging
+# Gỡ lỗi có hệ thống
 
-Four-phase debugging framework that ensures root cause investigation before attempting fixes.
+Bốn pha. Pha này xong mới sang pha kia.
 
-## The Iron Law
+## Luật sắt
 
 ```
-NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST
+KHÔNG ĐỀ XUẤT SỬA KHI CHƯA TRUY XONG NGUYÊN NHÂN GỐC
 ```
 
-If haven't completed Phase 1, cannot propose fixes.
+Chưa xong Pha 1 thì không được đề xuất cách sửa.
 
-## The Four Phases
+Với `oracle` luật này còn dễ giữ hơn: bạn **không sửa được gì** (`tools` không có `Edit`).
+Sản phẩm của bạn là nguyên nhân gốc kèm chuỗi bằng chứng, main mới là người sửa.
 
-Must complete each phase before proceeding to next.
+## Pha 1 — Truy nguyên nhân gốc
 
-### Phase 1: Root Cause Investigation
+1. **Đọc kỹ thông báo lỗi.** Đọc hết stack trace, đừng lướt qua warning. Dòng bạn bỏ qua
+   thường là dòng nói thật.
+2. **Tái hiện ổn định.** Kích hoạt lại được không? Chính xác các bước nào? Không tái hiện
+   được → thu thập thêm dữ liệu, **chưa** đưa giả thuyết.
+3. **Xem gì vừa đổi.** `git diff`, commit gần đây, phụ thuộc mới, config đổi.
+4. **Thu bằng chứng ở ranh giới giữa các thành phần.** Với mỗi ranh giới: dữ liệu vào là
+   gì, ra là gì, biến môi trường có truyền qua không. Chạy **một lượt** để biết nó vỡ ở
+   *đâu*, rồi mới phân tích *vì sao*.
+5. **Lần theo dòng dữ liệu.** Giá trị sai sinh ra từ đâu? Lần ngược call stack tới nguồn —
+   xem `root-cause-tracing.md`.
 
-**BEFORE attempting ANY fix:**
+Chưa xong 5 bước này thì mọi giả thuyết đều là đoán.
 
-1. **Read Error Messages Carefully** - Don't skip past errors/warnings, read stack traces completely
-2. **Reproduce Consistently** - Can trigger reliably? Exact steps? If not reproducible → gather more data
-3. **Check Recent Changes** - What changed? Git diff, recent commits, new dependencies, config changes
-4. **Gather Evidence in Multi-Component Systems**
-   - For EACH component boundary: log data entering/exiting, verify environment propagation
-   - Run once to gather evidence showing WHERE it breaks
-   - THEN analyze to identify failing component
-5. **Trace Data Flow** - Where does bad value originate? Trace up call stack until finding source (see root-cause-tracing.md)
+## Pha 2 — Phân tích mẫu
 
-### Phase 2: Pattern Analysis
+1. **Tìm ví dụ đang chạy đúng.** Code tương tự trong cùng repo mà không hỏng.
+2. **Đọc bản tham chiếu ĐẦY ĐỦ** trước khi so. Đọc lướt rồi so là cách bỏ sót đúng khác
+   biệt quan trọng.
+3. **Liệt kê mọi khác biệt**, dù nhỏ. Không được tự nhủ "chỗ đó không thể ảnh hưởng".
+4. **Hiểu phụ thuộc** — cần thành phần nào, config nào, biến môi trường nào.
 
-**Find pattern before fixing:**
+## Pha 3 — Giả thuyết và kiểm chứng
 
-1. **Find Working Examples** - Locate similar working code in same codebase
-2. **Compare Against References** - Read reference implementation COMPLETELY, understand fully before applying
-3. **Identify Differences** - List every difference however small, don't assume "that can't matter"
-4. **Understand Dependencies** - What other components, settings, config, environment needed?
+1. **Một giả thuyết, cụ thể:** "tôi cho rằng X là nguyên nhân gốc vì Y". Không phải "chắc
+   do phần auth".
+2. **Thử tối thiểu** — thay đổi nhỏ nhất đủ để kiểm giả thuyết. **Một biến một lần.**
+3. **Kiểm chứng trước khi đi tiếp.** Đúng → Pha 4. Sai → giả thuyết **mới**, không phải
+   chồng thêm bản sửa.
+4. **Không biết thì nói không biết.** "Tôi chưa hiểu vì sao X" là câu hợp lệ. Giả vờ hiểu
+   là cách main đi sửa nhầm chỗ.
 
-### Phase 3: Hypothesis and Testing
+## Pha 4 — Kết luận và bàn giao
 
-**Scientific method:**
+1. **Tái hiện được, càng nhỏ càng tốt.** Tự động hoá được thì tốt. Đây là thứ chứng minh
+   nguyên nhân gốc đúng.
+2. **Một đề xuất sửa duy nhất**, nhắm nguyên nhân gốc. Không kèm "tiện tay cải thiện luôn".
+3. **Chỉ rõ vì sao sửa ở đó**, chứ không phải ở chỗ triệu chứng nổ ra.
+4. **Đề xuất không đứng vững:**
+   - DỪNG. Đếm: đã thử mấy giả thuyết?
+   - Dưới 3 → về Pha 1 với thông tin mới.
+   - **Từ 3 trở lên → dừng và chất vấn kiến trúc.**
+5. **Ba lần thất bại nghĩa là gì.** Mẫu điển hình: mỗi lần sửa lại lộ ra một chỗ dùng chung
+   trạng thái hoặc coupling khác. Đó không còn là bug, đó là kiến trúc sai. Dừng, báo main,
+   và cân nhắc `alp-predict` hoặc `problem-solving` thay vì thử tiếp.
 
-1. **Form Single Hypothesis** - "I think X is root cause because Y", be specific not vague
-2. **Test Minimally** - SMALLEST possible change to test hypothesis, one variable at a time
-3. **Verify Before Continuing** - Worked? → Phase 4. Didn't work? → NEW hypothesis. DON'T add more fixes
-4. **When Don't Know** - Say "I don't understand X", don't pretend, ask for help
+## Cờ đỏ — dừng lại, quay về Pha 1
 
-### Phase 4: Implementation
+- "sửa tạm đã, điều tra sau"
+- "cứ thử đổi X xem sao"
+- "đổi vài chỗ rồi chạy test"
+- "bỏ qua test, kiểm tay cũng được"
+- "chắc là do X, sửa chỗ đó"
+- "tôi chưa hiểu hết nhưng chắc cách này được"
+- "thử thêm một lần nữa thôi" — khi đã thử 2+ lần
 
-**Fix root cause, not symptom:**
+## Tín hiệu từ main báo bạn đang làm sai
 
-1. **Create Failing Test Case** - Simplest reproduction, automated if possible, MUST have before fixing
-2. **Implement Single Fix** - Address root cause identified, ONE change, no "while I'm here" improvements
-3. **Verify Fix** - Test passes? No other tests broken? Issue actually resolved?
-4. **If Fix Doesn't Work**
-   - STOP. Count: How many fixes tried?
-   - If < 3: Return to Phase 1, re-analyze with new information
-   - **If ≥ 3: STOP and question architecture**
-5. **If 3+ Fixes Failed: Question Architecture**
-   - Pattern: Each fix reveals new shared state/coupling problem elsewhere
-   - STOP and question fundamentals: Is pattern sound? Wrong architecture?
-   - Discuss with human partner before more fixes
+| Main nói | Nghĩa là |
+|---|---|
+| "thế nó có xảy ra không?" | bạn đang giả định mà chưa kiểm |
+| "chạy cái đó có cho thấy gì không?" | lẽ ra phải thu bằng chứng trước |
+| "đừng đoán nữa" | đang đề xuất sửa khi chưa hiểu |
+| "nghĩ kỹ lại từ gốc" | chất vấn nền tảng, không phải triệu chứng |
 
-## Red Flags - STOP and Follow Process
+Gặp mấy câu này → về Pha 1.
 
-If catch yourself thinking:
-- "Quick fix for now, investigate later"
-- "Just try changing X and see if it works"
-- "Add multiple changes, run tests"
-- "Skip the test, I'll manually verify"
-- "It's probably X, let me fix that"
-- "I don't fully understand but this might work"
-- "One more fix attempt" (when already tried 2+)
+## Chặn biện minh
 
-**ALL mean:** STOP. Return to Phase 1.
+| Lý do | Thực tế |
+|---|---|
+| "lỗi đơn giản, không cần quy trình" | lỗi đơn giản cũng có nguyên nhân gốc |
+| "gấp lắm, không kịp làm quy trình" | có hệ thống **nhanh hơn** đoán-và-thử |
+| "thử cái này trước rồi điều tra sau" | lần thử đầu đặt luôn lối mòn |
+| "thử thêm lần nữa" (sau 2 lần hỏng) | 3 lần hỏng = vấn đề kiến trúc |
 
-## Human Partner Signals You're Doing It Wrong
-
-- "Is that not happening?" - Assumed without verifying
-- "Will it show us...?" - Should have added evidence gathering
-- "Stop guessing" - Proposing fixes without understanding
-- "Ultrathink this" - Question fundamentals, not just symptoms
-- "We're stuck?" (frustrated) - Approach isn't working
-
-**When see these:** STOP. Return to Phase 1.
-
-## Common Rationalizations
-
-| Excuse | Reality |
-|--------|---------|
-| "Issue is simple, don't need process" | Simple issues have root causes too |
-| "Emergency, no time for process" | Systematic is FASTER than guess-and-check |
-| "Just try this first, then investigate" | First fix sets pattern. Do right from start |
-| "One more fix attempt" (after 2+ failures) | 3+ failures = architectural problem |
-
-## Real-World Impact
-
-From debugging sessions:
-- Systematic approach: 15-30 minutes to fix
-- Random fixes approach: 2-3 hours of thrashing
-- First-time fix rate: 95% vs 40%
-- New bugs introduced: Near zero vs common
+Cái giá thật: có hệ thống mất 15–30 phút; đoán bừa mất 2–3 giờ và hay đẻ bug mới.

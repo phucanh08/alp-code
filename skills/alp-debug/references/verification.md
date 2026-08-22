@@ -1,123 +1,86 @@
-# Verification Before Completion
+# Kiểm chứng trước khi kết luận
 
-Run verification commands and confirm output before claiming success.
+`oracle` không sửa code, nên thứ bạn phải kiểm chứng không phải "đã làm xong chưa" mà là
+**"kết luận này có đứng vững không"**.
 
-## Core Principle
+Nói sai nguyên nhân gốc còn tệ hơn nói không biết: main sẽ đi sửa nhầm chỗ, mất thời gian
+gấp đôi, và lần sau không tin bạn nữa.
 
-**Evidence before claims, always.**
-
-Claiming work complete without verification is dishonesty, not efficiency.
-
-## The Iron Law
+## Luật sắt
 
 ```
-NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE
+KHÔNG KẾT LUẬN KHI CHƯA CÓ BẰNG CHỨNG MỚI, LẤY TRONG PHIÊN NÀY
 ```
 
-If haven't run verification command in this message, cannot claim it passes.
-
-## The Gate Function
+## Hàm cổng
 
 ```
-BEFORE claiming any status or expressing satisfaction:
+TRƯỚC khi nói bất cứ kết luận nào:
 
-1. IDENTIFY: What command proves this claim?
-2. RUN: Execute FULL command (fresh, complete)
-3. READ: Full output, check exit code, count failures
-4. VERIFY: Does output confirm claim?
-   - If NO: State actual status with evidence
-   - If YES: State claim WITH evidence
-5. ONLY THEN: Make claim
+1. XÁC ĐỊNH: lệnh hoặc quan sát nào chứng minh được điều này?
+2. CHẠY:     chạy đủ, mới, không cắt
+3. ĐỌC:      đọc hết output, xem exit code, đếm số fail
+4. ĐỐI CHIẾU: output có xác nhận không?
+   - KHÔNG → nói trạng thái thật, kèm bằng chứng
+   - CÓ    → nói kết luận, KÈM bằng chứng
+5. RỒI MỚI: phát biểu
 
-Skip any step = lying, not verifying
+Bỏ bước nào = đoán, không phải kết luận
 ```
 
-## Common Failures
+## Ba mức tin cậy — phải nói rõ mức nào
 
-| Claim | Requires | Not Sufficient |
-|-------|----------|----------------|
-| Tests pass | Test command output: 0 failures | Previous run, "should pass" |
-| Linter clean | Linter output: 0 errors | Partial check, extrapolation |
-| Build succeeds | Build command: exit 0 | Linter passing, logs look good |
-| Bug fixed | Test original symptom: passes | Code changed, assumed fixed |
-| Regression test works | Red-green cycle verified | Test passes once |
-| Agent completed | VCS diff shows changes | Agent reports "success" |
-| Requirements met | Line-by-line checklist | Tests passing |
+| Mức | Điều kiện | Viết thế nào |
+|---|---|---|
+| **Đã xác nhận** | tái hiện được, có output | "chạy X, output cho thấy Y" |
+| **Giả thuyết** | hợp lý nhưng chưa tái hiện | "có thể do X — chưa tái hiện được" |
+| **Tương quan** | hai thứ cùng xuất hiện | "X và Y cùng xuất hiện — chưa chứng minh nhân quả" |
 
-## Red Flags - STOP
+Trộn ba mức này vào cùng một giọng khẳng định là lỗi hay gặp nhất trong báo cáo điều tra.
 
-- Using "should", "probably", "seems to"
-- Expressing satisfaction before verification ("Great!", "Perfect!", "Done!")
-- About to commit/push/PR without verification
-- Trusting agent success reports
-- Relying on partial verification
-- Thinking "just this once"
-- Tired and wanting work over
-- **ANY wording implying success without having run verification**
+## Bảng đối chiếu
 
-## Rationalization Prevention
+| Kết luận | Bằng chứng bắt buộc | KHÔNG đủ |
+|---|---|---|
+| đây là nguyên nhân gốc | tái hiện được, và gỡ nguyên nhân thì triệu chứng biến mất | code đọc thấy có vẻ sai |
+| lỗi nằm ở thành phần X | log ở ranh giới cho thấy dữ liệu vào đúng, ra sai | X là chỗ stack trace nổ |
+| test fail do môi trường | chạy lại ở môi trường sạch: pass | "chắc do máy CI" |
+| chậm vì truy vấn N+1 | có số đo: số truy vấn, thời gian | đọc code thấy vòng lặp có query |
+| đã loại trừ giả thuyết Y | thử Y, kết quả bác bỏ | thấy Y không hợp lý |
 
-| Excuse | Reality |
-|--------|---------|
-| "Should work now" | RUN verification |
-| "I'm confident" | Confidence ≠ evidence |
-| "Just this once" | No exceptions |
-| "Linter passed" | Linter ≠ compiler |
-| "Agent said success" | Verify independently |
-| "Partial check is enough" | Partial proves nothing |
+## Cờ đỏ — dừng lại
 
-## Key Patterns
+- Dùng "chắc là", "nhiều khả năng", "có vẻ" trong phần **Nguyên nhân gốc**.
+- Kết luận dựa trên đọc code mà chưa chạy gì.
+- Nhận báo cáo của vai khác làm bằng chứng — vai đó chạy phiên riêng, bạn không thấy nó đã
+  chạy gì.
+- Dừng ở nguyên nhân **gần nhất** vì nó đủ hợp lý.
+- Mệt và muốn xong cho rồi.
 
-**Tests:**
-```
-✅ [Run test command] [See: 34/34 pass] "All tests pass"
-❌ "Should pass now" / "Looks correct"
-```
+## Chặn biện minh
 
-**Regression tests (TDD Red-Green):**
-```
-✅ Write → Run (pass) → Revert fix → Run (MUST FAIL) → Restore → Run (pass)
-❌ "I've written regression test" (without red-green verification)
-```
+| Lý do | Thực tế |
+|---|---|
+| "đọc code là thấy ngay mà" | đọc code cho giả thuyết, không cho kết luận |
+| "tôi khá chắc" | chắc ≠ bằng chứng |
+| "không tái hiện được nhưng chắc đúng" | thì ghi là giả thuyết, đừng ghi là nguyên nhân gốc |
+| "main đang gấp" | kết luận sai làm main mất nhiều thời gian hơn |
+| "vai kia đã kiểm rồi" | kiểm độc lập, hoặc ghi rõ là dựa vào báo cáo của vai đó |
 
-**Build:**
-```
-✅ [Run build] [See: exit 0] "Build passes"
-❌ "Linter passed" (linter doesn't check compilation)
-```
+## Bài kiểm quyết định
 
-**Requirements:**
-```
-✅ Re-read plan → Create checklist → Verify each → Report gaps or completion
-❌ "Tests pass, phase complete"
-```
+Một nguyên nhân gốc chỉ được gọi là **đã xác nhận** khi trả lời được cả hai:
 
-**Agent delegation:**
-```
-✅ Agent reports success → Check VCS diff → Verify changes → Report actual state
-❌ Trust agent report
-```
+1. **Tái hiện được triệu chứng** theo đúng cơ chế đã mô tả?
+2. **Gỡ nguyên nhân đi thì triệu chứng biến mất?** — hoặc chứng minh được bằng suy luận từ
+   bằng chứng đã có.
 
-## When To Apply
+Không trả lời được câu 2 thì đó vẫn là giả thuyết mạnh, không phải nguyên nhân gốc. Nói
+đúng như vậy với main.
 
-**ALWAYS before:**
-- ANY variation of success/completion claims
-- ANY expression of satisfaction
-- ANY positive statement about work state
-- Committing, PR creation, task completion
-- Moving to next task
-- Delegating to agents
+## Chốt
 
-**Rule applies to:**
-- Exact phrases
-- Paraphrases and synonyms
-- Implications of success
-- ANY communication suggesting completion/correctness
+Chạy. Đọc output. **Rồi mới** kết luận.
 
-## The Bottom Line
-
-**No shortcuts for verification.**
-
-Run command. Read output. THEN claim result.
-
-Non-negotiable.
+Chưa ra thì nói chưa ra, kèm danh sách đã loại trừ. Đó là câu trả lời hợp lệ và hữu ích —
+`oracle` được gọi vì độ tin cậy, không vì tốc độ.

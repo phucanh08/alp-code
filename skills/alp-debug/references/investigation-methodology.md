@@ -1,101 +1,106 @@
-# Investigation Methodology
+# Phương pháp điều tra mức hệ
 
-Five-step structured investigation for system-level issues, incidents, and multi-component failures.
+Năm bước cho sự cố nhiều thành phần — khác với gỡ một bug trong code, ở đây bạn phải dựng
+lại **chuyện gì đã xảy ra** trước khi bàn tới sửa gì.
 
-## When to Use
+## Khi nào dùng
 
-- Server returning 500 errors or unexpected responses
-- System behavior changed without obvious code changes
-- Multi-component failures spanning services/databases/infrastructure
-- Need to understand "what happened" before fixing
+- Server trả 500 hoặc phản hồi lạ.
+- Hành vi hệ đổi mà không thấy code đổi.
+- Sự cố trải qua nhiều dịch vụ / database / hạ tầng.
+- Cần biết "đã xảy ra chuyện gì" trước khi bàn cách sửa.
 
-## Step 1: Initial Assessment
+## Bước 1 — Đánh giá ban đầu
 
-**Gather scope and impact before diving in.**
+Nắm phạm vi và mức ảnh hưởng **trước khi** lao vào chi tiết.
 
-1. **Collect symptoms** - Error messages, affected endpoints, user reports
-2. **Identify affected components** - Which services, databases, queues involved?
-3. **Determine timeframe** - When did issue start? Correlate with deployments/changes
-4. **Assess severity** - Users affected? Data at risk? Revenue impact?
-5. **Check recent changes** - Git log, deployment history, config changes, dependency updates
+1. **Gom triệu chứng** — thông báo lỗi, endpoint bị ảnh hưởng, mô tả của principal.
+2. **Xác định thành phần liên quan** — dịch vụ nào, database nào, hàng đợi nào.
+3. **Khoanh mốc thời gian** — bắt đầu từ khi nào? Trùng với deploy hay thay đổi nào?
+4. **Đánh giá mức nghiêm trọng** — ảnh hưởng ai, dữ liệu có rủi ro không.
+5. **Xem gì vừa đổi.**
 
 ```bash
-# Recent deployments
 gh run list --limit 10
-# Recent commits
 git log --oneline -20 --since="2 days ago"
-# Config changes
 git diff HEAD~5 -- '*.env*' '*.config*' '*.yml' '*.yaml' '*.json'
 ```
 
-## Step 2: Data Collection
+Bước 5 giải quyết một tỷ lệ lớn sự cố ngay tại chỗ. Làm trước khi làm gì phức tạp hơn.
 
-**Gather evidence systematically before analysis.**
+## Bước 2 — Thu thập dữ liệu
 
-1. **Server/application logs** - Filter by timeframe and affected components
-2. **CI/CD pipeline logs** - Use `gh run view <run-id> --log-failed` for GitHub Actions
-3. **Database state** - Query relevant tables, check recent migrations
-4. **System metrics** - CPU, memory, disk, network utilization
-5. **External dependencies** - Third-party API status, DNS, CDN
+Gom bằng chứng **có hệ thống**, trước khi phân tích. Vừa gom vừa suy diễn dẫn tới việc chỉ
+gom thứ khớp với giả thuyết đầu tiên.
+
+1. **Log ứng dụng / server** — lọc theo mốc thời gian và thành phần.
+2. **Log CI/CD** — xem `log-and-ci-analysis.md`.
+3. **Trạng thái database** — truy vấn bảng liên quan, kiểm migration gần đây.
+4. **Số đo hệ thống** — CPU, bộ nhớ, đĩa, mạng.
+5. **Phụ thuộc bên ngoài** — API bên thứ ba, DNS, CDN.
 
 ```bash
-# GitHub Actions: list recent workflow runs
 gh run list --workflow=<workflow> --limit 5
-# View failed run logs
 gh run view <run-id> --log-failed
-# Download full logs
 gh run view <run-id> --log > /tmp/ci-logs.txt
 ```
 
-**For codebase understanding:**
-- Read `docs/codebase-summary.md` if exists and up-to-date (<2 days old)
-- Otherwise use `repomix` to generate fresh codebase summary
-- Use `/scout` or `/scout ext` to find relevant files
-- Use `docs-seeker` skill for package/plugin documentation
+**Cần hiểu codebase lạ:** báo main giao `search` (tìm code) hoặc `librarian` (tài liệu bên
+ngoài). `oracle` có `delegates_to: []` — không tự giao được.
 
-## Step 3: Analysis Process
+## Bước 3 — Phân tích
 
-**Correlate evidence across sources.**
+Đối chiếu chéo giữa các nguồn.
 
-1. **Timeline reconstruction** - Order events chronologically across all log sources
-2. **Pattern identification** - Recurring errors, timing patterns, affected user segments
-3. **Execution path tracing** - Follow request flow through system components
-4. **Database analysis** - Query performance, table relationships, data integrity
-5. **Dependency mapping** - Which components depend on the failing one?
+1. **Dựng lại mốc thời gian** — xếp sự kiện theo thứ tự, gộp mọi nguồn log.
+2. **Nhận mẫu** — lỗi lặp lại, mẫu theo thời điểm, nhóm người dùng bị ảnh hưởng.
+3. **Lần đường thực thi** — request đi qua những thành phần nào.
+4. **Phân tích database** — hiệu năng truy vấn, quan hệ bảng, toàn vẹn dữ liệu.
+5. **Vẽ phụ thuộc** — thành phần nào phụ thuộc thành phần đang hỏng.
 
-**Key questions:**
-- Does issue correlate with specific deployments or time windows?
-- Is it intermittent or consistent?
-- Does it affect all users or a subset?
-- Are there related errors in upstream/downstream services?
+Bốn câu hỏi then chốt:
 
-## Step 4: Root Cause Identification
+- Có trùng với một lần deploy hay một khung giờ cụ thể không?
+- Xảy ra lúc có lúc không, hay luôn luôn?
+- Ảnh hưởng mọi người dùng hay một nhóm?
+- Dịch vụ phía trước / phía sau có lỗi liên quan không?
 
-**Systematic elimination with evidence.**
+## Bước 4 — Xác định nguyên nhân gốc
 
-1. **List hypotheses** ranked by evidence strength
-2. **Test each** - Design smallest experiment to confirm/eliminate
-3. **Validate with evidence** - Logs, metrics, reproduction steps
-4. **Consider environmental factors** - Race conditions, resource limits, config drift
-5. **Document the chain** - Full event sequence from trigger to symptom
+Loại trừ có hệ thống, bằng bằng chứng.
 
-**Avoid:** Fixing first hypothesis without testing alternatives. Multiple plausible causes require elimination.
+1. **Liệt kê giả thuyết**, xếp theo độ mạnh của bằng chứng.
+2. **Thử từng cái** — thí nghiệm nhỏ nhất đủ để xác nhận hoặc loại bỏ.
+3. **Xác nhận bằng bằng chứng** — log, số đo, bước tái hiện.
+4. **Xét yếu tố môi trường** — race condition, giới hạn tài nguyên, config trôi lệch.
+5. **Ghi lại cả chuỗi** — từ chỗ kích hoạt tới triệu chứng.
 
-## Step 5: Solution Development
+**Tránh:** sửa theo giả thuyết đầu tiên mà chưa thử các giả thuyết khác. Nhiều nguyên nhân
+đều hợp lý thì phải loại trừ, không phải chọn cái tiện nhất.
 
-**Design targeted, evidence-backed fixes.**
+Ghi rõ giả thuyết nào **đã bị bác và bằng gì** — không có phần đó, main sẽ đi lại đúng con
+đường bạn vừa đi.
 
-1. **Immediate fix** - Minimum change to restore service (hotfix, rollback, config change)
-2. **Root cause fix** - Address underlying issue permanently
-3. **Preventive measures** - Monitoring, alerting, validation to catch recurrence early
-4. **Verification plan** - How to confirm fix works in production
+## Bước 5 — Đề xuất phương án
 
-**Prioritize:** Impact × urgency. Restore service first, then fix root cause, then prevent recurrence.
+`oracle` đề xuất, main thực hiện. Tách rõ ba loại:
 
-## Integration with Code-Level Debugging
+| Loại | Nội dung |
+|---|---|
+| **Ngay** | thay đổi nhỏ nhất để khôi phục — hotfix, rollback, đổi config |
+| **Gốc** | xử lý dứt điểm nguyên nhân gốc |
+| **Phòng ngừa** | giám sát, cảnh báo, chốt chặn để lần sau phát hiện sớm |
 
-When investigation narrows to specific code:
-- Switch to `systematic-debugging.md` for the code-level fix
-- Use `root-cause-tracing.md` if error is deep in call stack
-- Apply `defense-in-depth.md` after fixing
-- Always finish with `verification.md`
+Thứ tự ưu tiên: **ảnh hưởng × mức khẩn**. Khôi phục trước, sửa gốc sau, phòng ngừa sau nữa.
+
+Đánh dấu rõ phương án nào là thao tác **khó đảo ngược** (rollback production, migration,
+xoá dữ liệu) — main phải xin principal duyệt trước khi chạy (HOUSE-RULES §1.2).
+
+## Khi thu hẹp được về code cụ thể
+
+| Chuyển sang | Khi |
+|---|---|
+| `systematic-debugging.md` | đã khoanh về một vùng code |
+| `root-cause-tracing.md` | lỗi nổ sâu trong call stack |
+| `defense-in-depth.md` | đã ra nguyên nhân, cần khuyến nghị chốt chặn |
+| `verification.md` | trước khi phát biểu kết luận |

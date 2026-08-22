@@ -1,113 +1,112 @@
-# Performance Diagnostics
+# Chẩn đoán hiệu năng
 
-Identify bottlenecks, analyze query performance, and develop optimization strategies.
+## Khi nào dùng
 
-## When to Use
+Thời gian phản hồi tăng rõ rệt · ứng dụng chậm · truy vấn lâu · CPU/bộ nhớ/đĩa cao · cạn
+tài nguyên hoặc OOM.
 
-- Response times increased significantly
-- Application feels slow or unresponsive
-- Database queries taking too long
-- High CPU/memory/disk usage
-- Resource exhaustion or OOM errors
+## Luật vào nghề
 
-## Diagnostic Process
+**Đo trước, tối ưu sau.** Tối ưu mà không có số đo trước là đoán — và thường tối ưu đúng
+chỗ không phải nút thắt.
 
-### 1. Quantify the Problem
+Bốn câu phải trả lời trước khi động vào bất cứ thứ gì:
 
-**Measure before optimizing.** Establish baseline and current state.
+- Kỳ vọng bao nhiêu, thực tế bao nhiêu? (số cụ thể, không phải "chậm")
+- Chậm từ khi nào? Trùng với thay đổi nào?
+- Endpoint / thao tác nào bị?
+- Luôn luôn hay lúc có lúc không?
 
-- What is the expected response time vs actual?
-- When did degradation start? (correlate with changes)
-- Which endpoints/operations are affected?
-- Is it consistent or intermittent?
-
-### 2. Identify the Bottleneck Layer
+## Khoanh tầng nút thắt
 
 ```
-Request → Network → Web Server → Application → Database → Filesystem
-                                      ↓
-                              External APIs / Services
+Request → Mạng → Web server → Ứng dụng → Database → Filesystem
+                                 ↓
+                          API / dịch vụ ngoài
 ```
 
-**Elimination approach:** Measure time at each layer to find where delay occurs.
+Đo thời gian ở **từng tầng** để biết độ trễ nằm ở đâu. Loại trừ, đừng đoán.
 
-| Layer | Check | Tool |
-|-------|-------|------|
-| Network | Latency, DNS, TLS | `curl -w` timing, network logs |
-| Web server | Request queue, connections | Server metrics, access logs |
-| Application | CPU profiling, memory | Profiler, APM, `process.memoryUsage()` |
-| Database | Query time, connections | `EXPLAIN ANALYZE`, `pg_stat_statements` |
-| Filesystem | I/O wait, disk usage | `iostat`, `df -h` |
-| External APIs | Response time, timeouts | Request logging with durations |
+| Tầng | Kiểm | Công cụ |
+|---|---|---|
+| Mạng | độ trễ, DNS, TLS | `curl -w`, log mạng |
+| Web server | hàng đợi request, số kết nối | metric server, access log |
+| Ứng dụng | CPU, bộ nhớ | profiler, `process.memoryUsage()` |
+| Database | thời gian truy vấn, kết nối | `EXPLAIN ANALYZE`, `pg_stat_statements` |
+| Filesystem | I/O wait, dung lượng | `iostat`, `df -h` |
+| API ngoài | thời gian phản hồi, timeout | log request kèm thời lượng |
 
-### 3. Database Performance
+## Database — PostgreSQL
 
-#### PostgreSQL Diagnostics
+Toàn bộ truy vấn dưới đây là **chỉ đọc**. `oracle` không chạy `UPDATE`/`ALTER`/`DELETE`
+trên database thật — đó là thao tác khó đảo ngược, phải qua main và principal.
 
 ```sql
--- Slow queries (requires pg_stat_statements extension)
+-- truy vấn chậm (cần extension pg_stat_statements)
 SELECT query, calls, mean_exec_time, total_exec_time
 FROM pg_stat_statements
 ORDER BY mean_exec_time DESC LIMIT 20;
 
--- Active queries right now
-SELECT pid, now() - pg_stat_activity.query_start AS duration, query, state
+-- truy vấn đang chạy ngay lúc này
+SELECT pid, now() - query_start AS duration, query, state
 FROM pg_stat_activity
 WHERE state != 'idle'
 ORDER BY duration DESC;
 
--- Table sizes and bloat
+-- kích thước bảng
 SELECT relname, pg_size_pretty(pg_total_relation_size(relid))
 FROM pg_catalog.pg_statio_user_tables
 ORDER BY pg_total_relation_size(relid) DESC LIMIT 20;
 
--- Missing indexes (sequential scans on large tables)
+-- thiếu index: quét tuần tự nhiều trên bảng lớn
 SELECT relname, seq_scan, seq_tup_read, idx_scan
 FROM pg_stat_user_tables
 WHERE seq_scan > 100 AND seq_tup_read > 10000
 ORDER BY seq_tup_read DESC;
 
--- Connection pool status
+-- trạng thái pool kết nối
 SELECT count(*), state FROM pg_stat_activity GROUP BY state;
 ```
 
-#### Query Optimization
+Phân tích một truy vấn cụ thể:
 
 ```sql
--- Analyze specific query execution plan
-EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) <your-query>;
+EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) <truy vấn>;
 ```
 
-**Look for:** Sequential scans on large tables, nested loops with high row counts, sorts without indexes, excessive buffer hits.
+**Tìm:** quét tuần tự trên bảng lớn · nested loop với số dòng cao · sort không có index ·
+số lần chạm buffer bất thường.
 
-### 4. Application Performance
+## Ứng dụng — nút thắt thường gặp
 
-**Common bottlenecks:**
+| Vấn đề | Triệu chứng | Hướng sửa |
+|---|---|---|
+| N+1 truy vấn | rất nhiều truy vấn nhỏ mỗi request | nạp sớm, gộp truy vấn |
+| Rò bộ nhớ | bộ nhớ tăng dần theo thời gian | profile heap, kiểm event listener |
+| I/O chặn | thời gian phản hồi cao, CPU thấp | bất đồng bộ, pool kết nối |
+| Nghẽn CPU | CPU cao, tỷ lệ thuận với tải | tối ưu thuật toán, cache |
+| Cạn kết nối | timeout lúc có lúc không | chỉnh kích thước pool, dùng lại kết nối |
+| Payload lớn | truyền chậm, tốn bộ nhớ | phân trang, nén, streaming |
 
-| Issue | Symptom | Fix |
-|-------|---------|-----|
-| N+1 queries | Many small DB calls per request | Eager loading, batch queries |
-| Memory leaks | Growing memory over time | Profile heap, check event listeners |
-| Blocking I/O | High response time, low CPU | Async operations, connection pooling |
-| CPU-bound | High CPU, proportional to load | Optimize algorithms, caching |
-| Connection exhaustion | Intermittent timeouts | Pool sizing, connection reuse |
-| Large payloads | Slow transfers, high memory | Pagination, compression, streaming |
+Cặp **"thời gian phản hồi cao + CPU thấp"** là dấu hiệu rõ nhất: hệ đang **chờ**, không
+phải đang **tính**. Đừng đi tối ưu thuật toán khi CPU đang rảnh.
 
-### 5. Optimization Strategy
+## Thứ tự tối ưu
 
-**Priority order:**
-1. **Quick wins** - Add missing index, fix N+1 query, enable caching
-2. **Configuration** - Pool sizes, timeouts, buffer sizes, worker counts
-3. **Code changes** - Algorithm optimization, data structure changes
-4. **Architecture** - Caching layer, read replicas, async processing, CDN
+1. **Thắng nhanh** — thêm index còn thiếu, sửa N+1, bật cache.
+2. **Cấu hình** — kích thước pool, timeout, buffer, số worker.
+3. **Code** — tối ưu thuật toán, đổi cấu trúc dữ liệu.
+4. **Kiến trúc** — tầng cache, read replica, xử lý bất đồng bộ, CDN.
 
-**Always:** Measure after each change to verify improvement. One change at a time.
+Đi từ trên xuống. Bước 4 đắt và khó đảo ngược; bước 1 thường giải quyết phần lớn vấn đề.
 
-## Reporting Performance Issues
+**Mỗi lần một thay đổi, đo lại sau mỗi lần.** Đổi ba thứ cùng lúc rồi thấy nhanh hơn thì
+không biết thứ nào có tác dụng — và hai thứ kia có thể đang làm chậm đi.
 
-Include in diagnostic report:
-- **Baseline vs current** metrics (with numbers)
-- **Bottleneck identification** with evidence
-- **Root cause** explanation
-- **Recommended fixes** with expected impact
-- **Verification plan** to confirm improvement
+## Đưa vào báo cáo
+
+- **Số đo trước và sau**, có con số. Không có số thì không phải chẩn đoán hiệu năng.
+- **Nút thắt nằm ở tầng nào**, kèm bằng chứng.
+- **Nguyên nhân gốc** — vì sao tầng đó chậm.
+- **Đề xuất sửa** kèm tác động mong đợi.
+- **Cách kiểm chứng** rằng bản sửa có hiệu quả.
