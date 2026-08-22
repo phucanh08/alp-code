@@ -87,6 +87,13 @@ function init(args) {
 }
 
 function initInstall(projectPath) {
+  // Gốc rễ của sự cố repoRoot: `alp init` từng chạy lên một CLONE alp-code khác. Dòng
+  // `isWithin` ở trên chỉ chặn khi hai thư mục chứa lẫn nhau, không chặn clone rời.
+  // Chỉ chặn ở nhánh install — `--uninstall` phải gỡ được cái đã lỡ cài.
+  if (fs.existsSync(path.join(projectPath, "CHARTER.md")))
+    die(`${projectPath} là một checkout alp-code — không \`alp init\` lên chính hệ này.\n` +
+        "Dev alp-code thì mở `claude` trần trong clone đó, đừng để nó chạy dưới ACL của main.");
+
   const role = mainRole();
 
   // 1. Đăng ký. install-project.cjs đã làm project card L1 + L0 + workspaces trong mọi

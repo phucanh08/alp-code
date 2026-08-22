@@ -4,6 +4,7 @@
 // Mọi nơi khác chỉ gọi vào đây. Đừng viết lại logic ACL ở chỗ thứ hai.
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
 // ---------------------------------------------------------------- repo root
@@ -112,9 +113,17 @@ function loadoutPath(repoRoot, role) {
  *
  * `fallbackFrom` là `__dirname` của hook: khi agent đứng ngoài alp-code, repo root không
  * suy ra được từ cwd, nhưng hook thì luôn nằm trong repo.
+ *
+ * Khi có `ALP_ROLE`, `fallbackFrom` đứng TRƯỚC cwd. `ALP_ROLE` chỉ do launcher đặt
+ * (`alp`, `alp init`, `run-role`) ⇒ phiên đang ở trong một project, và repo alp-code là
+ * chỗ hook nằm. Lấy cwd trước thì một project vô tình LÀ CLONE alp-code khác (dev clone)
+ * sẽ được nhận nhầm làm nhà: clone đó không có `memory/` (gitignore), chưa compile ACL,
+ * chưa trust. Hậu quả đo được: boot mất sạch `MEMORY INDEX` + `PROJECTS L0` mà không
+ * cảnh báo, doctor phun ~50 dòng báo động giả, boot set phình 3 901 ký tự vượt ngân sách.
  */
 function sessionIdentity(cwd, fallbackFrom, env = process.env) {
-  const repoRoot = findRepoRoot(cwd) || (fallbackFrom ? findRepoRoot(fallbackFrom) : null);
+  const order = env.ALP_ROLE && fallbackFrom ? [fallbackFrom, cwd] : [cwd, fallbackFrom];
+  const repoRoot = order.filter(Boolean).map(findRepoRoot).find(Boolean) || null;
   if (!repoRoot) return null;
 
   if (env.ALP_ROLE) return { repoRoot, role: env.ALP_ROLE };
@@ -143,13 +152,35 @@ function effectiveGrants(loadout, role) {
   return { read, write };
 }
 
-/** Workspace code bên ngoài repo alp-code, dùng path tuyệt đối. */
+/**
+ * `~/x` → `<home>/x`. Chỉ `~` đứng đầu; `~user` không hỗ trợ — cố tình, `loadout.yaml`
+ * phải đọc được bằng mắt trong 10 giây và home của user khác không phải thứ agent chạm.
+ */
+function untildify(p) {
+  if (p === "~") return os.homedir();
+  if (p.startsWith("~/")) return path.join(os.homedir(), p.slice(2));
+  return p;
+}
+
+/** Chiều ngược lại — giữ `loadout.yaml` (file trong git) sạch path máy-cụ-thể. */
+function tildify(p) {
+  const abs = path.resolve(p);
+  const rel = path.relative(os.homedir(), abs);
+  if (rel === "") return "~";
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return abs; // ngoài home: đành tuyệt đối
+  return "~/" + rel.split(path.sep).join("/");
+}
+
+/**
+ * Workspace code ngoài repo alp-code. Trong `loadout.yaml` path viết dạng `~/...` để file
+ * còn dùng chung được giữa các máy; ở đây expand ra tuyệt đối vì MỌI consumer — acl-guard,
+ * settings.json, project-config, doctor, run-role — đều cần path thật. Một chỗ expand duy
+ * nhất, đừng thêm chỗ thứ hai.
+ */
 function effectiveWorkspaces(loadout) {
   const ws = loadout.workspaces || {};
-  return {
-    read: [...new Set((ws.read || []).map((p) => path.resolve(p)))],
-    write: [...new Set((ws.write || []).map((p) => path.resolve(p)))],
-  };
+  const norm = (list) => [...new Set((list || []).map((p) => path.resolve(untildify(p))))];
+  return { read: norm(ws.read), write: norm(ws.write) };
 }
 
 /**
@@ -160,12 +191,14 @@ function effectiveWorkspaces(loadout) {
 function writeWorkspaces(repoRoot, role, read, write) {
   const file = loadoutPath(repoRoot, role);
   const text = fs.readFileSync(file, "utf8");
-  const block =
-    `workspaces:\n  read:  [${[...new Set(read)].join(", ")}]\n  write: [${[...new Set(write)].join(", ")}]`;
+  // Ghi lại dạng `~/...`: `loadout.yaml` nằm trong git. Path tuyệt đối của một máy lọt lên
+  // remote là rác cho mọi máy khác — và làm thẻ danh tính lúc boot nói sai workspace.
+  const fmt = (list) => [...new Set(list.map(tildify))].join(", ");
+  const block = `workspaces:\n  read:  [${fmt(read)}]\n  write: [${fmt(write)}]`;
 
   const next = /^workspaces:\s*$/m.test(text)
     ? text.replace(/^workspaces:\s*$\n(?:^[ \t]+.*(?:\n|$))*/m, block + "\n")
-    : text.trimEnd() + "\n\n# --- workspace code ngoài alp-code (path tuyệt đối) ---\n" + block + "\n";
+    : text.trimEnd() + "\n\n# --- workspace code ngoài alp-code (viết dạng `~/...`) ---\n" + block + "\n";
 
   if (next === text) return false;
   fs.writeFileSync(file, next);
@@ -223,12 +256,15 @@ function validate(loadout, role, allRoles) {
       add(`khai \`${p}\` — cấm đọc/ghi private của vai khác, không có ngoại lệ`);
   }
 
+  // Path workspace neo vào gốc filesystem — hoặc tuyệt đối, hoặc `~/...` (xem `untildify`).
+  // Relative thì neo vào cwd, mà cwd của agent không cố định ⇒ ACL sẽ khác nhau mỗi phiên.
   for (const p of [...wsRead, ...wsWrite]) {
-    if (!path.isAbsolute(p)) add(`workspace \`${p}\` phải là path tuyệt đối`);
+    if (!path.isAbsolute(untildify(p)))
+      add(`workspace \`${p}\` phải là path tuyệt đối hoặc bắt đầu bằng \`~/\``);
   }
   for (const w of wsWrite) {
-    const absWrite = path.resolve(w);
-    if (!wsRead.some((r) => isWithin(path.resolve(r), absWrite)))
+    const absWrite = path.resolve(untildify(w));
+    if (!wsRead.some((r) => isWithin(path.resolve(untildify(r)), absWrite)))
       add(`workspace write \`${w}\` không nằm trong workspaces.read`);
   }
 
@@ -373,7 +409,7 @@ function isWithin(root, target) {
 module.exports = {
   findRepoRoot, parseYaml, globToRegExp, matchesAny,
   listRoles, loadoutPath, loadLoadout, sessionIdentity, effectiveGrants, effectiveWorkspaces,
-  writeWorkspaces,
+  writeWorkspaces, untildify, tildify,
   validate, checkPath, checkWorkspacePath, canDelegate, checkDelegationCommand, isWithin,
   KNOWN_TOOLS, REASONING_EFFORTS, FROZEN,
 };
