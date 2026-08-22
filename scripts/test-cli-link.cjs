@@ -5,6 +5,7 @@ const assert = require("assert");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { spawnSync } = require("child_process");
 const CLI = require("./lib/cli-link.cjs");
 
 const sandbox = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "alp-cli-link-"));
@@ -17,18 +18,22 @@ let failed = 0;
 try {
   testProfiles();
   testUnixInstall();
+  testUnixUninstall();
   testSkipPath();
   testForeignUnixCommand();
   testWindowsInstall();
+  testWindowsUninstall();
+  testWindowsRemovePathSyntax();
   testWindowsPathDetection();
   testForeignWindowsCommand();
+  testForeignWindowsUninstall();
   testBootstrapWiring();
 } finally {
   fs.rmSync(sandbox, { recursive: true, force: true });
 }
 
 if (failed) process.exit(1);
-console.log("OK               cli link: 8 nhóm ca đều xanh");
+console.log("OK               cli link: 12 nhóm ca đều xanh");
 
 function testProfiles() {
   const home = path.join(sandbox, "profiles");
@@ -79,6 +84,29 @@ function testUnixInstall() {
     const body = fs.readFileSync(profile, "utf8");
     assert.strictEqual(body.split(CLI.BEGIN).length - 1, 1);
   });
+}
+
+function testUnixUninstall() {
+  const home = path.join(sandbox, "unix-uninstall-home");
+  const env = { HOME: home, SHELL: "/bin/zsh", PATH: "/usr/bin" };
+  const target = path.join(home, ".local", "bin", "alp");
+  const profile = path.join(home, ".zshrc");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(profile, "export MINE=1\n");
+  CLI.installCli(repo, { env, platform: "darwin" });
+  env.PATH = `/usr/bin:${path.dirname(target)}`;
+
+  const first = CLI.uninstallCli(repo, { env, platform: "darwin" });
+  const second = CLI.uninstallCli(repo, { env, platform: "darwin" });
+  check("Unix uninstall gỡ symlink và chỉ khối PATH có marker", () => {
+    const body = fs.readFileSync(profile, "utf8");
+    assert(!fs.existsSync(target));
+    assert(body.includes("export MINE=1"));
+    assert(!body.includes(CLI.BEGIN));
+    assert(first.some((x) => x.level === "REMOVED"));
+  });
+  check("Unix uninstall chạy lại an toàn", () =>
+    assert(second.some((x) => x.level === "ABSENT")));
 }
 
 function testSkipPath() {
@@ -135,6 +163,55 @@ function testWindowsInstall() {
   });
 }
 
+function testWindowsUninstall() {
+  const localAppData = path.join(sandbox, "win-uninstall-local");
+  const dir = path.join(localAppData, "alp", "bin");
+  const target = path.join(dir, "alp.cmd");
+  const env = {
+    USERPROFILE: path.join(sandbox, "win-uninstall-user"),
+    LOCALAPPDATA: localAppData,
+    Path: `C:\\Windows;${dir};C:\\Node`,
+  };
+  CLI.installCli(repo, { env, platform: "win32" });
+  let removed = null;
+  const first = CLI.uninstallCli(repo, {
+    env,
+    platform: "win32",
+    removeWindowsPath(value) {
+      removed = value;
+      return "removed";
+    },
+  });
+  const second = CLI.uninstallCli(repo, {
+    env,
+    platform: "win32",
+    removeWindowsPath() { return "absent"; },
+  });
+
+  check("Windows uninstall gỡ alp.cmd và User PATH", () => {
+    assert.strictEqual(removed, dir);
+    assert(!fs.existsSync(target));
+    assert(!env.Path.toLowerCase().split(";").includes(dir.toLowerCase()));
+    assert(first.some((x) => x.level === "WROTE" && x.text.includes("PATH (User)")));
+  });
+  check("Windows uninstall chạy lại an toàn", () =>
+    assert(second.some((x) => x.level === "ABSENT")));
+}
+
+function testWindowsRemovePathSyntax() {
+  check("PowerShell script gỡ User PATH parse được", () => {
+    if (process.platform !== "win32") return;
+    const source = CLI.windowsRemovePathScript();
+    const probe = path.join(sandbox, "path-probe-khong-ton-tai");
+    const r = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", source], {
+      encoding: "utf8",
+      env: { ...process.env, ALP_BIN_DIR: probe },
+    });
+    assert.strictEqual(r.status, 0, (r.stdout || "") + (r.stderr || ""));
+    assert.strictEqual((r.stdout || "").trim(), "absent");
+  });
+}
+
 function testWindowsPathDetection() {
   const dir = path.join(sandbox, "CaseSensitive", "alp", "bin");
   const lower = dir.toLowerCase();
@@ -158,6 +235,28 @@ function testForeignWindowsCommand() {
   check("Windows không đè alp.cmd của người dùng", () => {
     assert.strictEqual(fs.readFileSync(target, "utf8"), "@echo off\r\necho mine\r\n");
     assert(log.some((x) => x.level === "SKIP"));
+  });
+}
+
+function testForeignWindowsUninstall() {
+  const localAppData = path.join(sandbox, "foreign-win-uninstall-local");
+  const target = path.join(localAppData, "alp", "bin", "alp.cmd");
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, "@echo off\r\necho mine\r\n");
+
+  let pathTouched = false;
+  const log = CLI.uninstallCli(repo, {
+    env: { LOCALAPPDATA: localAppData, USERPROFILE: sandbox, Path: "C:\\Windows" },
+    platform: "win32",
+    removeWindowsPath() {
+      pathTouched = true;
+      return "removed";
+    },
+  });
+  check("Windows uninstall không gỡ lệnh alp hay PATH của người khác", () => {
+    assert.strictEqual(fs.readFileSync(target, "utf8"), "@echo off\r\necho mine\r\n");
+    assert.strictEqual(pathTouched, false);
+    assert(log.some((x) => x.level === "KEEP"));
   });
 }
 
