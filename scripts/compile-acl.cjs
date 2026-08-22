@@ -20,6 +20,7 @@ const path = require("path");
 const L = require("./lib/loadout.cjs");
 const P = require("./lib/codex-profile.cjs");
 const S = require("./lib/claude-settings.cjs");
+const K = require("./lib/skill-links.cjs");
 
 const repoRoot = L.findRepoRoot(__dirname);
 if (!repoRoot) die("Không tìm thấy repo root (thư mục có CHARTER.md)");
@@ -81,6 +82,10 @@ for (const role of roles) {
       );
       drifted++;
     }
+    for (const issue of K.checkSkillLinks(repoRoot, role, L.loadLoadout(repoRoot, role))) {
+      console.log(`SKILL-DRIFT ${role} — ${issue}`);
+      drifted++;
+    }
     continue;
   }
 
@@ -101,6 +106,12 @@ for (const role of roles) {
     }) + "\n"
   );
   console.log(`WROTE    identity/${role}/.claude/settings.json`);
+
+  // Symlink skill sinh CÙNG lúc với settings, không phải bước riêng: hai artifact cùng
+  // derive từ một loadout, tách ra là mở đường cho chúng lệch nhau.
+  const links = K.syncSkillLinks(repoRoot, role, L.loadLoadout(repoRoot, role));
+  for (const name of links.removed) console.log(`UNLINK   identity/${role}/.claude/skills/${name}`);
+  for (const name of links.created) console.log(`LINK     identity/${role}/.claude/skills/${name}`);
 }
 
 if (checkOnly) {

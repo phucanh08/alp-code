@@ -220,8 +220,12 @@ const KNOWN_KEYS = [
   "reports_to", "delegates_to", "memory", "workspaces", "tools", "skills",
 ];
 
-/** Trả về mảng thông báo lỗi. Rỗng = hợp lệ. */
-function validate(loadout, role, allRoles) {
+/**
+ * Trả về mảng thông báo lỗi. Rỗng = hợp lệ.
+ * `knownSkills` — tên mọi skill có thật trong `skills/` (xem `lib/skill-links.cjs`). Bỏ trống
+ * thì bỏ qua phần kiểm skill; caller nào sinh ra artifact thật thì PHẢI truyền vào.
+ */
+function validate(loadout, role, allRoles, knownSkills) {
   const errs = [];
   const add = (m) => errs.push(`${role}: ${m}`);
 
@@ -279,6 +283,18 @@ function validate(loadout, role, allRoles) {
 
   for (const t of loadout.tools || []) {
     if (!KNOWN_TOOLS.includes(t)) add(`tool lạ trong \`tools:\`: ${t}`);
+  }
+
+  // Skill không có thật thì hỏng IM LẶNG: compile vẫn chạy, thẻ danh tính vẫn in tên đó,
+  // chỉ có link là không bao giờ sinh ra. Cùng lý do với `KNOWN_KEYS` — tên sai = lỗi.
+  if (knownSkills) {
+    const known = new Set(knownSkills);
+    const seen = new Set();
+    for (const s of loadout.skills || []) {
+      if (!known.has(s)) add(`skill lạ trong \`skills:\`: ${s} — không có \`skills/${s}/SKILL.md\``);
+      if (seen.has(s)) add(`skill trùng trong \`skills:\`: ${s}`);
+      seen.add(s);
+    }
   }
 
   return errs;

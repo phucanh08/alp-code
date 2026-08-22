@@ -27,4 +27,4 @@ workspaces:
 
 # --- công cụ & skill ---
 tools:  [Read, Write, Edit, Glob, Grep, Bash, WebSearch, WebFetch]
-skills: [agent-memory, herdr, alp:plan, alp:cook]
+skills: [agent-memory, herdr, alp-plan, git]

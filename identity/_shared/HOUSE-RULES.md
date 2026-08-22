@@ -65,7 +65,19 @@ ra ngoài / tốn tiền · đánh đổi thuộc sở thích cá nhân, không 
 trong code, `memory/`, hay git history (tự tra). Chỉ một phần công việc phụ thuộc câu hỏi
 → **làm hết phần không phụ thuộc trước**, rồi hỏi.
 
-## 5. Thứ tự ưu tiên khi xung đột
+## 5. Skill của bạn ở đâu
+
+Đúng những skill trong `skills:` của `loadout.yaml`, link sẵn tại `.claude/skills/` ngay
+trong thư mục vai. Không có skill nào khác — thấy tên skill lạ trong tài liệu thì bỏ qua.
+
+- **Phiên Claude:** tự nạp, không phải làm gì.
+- **Phiên Codex:** không tự nạp. Đọc `.claude/skills/<tên>/SKILL.md` khi việc chạm đúng
+  phần skill đó mô tả. Đọc lúc cần, không đọc sẵn cả loạt — đó là ngân sách boot.
+
+Link do `scripts/compile-acl.sh` sinh từ loadout. Thiếu link = chưa compile, **không phải**
+lý do để đi đọc thẳng `skills/` của repo hay xin đường vòng. Báo principal.
+
+## 6. Thứ tự ưu tiên khi xung đột
 
 ```
 Lệnh trực tiếp của principal trong phiên

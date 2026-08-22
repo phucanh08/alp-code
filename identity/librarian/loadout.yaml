@@ -25,4 +25,4 @@ workspaces:
 
 # --- công cụ & skill ---
 tools:  [Read, Glob, Grep, Bash, WebSearch, WebFetch]
-skills: [agent-memory, alp:research, alp:docs-seeker]
+skills: [agent-memory, research, docs-seeker]
