@@ -41,6 +41,10 @@ irm https://raw.githubusercontent.com/phucanh08/alp-code/main/install.ps1 | iex
 Installer clone repo về `~/.alp-code`, compile ACL cho mọi vai, trust workspace, chạy
 doctor, rồi cài luôn lệnh `alp`. Cần `git` và Node >= v18.
 
+Riêng Windows PowerShell, one-line installer thêm `%LOCALAPPDATA%\alp\bin` vào cả User
+PATH lẫn PATH của terminal hiện tại. Cài xong có thể gõ `alp init` ngay; các terminal mở
+sau cũng nhận lệnh `alp` ở mọi thư mục.
+
 **Chạy lại chính lệnh đó = cập nhật** — `git pull --ff-only` rồi recompile. `memory/` không
 bị đụng tới. Nhánh nội bộ đã rẽ thì installer **dừng** và báo, không tự merge hộ.
 
@@ -60,9 +64,11 @@ bị đụng tới. Nhánh nội bộ đã rẽ thì installer **dừng** và b�
 - Windows: tạo `%LOCALAPPDATA%\alp\bin\alp.cmd` (không cần symlink, admin hay Developer
   Mode), rồi thêm thư mục đó vào User PATH bằng PowerShell — không dùng `setx`.
 
-Installer không thể đổi PATH của terminal cha đang chạy. Sau lần cài đầu, mở terminal mới
-rồi gõ `alp`. Nếu shell không nhận diện được hoặc không ghi PATH được, installer báo rõ câu
-lệnh/thư mục cần thêm; `--no-path` / `ALP_NO_PATH=1` giữ nguyên profile và User PATH.
+Trên macOS/Linux, installer chạy trong shell con nên terminal hiện tại không nhận PATH mới;
+mở terminal mới rồi gõ `alp`. Trên Windows, lệnh `iex` chạy ngay trong PowerShell hiện tại
+nên installer kích hoạt `alp` tại chỗ sau khi đã ghi User PATH. Nếu không ghi PATH được,
+installer báo rõ thư mục cần thêm; `--no-path` / `ALP_NO_PATH=1` giữ nguyên cả persistent
+PATH lẫn PATH của terminal hiện tại.
 
 ## Làm việc trong project của bạn
 
@@ -258,6 +264,7 @@ alp-code/
 | `scripts/test-delegation.cjs` | contract ủy nhiệm · luật định tuyến pane/exec · seq |
 | `scripts/test-project-config.cjs` | nghiệm thu `alp init`: idempotent · uninstall sạch · cwd lạ chỉ-đọc |
 | `scripts/test-cli-link.cjs` | cài lệnh + PATH: macOS/Linux profile · Windows shim/User PATH · idempotent |
+| `scripts/test-windows-installer.cjs` | one-line Windows: PowerShell 5.1/7 · không đóng host · `alp` dùng ngay |
 | `scripts/test-skill-links.cjs` | symlink skill: sinh · dọn link thừa · target tương đối · validate `skills:` |
 | `scripts/sync-project-index.sh --write` | sinh lại L0 từ frontmatter L1 |
 
