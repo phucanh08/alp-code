@@ -131,6 +131,55 @@ function installCli(repoRoot, opts = {}) {
   return log;
 }
 
+/**
+ * Gỡ lệnh `alp` và phần PATH do installCli tạo.
+ *
+ * Chỉ xoá shim/link nếu nó còn trỏ đúng repo này. Một file `alp` của người dùng hoặc của
+ * clone alp-code khác là FOREIGN — giữ nguyên và không rút PATH chuyên dụng trên Windows.
+ */
+function uninstallCli(repoRoot, opts = {}) {
+  const env = opts.env || process.env;
+  const platform = opts.platform || process.platform;
+  const log = [];
+  const say = (level, text) => log.push({ level, text });
+  const cli = path.join(repoRoot, "scripts", "alp.cjs");
+  const dir = binDir(env, platform);
+  const target = path.join(dir, platform === "win32" ? "alp.cmd" : "alp");
+  let foreign = false;
+
+  if (fs.existsSync(target) || isBrokenLink(target)) {
+    if (ownsCommand(target, cli, platform)) {
+      fs.rmSync(target);
+      say("REMOVED", target);
+    } else {
+      foreign = true;
+      say("KEEP", `${target} — không phải lệnh của repo alp-code này`);
+    }
+  } else {
+    say("ABSENT", target);
+  }
+
+  if (platform === "win32") {
+    if (!foreign) {
+      removeWindowsPath(dir, env, opts, say);
+      removeFromProcessPath(dir, env, platform);
+      removeEmptyDir(dir);
+      removeEmptyDir(path.dirname(dir));
+    }
+  } else {
+    for (const file of profileCandidates(env)) {
+      if (!fs.existsSync(file)) continue;
+      const before = fs.readFileSync(file, "utf8");
+      const after = stripPathBlock(before);
+      if (after === before) continue;
+      fs.writeFileSync(file, after);
+      say("WROTE", `${file} — gỡ khối PATH của alp-code`);
+    }
+    removeFromProcessPath(dir, env, platform);
+  }
+  return log;
+}
+
 // ---------------------------------------------------------------- file thực thi
 
 function linkUnix(link, cli, say) {
@@ -163,6 +212,18 @@ function writeShim(target, cli, say) {
   }
   fs.writeFileSync(target, body);
   say("WROTE", `${target} → ${cli}`);
+}
+
+function ownsCommand(target, cli, platform) {
+  if (platform === "win32") {
+    try { return fs.readFileSync(target, "utf8") === cmdShim(cli); } catch { return false; }
+  }
+  try {
+    if (!fs.lstatSync(target).isSymbolicLink()) return false;
+    return path.resolve(path.dirname(target), fs.readlinkSync(target)) === path.resolve(cli);
+  } catch {
+    return false;
+  }
 }
 
 function isBrokenLink(p) {
@@ -207,6 +268,17 @@ function addWindowsPath(dir, env, opts, say) {
   }
 }
 
+function removeWindowsPath(dir, env, opts, say) {
+  const apply = opts.removeWindowsPath || removeWindowsPathReal;
+  try {
+    const r = apply(dir);
+    if (r === "absent") say("OK", `${dir} không còn trong PATH (User)`);
+    else say("WROTE", `PATH (User) -= ${dir}`);
+  } catch (e) {
+    say("WARN", `không gỡ được PATH (User) (${e.message}) — tự gỡ ${dir}`);
+  }
+}
+
 function applyWindowsPathReal(dir) {
   // -NoProfile: profile của người dùng có thể in ra thứ khác, làm bẩn stdout ta đang đọc.
   const ps = [
@@ -229,4 +301,74 @@ function applyWindowsPathReal(dir) {
   return (r.stdout || "").trim();
 }
 
-module.exports = { installCli, binDir, cmdShim, profileFor, pathBlock, onPath, BEGIN, END };
+function removeWindowsPathReal(dir) {
+  const ps = windowsRemovePathScript();
+
+  const r = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", ps], {
+    encoding: "utf8",
+    env: { ...process.env, ALP_BIN_DIR: dir },
+  });
+  if (r.error) throw r.error;
+  if (r.status !== 0) throw new Error((r.stderr || "").trim() || `powershell exit ${r.status}`);
+  return (r.stdout || "").trim();
+}
+
+function windowsRemovePathScript() {
+  return [
+    "$d = $env:ALP_BIN_DIR.TrimEnd('\\')",
+    '$cur = [Environment]::GetEnvironmentVariable("Path", "User")',
+    'if ([string]::IsNullOrEmpty($cur)) { Write-Output "absent"; exit 0 }',
+    '$parts = @($cur.Split(";") | Where-Object { $_ -ne "" })',
+    '$keep = @($parts | Where-Object { $_.TrimEnd("\\") -ine $d })',
+    'if ($keep.Count -eq $parts.Count) { Write-Output "absent"; exit 0 }',
+    '[Environment]::SetEnvironmentVariable("Path", ($keep -join ";"), "User")',
+    'Write-Output "removed"',
+  ].join("; ");
+}
+
+function profileCandidates(env) {
+  const home = env.HOME || os.homedir();
+  return [
+    path.join(home, ".zshrc"),
+    path.join(home, ".bash_profile"),
+    path.join(home, ".bashrc"),
+    path.join(home, ".config", "fish", "config.fish"),
+  ];
+}
+
+function stripPathBlock(body) {
+  const escapedBegin = BEGIN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedEnd = END.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return body.replace(new RegExp(`(?:\\r?\\n)?${escapedBegin}\\r?\\n[\\s\\S]*?${escapedEnd}(?:\\r?\\n)?`, "g"), "\n");
+}
+
+function removeFromProcessPath(dir, env, platform) {
+  const delimiter = platform === "win32" ? ";" : path.delimiter;
+  const key = Object.prototype.hasOwnProperty.call(env, "Path") ? "Path" : "PATH";
+  const wanted = platform === "win32" ? dir.toLowerCase() : dir;
+  env[key] = (env[key] || "")
+    .split(delimiter)
+    .filter(Boolean)
+    .filter((entry) => (platform === "win32" ? entry.toLowerCase() : entry) !== wanted)
+    .join(delimiter);
+}
+
+function removeEmptyDir(dir) {
+  try {
+    if (fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
+  } catch {}
+}
+
+module.exports = {
+  installCli,
+  uninstallCli,
+  binDir,
+  cmdShim,
+  profileFor,
+  pathBlock,
+  onPath,
+  stripPathBlock,
+  windowsRemovePathScript,
+  BEGIN,
+  END,
+};

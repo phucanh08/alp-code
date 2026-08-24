@@ -6,6 +6,7 @@
 //   alp deinit [path]      gỡ config cục bộ, huỷ đăng ký workspace
 //   alp delegate           Delegation API runtime-neutral
 //   alp delegation         lifecycle/status/health của execution
+//   alp uninstall          gỡ toàn bộ alp-code; backup memory theo mặc định
 //   alp doctor             khám toàn hệ
 //   alp update             git pull --ff-only + bootstrap lại
 //   alp help               9 script của repo, gom về một chỗ
@@ -23,7 +24,7 @@ const { spawnSync } = require("child_process");
 const L = require("./lib/loadout.cjs");
 const T = require("./lib/trust.cjs");
 const PC = require("./lib/project-config.cjs");
-const IB = require("./lib/delegation/init-backend.cjs");
+const U = require("./lib/uninstall.cjs");
 
 const repoRoot = L.findRepoRoot(__dirname);
 if (!repoRoot) die("không tìm thấy repo alp-code (thư mục có CHARTER.md)");
@@ -39,6 +40,7 @@ const COMMANDS = {
   deinit,
   delegate: delegateCommand,
   delegation: delegationCommand,
+  uninstall,
   doctor,
   update,
   help,
@@ -95,6 +97,9 @@ function init(args) {
   const options = initOptions(args);
   const projectPath = projectTarget(options.project ? [options.project] : []);
   try {
+    // Lazy load: `alp uninstall` phải chạy được từ installer tối giản ngay cả khi
+    // delegation tree/hooks đã thiếu hoặc đang được chính uninstall dọn đi.
+    const IB = require("./lib/delegation/init-backend.cjs");
     IB.configureInitBackend({
       repoRoot,
       requested: options.backend,
@@ -234,6 +239,29 @@ function deinitProject(projectPath) {
 
 // ---------------------------------------------------------------- lệnh còn lại
 
+function uninstall(args) {
+  const allowed = new Set(["--purge-memory", "--force"]);
+  for (const a of args)
+    if (!allowed.has(a)) die(`tham số lạ: ${a} — dùng: alp uninstall [--purge-memory] [--force]`);
+
+  console.log("---");
+  let result;
+  try {
+    result = U.uninstall(repoRoot, {
+      purgeMemory: args.includes("--purge-memory"),
+      force: args.includes("--force"),
+    });
+  } catch (e) {
+    die(e.message);
+  }
+  for (const { level, text } of result.log) console.log(`${level.padEnd(8)} ${text}`);
+
+  console.log("---");
+  console.log("REMOVED  alp-code, CLI global và PATH do installer tạo");
+  if (result.memoryBackup) console.log(`RESTORE  memory backup: ${result.memoryBackup}`);
+  console.log("NOTE     mở terminal mới để mọi process nhận User PATH đã cập nhật");
+}
+
 function doctor(args) {
   process.exit(run("doctor.cjs", args));
 }
@@ -269,6 +297,8 @@ function help() {
     ["alp deinit [path]", "gỡ config cục bộ, huỷ đăng ký workspace"],
     ["alp delegate <role> <task>", "giao việc qua policy + configured backend"],
     ["alp delegation <command>", "switch · status · wait · cancel · cleanup · health · list"],
+    ["alp uninstall", "gỡ alp-code + CLI/PATH; backup memory mặc định"],
+    ["alp uninstall --purge-memory", "gỡ và xoá vĩnh viễn cả memory"],
     ["alp doctor", "khám toàn hệ; mọi tín hiệu kèm dòng `→ fix:` chạy được"],
     ["alp update", "git pull --ff-only rồi bootstrap lại"],
     ["alp help", "bảng này"],
