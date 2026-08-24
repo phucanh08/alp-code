@@ -46,7 +46,9 @@ PATH lẫn PATH của terminal hiện tại. Cài xong có thể gõ `alp init` 
 sau cũng nhận lệnh `alp` ở mọi thư mục.
 
 **Chạy lại chính lệnh đó = cập nhật** — `git pull --ff-only` rồi recompile. `memory/` không
-bị đụng tới. Nhánh nội bộ đã rẽ thì installer **dừng** và báo, không tự merge hộ.
+bị đụng tới. `alp update` tự cất riêng các khối `workspaces:` machine-local do `alp init`
+sinh, fast-forward code rồi áp chúng lên loadout mới. Source edit, staged change hoặc field
+loadout khác vẫn làm update **dừng**; ALP không tự merge/stash chúng.
 
 | Tuỳ chọn | bash | PowerShell |
 |---|---|---|
@@ -311,6 +313,7 @@ alp-code/
 | `scripts/test-delegation-backends.cjs` | lifecycle mapping của HerdrBackend và PaseoBackend |
 | `scripts/test-project-config.cjs` | nghiệm thu `alp init`/`alp deinit`: idempotent · gỡ sạch · cwd lạ chỉ-đọc |
 | `scripts/test-runtime-installer.cjs` | prompt backend · cài/start Herdr/Paseo · non-interactive safety |
+| `scripts/test-update.cjs` | update giữ workspace local · chặn source edit · phục hồi khi pull lỗi |
 | `scripts/test-cli-link.cjs` | cài lệnh + PATH: macOS/Linux profile · Windows shim/User PATH · idempotent |
 | `scripts/test-windows-installer.cjs` | one-line Windows: PowerShell 5.1/7 · không đóng host · `alp` dùng ngay |
 | `scripts/test-uninstall.cjs` | gỡ toàn hệ: CLI/PATH · project config · memory backup/purge · safety guard |

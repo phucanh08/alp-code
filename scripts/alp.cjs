@@ -280,13 +280,17 @@ function delegationCommand(args) {
 function update(args) {
   if (args.length) die("`alp update` không nhận tham số");
   console.log(`PULL     ${repoRoot}`);
-  // --ff-only: có commit nội bộ chưa push thì DỪNG. Tự merge/stash hộ người dùng
-  // còn tệ hơn bắt họ xử lý tay.
-  const pull = spawnSync("git", ["-C", repoRoot, "pull", "--ff-only"], { stdio: "inherit" });
-  if (pull.error) die(`không chạy được git: ${pull.error.message}`);
-  if (pull.status !== 0)
-    die(`${repoRoot} không fast-forward được — nhánh nội bộ đã rẽ hoặc đang dở việc. ` +
-        `Tự xử lý (git -C "${repoRoot}" status) rồi chạy lại.`);
+  // `alp init` ghi workspace machine-local vào loadout đang tracked. Chỉ phần state cơ học
+  // này được tự cất/áp lại; mọi source edit hoặc field loadout khác vẫn phải dừng.
+  const UP = require("./lib/update.cjs");
+  const pull = UP.pullPreservingWorkspaces(repoRoot, {
+    env: process.env,
+    stdio: "inherit",
+    log(level, message) { console.log(`${level.padEnd(9)}${message}`); },
+  });
+  if (!pull.ok)
+    die(`${repoRoot} không update được — ${pull.message}. ` +
+        `Kiểm tra bằng: git -C "${repoRoot}" status`);
   process.exit(run("bootstrap.cjs", []));
 }
 
