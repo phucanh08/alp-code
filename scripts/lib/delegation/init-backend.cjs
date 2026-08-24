@@ -1,6 +1,8 @@
 // Interactive backend selection used by `alp init`.
 
 const fs = require("fs");
+const readline = require("readline");
+const { PassThrough } = require("stream");
 const { loadDelegationConfig, writeBackendSelection } = require("./config.cjs");
 const { createDelegationService } = require("./create-service.cjs");
 const { ensureBackendRuntime } = require("./runtime-installer.cjs");
@@ -10,7 +12,7 @@ const LABELS = {
   paseo: "Paseo — daemon/agent runtime",
 };
 
-function configureInitBackend(options) {
+async function configureInitBackend(options) {
   const repoRoot = options.repoRoot;
   const env = options.env || process.env;
   const input = options.input || process.stdin;
@@ -23,7 +25,7 @@ function configureInitBackend(options) {
 
   let selected = options.requested || null;
   if (!selected && interactive)
-    selected = promptBackend({ input, output, enabled, current: config.backend, readLine: options.readLine });
+    selected = await promptBackend({ input, output, enabled, current: config.backend, readLine: options.readLine });
 
   // `alp init` is also used from scripts/tests. Never surprise a non-interactive caller
   // with a package install; automation can opt in deterministically via --backend.
@@ -62,7 +64,7 @@ function configureInitBackend(options) {
   return { backend: selected, selected: true, runtime, health };
 }
 
-function promptBackend(options) {
+async function promptBackend(options) {
   const choices = options.enabled.filter((name) => LABELS[name]);
   if (!choices.length) throw new Error("không có delegation backend nào được enabled");
   const current = choices.includes(options.current) ? options.current : choices[0];
@@ -94,9 +96,11 @@ function canUseArrowMenu(options) {
     typeof options.input.setRawMode === "function";
 }
 
-function promptBackendArrowMenu(options) {
+async function promptBackendArrowMenu(options) {
   const { input, output, choices, current } = options;
-  const readKey = options.readKey || (() => readTerminalKey(input));
+  const wasFlowing = input.readableFlowing === true;
+  const keypress = options.readKey ? null : createKeypressReader(input);
+  const readKey = options.readKey || keypress.read;
   const wasRaw = Boolean(input.isRaw);
   let selectedIndex = Math.max(0, choices.indexOf(current));
 
@@ -104,9 +108,10 @@ function promptBackendArrowMenu(options) {
   output.write("\x1b[?25l"); // hide cursor while the menu is active
   try {
     if (!wasRaw) input.setRawMode(true);
+    if (keypress && typeof input.resume === "function") input.resume();
     renderArrowMenu(output, choices, current, selectedIndex, false);
     for (;;) {
-      const key = readKey();
+      const key = await readKey();
       if (key === "up") {
         selectedIndex = (selectedIndex - 1 + choices.length) % choices.length;
         renderArrowMenu(output, choices, current, selectedIndex, true);
@@ -122,19 +127,82 @@ function promptBackendArrowMenu(options) {
       }
     }
   } finally {
+    keypress?.close();
+    // `resume()` is needed for keypress events but must not keep the CLI process alive
+    // after selection. Restore a previously non-flowing stdin on Unix and Windows alike.
+    if (keypress && !wasFlowing && typeof input.pause === "function") input.pause();
     if (!wasRaw) input.setRawMode(false);
     output.write("\x1b[?25h"); // always restore cursor visibility
   }
 }
 
 function renderArrowMenu(output, choices, current, selectedIndex, redraw) {
-  if (redraw) output.write(`\x1b[${choices.length + 1}A`);
+  if (redraw) readline.moveCursor(output, 0, -(choices.length + 1));
   choices.forEach((name, index) => {
     const pointer = index === selectedIndex ? "❯" : " ";
     const persisted = name === current ? " (hiện tại)" : "";
-    output.write(`\r\x1b[2K  ${pointer} ${LABELS[name]}${persisted}\n`);
+    readline.clearLine(output, 0);
+    readline.cursorTo(output, 0);
+    output.write(`  ${pointer} ${LABELS[name]}${persisted}\n`);
   });
-  output.write("\r\x1b[2K↑/↓ chọn · Enter xác nhận · Ctrl+C huỷ\n");
+  readline.clearLine(output, 0);
+  readline.cursorTo(output, 0);
+  output.write("↑/↓ chọn · Enter xác nhận · Ctrl+C huỷ\n");
+}
+
+/**
+ * Node's readline decoder is the cross-platform boundary for terminal keys. In
+ * particular, Windows Console/ConPTY input must not be decoded by reading ANSI bytes
+ * directly from fd 0. Keep a queue because one Windows input chunk may contain both an
+ * arrow and Enter before the async menu installs its next waiter.
+ */
+function createKeypressReader(input) {
+  const decoder = new PassThrough();
+  const queued = [];
+  const waiting = [];
+  let terminalError = null;
+
+  const onKeypress = (sequence, key) => {
+    const value = normalizeKeypress(sequence, key);
+    const waiter = waiting.shift();
+    if (waiter) waiter.resolve(value);
+    else queued.push(value);
+  };
+  const onError = (error) => {
+    terminalError = error;
+    for (const waiter of waiting.splice(0)) waiter.reject(error);
+  };
+
+  // Keep readline's permanent decoder listeners off process.stdin. ALP owns the single
+  // forwarding listener below and can remove it completely when the menu closes.
+  readline.emitKeypressEvents(decoder);
+  decoder.on("keypress", onKeypress);
+  const onData = (chunk) => decoder.write(chunk);
+  input.on("data", onData);
+  input.on("error", onError);
+
+  return {
+    read() {
+      if (queued.length) return Promise.resolve(queued.shift());
+      if (terminalError) return Promise.reject(terminalError);
+      return new Promise((resolve, reject) => waiting.push({ resolve, reject }));
+    },
+    close() {
+      input.removeListener("data", onData);
+      input.removeListener("error", onError);
+      decoder.removeListener("keypress", onKeypress);
+      decoder.destroy();
+    },
+  };
+}
+
+function normalizeKeypress(sequence, key = {}) {
+  if (key.ctrl && key.name === "c") return "cancel";
+  if (key.name === "up") return "up";
+  if (key.name === "down") return "down";
+  if (["return", "enter"].includes(key.name) || sequence === "\r" || sequence === "\n")
+    return "enter";
+  return "other";
 }
 
 function readTerminalKey(input, options = {}) {
@@ -199,6 +267,8 @@ module.exports = {
   configureInitBackend,
   promptBackend,
   promptBackendArrowMenu,
+  createKeypressReader,
+  normalizeKeypress,
   readTerminalKey,
   readTerminalLine,
 };
