@@ -3,6 +3,7 @@ const assert = require("assert");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { PassThrough } = require("stream");
 const {
   PASEO_PACKAGE,
   ensureBackendRuntime,
@@ -17,16 +18,23 @@ const {
 } = require("./lib/delegation/config.cjs");
 
 let failed = 0;
-testHerdrAlreadyReady();
-testHerdrInstallAndStart();
-testPaseoInstallAndStart();
-testCustomPaseoCommandFailsClosed();
-testPrompt();
-testNonBlockingTerminalRead();
-testInitSelectionPersistence();
-testNonInteractiveCompatibility();
-if (failed) process.exit(1);
-console.log("OK               delegation runtime installer + alp init backend selection");
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+
+async function main() {
+  testHerdrAlreadyReady();
+  testHerdrInstallAndStart();
+  testPaseoInstallAndStart();
+  testCustomPaseoCommandFailsClosed();
+  await testPrompt();
+  testNonBlockingTerminalRead();
+  await testInitSelectionPersistence();
+  await testNonInteractiveCompatibility();
+  if (failed) process.exit(1);
+  console.log("OK               delegation runtime installer + alp init backend selection");
+}
 
 function testHerdrAlreadyReady() {
   const fake = fakeRuntime({ herdrInstalled: true, herdrServer: true });
@@ -79,10 +87,10 @@ function testCustomPaseoCommandFailsClosed() {
   });
 }
 
-function testPrompt() {
+async function testPrompt() {
   const answers = ["wat", "2"];
   let output = "";
-  const selected = promptBackend({
+  const selected = await promptBackend({
     input: {},
     output: { write(value) { output += value; } },
     enabled: ["herdr", "paseo"],
@@ -99,7 +107,7 @@ function testPrompt() {
   const rawModes = [];
   const keys = ["down", "enter"];
   let arrowOutput = "";
-  const arrowSelected = promptBackend({
+  const arrowSelected = await promptBackend({
     input: {
       fd: 7,
       isTTY: true,
@@ -116,6 +124,36 @@ function testPrompt() {
     assert.deepStrictEqual(rawModes, [true, false]);
     assert(arrowOutput.includes("↑/↓ chọn"));
     assert(arrowOutput.includes("\x1b[?25h"));
+  });
+
+  const streamRawModes = [];
+  const streamInput = new PassThrough();
+  streamInput.isTTY = true;
+  streamInput.isRaw = false;
+  streamInput.setRawMode = (value) => {
+    streamInput.isRaw = value;
+    streamRawModes.push(value);
+  };
+  let streamOutput = "";
+  const streamTerminal = {
+    isTTY: true,
+    write(value) { streamOutput += value; return true; },
+  };
+  // Windows Console/ConPTY can deliver Down + Enter in one input chunk. The keypress
+  // queue must retain Enter while the menu redraws after Down.
+  setImmediate(() => streamInput.write("\x1b[B\r"));
+  const streamSelected = await promptBackend({
+    input: streamInput,
+    output: streamTerminal,
+    enabled: ["herdr", "paseo"],
+    current: "herdr",
+  });
+  check("Node keypress decoder nhận Down + Enter cùng chunk kiểu Windows", () => {
+    assert.strictEqual(streamSelected, "paseo");
+    assert.deepStrictEqual(streamRawModes, [true, false]);
+    assert(streamOutput.includes("Paseo"));
+    assert.strictEqual(streamInput.listenerCount("data"), 0, "còn sót decoder listener trên stdin");
+    assert.strictEqual(streamInput.isPaused(), true, "stdin vẫn flowing làm alp init không thoát prompt");
   });
 }
 
@@ -139,10 +177,10 @@ function testNonBlockingTerminalRead() {
   });
 }
 
-function testInitSelectionPersistence() {
-  withConfig((fixture) => {
+async function testInitSelectionPersistence() {
+  await withConfig(async (fixture) => {
     const ensured = [];
-    const result = configureInitBackend({
+    const result = await configureInitBackend({
       repoRoot: fixture.repo,
       env: fixture.env,
       requested: "paseo",
@@ -159,10 +197,10 @@ function testInitSelectionPersistence() {
   });
 }
 
-function testNonInteractiveCompatibility() {
-  withConfig((fixture) => {
+async function testNonInteractiveCompatibility() {
+  await withConfig(async (fixture) => {
     let called = false;
-    const result = configureInitBackend({
+    const result = await configureInitBackend({
       repoRoot: fixture.repo,
       env: fixture.env,
       interactive: false,
@@ -226,7 +264,7 @@ function fakeRuntime(initial = {}) {
   };
 }
 
-function withConfig(fn) {
+async function withConfig(fn) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "alp-init-backend-"));
   const repo = path.join(root, "repo");
   const state = path.join(root, "state");
@@ -243,7 +281,7 @@ function withConfig(fn) {
     "      enabled: true",
     "      runtime_tools_disabled: true",
   ].join("\n") + "\n");
-  try { fn({ repo, state, env: { ...process.env, ALP_CONFIG: config } }); }
+  try { await fn({ repo, state, env: { ...process.env, ALP_CONFIG: config } }); }
   finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
 

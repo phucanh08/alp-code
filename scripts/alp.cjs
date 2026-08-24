@@ -46,10 +46,14 @@ const COMMANDS = {
   help,
 };
 
-if (!cmd) session();
-else if (COMMANDS[cmd]) COMMANDS[cmd](argv);
-else if (["-h", "--help"].includes(cmd)) help();
-else die(`lệnh lạ \`${cmd}\` — xem \`alp help\``);
+dispatch().catch((error) => die(error.message));
+
+async function dispatch() {
+  if (!cmd) return session();
+  if (COMMANDS[cmd]) return await COMMANDS[cmd](argv);
+  if (["-h", "--help"].includes(cmd)) return help();
+  die(`lệnh lạ \`${cmd}\` — xem \`alp help\``);
+}
 
 // ---------------------------------------------------------------- alp (không tham số)
 
@@ -87,7 +91,7 @@ function session() {
 
 // ---------------------------------------------------------------- alp init / alp deinit
 
-function init(args) {
+async function init(args) {
   // `--uninstall` là tên cũ của `alp deinit`. Giữ lại vì nó đang nằm trong header của
   // mọi file config đã sinh ra ngoài kia — gỡ ngay là bẻ tay người đã cài.
   if (args.includes("--uninstall")) {
@@ -100,7 +104,7 @@ function init(args) {
     // Lazy load: `alp uninstall` phải chạy được từ installer tối giản ngay cả khi
     // delegation tree/hooks đã thiếu hoặc đang được chính uninstall dọn đi.
     const IB = require("./lib/delegation/init-backend.cjs");
-    IB.configureInitBackend({
+    await IB.configureInitBackend({
       repoRoot,
       requested: options.backend,
       env: process.env,
