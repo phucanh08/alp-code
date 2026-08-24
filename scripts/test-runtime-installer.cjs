@@ -9,6 +9,10 @@ const {
   ensureBackendRuntime,
 } = require("./lib/delegation/runtime-installer.cjs");
 const {
+  resolveWindowsCommand,
+  spawnSyncCommand,
+} = require("./lib/delegation/backends/command-runner.cjs");
+const {
   configureInitBackend,
   promptBackend,
   readTerminalLine,
@@ -27,6 +31,9 @@ async function main() {
   testHerdrAlreadyReady();
   testHerdrInstallAndStart();
   testPaseoInstallAndStart();
+  testPaseoStatusIgnoresStderrWarning();
+  testPaseoWindowsInstallShell();
+  testWindowsCommandShim();
   testCustomPaseoCommandFailsClosed();
   await testPrompt();
   testNonBlockingTerminalRead();
@@ -74,6 +81,71 @@ function testPaseoInstallAndStart() {
     assert(start[1].includes("--no-relay"));
     assert.strictEqual(result.status, "healthy");
   });
+}
+
+function testPaseoStatusIgnoresStderrWarning() {
+  const fake = fakeRuntime({
+    paseoInstalled: true,
+    paseoDaemon: true,
+    paseoStatusStderr: "Warning: Ignoring extra certs from missing.pem\n",
+  });
+  const result = ensureBackendRuntime("paseo", fake.options({ backendConfig: { cli: "paseo" } }));
+  check("Paseo status JSON bỏ qua warning trên stderr", () => {
+    assert.strictEqual(result.status, "healthy");
+    assert(!fake.calls.some(([, args]) => args.join(" ").startsWith("daemon start")));
+  });
+}
+
+function testPaseoWindowsInstallShell() {
+  const fake = fakeRuntime({ paseoInstalled: false, paseoDaemon: true });
+  ensureBackendRuntime("paseo", fake.options({
+    platform: "win32",
+    env: { PATH: "C:\\node", PATHEXT: ".EXE;.CMD", ComSpec: "C:\\Windows\\System32\\cmd.exe" },
+    backendConfig: { cli: "paseo" },
+  }));
+  check("Windows npm lifecycle dùng cmd thay vì user script-shell", () => {
+    const install = fake.calls.find(([command, args]) =>
+      command === "npm.cmd" && args.join(" ") === `install -g ${PASEO_PACKAGE}`);
+    assert(install, "không gọi npm.cmd install");
+    assert.strictEqual(install[2].env.npm_config_script_shell, "C:\\Windows\\System32\\cmd.exe");
+  });
+}
+
+function testWindowsCommandShim() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "alp-windows-command-"));
+  const shim = path.join(root, "fake-tool.cmd");
+  const shimTarget = path.join(root, "fake-tool.cjs");
+  const npmBin = path.join(root, "AppData", "Roaming", "npm");
+  const globalShim = path.join(npmBin, "global-tool.cmd");
+  fs.mkdirSync(npmBin, { recursive: true });
+  fs.writeFileSync(shim, [
+    "@echo off",
+    "SET _prog=node",
+    '"%_prog%" "%dp0%\\fake-tool.cjs" %*',
+    "",
+  ].join("\r\n"));
+  fs.writeFileSync(shimTarget, 'process.stdout.write(JSON.stringify(process.argv.slice(2)));\n');
+  fs.writeFileSync(globalShim, "@echo off\r\necho global-tool %1\r\n");
+  const env = { ...process.env, PATH: root, PATHEXT: ".EXE;.CMD" };
+  try {
+    check("Windows PATHEXT resolve npm-style .cmd shim", () => {
+      assert.strictEqual(resolveWindowsCommand("fake-tool", env).toLowerCase(), shim.toLowerCase());
+    });
+    check("Windows resolve npm-global shim ngoài PATH", () => {
+      const isolated = { PATH: root, PATHEXT: ".EXE;.CMD", APPDATA: path.dirname(npmBin) };
+      assert.strictEqual(resolveWindowsCommand("global-tool", isolated).toLowerCase(), globalShim.toLowerCase());
+    });
+    if (process.platform === "win32") {
+      const args = ["ready & echo not-a-command", "%PATH%", "value with spaces"];
+      const result = spawnSyncCommand("fake-tool", args, { env, encoding: "utf8" }, "win32");
+      check("Windows Node chạy được npm-style .cmd shim", () => {
+        assert.strictEqual(result.status, 0, result.stderr || result.error?.message);
+        assert.deepStrictEqual(JSON.parse(result.stdout), args);
+      });
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 }
 
 function testCustomPaseoCommandFailsClosed() {
@@ -221,13 +293,13 @@ function fakeRuntime(initial = {}) {
   const state = { brew: true, npm: true, ...initial };
   const calls = [];
   const launches = [];
-  const run = (command, args) => {
-    calls.push([command, [...args]]);
+  const run = (command, args, options = {}) => {
+    calls.push([command, [...args], options]);
     if (command === "brew") {
       if (args[0] === "--version") return ok("Homebrew test\n");
       if (args.join(" ") === "install herdr") { state.herdrInstalled = true; return ok(); }
     }
-    if (command === "npm") {
+    if (command === "npm" || command === "npm.cmd") {
       if (args[0] === "--version") return ok("10.0.0\n");
       if (args.join(" ") === `install -g ${PASEO_PACKAGE}`) { state.paseoInstalled = true; return ok(); }
       if (args.join(" ") === "prefix -g") return ok("/fake/npm\n");
@@ -243,7 +315,7 @@ function fakeRuntime(initial = {}) {
       if (args[0] === "--version") return ok("0.5.1\n");
       if (args.join(" ") === "daemon status --json")
         return state.paseoDaemon
-          ? ok(JSON.stringify({ localDaemon: "running", connectedDaemon: "reachable" }))
+          ? ok(JSON.stringify({ localDaemon: "running", connectedDaemon: "reachable" }), state.paseoStatusStderr || "")
           : fail(JSON.stringify({ localDaemon: "stopped", connectedDaemon: "unreachable" }));
       if (args[0] === "daemon" && args[1] === "start") { state.paseoDaemon = true; return ok(); }
     }
@@ -286,7 +358,7 @@ async function withConfig(fn) {
 }
 
 function sink() { return { write() {} }; }
-function ok(stdout = "") { return { status: 0, stdout, stderr: "", error: null }; }
+function ok(stdout = "", stderr = "") { return { status: 0, stdout, stderr, error: null }; }
 function fail(stderr = "") { return { status: 1, stdout: "", stderr, error: null }; }
 function missing(command) {
   return { status: null, stdout: "", stderr: "", error: Object.assign(new Error(`${command}: not found`), { code: "ENOENT" }) };

@@ -7,17 +7,19 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { spawn, spawnSync } = require("child_process");
+const { spawn } = require("child_process");
+const { spawnSyncCommand } = require("./backends/command-runner.cjs");
 
 const HERDR_INSTALL_URL = "https://herdr.dev/install.sh";
 const HERDR_WINDOWS_INSTALL_URL = "https://herdr.dev/install.ps1";
 const PASEO_PACKAGE = "@getpaseo/cli";
 
 function ensureBackendRuntime(backend, options = {}) {
+  const platform = options.platform || process.platform;
   const context = {
     env: options.env || process.env,
-    platform: options.platform || process.platform,
-    run: options.run || defaultRun,
+    platform,
+    run: options.run || ((command, args, runOptions) => defaultRun(command, args, runOptions, platform)),
     launch: options.launch || defaultLaunch,
     log: options.log || (() => {}),
     backendConfig: options.backendConfig || {},
@@ -80,7 +82,14 @@ function ensurePaseo(context) {
     if (!commandProbe(context, npm, ["--version"]).ok)
       throw new Error("thiếu `npm`; cần Node/npm để cài Paseo CLI");
     context.log("INSTALL", `Paseo chưa có — đang cài ${PASEO_PACKAGE}`);
-    runChecked(context, npm, ["install", "-g", PASEO_PACKAGE], { stdio: "inherit" });
+    const installOptions = { stdio: "inherit" };
+    // npm honors a user-level `script-shell`. PowerShell 5.1 cannot parse lifecycle
+    // scripts that use `||` (node-pty does), so pin npm scripts to cmd for this install.
+    if (context.platform === "win32")
+      installOptions.env = {
+        npm_config_script_shell: context.env.ComSpec || context.env.COMSPEC || "cmd.exe",
+      };
+    runChecked(context, npm, ["install", "-g", PASEO_PACKAGE], installOptions);
     installed = true;
     command = refreshCommand(context, "paseo", npm);
     probe = commandProbe(context, command, ["--version"]);
@@ -162,10 +171,14 @@ function paseoDaemonStatus(context, command) {
     ["daemon", "status", "--json"],
     processOptions(context, { encoding: "utf8" })
   );
-  const output = combinedOutput(result);
-  if (result.error || result.status !== 0) return { ok: false, message: output.trim() || result.error?.message };
+  const stdout = String(result.stdout || "");
+  if (result.error || result.status !== 0)
+    return { ok: false, message: combinedOutput(result).trim() || result.error?.message };
   try {
-    const data = JSON.parse(output || "{}");
+    // Node warnings (for example NODE_EXTRA_CA_CERTS) are written to stderr. They are
+    // diagnostics, not part of Paseo's JSON protocol, and must not make a healthy daemon
+    // look unavailable.
+    const data = JSON.parse(stdout || "{}");
     const ok = data.connectedDaemon === "reachable" || data.localDaemon === "running";
     return { ok, message: ok ? "reachable" : data.connectedDaemon || data.localDaemon || "unreachable" };
   } catch {
@@ -221,7 +234,7 @@ function runChecked(context, command, args, options = {}) {
 }
 
 function processOptions(context, options) {
-  return { ...options, env: context.env };
+  return { ...options, env: { ...context.env, ...(options.env || {}) } };
 }
 
 function waitFor(check, timeoutMs) {
@@ -246,8 +259,8 @@ function firstLine(value) {
   return String(value || "").split(/\r?\n/, 1)[0].trim();
 }
 
-function defaultRun(command, args, options) {
-  return spawnSync(command, args, options);
+function defaultRun(command, args, options, platform = process.platform) {
+  return spawnSyncCommand(command, args, options, platform);
 }
 
 function defaultLaunch(command, args, options) {
