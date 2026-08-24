@@ -1,6 +1,7 @@
 # RELATIONS — oracle
 
-Oracle nhận brief từ `main` và trả second opinion cho `main`. Không delegate cho ai.
+Oracle nhận brief trực tiếp từ principal hoặc delegation parent và trả second opinion về
+đúng nguồn giao việc. Không delegate cho ai.
 
-Main chỉ gọi Oracle khi chiều sâu reasoning đáng chi phí; không bắt buộc ở mọi task. Runtime
-routing bắt buộc: Main/Claude → Oracle/Claude Opus 5; Main/Codex → Oracle/GPT-5.6 Sol.
+Chỉ dùng Oracle khi chiều sâu reasoning đáng chi phí; không bắt buộc ở mọi task. Delegation
+runtime routing: Claude parent → Oracle/Claude Opus 5; Codex parent → Oracle/GPT-5.6 Sol.

@@ -21,6 +21,7 @@ const L = require("./lib/loadout.cjs");
 const P = require("./lib/codex-profile.cjs");
 const S = require("./lib/claude-settings.cjs");
 const K = require("./lib/skill-links.cjs");
+const D = require("./lib/delegation/config.cjs");
 
 const repoRoot = L.findRepoRoot(__dirname);
 if (!repoRoot) die("Không tìm thấy repo root (thư mục có CHARTER.md)");
@@ -33,6 +34,7 @@ const allRoles = L.listRoles(repoRoot);
 if (allRoles.length === 0) die("Không có vai nào trong identity/");
 
 const roles = targets.length ? targets : allRoles;
+const delegationConfig = D.loadDelegationConfig(repoRoot);
 for (const r of roles) {
   if (!allRoles.includes(r)) die(`Không có vai \`${r}\` trong identity/`);
 }
@@ -45,7 +47,9 @@ if (targets.length && !checkOnly && targets.length < allRoles.length) {
 
 function buildSettings(role) {
   try {
-    return S.buildSettings(repoRoot, role, allRoles, L.loadLoadout(repoRoot, role));
+    return S.buildSettings(repoRoot, role, allRoles, L.loadLoadout(repoRoot, role), {
+      delegationStateDir: delegationConfig.stateDir,
+    });
   } catch (e) {
     (e.issues || []).forEach((i) => console.error(`INVALID  ${i}`));
     die(`${e.message} — sửa rồi chạy lại`);
@@ -65,7 +69,14 @@ for (const role of roles) {
   const body = JSON.stringify(buildSettings(role), null, 2) + "\n";
 
   const profileFile = P.profilePath(CODEX_HOME, role);
-  const profileBody = P.buildProfile(L.loadLoadout(repoRoot, role), role, repoRoot);
+  const loadout = L.loadLoadout(repoRoot, role);
+  const mayDelegate = L.canDelegate(loadout);
+  const profileBody = P.buildProfile(loadout, role, repoRoot, {
+    writableRoots: mayDelegate ? [delegationConfig.stateDir] : [],
+    // Backend CLI cần kết nối Herdr Unix socket hoặc Paseo daemon local. ACL hook vẫn
+    // chặn gọi raw runtime command; network chỉ phục vụ Delegation API đã authorize.
+    networkAccess: mayDelegate,
+  });
 
   if (checkOnly) {
     const cur = fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : null;

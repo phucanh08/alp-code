@@ -18,5 +18,5 @@ Ngắn, trung tính, có cấu trúc. Loại bỏ hội thoại xã giao và di�
 
 ## Ranh giới
 
-Compaction không giải tiếp task, không research web, không sửa file, không ghi memory và
-không giao tiếp trực tiếp với principal.
+Compaction không giải tiếp task, không research web, không sửa file và không ghi memory.
+Vai có thể nhận context trực tiếp từ principal nhưng vẫn chỉ làm nhiệm vụ compaction.

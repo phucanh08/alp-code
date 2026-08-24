@@ -13,16 +13,17 @@ const F = require("./lib/herdr-fleet.cjs");
 
 const prompt = wrapDelegatedPrompt("Tìm luồng authentication");
 assert(prompt.includes("do `main` (Phở 🍜) giao"));
-assert(prompt.includes("chỉ gửi về `main`"));
-assert(prompt.includes("không giao tiếp trực tiếp với principal"));
+assert(prompt.includes("Kết quả lifecycle của execution này trả về `main`"));
+assert(prompt.includes("Nếu principal tương tác trực tiếp"));
 assert(prompt.endsWith("Tìm luồng authentication"));
 
 // Bản một dòng phải giữ NGUYÊN nguồn ủy nhiệm. Bỏ nó đi thì vai phụ thấy một nhiệm vụ
-// không rõ nguồn và từ chối theo luật main-only — đã đo thật trên pane Titling.
+// không rõ nguồn và không biết delegation parent nào sở hữu lifecycle execution.
 const pointer = delegatedPromptPointer("/tmp/x.md");
 assert(!pointer.includes("\n"), "prompt gửi vào pane phải MỘT dòng — herdr từ chối newline");
 assert(pointer.includes("do `main` (Phở 🍜) giao"));
-assert(pointer.includes("chỉ gửi về `main`"));
+assert(pointer.includes("Kết quả execution trả về `main`"));
+assert(pointer.includes("principal tương tác trực tiếp"));
 assert(pointer.includes("/tmp/x.md"));
 
 // ---------------------------------------------------------------- luật định tuyến

@@ -50,10 +50,10 @@ context của bạn sạch:
 | đã từng quyết định gì về việc này | truy xuất trí nhớ |
 
 Ai đảm nhận vai nào: `identity/REGISTRY.md` và `delegates_to` trong loadout của bạn.
-Lệnh: `scripts/run-role.sh <vai>`.
+Lệnh: `alp delegate <vai> "<task>"`.
 
-Giao được nhiều vai **song song** thì giao — chúng độc lập với nhau. Quản nhiều phiên cùng
-lúc: skill `herdr`.
+Giao được nhiều vai **song song** thì dùng `--background` và theo dõi qua
+`alp delegation status|wait`. Runtime backend nằm sau API, không gọi trực tiếp.
 
 **Bỏ qua bước này nếu** principal đã đưa sẵn report, hoặc việc quá nhỏ.
 
@@ -123,6 +123,6 @@ vào `identity/<vai>/journal/YYYY-MM.md`.
 ## Ranh giới
 
 - Không tạo plan hay report ngoài `plans/` của repo này.
-- Không có `Task` tool — mọi việc giao đi đều qua `run-role`/`herdr`, là **phiên riêng**,
-  không phải subagent. Phiên riêng nghĩa là nó không thấy context của bạn: brief phải đủ.
+- Không có `Task` tool — mọi việc giao đi đều qua ALP Delegation API, là **execution riêng**,
+  không phải subagent. Execution chỉ thấy context ALP đã build: brief phải đủ.
 - Không có `AskUserQuestion`. Hỏi principal bằng cách hỏi thẳng trong phiên.

@@ -28,12 +28,13 @@ function findRepoRoot(start) {
  *   key: [a, b, c]
  *   key:            (map lồng một tầng, thụt 2 space)
  *     sub: [a, b]
- * Không hỗ trợ list nhiều dòng, multi-line string, anchor. Cố tình —
+ * Hỗ trợ map lồng theo indentation; không hỗ trợ list nhiều dòng, multi-line string,
+ * anchor. Cố tình —
  * loadout.yaml phải đọc được bằng mắt trong 10 giây.
  */
 function parseYaml(text) {
   const root = {};
-  let current = root;
+  const stack = [{ indent: -1, value: root }];
   for (const rawLine of text.split("\n")) {
     const line = rawLine.replace(/\s+#.*$/, "").trimEnd();
     if (!line.trim() || line.trim().startsWith("#")) continue;
@@ -43,13 +44,13 @@ function parseYaml(text) {
     if (!m) continue;
     const [, key, rawValue] = m;
 
-    if (indent === 0) current = root;
-    const target = indent === 0 ? root : current;
+    while (stack.length > 1 && stack.at(-1).indent >= indent) stack.pop();
+    const target = stack.at(-1).value;
 
     if (rawValue === "") {
-      const child = {}; // mở một map con
-      root[key] = child;
-      current = child;
+      const child = {};
+      target[key] = child;
+      stack.push({ indent, value: child });
       continue;
     }
     target[key] = parseScalarOrList(rawValue);
@@ -122,11 +123,16 @@ function loadoutPath(repoRoot, role) {
  * cảnh báo, doctor phun ~50 dòng báo động giả, boot set phình 3 901 ký tự vượt ngân sách.
  */
 function sessionIdentity(cwd, fallbackFrom, env = process.env) {
-  const order = env.ALP_ROLE && fallbackFrom ? [fallbackFrom, cwd] : [cwd, fallbackFrom];
+  // Backend delegation có thể chạy qua config project của main. Hook command trong config
+  // đó gắn ALP_ROLE=main, nên marker do DelegationService cấp phải thắng để target giữ đúng
+  // identity/ACL. Chỉ adapter đã qua policy mới đặt ALP_DELEGATED_ROLE.
+  const delegatedRole = env.ALP_DELEGATED_ROLE;
+  const sessionRole = delegatedRole || env.ALP_ROLE;
+  const order = sessionRole && fallbackFrom ? [fallbackFrom, cwd] : [cwd, fallbackFrom];
   const repoRoot = order.filter(Boolean).map(findRepoRoot).find(Boolean) || null;
   if (!repoRoot) return null;
 
-  if (env.ALP_ROLE) return { repoRoot, role: env.ALP_ROLE };
+  if (sessionRole) return { repoRoot, role: sessionRole };
 
   const rel = path.relative(repoRoot, cwd).split(path.sep);
   return { repoRoot, role: rel[0] === "identity" && rel[1] ? rel[1] : path.basename(cwd) };
@@ -385,8 +391,11 @@ function canDelegate(loadout) {
   return (loadout?.delegates_to || []).length > 0;
 }
 
-/** Lệnh spawn vai khác. Khớp theo TÊN LỆNH ở vị trí đầu, không theo chuỗi con. */
-const DELEGATION_BINS = /^(herdr|run-role\.(cjs|sh|ps1))$/;
+/** Raw runtime binaries không phải public delegation API của role. */
+const RUNTIME_DELEGATION_BINS = /^(herdr|paseo(?:\.exe)?)$/;
+const RUNTIME_DELEGATION_TOOLS = /(?:^|__)(?:create_agent|spawn_agent)$/i;
+/** Facade hợp lệ: vẫn phải qua exact `delegates_to` trong DelegationService. */
+const DELEGATION_FACADES = /^(run-role\.(cjs|sh|ps1)|delegate\.cjs)$/;
 const WRAPPERS = /^(node|bash|sh|zsh|pwsh|powershell)$/;
 
 /**
@@ -402,8 +411,10 @@ const WRAPPERS = /^(node|bash|sh|zsh|pwsh|powershell)$/;
  *
  * Trả `null` nếu cho phép, hoặc chuỗi lý do nếu chặn.
  */
-function checkDelegationCommand(role, mayDelegate, cmd) {
-  if (mayDelegate) return null;
+function checkDelegationCommand(role, delegatesToOrMayDelegate, cmd) {
+  const delegatesTo = Array.isArray(delegatesToOrMayDelegate)
+    ? delegatesToOrMayDelegate
+    : delegatesToOrMayDelegate ? null : [];
 
   for (const segment of String(cmd).split(/[;\n]|&&|\|\||\|/)) {
     const words = segment.trim().split(/\s+/).filter(Boolean);
@@ -412,12 +423,43 @@ function checkDelegationCommand(role, mayDelegate, cmd) {
     if (i >= words.length) continue;
 
     let head = unquote(words[i]);
-    if (WRAPPERS.test(path.basename(head)) && words[i + 1]) head = unquote(words[i + 1]);
+    if (WRAPPERS.test(path.basename(head)) && words[i + 1]) head = unquote(words[++i]);
     const bin = path.basename(head);
 
-    if (DELEGATION_BINS.test(bin))
-      return `${role} không được spawn vai khác (\`${bin}\`) — chống đệ quy delegation, chỉ \`main\` giao việc`;
+    if (RUNTIME_DELEGATION_BINS.test(bin))
+      return `${role} không được gọi raw runtime \`${bin}\` — dùng ALP Delegation API để policy chạy trước backend`;
+
+    let target = null;
+    let isFacade = false;
+    let lifecycle = false;
+    if (DELEGATION_FACADES.test(bin)) {
+      isFacade = true;
+      if (bin === "delegate.cjs") {
+        lifecycle = words[i + 1] !== "delegate";
+        target = lifecycle ? null : words[i + 2];
+      } else target = words[i + 1];
+    } else if (bin === "alp" && ["delegate", "delegation"].includes(words[i + 1])) {
+      isFacade = true;
+      lifecycle = words[i + 1] === "delegation";
+      target = lifecycle ? null : words[i + 2];
+    }
+    if (!isFacade) continue;
+    if (delegatesTo === null) continue; // compatibility caller chỉ truyền boolean true
+    if (lifecycle && delegatesTo.length > 0) continue;
+    if (target && delegatesTo.includes(unquote(target))) continue;
+    return (
+      `${role} không được delegate${target ? ` cho \`${unquote(target)}\`` : ""} ` +
+      `(delegates_to: ${delegatesTo.join(", ") || "[]"})`
+    );
   }
+  return null;
+}
+
+/** MCP/runtime delegation tool surfaced despite backend policy: fail closed for every role. */
+function checkRuntimeDelegationTool(role, toolName) {
+  const name = String(toolName || "");
+  if (/herdr|paseo/i.test(name) || RUNTIME_DELEGATION_TOOLS.test(name))
+    return `${role} không được gọi raw runtime tool \`${name}\` — dùng ALP Delegation API`;
   return null;
 }
 
@@ -440,6 +482,7 @@ module.exports = {
   findRepoRoot, parseYaml, globToRegExp, matchesAny,
   listRoles, loadoutPath, loadLoadout, sessionIdentity, effectiveGrants, effectiveWorkspaces,
   writeWorkspaces, untildify, tildify,
-  validate, checkPath, checkWorkspacePath, canDelegate, checkDelegationCommand, isWithin,
+  validate, checkPath, checkWorkspacePath, canDelegate, checkDelegationCommand,
+  checkRuntimeDelegationTool, isWithin,
   KNOWN_TOOLS, REASONING_EFFORTS, FROZEN,
 };

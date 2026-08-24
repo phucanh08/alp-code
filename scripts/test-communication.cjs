@@ -7,7 +7,7 @@ const { ENTRYPOINT_CONTRACT, checkCommunicationTopology } = require("./lib/commu
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "alp-code-communication-"));
 try {
-  write("AGENTS.md", "Phở is the default principal-facing role\n");
+  write("AGENTS.md", "Phở is the default coordinator; specialists accept direct principal tasks\n");
   write("identity/main/AGENTS.md", "Phở is main\n");
   write(`identity/search/AGENTS.md`, ENTRYPOINT_CONTRACT);
   write(`identity/search/CLAUDE.md`, ENTRYPOINT_CONTRACT);
@@ -32,7 +32,7 @@ try {
   assert(checkCommunicationTopology(root, roles, (role) => loadouts[role])
     .some((item) => item.tag === "COMMS-TOPOLOGY"));
 
-  console.log("OK               communication topology tests passed");
+  console.log("OK               communication channels: principal direct + delegated parent");
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }

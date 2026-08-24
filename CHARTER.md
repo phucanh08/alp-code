@@ -40,7 +40,7 @@ memory/private/<role>/  nháp riêng từng vai
 | `librarian` | Librarian 📚 | external/cross-repo research | `shared/reference/**` · `projects/*/refs/**` |
 | `read-thread` | Read Thread 🧵 | tìm kiếm trong memory | private của vai; memory chỉ đọc |
 | `review` | Review 🔎 | review code, một concern mỗi phiên | private của vai; code/memory chỉ đọc |
-| `oracle` | Oracle 🔮 | senior consultant tùy chọn của Main | private của vai; code/memory chỉ đọc |
+| `oracle` | Oracle 🔮 | senior consultant tùy chọn | private của vai; code/memory chỉ đọc |
 | `compaction` | Compaction 🗜️ | context summarization cho thread dài | private của vai; memory chỉ đọc |
 | `titling` | Titling 🏷️ | sinh nhanh title cho thread | private của vai; không đọc/ghi memory chung |
 
@@ -91,8 +91,10 @@ và *sự tập trung của context*, không phải bảo vệ *bí mật quốc
 
 ## 7. Luật vận hành phiên agent
 
-- Phiên Claude chạy với **CWD = `identity/<role>/`**. Các vai Codex chạy qua
-  `scripts/run-role.*`, launcher tự chọn CWD và inject identity.
+- Principal có thể mở một vai trực tiếp; phiên đó nhận task và trả lời principal trong phạm
+  vi ACL của chính vai. Khi một vai giao việc cho vai khác, execution bắt buộc đi qua ALP
+  Delegation API (`alp delegate` hoặc facade `scripts/run-role.*`); service chọn workspace,
+  inject identity/context và enforce policy trước runtime backend.
 - **Lần đầu mở một vai mới phải chạy `claude` tương tác một lần và bấm chấp nhận trust
   dialog.** Chưa trust ⇒ Claude Code **bỏ qua toàn bộ** `permissions.allow` và
   `additionalDirectories` trong `settings.json` của vai đó. `scripts/doctor.sh` kiểm việc này.

@@ -1,6 +1,6 @@
 # RELATIONS — titling
 
-Titling chỉ nhận context thread do `main` giao qua delegation launcher và trả đúng một tiêu
-đề cho `main`.
+Titling nhận context thread trực tiếp từ principal hoặc qua delegation launcher và trả đúng
+một tiêu đề cho nguồn giao việc.
 
-Không delegate cho ai. Mọi yêu cầu ngoài title generation được trả lại cho `main`.
+Không delegate cho ai. Mọi yêu cầu ngoài title generation được trả lại cho người giao việc.

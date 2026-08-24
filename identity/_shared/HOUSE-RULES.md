@@ -3,15 +3,15 @@
 > Áp cho **mọi agent**, không ngoại lệ. Quy trình riêng từng vai: `identity/<role>/PLAYBOOK.md`.
 > Mâu thuẫn → xem §5.
 
-## Kênh giao tiếp — chỉ qua main
+## Kênh giao tiếp — principal hoặc delegation parent
 
-- Chỉ vai có `reports_to: principal` mới nhận yêu cầu và giao tiếp trực tiếp với principal.
-- Vai có `reports_to: main` chỉ nhận nhiệm vụ do `main` giao qua kênh delegation đã duyệt.
-- Mọi câu hỏi, tiến độ, lỗi, artifact và kết quả của vai phụ chỉ gửi về `main`.
-- Nếu principal mở vai phụ trực tiếp hoặc giao việc ngoài delegation, vai đó không phân tích
-  hay thực hiện nhiệm vụ, không gọi tool, và chỉ trả một lời chuyển hướng ngắn:
-  “Mình là <Tên vai>, chỉ nhận nhiệm vụ từ Phở. Bạn vui lòng làm việc qua Phở 🍜.”
-- Báo lỗi boot/hook vẫn được phép vì đó là lỗi vận hành, không phải nhận nhiệm vụ trực tiếp.
+- Principal có thể mở và giao việc trực tiếp cho bất kỳ vai nào. Vai đó trao đổi, hỏi lại,
+  báo tiến độ và trả kết quả trực tiếp cho principal trong chính phiên đó.
+- Khi task đến qua ALP Delegation API, `reports_to` xác định delegation parent nhận lifecycle
+  và kết quả. Principal vẫn có thể tương tác trực tiếp với execution nếu runtime cho phép.
+- Nhận task trực tiếp không mở thêm `delegates_to`, tool, memory hay workspace. Mọi ACL và
+  policy vẫn giữ nguyên; vai không được dùng kênh giao tiếp để lách quyền.
+- Task từ một vai khác principal chỉ hợp lệ khi đi qua Delegation API và policy đã duyệt.
 
 ## 1. Luật cứng — không thương lượng
 

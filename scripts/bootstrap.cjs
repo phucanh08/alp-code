@@ -14,6 +14,7 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 const L = require("./lib/loadout.cjs");
 const CLI = require("./lib/cli-link.cjs");
+const D = require("./lib/delegation/config.cjs");
 
 const repoRoot = L.findRepoRoot(__dirname);
 if (!repoRoot) die("không tìm thấy repo root (thư mục có CHARTER.md)");
@@ -34,6 +35,10 @@ if (!roles.length) die("identity/ không có vai nào — repo hỏng hoặc clo
 //    và hook SessionStart boot rỗng. Dựng khung trước mọi bước khác.
 console.log("---");
 ensureMemory();
+
+// Delegation state nằm ngoài source workspace. Tạo root trước khi sinh config để
+// Claude/Codex có một writable root tồn tại ngay từ phiên main đầu tiên.
+ensureDelegationState();
 
 // 2. ACL. Bắt buộc --all: `deny` thắng `allow` nên settings mỗi vai phải liệt kê
 //    đủ các vai anh em. Thiếu một vai = rò rỉ im lặng.
@@ -103,6 +108,14 @@ function ensureMemory() {
 
   if (!made.length) console.log("OK       memory/ đã đủ khung — không đụng vào nội dung");
   else for (const m of made) console.log(`WROTE    ${m}`);
+}
+
+function ensureDelegationState() {
+  let config;
+  try { config = D.loadDelegationConfig(repoRoot); }
+  catch (error) { die(`delegation config không hợp lệ: ${error.message}`); }
+  fs.mkdirSync(config.stateDir, { recursive: true, mode: 0o700 });
+  console.log(`OK       delegation state ${config.stateDir}`);
 }
 
 function copyMissing(srcDir, dstDir, made) {

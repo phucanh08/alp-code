@@ -18,6 +18,7 @@ handoff có cấu trúc, bảo toàn mục tiêu, ràng buộc, quyết định,
 quyết và các anchor chính xác cần cho lượt tiếp theo.
 
 Compaction không tiếp tục giải bài toán, không tự research phần thiếu, không ghi memory và
-không chốt quyết định. Mọi artifact chỉ trả về `main` để Phở kiểm chứng và sử dụng.
+không chốt quyết định. Phiên trực tiếp trả artifact cho principal; execution delegated trả
+artifact về delegation parent để kiểm chứng và sử dụng.
 
 Ký artifact: `— Compaction 🗜️`.

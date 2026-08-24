@@ -17,6 +17,7 @@ const os = require("os");
 const path = require("path");
 const { execFileSync, spawnSync } = require("child_process");
 const L = require("./lib/loadout.cjs");
+const D = require("./lib/delegation/config.cjs");
 
 const repoRoot = L.findRepoRoot(__dirname);
 if (!repoRoot) die("không tìm thấy repo root");
@@ -58,11 +59,20 @@ const CASES = [
   // Không có nhóm này thì Search spawn được Search: vòng lặp đốt quota không có phanh,
   // và không ai ngồi giữa để cắt. `delegates_to` rỗng = không được mở phiên vai nào.
   ["librarian", "DENY", "Bash", { command: "herdr agent start x --kind codex --pane w1:p1" }, "vai phụ spawn agent"],
+  ["librarian", "DENY", "Bash", { command: "paseo run --background -- task" }, "vai phụ gọi raw Paseo"],
+  ["librarian", "DENY", "mcp__paseo__create_agent", { task: "x" }, "vai phụ gọi raw Paseo MCP tool"],
   ["librarian", "DENY", "Bash", { command: `node ${R("scripts/run-role.cjs")} search -- việc` }, "vai phụ gọi run-role"],
+  ["librarian", "DENY", "Bash", { command: `node ${R("scripts/delegate.cjs")} delegate review -- việc` }, "vai phụ gọi Delegation API"],
+  ["librarian", "DENY", "Bash", { command: "alp delegation cancel exec_x" }, "vai phụ không quản execution"],
   ["librarian", "DENY", "Bash", { command: "ALP_ROLE=main herdr pane split --pane w1:p1" }, "lách bằng tiền tố env"],
   ["librarian", "ALLOW", "Bash", { command: "grep -rn herdr ../../docs" }, "đọc TÀI LIỆU về herdr vẫn được"],
-  ["main", "ALLOW", "Bash", { command: "herdr agent list" }, "main điều phối — không hỏi permission"],
-  ["main", "ALLOW", "Bash", { command: `node ${R("scripts/run-role.cjs")} search --pane -- việc` }, "main giao việc"],
+  ["main", "DENY", "Bash", { command: "herdr agent list" }, "main cũng không bypass Delegation API qua Herdr"],
+  ["main", "DENY", "Bash", { command: "paseo run --background -- việc" }, "main cũng không bypass Delegation API qua Paseo"],
+  ["main", "DENY", "spawn_agent", { task: "x" }, "main cũng không bypass bằng raw spawn tool"],
+  ["main", "ALLOW", "Bash", { command: `node ${R("scripts/run-role.cjs")} search --pane -- việc` }, "main giao đúng target qua facade"],
+  ["main", "ALLOW", "Bash", { command: `node ${R("scripts/delegate.cjs")} delegate review -- việc` }, "main dùng Delegation API"],
+  ["main", "ALLOW", "Bash", { command: "alp delegation status exec_x" }, "main quản lifecycle generic"],
+  ["main", "DENY", "Bash", { command: `node ${R("scripts/delegate.cjs")} delegate not-allowed -- việc` }, "main không được bỏ qua exact delegates_to"],
 ];
 
 /**
@@ -75,7 +85,15 @@ const DELEGATED_CASES = [
   ["librarian", "DENY", "Bash", { command: `cat ${R("memory/private/main/x.md")}` }, "ngoài repo vẫn chặn kho riêng vai khác"],
   ["librarian", "DENY", "Edit", { file_path: R("identity/main/SOUL.md") }, "ngoài repo vẫn chặn persona vai khác"],
   ["librarian", "ALLOW", "Read", { file_path: R("memory/shared/reference/deepseek-harness.md") }, "ngoài repo vẫn đọc được shared"],
+  ["librarian", "DENY", "mcp__paseo__create_agent", { task: "x" }, "ALP_DELEGATED_ROLE ngoài repo vẫn chặn raw runtime tool", "ALP_DELEGATED_ROLE"],
 ];
+
+const SEARCH_WORKSPACES = L.effectiveWorkspaces(L.loadLoadout(repoRoot, "search")).read;
+const WORKSPACE_SCOPE_CASES = SEARCH_WORKSPACES.length >= 2 ? [
+  ["ALLOW", "Read", { file_path: path.join(SEARCH_WORKSPACES[1], "scope-probe") }, SEARCH_WORKSPACES[1], "đọc đúng workspace của execution"],
+  ["DENY", "Read", { file_path: path.join(SEARCH_WORKSPACES[0], "scope-probe") }, SEARCH_WORKSPACES[1], "chặn workspace cũ dù vẫn có trong workspaces.read"],
+  ["DENY", "Bash", { command: `rg probe ${SEARCH_WORKSPACES[0]}` }, SEARCH_WORKSPACES[1], "Bash cũng không đọc workspace cũ"],
+] : [];
 
 // ---------------------------------------------------------------- chạy
 // main() gọi ở CUỐI file: mọi `const` phải khởi tạo xong trước, nếu không
@@ -97,23 +115,37 @@ function main() {
     console.log(`${ok ? " ok " : "FAIL"}  ${role.padEnd(15)} ${expect.padEnd(5)} ${label}`);
   }
 
-  for (const [role, expect, tool, input, label] of DELEGATED_CASES) {
-    const got = runHook(role, tool, input, { cwd: os.tmpdir(), env: { ALP_ROLE: role } });
+  for (const [role, expect, tool, input, label, roleEnv = "ALP_ROLE"] of DELEGATED_CASES) {
+    const got = runHook(role, tool, input, { cwd: os.tmpdir(), env: { [roleEnv]: role } });
     const ok = got === expect;
     ok ? pass++ : failures.push({ role, expect, got, label });
     console.log(`${ok ? " ok " : "FAIL"}  ${role.padEnd(15)} ${expect.padEnd(5)} ${label}`);
+  }
+
+  for (const [expect, tool, input, workspace, label] of WORKSPACE_SCOPE_CASES) {
+    const got = runHook("search", tool, input, {
+      cwd: workspace,
+      env: {
+        ALP_DELEGATED_ROLE: "search",
+        ALP_DELEGATION_WORKSPACE: workspace,
+        ALP_READONLY_DIRS: workspace,
+      },
+    });
+    const ok = got === expect;
+    ok ? pass++ : failures.push({ role: "search", expect, got, label });
+    console.log(`${ok ? " ok " : "FAIL"}  ${"search".padEnd(15)} ${expect.padEnd(5)} ${label}`);
   }
 
   cleanupFixtures();
 
   console.log("---");
   if (failures.length) {
-    console.log(`${pass}/${CASES.length + DELEGATED_CASES.length} đúng. ${failures.length} ca SAI:`);
+    console.log(`${pass}/${CASES.length + DELEGATED_CASES.length + WORKSPACE_SCOPE_CASES.length} đúng. ${failures.length} ca SAI:`);
     for (const f of failures) console.log(`  ${f.role} · ${f.label} — cần ${f.expect}, thực tế ${f.got}`);
     console.log("\nMột ca sai = cách ly chưa xong. Không được bỏ qua ca ALLOW.");
     process.exit(1);
   }
-  console.log(`${pass}/${CASES.length + DELEGATED_CASES.length} đúng — cách ly hoạt động cả hai chiều.`);
+  console.log(`${pass}/${CASES.length + DELEGATED_CASES.length + WORKSPACE_SCOPE_CASES.length} đúng — cách ly hoạt động cả hai chiều.`);
   process.exit(0);
 }
 
@@ -123,6 +155,7 @@ function main() {
  */
 function assertGeneratedSettings() {
   const roles = L.listRoles(repoRoot);
+  const delegationStateDir = D.loadDelegationConfig(repoRoot).stateDir;
   for (const role of roles) {
     const settingsPath = R("identity", role, ".claude", "settings.json");
     if (!fs.existsSync(settingsPath)) die(`thiếu settings sinh ra cho ${role}`);
@@ -155,10 +188,23 @@ function assertGeneratedSettings() {
     // theo tiền tố chuỗi nên chặn không đáng tin), nhưng hai lớp phải nói CÙNG một điều —
     // lệch nhau là lúc không ai biết luật thật là gì.
     const mayDelegate = L.canDelegate(L.loadLoadout(repoRoot, role));
-    const bucket = mayDelegate ? settings.permissions?.allow : settings.permissions?.deny;
-    for (const rule of ["Bash(herdr:*)", `Bash(node ${R("scripts", "run-role.cjs")}:*)`]) {
+    if (mayDelegate && !dirs.includes(delegationStateDir))
+      die(`${role}: additionalDirectories thiếu delegation state ${delegationStateDir}`);
+    if (!mayDelegate && dirs.includes(delegationStateDir))
+      die(`${role}: role không delegate nhưng lại được mở delegation state`);
+    for (const rule of ["Bash(herdr:*)", "Bash(paseo:*)"]) {
+      if (!(settings.permissions?.deny || []).includes(rule))
+        die(`${role}: settings thiếu deny raw runtime \`${rule}\``);
+    }
+    for (const rule of [
+      `Bash(node ${R("scripts", "run-role.cjs")}:*)`,
+      `Bash(node ${R("scripts", "delegate.cjs")}:*)`,
+      "Bash(alp delegate:*)",
+      "Bash(alp delegation:*)",
+    ]) {
+      const bucket = mayDelegate ? settings.permissions?.allow : settings.permissions?.deny;
       if (!(bucket || []).includes(rule))
-        die(`${role}: settings thiếu ${mayDelegate ? "allow" : "deny"} \`${rule}\``);
+        die(`${role}: settings thiếu ${mayDelegate ? "allow" : "deny"} facade \`${rule}\``);
     }
   }
 }
@@ -174,7 +220,14 @@ function assertGeneratedSettings() {
  * `ALP_ROLE=main` cho 17/29 với 12 ca librarian sai — báo động giả "cách ly thủng" trong
  * khi ACL nguyên vẹn. Ca nào cần vai từ env thì tự truyền qua `opts.env`.
  */
-const { ALP_ROLE: _ambientRole, ...BASE_ENV } = process.env;
+const {
+  ALP_ROLE: _ambientRole,
+  ALP_DELEGATED_ROLE: _ambientDelegatedRole,
+  ALP_DELEGATION_EXECUTION_ID: _ambientExecution,
+  ALP_DELEGATION_WORKSPACE: _ambientWorkspace,
+  ALP_READONLY_DIRS: _ambientReadonly,
+  ...BASE_ENV
+} = process.env;
 
 /** Gọi thẳng acl-guard.cjs với payload hook y như Claude Code gửi. */
 function runHook(role, tool, input, opts = {}) {

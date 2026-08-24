@@ -22,8 +22,9 @@ const C = require("./lib/communication.cjs");
 const T = require("./lib/trust.cjs");
 const PC = require("./lib/project-config.cjs");
 const P = require("./lib/codex-profile.cjs");
-const F = require("./lib/herdr-fleet.cjs");
 const K = require("./lib/skill-links.cjs");
+const { createDelegationService } = require("./lib/delegation/create-service.cjs");
+const { loadDelegationConfig } = require("./lib/delegation/config.cjs");
 
 const quiet = process.argv.includes("--quiet");
 const repoRoot = L.findRepoRoot(__dirname);
@@ -34,6 +35,8 @@ if (!repoRoot) {
 
 const signals = [];
 const signal = (tag, msg, fix) => signals.push({ tag, msg, fix });
+const observations = [];
+const observe = (tag, msg) => observations.push({ tag, msg });
 
 /** Lệnh sửa hay gặp — viết một lần, đừng chép chuỗi. */
 const FIX = {
@@ -53,6 +56,8 @@ if (!roles.length) {
   console.error("ERROR    không có vai nào trong identity/");
   process.exit(2);
 }
+let delegationStateDir = null;
+try { delegationStateDir = loadDelegationConfig(repoRoot).stateDir; } catch {}
 
 
 // ---------------------------------------------------------------- Project Layer
@@ -118,9 +123,14 @@ function checkAcl() {
     // KHÔNG kiểm "mọi dir nằm trong repoRoot": workspace code hợp lệ nằm NGOÀI repo, nên
     // luật đó biến mỗi `alp init` thành 8 cảnh báo giả. Dir hợp lệ = trong repo HOẶC
     // trong một `workspaces.read` đã khai; còn lại mới là tàn dư của repo root cũ.
-    const ws = L.effectiveWorkspaces(L.loadLoadout(repoRoot, role) || {});
+    const loadout = L.loadLoadout(repoRoot, role) || {};
+    const ws = L.effectiveWorkspaces(loadout);
+    const runtimeDirs = L.canDelegate(loadout) && delegationStateDir ? [delegationStateDir] : [];
     const strays = (settings.permissions?.additionalDirectories || []).filter(
-      (d) => !L.isWithin(repoRoot, d) && !ws.read.some((r) => L.isWithin(r, d))
+      (d) =>
+        !L.isWithin(repoRoot, d) &&
+        !ws.read.some((r) => L.isWithin(r, d)) &&
+        !runtimeDirs.some((r) => L.isWithin(r, d))
     );
     if (strays.length)
       signal(
@@ -328,37 +338,56 @@ function checkRegisteredProjects() {
   }
 }
 
-// ---------------------------------------------------------------- fleet herdr
+// ---------------------------------------------------------------- Delegation backend
 
-/**
- * Không có fleet KHÔNG phải tín hiệu — phiên headless là bình thường và launcher tự rơi
- * về `--exec`. Chỉ kêu khi fleet CÓ mà lệch bản, hoặc có pane mồ côi.
- */
-function checkHerdr() {
-  const fleet = F.available();
-  if (!fleet.ok) return;
-
-  if (fleet.version !== F.VERIFIED_VERSION)
-    signal(
-      "HERDR-VERSION",
-      `herdr ${fleet.version} ≠ bản đã kiểm chứng ${F.VERIFIED_VERSION} — CLI đổi giữa các minor ` +
-        "(0.7→0.8 xoá cả nhóm `wait`), lệnh trong lib/skill có thể không còn đúng",
-      "đọc `herdr <nhóm> --help`, sửa scripts/lib/herdr-fleet.cjs + skills/herdr/SKILL.md rồi cập nhật VERIFIED_VERSION"
-    );
-
-  let orphans = [];
+function checkDelegation() {
+  let runtime;
   try {
-    orphans = F.orphanPanes();
-  } catch {
-    return; // fleet vừa tắt giữa chừng — không phải bệnh của hệ này
+    runtime = createDelegationService({ repoRoot, logger: () => {} });
+  } catch (error) {
+    return signal(
+      "DELEGATION-BACKEND",
+      error.message,
+      "sửa alp.config.yaml hoặc ALP_DELEGATION_BACKEND rồi chạy alp doctor"
+    );
   }
-  for (const o of orphans) {
-    // Nhãn do launcher đặt là `<role>-<hậu tố>`; lấy lại vai để in đúng lệnh chạy được.
-    const role = roles.find((r) => String(o.agent || "").startsWith(r + "-")) || "main";
+
+  const { service, config, backendRegistry } = runtime;
+  observe("DELEGATION-BACKEND", config.backend);
+  let health;
+  try { health = service.health(config.backend); }
+  catch (error) {
+    health = { backend: config.backend, ok: false, status: "unavailable", message: error.message };
+  }
+  observe("BACKEND-HEALTH", `${health.status || (health.ok ? "healthy" : "unavailable")} — ${health.message}`);
+  if (!health.ok || health.warning) {
     signal(
-      "ORPHAN-PANE",
-      `pane ${o.pane} (${o.agent}) còn báo \`${o.status}\` nhưng tiến trình đã chết`,
-      `node scripts/run-role.cjs ${role} --release ${o.pane}`
+      "BACKEND-HEALTH",
+      `${config.backend}: ${health.message}`,
+      health.remediation || `kiểm backend bằng \`alp delegation health ${config.backend}\``
+    );
+  }
+
+  // Reconcile tracked lifecycle before counting. Otherwise a completed runtime execution
+  // remains `running` forever in ALP state merely because nobody called `status` manually.
+  for (const entry of service.listExecutions()) {
+    if (!["queued", "running"].includes(entry.status)) continue;
+    try { service.status(entry.executionId); } catch {}
+  }
+  const active = service.listExecutions().filter((entry) => ["queued", "running"].includes(entry.status));
+  observe("ACTIVE-EXECUTIONS", String(active.length));
+
+  const backend = backendRegistry.resolve(config.backend);
+  let orphans = [];
+  try { orphans = typeof backend.orphanExecutions === "function" ? backend.orphanExecutions() : []; }
+  catch { orphans = []; }
+  observe("ORPHAN-EXECUTIONS", String(orphans.length));
+  for (const orphan of orphans) {
+    const ref = orphan.executionId;
+    signal(
+      "ORPHAN-EXECUTION",
+      `${config.backend} execution ${ref} (${orphan.label || "unknown"}) còn \`${orphan.status}\` nhưng runtime đã dừng`,
+      `alp delegation cleanup ${ref}`
     );
   }
 }
@@ -381,13 +410,17 @@ function main() {
   checkIdentityFiles();
   checkTrust();
   checkRegisteredProjects();
-  checkHerdr();
+  checkDelegation();
 
   if (signals.length) {
+    if (!quiet && observations.length) console.log(observations.map(renderObservation).join("\n"));
     console.log(signals.map(render).join("\n"));
     process.exit(1);
   }
-  if (!quiet) console.log("OK               alp-code sạch — không có tín hiệu nào");
+  if (!quiet) {
+    if (observations.length) console.log(observations.map(renderObservation).join("\n"));
+    console.log("OK               alp-code sạch — không có tín hiệu nào");
+  }
   process.exit(0);
 }
 
@@ -401,6 +434,10 @@ function render({ tag, msg, fix }) {
   return fix
     ? `${line}\n${" ".repeat(16)} → fix: ${fix}`
     : `${line}\n${" ".repeat(16)} → fix: (thiếu — doctor.cjs quên tham số thứ ba của signal())`;
+}
+
+function renderObservation({ tag, msg }) {
+  return `${tag.padEnd(20)} ${msg}`;
 }
 
 function escapeRe(s) {

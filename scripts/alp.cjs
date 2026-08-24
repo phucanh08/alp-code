@@ -2,8 +2,10 @@
 // alp.cjs — một cửa vào duy nhất cho cả hệ.
 //
 //   alp                    phiên Phở CHỈ-ĐỌC ở cwd bất kỳ (không cần init)
-//   alp init [path]        đăng ký project + sinh config Claude/Codex + trust hai runtime
+//   alp init [path]        chọn/cài delegation backend + đăng ký project + config hai runtime
 //   alp deinit [path]      gỡ config cục bộ, huỷ đăng ký workspace
+//   alp delegate           Delegation API runtime-neutral
+//   alp delegation         lifecycle/status/health của execution
 //   alp doctor             khám toàn hệ
 //   alp update             git pull --ff-only + bootstrap lại
 //   alp help               9 script của repo, gom về một chỗ
@@ -21,14 +23,26 @@ const { spawnSync } = require("child_process");
 const L = require("./lib/loadout.cjs");
 const T = require("./lib/trust.cjs");
 const PC = require("./lib/project-config.cjs");
+const IB = require("./lib/delegation/init-backend.cjs");
 
 const repoRoot = L.findRepoRoot(__dirname);
 if (!repoRoot) die("không tìm thấy repo alp-code (thư mục có CHARTER.md)");
 
 const argv = process.argv.slice(2);
-const cmd = argv[0] && !argv[0].startsWith("-") ? argv.shift() : null;
+// Mọi argv đầu tiên đều là command/flag của `alp`. Cách parse cũ coi `alp --help`
+// như `alp` không tham số và mở một Claude session lồng nhau; trong Claude `--print`
+// việc đó kết thúc bằng lỗi "Input must be provided" thay vì in help.
+const cmd = argv.length ? argv.shift() : null;
 
-const COMMANDS = { init, deinit, doctor, update, help };
+const COMMANDS = {
+  init,
+  deinit,
+  delegate: delegateCommand,
+  delegation: delegationCommand,
+  doctor,
+  update,
+  help,
+};
 
 if (!cmd) session();
 else if (COMMANDS[cmd]) COMMANDS[cmd](argv);
@@ -78,11 +92,51 @@ function init(args) {
     console.error("WARN     `alp init --uninstall` đổi tên thành `alp deinit` — dùng tên mới.");
     return deinit(args.filter((a) => a !== "--uninstall"));
   }
-  return initInstall(projectTarget(args));
+  const options = initOptions(args);
+  const projectPath = projectTarget(options.project ? [options.project] : []);
+  try {
+    IB.configureInitBackend({
+      repoRoot,
+      requested: options.backend,
+      env: process.env,
+      input: process.stdin,
+      output: process.stdout,
+    });
+  } catch (error) {
+    if (error.code === "PROMPT_CANCELLED") {
+      console.log("\nĐã huỷ `alp init`.");
+      process.exit(130);
+    }
+    die(error.message);
+  }
+  return initInstall(projectPath);
 }
 
 function deinit(args) {
   return deinitProject(projectTarget(args));
+}
+
+/** `alp init [path] [--backend herdr|paseo]`; flag dùng cho automation/non-TTY. */
+function initOptions(args) {
+  let project = null;
+  let backend = null;
+  for (let i = 0; i < args.length; i++) {
+    const value = args[i];
+    if (value === "--backend") {
+      backend = args[++i];
+      if (!backend) die("--backend thiếu tên");
+    } else if (value.startsWith("--backend=")) {
+      backend = value.slice("--backend=".length);
+      if (!backend) die("--backend thiếu tên");
+    } else if (value.startsWith("-")) {
+      die(`tham số lạ: ${value}`);
+    } else if (project) {
+      die(`chỉ nhận một project path: ${project}, ${value}`);
+    } else {
+      project = value;
+    }
+  }
+  return { project, backend };
 }
 
 /** Đường dẫn project cho `alp init`/`alp deinit`: mặc định cwd, phải là thư mục, phải rời repo. */
@@ -126,7 +180,9 @@ function initInstall(projectPath) {
   for (const { file, action } of results) console.log(`${action.padEnd(8)} ${file}`);
 
   // 3. Giấu khỏi `git status` của người ta — per-clone, không tracked.
-  if (PC.setGitExclude(projectPath, true)) console.log("WROTE    khối exclude per-clone cho hai file trên");
+  const projectSkills = L.loadLoadout(repoRoot, role).skills || [];
+  if (PC.setGitExclude(projectPath, true, projectSkills))
+    console.log("WROTE    khối exclude per-clone cho config + ALP skill links");
   const tracked = PC.trackedConfigs(projectPath);
   if (tracked.length)
     console.log(`WARN     project đang track ${tracked.join(", ")} — exclude không áp được, \`git status\` sẽ đổi`);
@@ -150,7 +206,7 @@ function initInstall(projectPath) {
 
 function deinitProject(projectPath) {
   console.log("---");
-  for (const { file, action } of PC.uninstall(projectPath)) {
+  for (const { file, action } of PC.uninstall(projectPath, repoRoot)) {
     if (action === "ABSENT") continue;
     if (action === "FOREIGN") console.log(`KEEP     ${file} — không phải file do alp init sinh, không đụng`);
     else console.log(`${action.padEnd(8)} ${file}`);
@@ -182,6 +238,17 @@ function doctor(args) {
   process.exit(run("doctor.cjs", args));
 }
 
+function delegateCommand(args) {
+  // DelegationRequest mặc định lấy workspace từ cwd của người gọi. Không được chạy child
+  // ở repoRoot: làm vậy mọi `cd <project> && alp delegate ...` đều âm thầm biến thành
+  // delegation tại alp-code, rồi role có nhiều workspace dễ đọc nhầm project cũ.
+  process.exit(run("delegate.cjs", ["delegate", ...args], { cwd: process.cwd() }));
+}
+
+function delegationCommand(args) {
+  process.exit(run("delegate.cjs", args, { cwd: process.cwd() }));
+}
+
 function update(args) {
   if (args.length) die("`alp update` không nhận tham số");
   console.log(`PULL     ${repoRoot}`);
@@ -198,8 +265,10 @@ function update(args) {
 function help() {
   const rows = [
     ["alp", "phiên Phở chỉ-đọc ở cwd bất kỳ"],
-    ["alp init [path]", "đăng ký project + sinh config Claude/Codex + trust"],
+    ["alp init [path] [--backend x]", "chọn/cài backend + đăng ký project + config runtime"],
     ["alp deinit [path]", "gỡ config cục bộ, huỷ đăng ký workspace"],
+    ["alp delegate <role> <task>", "giao việc qua policy + configured backend"],
+    ["alp delegation <command>", "switch · status · wait · cancel · cleanup · health · list"],
     ["alp doctor", "khám toàn hệ; mọi tín hiệu kèm dòng `→ fix:` chạy được"],
     ["alp update", "git pull --ff-only rồi bootstrap lại"],
     ["alp help", "bảng này"],
@@ -209,7 +278,8 @@ function help() {
     ["compile-acl.cjs [--check]", "loadout.yaml → settings.json + profile Codex"],
     ["new-role.cjs <slug>", "tạo vai mới (đường DUY NHẤT — xem CHARTER §4)"],
     ["install-project.cjs <path>", "đăng ký project code có sẵn"],
-    ["run-role.cjs <role> [--pane]", "giao việc cho một vai (--exec headless · --release trả quyền)"],
+    ["run-role.cjs <role> [--pane]", "compatibility facade (--exec foreground · --release cleanup)"],
+    ["delegate.cjs <command>", "Delegation API CLI trung lập runtime"],
     ["trust-role.cjs [role]", "trust workspace của vai trong ~/.claude.json"],
     ["doctor.cjs [--quiet]", "kiểm toàn vẹn"],
     ["sync-project-index.sh --write", "sinh lại L0 từ frontmatter L1"],
@@ -243,13 +313,13 @@ function safeTrust(dirs) {
   }
 }
 
-function run(script, extra) {
+function run(script, extra, options = {}) {
   const file = path.join(repoRoot, "scripts", script);
   // ALP_INIT: script con biết mình đang chạy TRONG `alp init` nên đừng in lại hướng dẫn
   // bước tiếp theo — `alp init` in bản đầy đủ ở cuối.
   const r = spawnSync(process.execPath, [file, ...extra], {
     stdio: "inherit",
-    cwd: repoRoot,
+    cwd: options.cwd || repoRoot,
     env: { ...process.env, ALP_INIT: "1" },
   });
   if (r.error) die(`không chạy được ${script}: ${r.error.message}`);

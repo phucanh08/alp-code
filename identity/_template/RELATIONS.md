@@ -6,7 +6,8 @@
 
 ## Báo cáo cho
 
-<`reports_to` — principal, hay một vai khác. Báo cáo thế nào, tần suất nào.>
+<`reports_to` là delegation parent mặc định. Phiên trực tiếp vẫn trao đổi với principal;
+execution delegated trả lifecycle/kết quả về parent.>
 
 ## Giao việc cho
 
@@ -22,7 +23,7 @@
 **Vai đó ghi được:** <từ `loadout.yaml` của vai đó>
 **Vai đó KHÔNG ghi được:** <ranh giới>
 
-**Cách giao:** qua herdr, pane riêng. Prompt theo khuôn 6 mục ở `../_shared/DELEGATION.md`.
+**Cách giao:** qua ALP Delegation API. Prompt theo khuôn 6 mục ở `../_shared/DELEGATION.md`.
 
 **Kiểm chứng bắt buộc:** đọc lại output bằng mắt mình trước khi báo cáo lên.
 

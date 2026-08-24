@@ -23,7 +23,7 @@ const L = require(path.join(__dirname, "..", "scripts", "lib", "loadout.cjs"));
 // agent tưởng mình đã đọc đủ trong khi thiếu mất nửa bộ luật.
 const BOOT_BUDGET = 14000;
 
-main();
+if (require.main === module) main();
 
 function main() {
   const warnings = [];
@@ -56,9 +56,11 @@ function main() {
 
 // ---------------------------------------------------------------- boot set
 
-function buildContext(warnings) {
-  const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  const ident = L.sessionIdentity(cwd, __dirname);
+function buildContext(warnings, options = {}) {
+  const cwd = options.cwd || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  const ident = options.repoRoot && options.role
+    ? { repoRoot: options.repoRoot, role: options.role }
+    : L.sessionIdentity(cwd, __dirname);
   if (!ident) throw new Error("không tìm thấy repo root (thư mục có CHARTER.md)");
   const { repoRoot, role } = ident;
 
@@ -82,7 +84,7 @@ function buildContext(warnings) {
     ].join("\n")
   );
 
-  push("Bạn là ai", identityCard(loadout, role, grants, workspaces));
+  push("Bạn là ai", identityCard(loadout, role, grants, workspaces, options.workspace));
   push("IDENTITY", read(path.join(roleDir, "IDENTITY.md"), warnings));
   push("VOICE + SOUL", joinDocs([
     ["VOICE (chung mọi vai)", read(path.join(sharedDir, "VOICE.md"), warnings)],
@@ -101,10 +103,27 @@ function buildContext(warnings) {
     "chưa project nào đăng ký — `alp init <path>`"
   )));
 
-  const signals = runDoctor(repoRoot);
+  const signals = options.includeDoctor === false ? null : runDoctor(repoRoot);
   if (signals) warnings.push(`doctor.sh:\n${signals}`);
 
   return parts.join("\n\n---\n\n") + "\n";
+}
+
+/**
+ * Context Builder của Delegation Core gọi hàm này trước backend. Backend chỉ nhận boot
+ * context đã lọc theo loadout target; Paseo/Herdr không tự quyết identity hay memory.
+ * Doctor bị bỏ ở đường này để không tạo vòng `context → doctor → backend health`.
+ */
+function buildContextForRole(repoRoot, role, options = {}) {
+  const warnings = [];
+  const context = buildContext(warnings, {
+    repoRoot,
+    role,
+    includeDoctor: false,
+    workspace: options.workspace,
+  });
+  if (!warnings.length) return context;
+  return context + "\n---\n\n## BOOT WARNINGS\n\n" + warnings.map((w) => `- ${w}`).join("\n") + "\n";
 }
 
 /** Ghép các file cùng một nhóm boot mà vẫn giữ ranh giới nguồn rõ ràng. */
@@ -115,17 +134,25 @@ function joinDocs(docs) {
     .join("\n\n");
 }
 
-function identityCard(lo, role, grants, workspaces) {
+function identityCard(lo, role, grants, workspaces, activeWorkspace = null) {
   const rows = [
     ["Tên", lo.name],
     ["Vai", role],
     ["Emoji", lo.emoji],
-    ["Báo cáo cho", lo.reports_to],
+    ["Delegation parent", lo.reports_to],
     ["Giao việc cho", (lo.delegates_to || []).join(", ") || "_(không ai)_"],
     ["Đọc được", grants.read.map((g) => `memory/${g}`).join(" · ")],
     ["Ghi được", grants.write.map((g) => `memory/${g}`).join(" · ") || "_(chỉ private của mình)_"],
-    ["Workspace đọc", workspaces.read.join(" · ") || "_(chưa đăng ký)_"],
-    ["Workspace ghi", workspaces.write.join(" · ") || "_(không có)_"],
+    [
+      activeWorkspace ? "Workspace execution" : "Workspace đọc",
+      activeWorkspace || workspaces.read.join(" · ") || "_(chưa đăng ký)_",
+    ],
+    [
+      "Workspace ghi",
+      activeWorkspace
+        ? workspaces.write.some((root) => L.isWithin(root, activeWorkspace)) ? activeWorkspace : "_(chỉ đọc)_"
+        : workspaces.write.join(" · ") || "_(không có)_",
+    ],
   ];
   return (
     rows.map(([k, v]) => `- **${k}:** ${v}`).join("\n") +
@@ -230,3 +257,5 @@ function read(file, warnings, note = "vai này chưa đủ bộ file") {
   }
   return fs.readFileSync(file, "utf8");
 }
+
+module.exports = { BOOT_BUDGET, buildContext, buildContextForRole, filteredIndex, identityCard };
