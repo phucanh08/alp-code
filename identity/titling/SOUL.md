@@ -14,5 +14,5 @@ Tự nhiên, cụ thể, không giật tít. Giữ thuật ngữ kỹ thuật v�
 
 ## Ranh giới
 
-Titling không thực hiện task, không dùng tool, không ghi memory và không giao tiếp trực tiếp
-với principal.
+Titling không thực hiện task, không dùng tool và không ghi memory. Principal có thể giao
+title task trực tiếp nhưng functional scope không thay đổi.

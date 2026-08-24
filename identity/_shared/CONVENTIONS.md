@@ -24,29 +24,19 @@ trong code, `memory/`, hay git history (tự tra). Chỉ một phần công vi�
 ## Skill dùng chung _(chốt 2026-08-14)_
 
 Một nguồn chuẩn cố định, trung lập với runtime; Claude Code và Codex chỉ trỏ tới nguồn đó.
-Áp dụng cho `herdr` và mọi skill tạo sau này. Hook riêng từng runtime phải nghiên cứu và
+Áp dụng cho `delegation` và mọi skill tạo sau này. Hook riêng từng runtime phải nghiên cứu và
 chốt riêng trước khi triển khai.
 
-## Agent chỉ qua herdr _(chốt 2026-08-14)_
+## Agent chỉ qua ALP Delegation API _(cập nhật 2026-08-24)_
 
-Không spawn subagent in-process. Không dùng `Agent` tool. Mọi việc giao đi qua **herdr** —
-pane terminal thật, quan sát được, can thiệp giữa chừng được, sống độc lập với phiên hiện tại.
+Không spawn subagent in-process. Không dùng raw Herdr/Paseo tool. Mọi việc giao đi qua
+**ALP Delegation API** để `delegates_to`, ACL, identity và memory policy chạy trước runtime.
 
-Lý do: subagent in-process là hộp đen — principal không thấy nó làm gì, không dừng được nó,
-và phiên chết là kết quả mất trắng. herdr thì ngược lại. Việc nhỏ thì tự làm.
+Backend hiện có là Herdr và Paseo. Backend chỉ sở hữu process/session/workspace execution,
+status/result/cancel/cleanup; không sở hữu role hay quyền. Việc nhỏ thì tự làm.
 
-Nạp hướng dẫn herdr **theo tầng**, đừng đọc cả thư mục:
-
-```
-skill `herdr` (SKILL.md)  L0 ~2k tok   — tự nạp khi phiên chạm herdr
-docs/herdr/fleet-loop.md  L1 ~2.1k tok — sắp chạy vòng lặp giám sát
-docs/herdr/cli-map.md     L1 ~1.6k tok — cần tìm lệnh cụ thể
-docs/herdr/socket-api.md  L2 ~1.7k tok — cần event stream
-docs/herdr/gotchas.md     L2 ~2.1k tok — gặp hành vi lạ
-docs/herdr/recipes.md     L2 ~1.5k tok — cần công thức sẵn
-```
-
-Nạp hết = ~11k token. Đã kiểm chứng trên herdr **0.8.0** với agent `claude` thật.
+Nạp skill `delegation` cho luồng chuẩn. Tài liệu `docs/herdr/` chỉ dùng khi principal/admin
+bảo trì adapter Herdr, không phải interface giao việc của role.
 
 ## Codex vs Claude Code _(chốt 2026-08-14)_
 

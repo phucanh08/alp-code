@@ -8,21 +8,24 @@
 
 ---
 
-## 1. Hai runtime, hai cách giao việc
+## 1. Hai provider, một cách giao việc
 
 | | Claude Code | Codex CLI |
 |---|---|---|
 | Bản | phiên hiện tại, model mặc định `opus` | `codex-cli 0.149.0` |
-| Giao việc | `Agent` tool (subagent trong phiên) | `run-role <role> --pane` / `--exec` |
-| Chọn model | tham số `model:` — **chỉ 4 alias** | **profile**, không phải flag CLI |
+| Giao role ALP | `alp delegate <role>` | `alp delegate <role>` |
+| Chọn model | loadout của role | **profile** sinh từ loadout |
 | Effort | ẩn (theo alias) | **profile** (`model_reasoning_effort`) |
-| Kết quả | trả về context của Phở | stdout / pane terminal |
-| Chạy dài | subagent nền, có notify | pane herdr, sống độc lập phiên |
+| Kết quả | `DelegationResult` | `DelegationResult` |
+| Chạy dài | backend execution | backend execution |
 
-**Vai đã có loadout thì KHÔNG truyền model/effort bằng tay.** Cả hai — cộng sandbox,
+Backend được chọn bằng config và adapter có thể dùng Herdr hoặc Paseo. Business code không
+gọi runtime trực tiếp; ALP policy/context luôn chạy trước backend.
+
+**Vai đã có loadout thì KHÔNG truyền model/effort bằng tay.** Model — cộng sandbox,
 approval, web search và hook boot — nằm trong `$CODEX_HOME/<role>.config.toml` do
 `compile-acl` sinh từ `loadout.yaml`; launcher chỉ gọi `codex -p <role>`. Flag `-m`/`-c`
-chỉ dùng cho `codex exec` ad-hoc, tức việc **không** thuộc vai nào (mục 6).
+chỉ dùng cho thử nghiệm admin ad-hoc, không phải delegation của role (mục 6).
 
 **Ràng buộc quan trọng:** `Agent` tool chỉ nhận `model` ∈ `opus` · `sonnet` · `haiku` · `fable`.
 Không spawn được subagent trên Opus 4.8, Sonnet 4.6 hay bất kỳ ID cụ thể nào — muốn model khác
@@ -163,14 +166,13 @@ Propose 3 fundamentally different approaches. Do not refine mine."
 codex exec -m gpt-5.6-terra "<prompt>"
 
 # Vai đã có loadout — launcher tự lấy cả model lẫn effort từ profile
-scripts/run-role.sh compaction --exec -- "<thread/context bundle>"
-scripts/run-role.sh titling --exec -- "<thread/context bundle>"
-scripts/run-role.sh review --project ~/code/api --pane -- "<concern>"
+alp delegate compaction -- "<thread/context bundle>"
+alp delegate titling -- "<thread/context bundle>"
+alp delegate review --project ~/code/api --background -- "<concern>"
 ```
 
-Chọn `--pane` hay `--exec` theo hình dạng việc, không theo cảm giác — bảng ở
-[`delegation.md`](delegation.md) §1. Tóm tắt: nhiều vai / dài / cần theo dõi → `--pane`;
-một câu hỏi đồng bộ dưới một phút → `--exec`.
+Việc dài hoặc chạy song song dùng `--background`, rồi theo dõi bằng
+`alp delegation status|wait <execution-id>`. Việc đồng bộ bỏ `--background`.
 
 **Profile thiếu thì `codex -p` KHÔNG báo lỗi** — nó im lặng chạy mặc định, mà mặc định của
 `codex exec` là `workspace-write`. `run-role` chặn trước ở chỗ đó; `alp doctor` báo

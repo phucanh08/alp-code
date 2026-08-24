@@ -9,6 +9,10 @@ metadata:
 
 # herdr — quản fleet agent
 
+> **Admin/runtime maintenance only.** Đây không phải interface delegation của ALP role.
+> Tạo execution mới phải dùng `alp delegate`; raw Herdr chỉ dùng khi principal yêu cầu
+> chẩn đoán/bảo trì `HerdrBackend`.
+
 herdr = tmux cho AI agent. Mỗi agent chạy trong một pane terminal thật; herdr thêm lớp
 quan sát + điều phối qua CLI và Unix socket.
 

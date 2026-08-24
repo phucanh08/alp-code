@@ -9,16 +9,26 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 const L = require("./lib/loadout.cjs");
 const P = require("./lib/codex-profile.cjs");
+const D = require("./lib/delegation/config.cjs");
 
 const repoRoot = L.findRepoRoot(__dirname);
 if (!repoRoot) throw new Error("không tìm thấy repo root");
 const roles = L.listRoles(repoRoot);
+const delegationStateDir = D.loadDelegationConfig(repoRoot).stateDir;
+const compiledProfile = (role) => {
+  const loadout = L.loadLoadout(repoRoot, role);
+  const mayDelegate = L.canDelegate(loadout);
+  return P.buildProfile(loadout, role, repoRoot, {
+    writableRoots: mayDelegate ? [delegationStateDir] : [],
+    networkAccess: mayDelegate,
+  });
+};
 
 // --- mọi vai: nền phải là read-only + approval never ------------------------------
 // `codex exec` mặc định `workspace-write`. Quên dòng này là mất bất biến CHARTER mà
 // không có lỗi nào nổ.
 for (const role of roles) {
-  const toml = P.buildProfile(L.loadLoadout(repoRoot, role), role, repoRoot);
+  const toml = compiledProfile(role);
   assert.match(toml, /^sandbox_mode = "read-only"$/m, `${role} phải read-only trong profile`);
   assert.match(toml, /^approval_policy = "never"$/m, `${role} phải approval never`);
   assert.match(
@@ -30,12 +40,15 @@ for (const role of roles) {
 }
 
 // --- model: main khai model Claude, profile Codex phải lấy codex_model -------------
-const mainToml = P.buildProfile(L.loadLoadout(repoRoot, "main"), "main", repoRoot);
+const mainToml = compiledProfile("main");
 assert.match(mainToml, /^model = "gpt-5\.6-sol"$/m, "main dùng codex_model cho Codex");
 assert(!/^model = ".*claude.*"$/mi.test(mainToml), "model Claude không được lọt vào profile Codex");
+assert(mainToml.includes(`writable_roots = ["${delegationStateDir}"]`));
+assert.match(mainToml, /^network_access = true$/m);
+assert(!/\[sandbox_workspace_write\]/.test(compiledProfile("search")), "Search không được mở runtime state/network");
 
 // --- effort chỉ xuất hiện khi có khai --------------------------------------------
-const search = P.buildProfile(L.loadLoadout(repoRoot, "search"), "search", repoRoot);
+const search = compiledProfile("search");
 assert.match(search, /^model_reasoning_effort = "low"$/m);
 assert(
   !/model_reasoning_effort/.test(P.buildProfile({ model: "m" }, "librarian", repoRoot)),
@@ -44,7 +57,7 @@ assert(
 
 // --- web search: chỉ librarian ----------------------------------------------------
 for (const role of roles) {
-  const toml = P.buildProfile(L.loadLoadout(repoRoot, role), role, repoRoot);
+  const toml = compiledProfile(role);
   assert.match(
     toml,
     new RegExp(`^web_search = ${role === "librarian"}$`, "m"),

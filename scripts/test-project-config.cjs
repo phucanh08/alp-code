@@ -17,6 +17,7 @@ const path = require("path");
 const { execFileSync, spawnSync } = require("child_process");
 const L = require("./lib/loadout.cjs");
 const PC = require("./lib/project-config.cjs");
+const D = require("./lib/delegation/config.cjs");
 
 const repoRoot = L.findRepoRoot(__dirname);
 if (!repoRoot) die("không tìm thấy repo root");
@@ -130,6 +131,13 @@ function testReadOnlySession() {
     for (const f of Object.values(PC.paths(project))) assert(!fs.existsSync(f), `${f} không được sinh ra`);
     assert.strictEqual(status(), CLEAN_STATUS);
   });
+
+  const help = alp(["--help"], { PATH: `${bin}${path.delimiter}${process.env.PATH}` });
+  check("alp --help không mở Claude session lồng nhau", () => {
+    assert.strictEqual(help.status, 0, help.output);
+    assert(help.output.includes("alp — cửa vào alp-code"), help.output);
+    assert(!help.output.includes("ARGV|"), "--help đã gọi nhầm Claude stub");
+  });
 }
 
 /** Đăng ký rồi thì phải MỞ ra — ACL chặn hết cũng là ACL hỏng. */
@@ -149,6 +157,14 @@ function testRegisteredAllowsWrite() {
     );
   });
   check("đã đăng ký → ALP_ROLE vẫn được truyền", () => assert.strictEqual(s.env.ALP_ROLE, ROLE));
+  const stateDir = D.loadDelegationConfig(repoRoot).stateDir;
+  check("main Claude được mở đúng delegation state root", () =>
+    assert(s.permissions.additionalDirectories.includes(stateDir), `thiếu ${stateDir}`));
+  check("main Codex được ghi state và nối backend local", () => {
+    const toml = PC.codexConfig(repoRoot, ROLE, project, lo);
+    assert(toml.includes(`writable_roots = ["${stateDir}"]`), toml);
+    assert.match(toml, /^network_access = true$/m);
+  });
   check("deny của vai anh em không được rơi rụng", () => {
     for (const other of roles.filter((r) => r !== ROLE))
       assert(
@@ -172,17 +188,34 @@ function testIdempotent() {
   check("sinh đủ hai file", () => {
     for (const f of Object.values(PC.paths(project))) assert(fs.existsSync(f), `thiếu ${f}`);
   });
+  check("link skill của main cho cả Claude và Codex trong project", () => {
+    const names = L.loadLoadout(repoRoot, ROLE).skills || [];
+    for (const dir of PC.projectSkillDirs(project))
+      for (const name of names) {
+        const link = path.join(dir, name);
+        assert(fs.lstatSync(link).isSymbolicLink(), `${link} không phải symlink`);
+        assert.strictEqual(fs.realpathSync(link), path.join(repoRoot, "skills", name));
+      }
+  });
   check("project vào workspaces.write của main", () => {
     const ws = L.effectiveWorkspaces(L.loadLoadout(repoRoot, ROLE));
     assert(ws.write.includes(project), "main không ghi được project vừa init");
   });
   check("init xong → Codex được workspace-write", () =>
     assert.match(fs.readFileSync(PC.paths(project).codex, "utf8"), /^sandbox_mode = "workspace-write"$/m));
+  check("init tạo delegation state writable ngoài project", () => {
+    const stateDir = D.defaultStateDir(repoRoot, { HOME: home });
+    const codex = fs.readFileSync(PC.paths(project).codex, "utf8");
+    const claude = JSON.parse(fs.readFileSync(PC.paths(project).claude, "utf8"));
+    assert(fs.statSync(stateDir).isDirectory(), `thiếu ${stateDir}`);
+    assert(codex.includes(`writable_roots = ["${stateDir}"]`), codex);
+    assert(claude.permissions.additionalDirectories.includes(stateDir), `Claude thiếu ${stateDir}`);
+  });
   check("trust cả hai runtime", () => {
     const claude = JSON.parse(fs.readFileSync(path.join(home, ".claude.json"), "utf8"));
     assert(
       Object.entries(claude.projects).some(([k, v]) => k === project && v.hasTrustDialogAccepted),
-      "chưa trust cho Claude — pane mới sẽ dừng ở dialog và hook KHÔNG chạy"
+      "chưa trust cho Claude — execution mới sẽ dừng ở dialog và hook KHÔNG chạy"
     );
     // So bằng chuỗi, không regex: path tạm trên macOS chứa `+` — làm regex thì nó thành
     // lượng từ và ca test xanh/đỏ theo tên thư mục ngẫu nhiên.
@@ -190,7 +223,7 @@ function testIdempotent() {
       fs
         .readFileSync(path.join(home, ".codex", "config.toml"), "utf8")
         .includes(`[projects."${project}"]\ntrust_level = "trusted"`),
-      "chưa trust cho Codex — pane Codex sẽ bỏ qua hook của config cấp project"
+      "chưa trust cho Codex — execution Codex sẽ bỏ qua hook của config cấp project"
     );
   });
 }
@@ -210,6 +243,7 @@ function testUninstallRestoresEverything() {
   check("dọn cả thư mục rỗng", () => {
     assert(!fs.existsSync(path.join(project, ".claude")));
     assert(!fs.existsSync(path.join(project, ".codex")));
+    assert(!fs.existsSync(path.join(project, ".agents")));
   });
   check("gỡ khỏi workspaces của mọi vai", () => {
     for (const role of roles) {
@@ -280,6 +314,11 @@ function snapshot() {
     files[f] = fs.existsSync(f) ? fs.readFileSync(f, "utf8") : null;
   for (const role of roles)
     files[role] = JSON.stringify(L.effectiveWorkspaces(L.loadLoadout(repoRoot, role)));
+  for (const dir of PC.projectSkillDirs(project)) {
+    files[dir] = fs.existsSync(dir)
+      ? fs.readdirSync(dir).sort().map((name) => [name, fs.readlinkSync(path.join(dir, name))])
+      : null;
+  }
   return files;
 }
 

@@ -1,90 +1,106 @@
 # DELEGATION — giao việc cho agent khác
 
 > **Không nằm trong boot set.** Nạp khi sắp giao việc, không nạp dự phòng.
-> Giao cho ai: `identity/<role>/RELATIONS.md`.
+> Giao cho ai: `identity/<role>/RELATIONS.md` và `delegates_to` trong loadout.
 
 ## Khi nào tự làm, khi nào giao
 
 **Tự làm** khi: đã biết đường dẫn · trả lời được từ bối cảnh sẵn có · việc <5 phút ·
 chỉ cần quét bằng `Glob`/`Grep`/`Read`.
 
-**Giao** khi: nhiều nhánh độc lập chạy song song được · việc dài cần theo dõi và can thiệp ·
+**Giao** khi: nhiều nhánh độc lập chạy song song được · việc dài cần lifecycle riêng ·
 cần chuyên môn hẹp mà vai khác có.
 
-Mỗi agent khởi động từ con số không và phải suy luận lại bối cảnh bạn đã có sẵn. Task
-"nhiều mặt", "kỹ lưỡng", "nhiều phần" **không** đồng nghĩa với phải giao đi.
+Mỗi execution khởi động từ con số không và phải suy luận lại context đã được ALP chuẩn bị.
+Task “nhiều mặt” không tự động đồng nghĩa với phải giao đi.
 
-**Luật cứng:** không spawn subagent in-process, không dùng `Agent` tool — mọi việc giao đi
-qua **herdr**. Giao cho ai: bảng RELATIONS đã nạp sẵn ở boot.
+Principal có thể tương tác trực tiếp với role/execution. Khi task delegated, lifecycle và
+kết quả vẫn route về `reports_to`; kênh giao tiếp không mở thêm ACL hay quyền delegation.
 
-## Cách chạy — chọn đường theo HÌNH DẠNG việc, không theo cảm giác
+## Luật cứng
 
-| Hình dạng việc | Đường |
-|---|---|
-| ≥2 vai song song · >1 phút · cần theo dõi/tương tác · review nhiều concern | **pane herdr** |
-| Một câu hỏi · đồng bộ · <1 phút · **hoặc không có fleet** | **`--exec`** |
+Mọi delegation đi qua ALP Delegation API:
 
 ```bash
-# pane: chạy nền, theo dõi được, không chiếm terminal
-node scripts/run-role.cjs search --project /path/to/app --pane -- "<việc>"
-#   → PANE w5:p3 · AGENT search-8f2a · kèm sẵn lệnh WATCH và RELEASE
-
-# exec: một câu hỏi, chờ ngay tại chỗ
-node scripts/run-role.cjs read-thread --exec -- "<câu hỏi>"
+alp delegate search --project /path/to/app -- "<việc>"
+alp delegate review --background --project /path/to/app -- "<việc>"
+alp delegation wait <execution-id>
+alp delegation cleanup <execution-id>
 ```
 
-Ba điều launcher đã lo, đừng làm lại bằng tay:
+`scripts/run-role.cjs` là compatibility facade và gọi cùng `DelegationService`.
 
-- **Không có fleet ⇒ `--pane` tự rơi về `--exec`.** Phiên headless không có pane để mở.
-- **`--seq` và `release-agent`.** `release-agent` thiếu `--seq` bị bỏ qua IM LẶNG (exit 0,
-  panel không đổi) — nên trả quyền bằng `run-role.cjs <role> --release <pane>`,
-  không gõ `herdr pane release-agent` trần.
-- **Prompt nhiều dòng.** herdr từ chối arg có xuống dòng; launcher tự đưa ra file và thay
-  bằng một dòng có mang nguồn ủy nhiệm.
+Không gọi trực tiếp:
 
-Xong việc thì **release**, đừng để pane kẹt `working`:
+```text
+herdr
+paseo
+create_agent
+spawn_agent
+```
+
+Flow bắt buộc:
+
+```text
+role → DelegationService → exact delegates_to/ACL → prepared context → backend
+```
+
+ALP quyết định role, identity, memory visibility, task ownership và authorization. Backend
+chỉ quyết định cách execution chạy, báo status/result, cancel và cleanup.
+
+## Lifecycle
+
+```text
+queued → running → completed | failed | cancelled
+```
+
+Lệnh lifecycle luôn dùng ALP `execution-id`, không dùng pane ID hay Paseo agent ID:
 
 ```bash
-node scripts/run-role.cjs <role> --release <pane>
+alp delegation status <execution-id>
+alp delegation wait <execution-id>
+alp delegation cancel <execution-id>
+alp delegation cleanup <execution-id>
+alp delegation health
 ```
 
-`alp doctor` báo `ORPHAN-PANE` cho pane đã quên trả quyền.
+Backend nền được chọn ở `alp.config.yaml` hoặc `ALP_DELEGATION_BACKEND`. Principal có thể
+đổi effective backend cho các request tiếp theo bằng skill `delegation-switch` hoặc
+`alp delegation switch herdr|paseo`; `switch default` quay lại default. Không tự fallback sau
+khi spawn đã bắt đầu vì có thể chạy task hai lần; fallback chỉ hợp lệ trước spawn và phải
+được khai rõ.
 
-**Vai phụ không được chạy hai lệnh trên.** `delegates_to` rỗng = không spawn được ai;
-acl-guard chặn `herdr` và `run-role` ở vị trí lệnh. Cần thêm tay thì báo `main`.
+Không có `--project` thì workspace là cwd nơi gọi `alp`. ALP pin path canonical vào prompt,
+state và env của execution; role không được đọc source từ workspace đăng ký khác trong cùng
+lượt. Với task quan trọng, luôn truyền `--project <absolute-path>` để scope không mơ hồ.
 
-## Khuôn prompt — sáu mục, không thiếu mục nào
+## Khuôn prompt — sáu mục
 
-```
+```text
 1. Mục tiêu   — một câu, kết quả mong muốn
 2. Bối cảnh   — đường dẫn file liên quan, quyết định đã chốt, cái đã thử
 3. Phạm vi    — file/thư mục được động vào; cái gì KHÔNG được động
-4. Môi trường — CWD, OS darwin, shell zsh, timezone Asia/Saigon
+4. Môi trường — CWD, OS, shell, timezone
 5. Đầu ra     — định dạng mong muốn, ghi vào đâu
 6. Ranh giới  — không commit, không deploy, không sửa ngoài phạm vi
 ```
 
-Thiếu mục 3 hoặc 6 là nguyên nhân phổ biến nhất khiến agent làm vượt phạm vi.
+Thiếu mục 3 hoặc 6 là nguyên nhân phổ biến nhất khiến execution làm vượt phạm vi.
 
-## Sau khi agent trả kết quả
+## Sau khi có kết quả
 
-**Đọc lại bằng mắt mình trước khi báo cáo lên.** Agent có thể sai, phóng đại, hoặc
-tuyên bố hoàn thành việc chưa làm. Kết quả sai là lỗi của người giao, không phải người nhận.
-
-Kiểm tối thiểu: mở file agent nói đã ghi · chạy lệnh agent nói đã chạy · kiểm một link.
+Đọc lại output trước khi báo cáo. Kiểm tối thiểu: mở file được nhắc tới · chạy test được
+tuyên bố đã chạy · kiểm một link. Trách nhiệm cuối vẫn thuộc role giao việc.
 
 ## Chạy song song an toàn
 
-- Mỗi agent sở hữu một tập file riêng, **không giao nhau**. Hai agent ghi cùng file = hỏng.
-- Tối đa 3–4 agent đồng thời, cân theo tài nguyên máy.
-- Việc phụ thuộc nhau thì chạy tuần tự, không song song.
-- Mỗi agent chỉ có ~200K context — giao task hẹp, kèm đúng bối cảnh cần, không dump cả repo.
+- Mỗi execution sở hữu một file set riêng, không giao nhau.
+- Tối đa 3–4 execution đồng thời.
+- Việc phụ thuộc nhau chạy tuần tự.
+- Prompt chỉ mang context ALP đã cho phép; không dump memory/private của role khác.
 
-## Ngân sách & cách ly
+## Memory và identity boundary
 
-Mỗi agent khởi động từ con số không và phải suy luận lại bối cảnh bạn đã có sẵn.
-Task "nhiều mặt", "kỹ lưỡng", "nhiều phần" **không** đồng nghĩa với phải giao đi.
-
-Agent được giao chạy trong phiên riêng, với `loadout.yaml` riêng — nó **không** thấy
-`memory/private/` của bạn và không ghi được ngoài `memory.write` của nó. Muốn nó ghi
-được chỗ mới → xin principal sửa loadout của **nó**, không phải của bạn.
+Execution nhận identity + task + memory index/context đã được ALP lọc theo target loadout.
+Herdr/Paseo không phải source of truth của identity hay memory. Muốn mở thêm quyền phải sửa
+target `loadout.yaml` rồi compile ACL; không cấu hình quyền ở backend để lách ALP.

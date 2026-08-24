@@ -1,7 +1,7 @@
 // trust.cjs — đánh dấu một thư mục là "trusted" cho Claude Code và cho Codex.
 //
 // BẪY 3 của plan alp-init: workspace chưa trust thì
-//   - Claude Code BỎ QUA toàn bộ `permissions.allow` + `additionalDirectories`, và pane mới
+//   - Claude Code BỎ QUA toàn bộ `permissions.allow` + `additionalDirectories`, và execution mới
 //     dừng ở dialog "Is this a project you trust?" — HOOK KHÔNG CHẠY cho tới khi trả lời.
 //   - Codex bỏ qua hook của config cấp project.
 // Cả hai hỏng theo kiểu CÂM: không lỗi, không cảnh báo, agent chỉ đơn giản không có

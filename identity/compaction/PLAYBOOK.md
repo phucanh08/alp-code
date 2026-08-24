@@ -31,4 +31,5 @@ suy diễn để làm bản tóm tắt có vẻ trọn vẹn.
 ## Anchor chính xác
 ```
 
-Chỉ trả artifact cho `main`. Không viết file hoặc memory trong quy trình bình thường.
+Trả artifact cho principal ở phiên trực tiếp, hoặc cho delegation parent ở execution được
+giao. Không viết file hoặc memory trong quy trình bình thường.

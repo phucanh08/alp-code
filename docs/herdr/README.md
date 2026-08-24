@@ -1,5 +1,8 @@
 # herdr — L0
 
+> **Tài liệu maintenance của `HerdrBackend`.** Business orchestration và role không gọi raw
+> Herdr; đường chuẩn là `alp delegate` và lifecycle dùng ALP execution ID.
+
 > Tầng luôn nạp khi phiên có dùng herdr. **~800 token.** Đừng đọc file nào khác trừ khi bảng
 > định tuyến ở cuối bảo đọc.
 > Đã kiểm chứng trên herdr **0.8.0**, protocol 19, macOS — gồm cả một agent `claude` thật.

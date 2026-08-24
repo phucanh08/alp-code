@@ -24,6 +24,7 @@ const { execFileSync } = require("child_process");
 const L = require("./loadout.cjs");
 const S = require("./claude-settings.cjs");
 const P = require("./codex-profile.cjs");
+const D = require("./delegation/config.cjs");
 
 /** Dấu nhận biết file do `alp init` sinh. Không có dấu này = file của người ta, không đụng. */
 const MARKER = "alp init";
@@ -33,12 +34,20 @@ const EXCLUDE_BEGIN = "# >>> alp-code (alp init) — gỡ bằng: alp deinit";
 const EXCLUDE_END = "# <<< alp-code";
 /** Khớp cả marker cũ (`alp init --uninstall`): khối đã ghi ra ngoài kia vẫn phải gỡ được. */
 const EXCLUDE_BEGIN_RE = "# >>> alp-code \\(alp init\\)[^\\n]*";
+const PROJECT_SKILL_DIRS = [
+  [".claude", "skills"],
+  [".agents", "skills"],
+];
 
 function paths(projectPath) {
   return {
     claude: path.join(projectPath, ".claude", "settings.local.json"),
     codex: path.join(projectPath, ".codex", "config.toml"),
   };
+}
+
+function projectSkillDirs(projectPath) {
+  return PROJECT_SKILL_DIRS.map((parts) => path.join(projectPath, ...parts));
 }
 
 // ---------------------------------------------------------------- nội dung
@@ -56,9 +65,12 @@ function isRegistered(loadout, projectPath) {
  * hai file byte-identical, và test kiểm được cả nhánh "chưa đăng ký" mà không cần
  * thật sự đăng ký gì.
  */
-function claudeSettings(repoRoot, role, projectPath, allRoles, loadout) {
+function claudeSettings(repoRoot, role, projectPath, allRoles, loadout, opts = {}) {
   const lo = loadout || L.loadLoadout(repoRoot, role);
-  const settings = S.buildSettings(repoRoot, role, allRoles, lo);
+  const stateDir = opts.delegationStateDir || D.loadDelegationConfig(repoRoot).stateDir;
+  const settings = S.buildSettings(repoRoot, role, allRoles, lo, {
+    delegationStateDir: stateDir,
+  });
   const registered = isRegistered(lo, projectPath);
 
   settings.$comment =
@@ -94,10 +106,16 @@ function claudeSettings(repoRoot, role, projectPath, allRoles, loadout) {
  * theo từng lần chạy nên profile pin `read-only`; ở đây không có launcher nào chen vào
  * giữa — người dùng gõ thẳng `codex` — nên mức quyền phải đúng ngay trong file.
  */
-function codexConfig(repoRoot, role, projectPath, loadout) {
+function codexConfig(repoRoot, role, projectPath, loadout, opts = {}) {
   const lo = loadout || L.loadLoadout(repoRoot, role);
+  const stateDir = opts.delegationStateDir || D.loadDelegationConfig(repoRoot).stateDir;
+  const mayDelegate = L.canDelegate(lo);
   return P.buildProfile(lo, role, repoRoot, {
     sandboxMode: isRegistered(lo, projectPath) ? "workspace-write" : "read-only",
+    writableRoots: mayDelegate ? [stateDir] : [],
+    // Herdr dùng Unix socket và Paseo dùng daemon localhost. Raw runtime commands vẫn
+    // bị acl-guard chặn; chỉ Delegation API đã qua policy được phép tận dụng network này.
+    networkAccess: mayDelegate,
     header: [
       `# GENERATED bởi \`${MARKER}\` từ ${path.join(repoRoot, "identity", role, "loadout.yaml")} — KHÔNG SỬA TAY.`,
       `# Sinh lại: \`alp init\` · gỡ: \`alp deinit\``,
@@ -139,22 +157,31 @@ function writeConfig(file, body) {
 /** Sinh cả hai file. Trả về [{ file, action }]. */
 function install(repoRoot, role, projectPath, allRoles) {
   const lo = L.loadLoadout(repoRoot, role);
+  const delegationConfig = D.loadDelegationConfig(repoRoot);
+  if (L.canDelegate(lo))
+    fs.mkdirSync(delegationConfig.stateDir, { recursive: true, mode: 0o700 });
+  const runtimeOpts = { delegationStateDir: delegationConfig.stateDir };
   const p = paths(projectPath);
   return [
     {
       file: p.claude,
       action: writeConfig(
         p.claude,
-        JSON.stringify(claudeSettings(repoRoot, role, projectPath, allRoles, lo), null, 2) + "\n"
+        JSON.stringify(claudeSettings(repoRoot, role, projectPath, allRoles, lo, runtimeOpts), null, 2) + "\n"
       ),
     },
-    { file: p.codex, action: writeConfig(p.codex, codexConfig(repoRoot, role, projectPath, lo)) },
+    {
+      file: p.codex,
+      action: writeConfig(p.codex, codexConfig(repoRoot, role, projectPath, lo, runtimeOpts)),
+    },
+    ...syncProjectSkills(repoRoot, projectPath, lo.skills || []),
   ];
 }
 
 /** Gỡ hai file (chỉ file có MARKER), trả lại backup, dọn thư mục rỗng. */
-function uninstall(projectPath) {
+function uninstall(projectPath, repoRoot = null) {
   const out = [];
+  if (repoRoot) out.push(...removeProjectSkills(repoRoot, projectPath));
   for (const file of Object.values(paths(projectPath))) {
     const backup = file + BACKUP_SUFFIX;
     if (!fs.existsSync(file)) out.push({ file, action: "ABSENT" });
@@ -170,6 +197,67 @@ function uninstall(projectPath) {
     rmdirIfEmpty(path.dirname(file));
   }
   return out;
+}
+
+function syncProjectSkills(repoRoot, projectPath, names) {
+  const out = [];
+  const wanted = [...new Set(names)].sort();
+  for (const dir of projectSkillDirs(projectPath)) {
+    fs.mkdirSync(dir, { recursive: true });
+    for (const name of fs.readdirSync(dir)) {
+      const link = path.join(dir, name);
+      if (isAlpSkillLink(repoRoot, link) && !wanted.includes(name)) {
+        fs.rmSync(link, { recursive: true, force: true });
+        out.push({ file: link, action: "UNLINK" });
+      }
+    }
+    for (const name of wanted) {
+      const source = path.join(repoRoot, "skills", name);
+      const link = path.join(dir, name);
+      if (!fs.existsSync(source)) continue; // loadout validation will report the real error
+      if (fs.existsSync(link) || isSymlink(link)) {
+        const same = isAlpSkillLink(repoRoot, link) && safeRealpath(link) === safeRealpath(source);
+        out.push({ file: link, action: same ? "KEEP" : "SKIP" });
+        continue;
+      }
+      const target = process.platform === "win32" ? source : path.relative(dir, source);
+      fs.symlinkSync(target, link, process.platform === "win32" ? "junction" : "dir");
+      out.push({ file: link, action: "LINK" });
+    }
+    rmdirIfEmpty(dir);
+    rmdirIfEmpty(path.dirname(dir));
+  }
+  return out;
+}
+
+function removeProjectSkills(repoRoot, projectPath) {
+  const out = [];
+  for (const dir of projectSkillDirs(projectPath)) {
+    if (!fs.existsSync(dir)) continue;
+    for (const name of fs.readdirSync(dir)) {
+      const link = path.join(dir, name);
+      if (!isAlpSkillLink(repoRoot, link)) continue;
+      fs.rmSync(link, { recursive: true, force: true });
+      out.push({ file: link, action: "UNLINK" });
+    }
+    rmdirIfEmpty(dir);
+    rmdirIfEmpty(path.dirname(dir));
+  }
+  return out;
+}
+
+function isSymlink(file) {
+  try { return fs.lstatSync(file).isSymbolicLink(); } catch { return false; }
+}
+
+function safeRealpath(file) {
+  try { return fs.realpathSync(file); } catch { return null; }
+}
+
+function isAlpSkillLink(repoRoot, file) {
+  if (!isSymlink(file)) return false;
+  const resolved = safeRealpath(file);
+  return Boolean(resolved && L.isWithin(path.join(repoRoot, "skills"), resolved));
 }
 
 function rmdirIfEmpty(dir) {
@@ -191,7 +279,7 @@ function excludeFile(projectPath) {
 }
 
 /** Thêm/gỡ khối exclude cho hai file config. Trả về true nếu có đổi. */
-function setGitExclude(projectPath, on) {
+function setGitExclude(projectPath, on, skillNames = []) {
   const file = excludeFile(projectPath);
   if (!file) return false; // không phải git repo — không có gì để giấu
 
@@ -200,9 +288,14 @@ function setGitExclude(projectPath, on) {
     new RegExp(`\\n?${EXCLUDE_BEGIN_RE}[\\s\\S]*?${escapeRe(EXCLUDE_END)}\\n?`, "g"),
     "\n"
   );
+  const skillLines = [...new Set(skillNames)].sort().flatMap((name) => [
+    `/.claude/skills/${name}`,
+    `/.agents/skills/${name}`,
+  ]);
+  const managed = ["/.claude/settings.local.json", "/.codex/config.toml", ...skillLines];
   const next = on
     ? stripped.trimEnd() +
-      `\n\n${EXCLUDE_BEGIN}\n/.claude/settings.local.json\n/.codex/config.toml\n${EXCLUDE_END}\n`
+      `\n\n${EXCLUDE_BEGIN}\n${managed.join("\n")}\n${EXCLUDE_END}\n`
     : stripped;
 
   if (next === current) return false;
@@ -240,5 +333,6 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 module.exports = {
   MARKER, BACKUP_SUFFIX, paths, claudeSettings, codexConfig, isRegistered,
+  projectSkillDirs, syncProjectSkills, removeProjectSkills,
   install, uninstall, isGenerated, setGitExclude, trackedConfigs,
 };

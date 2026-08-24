@@ -67,6 +67,14 @@ function buildProfile(loadout, role, repoRoot, opts = {}) {
   // Xem đầu file, điều 4: đây là mức nền an toàn, không phải mức quyền thật.
   lines.push(`sandbox_mode = ${str(opts.sandboxMode || "read-only")}`);
 
+  const writableRoots = [...new Set(opts.writableRoots || [])];
+  if (writableRoots.length || opts.networkAccess) {
+    lines.push("", "[sandbox_workspace_write]");
+    if (writableRoots.length)
+      lines.push(`writable_roots = [${writableRoots.map(str).join(", ")}]`);
+    if (opts.networkAccess) lines.push("network_access = true");
+  }
+
   lines.push("", "[tools]", `web_search = ${WEB_SEARCH_ROLES.has(role)}`);
 
   for (const [event, file] of HOOKS) {

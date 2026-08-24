@@ -1,0 +1,18 @@
+# ALP runtime configuration. Identity, ACL, memory and delegates_to remain in loadout.yaml.
+delegation:
+  backend: herdr
+  fallback_backend: ""
+  state_dir: ""
+
+  backends:
+    herdr:
+      enabled: true
+
+    paseo:
+      enabled: true
+      cli: paseo
+      host: ""
+      # Paseo tools must not be injected into delegated roles. This matches Paseo's
+      # default (`daemon.mcp.injectIntoAgents: false`). Doctor rejects a known unsafe
+      # local Paseo config before any agent is created.
+      runtime_tools_disabled: true

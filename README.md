@@ -5,9 +5,9 @@ chính, vì Codex không nạp được skill `alp:plan`/`alp:cook` (marketplace
 Codex là **đường phụ** cho main khi muốn tiết kiệm quota. Các vai chuyên môn chạy Codex
 trong phiên riêng, cùng một kho trí nhớ.
 
-**Principal luôn giao tiếp qua Phở 🍜 (`main`).** Các vai chuyên môn chỉ là cơ chế
-delegation nội bộ: nhận việc từ Phở, trao đổi với Phở và trả kết quả về Phở. Nếu mở trực
-tiếp một vai phụ, vai đó sẽ từ chối nhiệm vụ và chuyển hướng về Phở.
+**Phở 🍜 (`main`) là coordinator mặc định, không phải cổng giao tiếp duy nhất.** Principal
+có thể giao việc trực tiếp cho vai chuyên môn; phiên trực tiếp trả lời principal. Khi task
+đi qua delegation, lifecycle/kết quả vẫn route về delegation parent và giữ nguyên ACL.
 
 Luật nền: [`CHARTER.md`](CHARTER.md). Danh bạ các vai: [`identity/REGISTRY.md`](identity/REGISTRY.md).
 
@@ -74,16 +74,28 @@ PATH lẫn PATH của terminal hiện tại.
 
 ```bash
 cd ~/code/my-app
-alp init          # một lần cho mỗi project
+alp init          # chọn delegation backend, rồi cài project
 claude            # ra Phở, ngay trong my-app
 ```
 
-`alp init` làm bốn việc trong một lượt: đăng ký project (project card + `workspaces` trong
-loadout + recompile ACL), sinh `.claude/settings.local.json` và `.codex/config.toml` **cùng
-từ `loadout.yaml`**, giấu hai file đó khỏi `git status` bằng exclude per-clone, rồi **trust
-cả hai runtime**. Chạy lại bao nhiêu lần cũng cho cùng kết quả.
+`alp init` hỏi backend delegation mặc định trước khi đụng project. Chọn Herdr/Paseo thì ALP
+kiểm CLI tương ứng, chỉ cài runtime được chọn nếu còn thiếu, khởi động server/daemon local,
+kiểm adapter health rồi mới lưu lựa chọn. Herdr dùng Homebrew khi có hoặc installer chính
+thức `herdr.dev`; Paseo dùng package chính thức `@getpaseo/cli`. Paseo daemon được start với
+relay và MCP auto-injection tắt để role không bypass ALP policy. Trong terminal dùng `↑/↓`
+để chọn, `Enter` để xác nhận; môi trường không hỗ trợ raw TTY vẫn dùng được lựa chọn `1/2`.
 
-Trust là bước không được bỏ: workspace chưa trust thì pane Claude mới dừng ở dialog *"Is this
+Sau đó `alp init` đăng ký project (project card + `workspaces` + recompile ACL), sinh
+`.claude/settings.local.json` và `.codex/config.toml` **cùng từ `loadout.yaml`**, link skill,
+giấu artifact khỏi `git status`, rồi **trust cả hai runtime**. Chạy lại bao nhiêu lần cũng
+cho cùng kết quả. Automation/non-TTY chọn rõ backend để cho phép cài package:
+
+```bash
+alp init --backend herdr
+alp init /path/to/project --backend paseo
+```
+
+Trust là bước không được bỏ: execution Claude mới có thể dừng ở dialog *"Is this
 a project you trust?"* và **hook không chạy** cho tới khi trả lời — vai mở được phiên nhưng
 không có danh tính, không lỗi nào nổ ra.
 
@@ -165,33 +177,51 @@ và `--write-role <role>`. Installer tạo project card, cập nhật L0, ghi
 
 ## Phở giao việc cho các vai
 
-Delegation nội bộ của `main`, **không** phải kênh giao tiếp thay thế cho principal.
-Ba đường, chọn theo **hình dạng việc**:
-
-| Hình dạng việc | Đường |
-|---|---|
-| ≥2 vai song song · >1 phút · cần theo dõi · review nhiều concern | `--pane` (**đường chính**) |
-| Một câu hỏi · đồng bộ · <1 phút · hoặc không có fleet | `--exec` |
-| Principal tự ngồi vào phiên đó | không cờ nào (phiên tương tác) |
+Delegation là kênh một agent giao việc cho agent khác. Principal vẫn có thể tương tác trực
+tiếp với role/execution. Mọi request delegation đi qua `DelegationService`: ALP resolve identity, kiểm exact `delegates_to`/ACL,
+build context và memory được phép, rồi mới chọn backend execution.
 
 ```bash
-# pane herdr: chạy nền, theo dõi được, không chiếm terminal
+# API trung lập runtime
+alp delegate search --project /path/to/app --background -- "Tìm luồng authentication"
+alp delegate review --project /path/to/app -- "Review correctness của diff"
+alp delegate oracle --project /path/to/app --background --kind claude -- "Phản biện migration"
+
+# lifecycle dùng ALP execution ID
+alp delegation status exec_...
+alp delegation wait exec_...
+alp delegation cancel exec_...
+alp delegation cleanup exec_...
+
+# xem/chuyển backend mặc định cho các delegation tiếp theo
+alp delegation switch
+alp delegation switch paseo
+alp delegation switch herdr
+alp delegation switch default
+
+# compatibility facade cũ vẫn hoạt động
 scripts/run-role.sh search --project /path/to/app --pane -- "Tìm luồng authentication"
-scripts/run-role.sh review --project /path/to/app --pane -- "Review correctness của diff"
-scripts/run-role.sh oracle --project /path/to/app --pane --kind claude -- "Phản biện migration"
-
-# headless: một câu hỏi, chờ ngay tại chỗ
 scripts/run-role.sh read-thread --exec -- "Tìm các decision liên quan ACL"
-scripts/run-role.sh titling --exec -- "Đặt title cho thread này"
-
-# xong việc thì trả quyền, đừng để panel kẹt `working`
-scripts/run-role.sh search --release w5:p3
 ```
 
-**Không có fleet ⇒ `--pane` tự rơi về `--exec`** — phiên headless không có pane để mở.
-`--kind claude` chạy vai bằng Claude Code thay vì Codex (Oracle trên Opus 5).
-Windows dùng `scripts/run-role.ps1`. Luật đầy đủ + ba bẫy của herdr:
-[`docs/delegation.md`](docs/delegation.md).
+Không truyền `--project` thì workspace là **cwd nơi bạn gõ `alp`**. Facade giữ nguyên cwd
+đó khi gọi Delegation Core; prepared context pin path tuyệt đối và hook chặn execution đọc
+nhầm một workspace khác đã đăng ký. Với task quan trọng, truyền `--project` để scope hiện rõ
+ngay trong command/log.
+
+Backend nền chọn ở `alp init`, `alp.config.yaml` hoặc `ALP_DELEGATION_BACKEND`; mặc định
+`herdr` để giữ setup cũ. Lựa chọn persist từ `alp init`/`alp delegation switch` thắng default
+này cho tới khi `switch default`, và có thể đổi sang `paseo` mà không đổi loadout, identity,
+memory hay policy.
+Trong Claude Code dùng `/delegation-switch paseo`; trong Codex dùng
+`$delegation-switch paseo`. `--backend` vẫn là override chỉ cho một request.
+`run-role --pane` nay chỉ là alias compatibility cho background execution; output công khai
+dùng ALP `executionId`, không dùng pane/agent ID. Windows vẫn dùng `scripts/run-role.ps1`.
+Kiến trúc, config, failure/fallback và migration: [`docs/delegation.md`](docs/delegation.md).
+
+`alp init` cũng mở đúng `~/.alp/delegation/<repo-key>` cho main ghi lifecycle/lock và cho
+Codex main kết nối backend daemon local. Quyền này không cấp cho specialist; raw
+`herdr`/`paseo` vẫn bị ACL chặn.
 
 Model, effort, sandbox và hook boot nằm trong profile `$CODEX_HOME/<role>.config.toml` do
 `compile-acl.sh` sinh từ loadout — **không** truyền model bằng tay. Artifact được trả cho
@@ -201,8 +231,9 @@ main kiểm chứng và lưu.
 đứng ở repo alp-code hoặc trong một đường dẫn đã khai ở `workspaces.write` — cwd lạ vẫn
 `read-only`, đúng bất biến CHARTER.
 
-**Vai phụ không spawn được vai khác.** `delegates_to` rỗng ⇒ `acl-guard` chặn `herdr` và
-`run-role` ở vị trí lệnh. Không có phanh này thì Search spawn được Search.
+**Vai phụ không spawn được vai khác.** `delegates_to` rỗng ⇒ policy từ chối trước backend.
+`acl-guard` còn chặn raw `herdr`/`paseo` cho mọi role và kiểm target của `run-role`/`alp
+delegate`; runtime-specific tool không phải public delegation API.
 
 **`main` trên Codex là đường phụ** (`scripts/run-role.sh main -- "<việc>"`), dùng khi muốn
 tiết kiệm quota Claude. Model Codex của main khai riêng ở `codex_model:` trong loadout —
@@ -227,8 +258,8 @@ alp-code/
 │   ├── projects/           Project Layer 3 tầng
 │   └── private/<role>/     nháp riêng, cách ly hai chiều
 ├── scaffold/memory/        khung RỖNG của memory/ — bootstrap chép sang cái còn thiếu
-├── skills/                 15 skill dùng chung — nguồn sự thật DUY NHẤT của skill
-│                           riêng của hệ: agent-memory (luật ghi trí nhớ) · herdr (quản fleet)
+├── skills/                 skill dùng chung — nguồn sự thật DUY NHẤT của skill
+│                           riêng của hệ: agent-memory (luật ghi trí nhớ) · delegation
 │                           nhúng từ alp-plugin: alp-plan · alp-debug · alp-predict ·
 │                           alp-scenario · code-review · docs-seeker · git · gkg ·
 │                           problem-solving · repomix · research · scout · security-scan
@@ -237,7 +268,7 @@ alp-code/
 ├── hooks/                  session-start · acl-guard · session-end
 ├── scripts/                alp · compile-acl · new-role · doctor · trust-role · test-isolation
 │   └── lib/                loadout (parser + checkPath) · claude-settings · codex-profile
-│                           project-config · trust · herdr-fleet · delegation
+│                           project-config · trust · delegation/{core,backends}
 │                           — MỘT nguồn cho mỗi loại config
 └── docs/
 ```
@@ -249,8 +280,10 @@ alp-code/
 | Lệnh | Việc |
 |---|---|
 | `alp` | phiên Phở chỉ-đọc ở cwd bất kỳ |
-| `alp init` | đăng ký project hiện tại + sinh config Claude/Codex + trust hai runtime |
+| `alp init` | chọn/cài delegation backend + đăng ký project + config/trust hai runtime |
 | `alp deinit` | gỡ config cục bộ, huỷ đăng ký workspace |
+| `alp delegate <role> <task>` | giao việc qua ALP policy và configured backend |
+| `alp delegation <command>` | status · wait · cancel · cleanup · health · list |
 | `alp uninstall [--purge-memory] [--force]` | gỡ toàn hệ; backup memory mặc định |
 | `alp doctor` | khám toàn hệ — mọi tín hiệu kèm dòng `→ fix:` chạy được |
 | `alp update` · `alp help` | pull + bootstrap · bảng lệnh |
@@ -266,14 +299,18 @@ alp-code/
 | `scripts/new-role.sh <slug>` | tạo vai mới + recompile ACL toàn bộ + trust workspace |
 | `scripts/install-project.sh <path>` | đăng ký project code có sẵn (macOS/Linux) |
 | `scripts/install-project.ps1 <path>` | đăng ký project code có sẵn (Windows PowerShell) |
-| `scripts/run-role.sh <role> [--pane\|--exec]` | giao việc cho một vai; `--release <pane>` trả quyền khi xong |
+| `scripts/run-role.sh <role> [--pane\|--exec]` | compatibility facade của Delegation API; `--release <execution-id>` = cleanup |
+| `scripts/delegate.cjs <command>` | CLI Delegation API trung lập runtime |
 | `scripts/trust-role.sh [role]` | đánh dấu workspace trusted trong `~/.claude.json` |
-| `scripts/doctor.sh` | kiểm toàn vẹn: DRIFT · ACL-* · SKILL-DRIFT · TRUST-MISSING\* · CODEX-PROFILE-\* · PROJECT-CONFIG-STALE · HERDR-VERSION · ORPHAN-PANE |
-| `scripts/test-communication.sh` | kiểm topology giao tiếp và contract main-only |
+| `scripts/doctor.sh` | kiểm toàn vẹn: DRIFT · ACL-* · TRUST-* · `DELEGATION-BACKEND` · `BACKEND-HEALTH` · `ORPHAN-EXECUTION` |
+| `scripts/test-communication.sh` | kiểm direct-principal channel + delegated-parent routing |
 | `scripts/test-agent-routing.sh` | kiểm model, effort và delegation route của các vai Codex |
 | `scripts/test-isolation.sh` | cách ly giữa các vai + chống đệ quy (nhanh, qua hook) · `--live` chạy `claude -p` thật |
-| `scripts/test-delegation.cjs` | contract ủy nhiệm · luật định tuyến pane/exec · seq |
+| `scripts/test-delegation.cjs` | compatibility contract của launcher cũ |
+| `scripts/test-delegation-core.cjs` | policy · context · registry · lifecycle bằng FakeBackend |
+| `scripts/test-delegation-backends.cjs` | lifecycle mapping của HerdrBackend và PaseoBackend |
 | `scripts/test-project-config.cjs` | nghiệm thu `alp init`/`alp deinit`: idempotent · gỡ sạch · cwd lạ chỉ-đọc |
+| `scripts/test-runtime-installer.cjs` | prompt backend · cài/start Herdr/Paseo · non-interactive safety |
 | `scripts/test-cli-link.cjs` | cài lệnh + PATH: macOS/Linux profile · Windows shim/User PATH · idempotent |
 | `scripts/test-windows-installer.cjs` | one-line Windows: PowerShell 5.1/7 · không đóng host · `alp` dùng ngay |
 | `scripts/test-uninstall.cjs` | gỡ toàn hệ: CLI/PATH · project config · memory backup/purge · safety guard |

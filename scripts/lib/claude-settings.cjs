@@ -29,8 +29,13 @@ function absoluteRule(p, glob) {
 }
 
 /** Thư mục agent được phép làm việc. Path thường, KHÔNG có `//`. */
-function additionalDirectories(repoRoot, role, loadout) {
+function additionalDirectories(repoRoot, role, loadout, opts = {}) {
   const workspaces = L.effectiveWorkspaces(loadout);
+  // Delegation CLI ghi lifecycle/lock vào state runtime ngoài source workspace. Chỉ role
+  // có delegates_to mới cần root này; role phụ không được mở thêm bề mặt filesystem.
+  const delegationState = L.canDelegate(loadout) && opts.delegationStateDir
+    ? [opts.delegationStateDir]
+    : [];
   return [...new Set([
     path.join(repoRoot, "identity", "_shared"),
     // Không mở thư mục cha `memory/`: workspace settings có thể được dùng ngay cả
@@ -41,6 +46,7 @@ function additionalDirectories(repoRoot, role, loadout) {
     path.join(repoRoot, "memory", "private", role),
     path.join(repoRoot, "skills"),
     path.join(repoRoot, "docs"),
+    ...delegationState,
     ...workspaces.read,
   ])];
 }
@@ -82,6 +88,9 @@ function denyRules(repoRoot, role, allRoles, loadout) {
   // 5. Chống đệ quy: vai không có `delegates_to` thì không spawn được vai khác.
   //    Đây là lớp PHÒNG THỦ THỨ HAI — luật `Bash(...)` khớp theo tiền tố chuỗi nên chặn
   //    không đáng tin; lớp enforce thật là acl-guard (`checkDelegationCommand`).
+  // Raw Herdr/Paseo luôn backend-only. Ngay cả main cũng gọi qua DelegationService để
+  // exact delegates_to + context/memory policy chạy trước runtime.
+  deny.push(...runtimeDelegationRules());
   if (!L.canDelegate(loadout)) deny.push(...delegationRules(repoRoot));
 
   return deny;
@@ -90,9 +99,15 @@ function denyRules(repoRoot, role, allRoles, loadout) {
 /** Hai lệnh mở phiên vai khác. Dùng chung cho cả allow (main) lẫn deny (vai phụ). */
 function delegationRules(repoRoot) {
   return [
-    "Bash(herdr:*)",
     `Bash(node ${path.join(repoRoot, "scripts", "run-role.cjs")}:*)`,
+    `Bash(node ${path.join(repoRoot, "scripts", "delegate.cjs")}:*)`,
+    "Bash(alp delegate:*)",
+    "Bash(alp delegation:*)",
   ];
+}
+
+function runtimeDelegationRules() {
+  return ["Bash(herdr:*)", "Bash(paseo:*)"];
 }
 
 const hookCmd = (repoRoot, f) => `node ${path.join(repoRoot, "hooks", f)}`;
@@ -104,7 +119,8 @@ function hooks(repoRoot) {
     ],
     PreToolUse: [
       {
-        matcher: "Bash|Read|Edit|Write|NotebookEdit|Glob|Grep",
+        // Không matcher để raw runtime MCP tool cũng đi qua guard. Guard tự bỏ qua tool
+        // không liên quan; giới hạn vào file/Bash từng khiến create_agent bypass hoàn toàn.
         hooks: [{ type: "command", command: hookCmd(repoRoot, "acl-guard.cjs") }],
       },
     ],
@@ -118,7 +134,7 @@ function hooks(repoRoot) {
  * Object settings.json đầy đủ của một vai. Ném lỗi nếu loadout không hợp lệ —
  * fail đóng: settings sinh từ loadout hỏng còn tệ hơn không sinh.
  */
-function buildSettings(repoRoot, role, allRoles, loadout) {
+function buildSettings(repoRoot, role, allRoles, loadout, opts = {}) {
   const lo = loadout || L.loadLoadout(repoRoot, role);
   const errs = L.validate(lo, role, allRoles, K.availableSkills(repoRoot));
   if (errs.length) {
@@ -140,7 +156,7 @@ function buildSettings(repoRoot, role, allRoles, loadout) {
     $workspaces: L.effectiveWorkspaces(lo),
     permissions: {
       defaultMode: "default",
-      additionalDirectories: additionalDirectories(repoRoot, role, lo),
+      additionalDirectories: additionalDirectories(repoRoot, role, lo, opts),
       allow: [
         `Read(${rule("CHARTER.md")})`,
         `Read(${rule("README.md")})`,
@@ -155,4 +171,7 @@ function buildSettings(repoRoot, role, allRoles, loadout) {
   };
 }
 
-module.exports = { buildSettings, denyRules, delegationRules, additionalDirectories, absoluteRule, hooks };
+module.exports = {
+  buildSettings, denyRules, delegationRules, runtimeDelegationRules,
+  additionalDirectories, absoluteRule, hooks,
+};

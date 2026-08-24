@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 const assert = require("assert");
+const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const L = require("./lib/loadout.cjs");
@@ -32,9 +33,12 @@ for (const [role, [model, effort]] of Object.entries(expected)) {
   assert.deepStrictEqual(probe.delegation, {
     from: "main",
     replyTo: "main",
-    principalFacing: false,
+    principalFacing: true,
   });
 }
+
+const callerScoped = dryRun(["search", "--dry-run", "--", "caller cwd probe"], "/tmp");
+assert.strictEqual(callerScoped.cwd, fs.realpathSync("/tmp"), "run-role phải giữ caller cwd");
 
 const main = L.loadLoadout(repoRoot, "main");
 assert(main.delegates_to.includes("compaction"));
@@ -83,9 +87,9 @@ assert.deepStrictEqual(titling.skills, []);
 
 console.log("OK               agent routing tests passed");
 
-function dryRun(args) {
+function dryRun(args, cwd = repoRoot) {
   const result = spawnSync(path.join(repoRoot, "scripts", "run-role.sh"), args, {
-    cwd: repoRoot,
+    cwd,
     encoding: "utf8",
   });
   assert.strictEqual(result.status, 0, `dry-run ${args[0]}: ${result.stderr || result.stdout}`);

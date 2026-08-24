@@ -16,14 +16,15 @@ khi tin. Đó vừa là lý do các vai chuyên môn tồn tại, vừa là các
 | phản biện một thiết kế rủi ro cao | phản biện độc lập |
 
 Ai đảm nhận vai nào: `identity/REGISTRY.md` và `delegates_to` trong loadout của bạn.
-Lệnh: `scripts/run-role.sh <vai>`.
+Lệnh: `alp delegate <vai> "<task>"`; `scripts/run-role.sh <vai>` là facade compatibility.
 
-Ba việc đầu **độc lập với nhau** → giao song song. Quản nhiều phiên cùng lúc: skill `herdr`.
+Ba việc đầu **độc lập với nhau** → giao background và theo dõi bằng
+`alp delegation status|wait`; runtime phía dưới có thể là Herdr, Paseo hoặc backend khác.
 
 ## Viết brief cho vai được giao
 
-`run-role` mở một **phiên riêng**, không phải subagent. Nó **không thấy** gì trong context
-của bạn. Brief thiếu thì nó đi hỏi lại, hoặc tệ hơn — tự đoán.
+Delegation API mở một **execution riêng**. Nó chỉ thấy context ALP đã build, không thấy toàn
+bộ context phiên của bạn. Brief thiếu thì nó đi hỏi lại, hoặc tệ hơn — tự đoán.
 
 Brief tối thiểu phải có:
 

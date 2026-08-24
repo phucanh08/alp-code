@@ -54,6 +54,13 @@ const READONLY_DIRS = (process.env.ALP_READONLY_DIRS || "")
   .filter(Boolean)
   .map((p) => path.resolve(p));
 
+// Một delegated execution chỉ có đúng một source workspace. Loadout có thể đăng ký nhiều
+// project để role dùng ở những lượt khác; biến này ngăn một lượt hiện tại đọc nhầm project
+// cũ chỉ vì nó vẫn nằm trong workspaces.read.
+const DELEGATION_WORKSPACE = process.env.ALP_DELEGATION_WORKSPACE
+  ? path.resolve(process.env.ALP_DELEGATION_WORKSPACE)
+  : null;
+
 main();
 
 function main() {
@@ -82,11 +89,11 @@ function main() {
   if (!ctx) return allow(); // ngoài repo alp-code — không phải việc của hook này
 
   try {
-    const reason = FILE_TOOLS.has(tool)
+    const reason = L.checkRuntimeDelegationTool(ctx.role, tool) || (FILE_TOOLS.has(tool)
       ? checkFileTool(ctx, tool, input)
       : tool === "Bash"
       ? checkBash(ctx, input)
-      : null;
+      : null);
     return reason ? deny(reason) : allow();
   } catch (e) {
     return deny(`acl-guard lỗi khi kiểm tra (${tool}): ${e.message}`);
@@ -104,7 +111,10 @@ function main() {
  * ngoài repo thì mới buông (phiên đó không phải của hệ này).
  */
 function resolveContext(cwd) {
-  const ident = L.sessionIdentity(cwd, process.env.ALP_ROLE ? __dirname : null);
+  const ident = L.sessionIdentity(
+    cwd,
+    process.env.ALP_ROLE || process.env.ALP_DELEGATED_ROLE ? __dirname : null
+  );
   if (!ident) return null;
   const { repoRoot, role } = ident;
 
@@ -122,7 +132,7 @@ function resolveContext(cwd) {
     workspaces: L.effectiveWorkspaces(loadout),
     // Vai phụ không được spawn vai khác — quyền này đọc từ `delegates_to`, không phải
     // một khoá riêng có thể lệch với nó.
-    mayDelegate: L.canDelegate(loadout),
+    delegatesTo: loadout.delegates_to || [],
   };
 }
 
@@ -135,7 +145,8 @@ function checkFileTool(ctx, tool, input) {
     const abs = resolveAbs(c, ctx.cwd);
     const reason =
       L.checkPath(ctx.repoRoot, ctx.role, ctx.grants, abs, isWrite) ||
-      L.checkWorkspacePath(ctx.role, ctx.workspaces, abs, isWrite);
+      L.checkWorkspacePath(ctx.role, ctx.workspaces, abs, isWrite) ||
+      checkDelegationWorkspace(ctx, abs);
     if (reason) return reason;
   }
   return null;
@@ -205,7 +216,7 @@ function checkBash(ctx, input) {
 
   // Chống đệ quy delegation. Kiểm TRƯỚC indirection: lý do từ chối phải nói đúng bệnh,
   // không phải "lệnh có $()".
-  const recursion = L.checkDelegationCommand(ctx.role, ctx.mayDelegate, cmd);
+  const recursion = L.checkDelegationCommand(ctx.role, ctx.delegatesTo, cmd);
   if (recursion) return recursion;
 
   if (INDIRECTION.test(cmd)) {
@@ -222,6 +233,7 @@ function checkBash(ctx, input) {
     const reason =
       L.checkPath(ctx.repoRoot, ctx.role, ctx.grants, abs, false) ||
       L.checkWorkspacePath(ctx.role, ctx.workspaces, abs, false) ||
+      checkDelegationWorkspace(ctx, abs) ||
       (isWrite
         ? L.checkPath(ctx.repoRoot, ctx.role, ctx.grants, abs, true) ||
           L.checkWorkspacePath(ctx.role, ctx.workspaces, abs, true)
@@ -229,6 +241,20 @@ function checkBash(ctx, input) {
     if (reason) return `${reason} (qua Bash: \`${token}\`)`;
   }
   return null;
+}
+
+/**
+ * Deny một workspace ĐÃ ĐĂNG KÝ nhưng không phải workspace của execution hiện tại.
+ * Chỉ xét registered workspace để không chặn binary hệ thống, /tmp prompt hay SDK cache.
+ */
+function checkDelegationWorkspace(ctx, absPath) {
+  if (!DELEGATION_WORKSPACE) return null;
+  const registered = ctx.workspaces.read.find((root) => within(root, absPath));
+  if (!registered || within(DELEGATION_WORKSPACE, absPath)) return null;
+  return (
+    `${ctx.role}: execution được scope vào \`${DELEGATION_WORKSPACE}\`, ` +
+    `không được đọc workspace khác \`${registered}\``
+  );
 }
 
 /** Token trông giống đường dẫn: có `/`, hoặc mở đầu bằng `.` / `~`. */

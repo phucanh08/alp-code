@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const ENTRYPOINT_CONTRACT = "Kênh giao tiếp — chỉ qua main";
+const ENTRYPOINT_CONTRACT = "Kênh giao tiếp — principal hoặc delegation parent";
 
 const contractFix = (file) => `thêm mục "${ENTRYPOINT_CONTRACT}" vào ${file}`;
 
@@ -33,13 +33,13 @@ function checkCommunicationTopology(repoRoot, roles, loadLoadout) {
     if (role !== "main") {
       for (const file of [`identity/${role}/AGENTS.md`, `identity/${role}/CLAUDE.md`])
         if (!contains(file, ENTRYPOINT_CONTRACT))
-          add("COMMS-CONTRACT", `${file} thiếu contract giao tiếp qua main`, contractFix(file));
+          add("COMMS-CONTRACT", `${file} thiếu contract giao tiếp direct/delegated`, contractFix(file));
     }
   }
 
   for (const file of ["identity/_template/AGENTS.md", "identity/_template/CLAUDE.md"])
     if (!contains(file, ENTRYPOINT_CONTRACT))
-      add("COMMS-CONTRACT", `${file} thiếu contract giao tiếp qua main`, contractFix(file));
+      add("COMMS-CONTRACT", `${file} thiếu contract giao tiếp direct/delegated`, contractFix(file));
   if (!hasLine("identity/_template/loadout.yaml", "reports_to: main"))
     add(
       "COMMS-TOPOLOGY",
