@@ -82,6 +82,8 @@ function main() {
 
   let ctx;
   try {
+    const role = roleArg();
+    if (role) process.env.ALP_ROLE = role;
     ctx = resolveContext(cwd);
   } catch (e) {
     return deny(`acl-guard không xác định được vai/quyền: ${e.message}`);
@@ -98,6 +100,16 @@ function main() {
   } catch (e) {
     return deny(`acl-guard lỗi khi kiểm tra (${tool}): ${e.message}`);
   }
+}
+
+/** Role do profile Codex pin bằng argv; `ALP_DELEGATED_ROLE` vẫn thắng trong sessionIdentity. */
+function roleArg(argv = process.argv.slice(2)) {
+  const i = argv.indexOf("--role");
+  if (i < 0) return null;
+  const role = argv[i + 1];
+  if (!role || role.startsWith("--")) throw new Error("--role thiếu giá trị");
+  if (!/^[a-z][a-z0-9-]*$/.test(role)) throw new Error(`--role không hợp lệ: ${role}`);
+  return role;
 }
 
 // ---------------------------------------------------------------- bối cảnh
