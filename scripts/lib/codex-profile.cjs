@@ -10,8 +10,10 @@
 //      hook thật nằm trong array con `hooks`. Wire format vào/ra trùng Claude Code:
 //      `tool_name`/`tool_input` vào, `hookSpecificOutput`/`additionalContext` ra.
 //      `systemMessage` KHÔNG bị từ chối — không cần adapter.
-//   2. `command` chạy qua shell ⇒ nhét được `ALP_ROLE=<role>` làm tiền tố. Codex không có
-//      khối `env` như Claude settings, đây là đường duy nhất đưa danh tính tới hook.
+//   2. Codex không có khối `env` như Claude settings. Đừng gán `ALP_ROLE` bằng cú pháp
+//      shell: `ALP_ROLE=x` hỏng qua cmd.exe, còn `set "ALP_ROLE=x"` không set env trong
+//      PowerShell. Truyền `--role <role>` thẳng cho Node để độc lập shell; hook chuyển nó
+//      thành env nội bộ và vẫn để `ALP_DELEGATED_ROLE` thắng khi có delegation.
 //   3. Hook bị TRUST-GATE: profile chưa được duyệt thì hook bị BỎ QUA IM LẶNG trong phiên
 //      headless — không lỗi, không cảnh báo. `run-role --exec` phải kèm
 //      `--dangerously-bypass-hook-trust`, xem run-role.cjs.
@@ -78,14 +80,17 @@ function buildProfile(loadout, role, repoRoot, opts = {}) {
   lines.push("", "[tools]", `web_search = ${WEB_SEARCH_ROLES.has(role)}`);
 
   for (const [event, file] of HOOKS) {
-    const cmd = `ALP_ROLE=${role} node ${shellQuote(path.join(repoRoot, "hooks", file))}`;
+    const hookPath = path.join(repoRoot, "hooks", file);
+    const cmd = `node ${shellQuote(hookPath)} --role ${shellQuote(role)}`;
+    const windowsCmd = `node ${windowsQuote(hookPath)} --role ${windowsQuote(role)}`;
     lines.push(
       "",
       `[[hooks.${event}]]`,
       "",
       `[[hooks.${event}.hooks]]`,
       `type = "command"`,
-      `command = ${str(cmd)}`
+      `command = ${str(cmd)}`,
+      `command_windows = ${str(windowsCmd)}`
     );
   }
 
@@ -100,6 +105,11 @@ function str(value) {
 /** Bọc path cho shell: nháy đơn, và `'` trong path thành `'\''`. */
 function shellQuote(p) {
   return "'" + p.replace(/'/g, "'\\''") + "'";
+}
+
+/** Bọc path cho cmd.exe. Windows không cho dấu `"` trong tên file. */
+function windowsQuote(p) {
+  return `"${p}"`;
 }
 
 module.exports = { buildProfile, profilePath, codexHome, codexModel, WEB_SEARCH_ROLES };

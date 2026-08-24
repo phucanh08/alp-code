@@ -110,7 +110,18 @@ function runtimeDelegationRules() {
   return ["Bash(herdr:*)", "Bash(paseo:*)"];
 }
 
-const hookCmd = (repoRoot, f) => `node ${path.join(repoRoot, "hooks", f)}`;
+/**
+ * Lệnh hook chạy qua shell của Claude Code. Trên Windows, một path trần như
+ * `C:\Users\...` có thể đi qua shell kiểu POSIX và bị nuốt toàn bộ backslash.
+ * Dùng forward slash + quote để cùng chạy được trong cmd.exe, PowerShell và sh.
+ */
+function hookCmd(repoRoot, f) {
+  const script = path.join(repoRoot, "hooks", f);
+  const quoted = process.platform === "win32"
+    ? `"${script.split(path.sep).join("/")}"`
+    : "'" + script.replace(/'/g, "'\\''") + "'";
+  return `node ${quoted}`;
+}
 
 function hooks(repoRoot) {
   return {

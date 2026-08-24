@@ -30,6 +30,8 @@ function main() {
   let context = "";
 
   try {
+    const role = roleArg();
+    if (role) process.env.ALP_ROLE = role;
     context = buildContext(warnings);
   } catch (e) {
     warnings.push(`session-start.cjs lỗi: ${e.message} — identity CHƯA được nạp. Đọc thủ công theo CLAUDE.md.`);
@@ -52,6 +54,16 @@ function main() {
     })
   );
   process.exit(0);
+}
+
+/** Role do profile Codex pin bằng argv; không phụ thuộc cú pháp env của shell. */
+function roleArg(argv = process.argv.slice(2)) {
+  const i = argv.indexOf("--role");
+  if (i < 0) return null;
+  const role = argv[i + 1];
+  if (!role || role.startsWith("--")) throw new Error("--role thiếu giá trị");
+  if (!/^[a-z][a-z0-9-]*$/.test(role)) throw new Error(`--role không hợp lệ: ${role}`);
+  return role;
 }
 
 // ---------------------------------------------------------------- boot set
