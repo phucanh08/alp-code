@@ -43,12 +43,16 @@ git branch --show-current                 # phải là main
 git status --porcelain                    # phải rỗng
 git fetch origin --tags && git log --oneline -1 origin/main   # main local phải bằng origin
 git tag -l                                # xem version gần nhất đã phát hành
+gh workflow list                          # Release phải đã tồn tại trên remote TỪ TRƯỚC
 npm run typecheck && npm run build && npm test
 for f in scripts/test-*.cjs; do node "$f" || break; done
 ```
 
 Bất kỳ bước nào đỏ → **DỪNG**, báo principal. Không release trên tree bẩn, không release khi
 test đỏ, không release từ nhánh feature.
+
+**Nếu `release.yml` vừa được thêm/sửa và chưa có trên remote**: push nó lên `main` trước,
+thành một cú push riêng, rồi mới tag ở bước sau. Xem mục "Workflow không chạy" bên dưới.
 
 ## Chọn số version
 
@@ -98,6 +102,10 @@ git push origin main --tags
 Push commit và tag **cùng lúc**: tag trỏ vào commit mà `origin/main` chưa có thì workflow
 checkout được nhưng lịch sử nhánh lệch với release.
 
+Ngoại lệ duy nhất: cú push nào **lần đầu mang `release.yml` lên remote** thì phải tách làm
+hai — `git push origin main` trước, đợi `gh workflow list` thấy workflow, rồi
+`git push origin --tags` sau. Đẩy cả hai một lần khiến tag không sinh run nào.
+
 ### 4. Xác minh
 
 ```bash
@@ -126,10 +134,52 @@ Chưa push thì ghi rõ chưa push. Đã push thì dán link release.
 |---|---|
 | tag `vX.Y.Z` đã tồn tại | DỪNG. Không `-f`. Báo principal, đề xuất số kế tiếp |
 | workflow fail ở bước verify | tag lệch `package.json.version` — cắt version mới, không sửa tag |
-| workflow không chạy | kiểm tra tag khớp pattern `v*.*.*` và đã push (`git ls-remote --tags origin`) |
+| workflow không chạy | xem mục "Workflow không chạy" bên dưới trước khi nghi ngờ pattern hay tag |
 | push bị từ chối | `origin/main` đã tiến — DỪNG, báo principal, không force |
 | lỡ tag nhầm commit, **chưa push** | `git tag -d vX.Y.Z && git reset --hard HEAD~1` rồi chạy lại script; chỉ an toàn khi chưa push |
 | repo chưa có tag nào | bình thường cho bản đầu; `resolveLatestReleaseTag` sẽ fail cho tới khi có tag đầu tiên |
+
+## Workflow không chạy
+
+Đã xảy ra thật khi cắt `v0.1.0` (2026-08-27): tag lên remote đúng commit, `release.yml` có
+mặt tại tag, Actions bật, repo public, chỉ push một tag — nhưng `total_count` runs = 0.
+
+Chẩn đoán theo thứ tự, dừng ở cái đầu tiên sai:
+
+```bash
+git ls-remote --tags origin                                   # tag có trên remote chưa
+gh api "repos/<slug>/contents/.github/workflows/release.yml?ref=vX.Y.Z" --jq .size
+gh api repos/<slug>/actions/permissions                       # enabled: true
+gh api repos/<slug>/actions/workflows --jq '.workflows[] | {name, state, created_at}'
+```
+
+Nguyên nhân của ca 2026-08-27: `workflow.created_at` **trùng đúng thời điểm push** — nghĩa là
+GitHub mới biết đến workflow ngay trong chính cú push đó, nên ref-update của tag không khớp
+workflow nào. Tài liệu GitHub ghi rõ `push` dùng file workflow **của chính ref được push**
+("includes workflows that are not merged into the default branch") và ràng buộc "phải tồn tại
+trên default branch" **không** áp cho `push` — nên file-có-mặt-tại-tag vẫn không đủ. Cộng đồng
+mô tả cùng hiện tượng: workflow chỉ bắt các push xảy ra **sau khi** nó đã tồn tại trên repo.
+
+Loại trừ các nguyên nhân khác trước khi kết luận:
+
+| Nghi ngờ | Bác bỏ bằng |
+|---|---|
+| push > 3 tag một lúc (documented: không sinh event) | chỉ push một tag |
+| tag do workflow khác push bằng `GITHUB_TOKEN` | push từ máy local bằng credential người dùng |
+| Actions bị tắt / repo là fork / repo archived | `gh api repos/<slug>` + `/actions/permissions` |
+| sai pattern `v*.*.*` | `v0.1.0` khớp |
+
+**Khắc phục — không đụng vào tag đã push:**
+
+```bash
+gh release create vX.Y.Z --generate-notes
+```
+
+Kết quả giống hệt cái workflow sinh ra. Trước khi chạy, tự tay kiểm cái mà workflow lẽ ra
+verify: tag phải khớp `package.json.version`.
+
+**Không** xoá rồi push lại tag để ép workflow bắn — vi phạm cổng chặn ở đầu skill. Lần release
+sau workflow chạy bình thường vì nó đã tồn tại từ trước.
 
 ## Sau khi release
 
