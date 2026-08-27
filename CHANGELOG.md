@@ -8,6 +8,13 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Gỡ
+
+- Bỏ `.github/workflows/release.yml`. Release nay publish bằng `gh release create` từ máy
+  maintainer. Workflow không chạy khi cắt `v0.1.0` vì nó vừa được thêm trong chính cú push
+  mang tag, và với một maintainer dùng `gh` sẵn thì nó chỉ thêm một bộ phận async có thể im
+  lặng hỏng. Bất biến `tag == package.json.version` vẫn do `cut-release.cjs` giữ lúc tạo tag.
+
 ## [0.1.0] - 2026-08-27
 
 Bản release đánh số đầu tiên. Trước mốc này alp-code chưa có version, chưa có tag, và

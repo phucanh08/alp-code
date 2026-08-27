@@ -8,16 +8,16 @@ description: Cắt bản release cho alp-code — bump version, cập nhật CHA
 Skill này cần `Write`/`Edit` và `Bash` (kèm `gh` để xác minh). Execution policy không cấp đủ
 thì chỉ đọc và đề xuất được kế hoạch release, không tạo tag.
 
-**Phạm vi: chỉ repo alp-code.** Nó nói về `package.json`, `CHANGELOG.md`, `cut-release.cjs`
-và `release.yml` của chính repo này, nên nằm ở `.claude/skills/` (project scope) chứ không
-phải `skills/` — `skills/` được ship cho mọi project qua `ALP_REPO_ROOT/skills`.
+**Phạm vi: chỉ repo alp-code.** Nó nói về `package.json`, `CHANGELOG.md` và `cut-release.cjs`
+của chính repo này, nên nằm ở `.claude/skills/` (project scope) chứ không phải `skills/` —
+`skills/` được ship cho mọi project qua `ALP_REPO_ROOT/skills`.
 `.codex/skills/release` là symlink trỏ về đây; sửa bản ở `.claude/`, đừng tạo bản sao thứ hai.
 
 ## Cổng chặn — đọc trước mọi thứ khác
 
-**Không tạo tag, không push tag, trừ khi principal yêu cầu trong phiên này.** Tag đã push là
-việc ra ngoài máy: nó kích hoạt workflow, sinh GitHub Release, và người khác `alp update` về
-ngay lập tức. Duyệt ở lần trước không tính cho lần này (HOUSE-RULES §1.2).
+**Không tạo tag, không push tag, không publish release, trừ khi principal yêu cầu trong phiên
+này.** Tag đã push và release đã publish là việc ra ngoài máy: người khác `alp update` về ngay
+lập tức. Duyệt ở lần trước không tính cho lần này (HOUSE-RULES §1.2).
 
 Hai việc **không bao giờ tự làm**, kể cả khi thấy sai:
 
@@ -30,9 +30,14 @@ Tag sai thì **cắt version mới** (`v0.1.1`), không sửa tag cũ. Báo prin
 
 ## Bất biến của repo
 
-`tag vX.Y.Z` **phải** khớp `package.json.version` là `X.Y.Z`. `.github/workflows/release.yml`
-verify điều này và fail release nếu lệch. Đây là lý do bump version và tạo tag luôn đi cùng
-một commit — không tag một commit chưa bump.
+`tag vX.Y.Z` **phải** khớp `package.json.version` là `X.Y.Z` — `alp update` resolve tag rồi
+checkout, nên tag lệch version nghĩa là máy người dùng báo sai bản đang chạy. `cut-release.cjs`
+giữ bất biến này ngay lúc tạo tag (bump và tag cùng một commit, không tag commit chưa bump).
+
+Không có ai verify lại phía server: repo cố ý **không** dùng GitHub Actions cho release. Với
+một maintainer cắt release từ máy local, workflow chỉ thêm một bộ phận async có thể im lặng
+không chạy — đã xảy ra ở `v0.1.0`. Đổi lại, tag tạo bằng tay ngoài `cut-release.cjs` sẽ không
+được kiểm gì cả; đừng làm thế.
 
 ## Tiền điều kiện
 
@@ -43,16 +48,13 @@ git branch --show-current                 # phải là main
 git status --porcelain                    # phải rỗng
 git fetch origin --tags && git log --oneline -1 origin/main   # main local phải bằng origin
 git tag -l                                # xem version gần nhất đã phát hành
-gh workflow list                          # Release phải đã tồn tại trên remote TỪ TRƯỚC
+gh auth status                            # publish release cần gh đã đăng nhập
 npm run typecheck && npm run build && npm test
 for f in scripts/test-*.cjs; do node "$f" || break; done
 ```
 
 Bất kỳ bước nào đỏ → **DỪNG**, báo principal. Không release trên tree bẩn, không release khi
 test đỏ, không release từ nhánh feature.
-
-**Nếu `release.yml` vừa được thêm/sửa và chưa có trên remote**: push nó lên `main` trước,
-thành một cú push riêng, rồi mới tag ở bước sau. Xem mục "Workflow không chạy" bên dưới.
 
 ## Chọn số version
 
@@ -93,28 +95,28 @@ Script tự chặn: tree bẩn, tag đã tồn tại, version không tăng, mụ
 (`--allow-empty` để vượt, chỉ dùng khi principal đồng ý). Cần tự tay commit thì thêm
 `--no-commit` — script chỉ ghi file rồi in lệnh git cần chạy.
 
-### 3. Push — hỏi principal trước
+### 3. Push và publish — hỏi principal trước
 
 ```bash
 git push origin main --tags
+gh release create vX.Y.Z --generate-notes
 ```
 
-Push commit và tag **cùng lúc**: tag trỏ vào commit mà `origin/main` chưa có thì workflow
-checkout được nhưng lịch sử nhánh lệch với release.
+Push commit và tag **cùng lúc**: tag trỏ vào commit mà `origin/main` chưa có thì release trỏ
+vào lịch sử mà người khác chưa fetch được.
 
-Ngoại lệ duy nhất: cú push nào **lần đầu mang `release.yml` lên remote** thì phải tách làm
-hai — `git push origin main` trước, đợi `gh workflow list` thấy workflow, rồi
-`git push origin --tags` sau. Đẩy cả hai một lần khiến tag không sinh run nào.
+`gh release create` chạy tại máy nên biết kết quả ngay — nó in URL release. Không có bước
+async nào để phải đi moi log.
 
 ### 4. Xác minh
 
 ```bash
-gh run list --workflow=release.yml --limit 1
-gh release view vX.Y.Z
+gh release view vX.Y.Z --json tagName,isDraft,url
+gh api repos/phucanh08/alp-code/releases/latest --jq .tag_name   # đúng cái alp update đọc
 ```
 
-Workflow phải xanh và release phải tồn tại kèm auto-generated notes. Workflow đỏ ở bước
-"Verify tag matches package.json version" nghĩa là tag lệch version — xem mục Xử lý lỗi.
+Release phải tồn tại, không phải draft, và `releases/latest` phải trả đúng tag vừa cắt — đây
+mới là thứ `resolveLatestReleaseTag` dựa vào.
 
 ## Mẫu báo cáo về principal
 
@@ -133,53 +135,29 @@ Chưa push thì ghi rõ chưa push. Đã push thì dán link release.
 | Lỗi | Làm gì |
 |---|---|
 | tag `vX.Y.Z` đã tồn tại | DỪNG. Không `-f`. Báo principal, đề xuất số kế tiếp |
-| workflow fail ở bước verify | tag lệch `package.json.version` — cắt version mới, không sửa tag |
-| workflow không chạy | xem mục "Workflow không chạy" bên dưới trước khi nghi ngờ pattern hay tag |
+| lỡ tag lệch `package.json.version` | cắt version mới, **không** sửa tag đã push |
+| `gh release create` báo release đã tồn tại | ai đó publish rồi — `gh release view` xem, đừng tạo đè |
+| `gh auth status` đỏ | `gh auth login` rồi chạy lại; không tự đổi credential của principal |
 | push bị từ chối | `origin/main` đã tiến — DỪNG, báo principal, không force |
 | lỡ tag nhầm commit, **chưa push** | `git tag -d vX.Y.Z && git reset --hard HEAD~1` rồi chạy lại script; chỉ an toàn khi chưa push |
 | repo chưa có tag nào | bình thường cho bản đầu; `resolveLatestReleaseTag` sẽ fail cho tới khi có tag đầu tiên |
 
-## Workflow không chạy
+## Vì sao không dùng GitHub Actions
 
-Đã xảy ra thật khi cắt `v0.1.0` (2026-08-27): tag lên remote đúng commit, `release.yml` có
-mặt tại tag, Actions bật, repo public, chỉ push một tag — nhưng `total_count` runs = 0.
+`v0.1.0` từng có `.github/workflows/release.yml` trigger trên tag push. Nó không chạy: tag lên
+remote đúng commit, file có mặt tại tag, Actions bật, chỉ push một tag — nhưng 0 run.
+`workflow.created_at` trùng đúng thời điểm push, tức GitHub mới biết đến workflow trong chính
+cú push đó nên ref-update của tag không khớp workflow nào. (Tài liệu GitHub: `push` dùng file
+workflow của chính ref được push, và ràng buộc "phải tồn tại trên default branch" **không** áp
+cho `push` — nên file-có-mặt-tại-tag vẫn không đủ.)
 
-Chẩn đoán theo thứ tự, dừng ở cái đầu tiên sai:
+Repo đã bỏ workflow thay vì vá cái bẫy bootstrap đó. Với một maintainer cắt release từ máy
+local, `gh` đã auth sẵn, workflow chỉ đóng góp: một bộ phận async có thể im lặng không chạy,
+và việc ép `tag == version` cho những tag tạo ngoài `cut-release.cjs` — thứ không nên xảy ra
+ngay từ đầu. `gh release create` cho kết quả y hệt, đồng bộ, biết ngay đúng sai.
 
-```bash
-git ls-remote --tags origin                                   # tag có trên remote chưa
-gh api "repos/<slug>/contents/.github/workflows/release.yml?ref=vX.Y.Z" --jq .size
-gh api repos/<slug>/actions/permissions                       # enabled: true
-gh api repos/<slug>/actions/workflows --jq '.workflows[] | {name, state, created_at}'
-```
-
-Nguyên nhân của ca 2026-08-27: `workflow.created_at` **trùng đúng thời điểm push** — nghĩa là
-GitHub mới biết đến workflow ngay trong chính cú push đó, nên ref-update của tag không khớp
-workflow nào. Tài liệu GitHub ghi rõ `push` dùng file workflow **của chính ref được push**
-("includes workflows that are not merged into the default branch") và ràng buộc "phải tồn tại
-trên default branch" **không** áp cho `push` — nên file-có-mặt-tại-tag vẫn không đủ. Cộng đồng
-mô tả cùng hiện tượng: workflow chỉ bắt các push xảy ra **sau khi** nó đã tồn tại trên repo.
-
-Loại trừ các nguyên nhân khác trước khi kết luận:
-
-| Nghi ngờ | Bác bỏ bằng |
-|---|---|
-| push > 3 tag một lúc (documented: không sinh event) | chỉ push một tag |
-| tag do workflow khác push bằng `GITHUB_TOKEN` | push từ máy local bằng credential người dùng |
-| Actions bị tắt / repo là fork / repo archived | `gh api repos/<slug>` + `/actions/permissions` |
-| sai pattern `v*.*.*` | `v0.1.0` khớp |
-
-**Khắc phục — không đụng vào tag đã push:**
-
-```bash
-gh release create vX.Y.Z --generate-notes
-```
-
-Kết quả giống hệt cái workflow sinh ra. Trước khi chạy, tự tay kiểm cái mà workflow lẽ ra
-verify: tag phải khớp `package.json.version`.
-
-**Không** xoá rồi push lại tag để ép workflow bắn — vi phạm cổng chặn ở đầu skill. Lần release
-sau workflow chạy bình thường vì nó đã tồn tại từ trước.
+Chỉ nên quay lại workflow khi có người thứ hai cắt release, hoặc cần tag từ web UI. Khi đó
+nhớ: push `release.yml` lên `main` thành **một cú push riêng trước**, rồi mới push tag.
 
 ## Sau khi release
 
@@ -190,7 +168,7 @@ Máy đang chạy `alp` chỉ thấy thông báo sau khi cache `~/.alp/update-ch
 ## Ranh giới
 
 - Không release từ nhánh khác `main`, không release khi test đỏ.
-- Không sửa `.github/workflows/release.yml` trong lúc cắt release — đó là thay đổi riêng,
-  cần review riêng.
 - Không tự viết release notes đè lên auto-generated notes trừ khi principal yêu cầu.
+- Không thêm lại GitHub Actions cho release trong lúc đang cắt release — đó là thay đổi thiết
+  kế, cần bàn riêng (xem mục "Vì sao không dùng GitHub Actions").
 - Không commit `dist/`, `memory/` (xem skill `git` — chúng phải nằm ngoài mọi commit).

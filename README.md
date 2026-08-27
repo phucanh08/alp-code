@@ -162,8 +162,9 @@ artifact của bản ALP cũ (`identity/`, `CHARTER.md`, compiled ACL); doctor s
    đóng mục CHANGELOG theo ngày, tạo commit `chore(release): vX.Y.Z` và tag. Thêm
    `--dry-run` để xem trước. Script cố ý dừng trước push.
 3. `git push origin main --tags`.
-4. `.github/workflows/release.yml` chạy trên tag push: verify tag khớp `package.json.version`
-   rồi publish GitHub Release với auto-generated notes. Tag không khớp version sẽ fail workflow.
+4. `gh release create vX.Y.Z --generate-notes` — publish GitHub Release từ máy, biết kết quả
+   ngay. Repo cố ý không dùng GitHub Actions cho việc này; lý do ghi trong
+   `.claude/skills/release/SKILL.md`.
 5. Từ đây, `alp update` và installer trên máy khác sẽ resolve được `vX.Y.Z` làm bản mới nhất.
 
 ## Cấu trúc
