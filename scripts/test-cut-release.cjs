@@ -30,6 +30,12 @@ function testBumpsAndTags() {
     assert.strictEqual(JSON.parse(text).version, "0.2.0");
     assert(text.startsWith('{\n  "name"'), "không được stringify lại cả file");
   });
+  check("package-lock.json bump theo, không đụng version của dependency", () => {
+    const lock = JSON.parse(fs.readFileSync(path.join(repo, "package-lock.json"), "utf8"));
+    assert.strictEqual(lock.version, "0.2.0");
+    assert.strictEqual(lock.packages[""].version, "0.2.0");
+    assert.strictEqual(lock.packages["node_modules/zod"].version, "0.1.0", "dep trùng version cũ phải giữ nguyên");
+  });
   check("CHANGELOG mở mục rỗng mới và đóng mục cũ theo ngày", () => {
     const text = fs.readFileSync(path.join(repo, "CHANGELOG.md"), "utf8");
     const today = new Date().toISOString().slice(0, 10);
@@ -106,6 +112,16 @@ function makeRepo(name, version, unreleased) {
   const repo = path.join(sandbox, name);
   fs.mkdirSync(repo, { recursive: true });
   fs.writeFileSync(path.join(repo, "package.json"), `{\n  "name": "alp-code",\n  "version": "${version}",\n  "private": true\n}\n`);
+  // Dependency cố ý mang đúng version cũ: chứng minh script không sửa nhầm bằng regex.
+  fs.writeFileSync(path.join(repo, "package-lock.json"), `${JSON.stringify({
+    name: "alp-code",
+    version,
+    lockfileVersion: 3,
+    packages: {
+      "": { name: "alp-code", version, dependencies: { zod: "^4.0.0" } },
+      "node_modules/zod": { version, resolved: "https://registry.npmjs.org/zod/-/zod-0.1.0.tgz" },
+    },
+  }, null, 2)}\n`);
   fs.writeFileSync(path.join(repo, "CHANGELOG.md"), [
     "# Changelog", "",
     "## [Chưa phát hành]", "",

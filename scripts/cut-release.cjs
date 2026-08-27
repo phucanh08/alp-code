@@ -16,6 +16,7 @@ const { assertCleanWorkingTree } = require("./lib/update.cjs");
 
 const repoRoot = process.env.ALP_REPO_ROOT || path.resolve(__dirname, "..");
 const packageFile = path.join(repoRoot, "package.json");
+const lockFile = path.join(repoRoot, "package-lock.json");
 const changelogFile = path.join(repoRoot, "CHANGELOG.md");
 const UNRELEASED = "## [Chưa phát hành]";
 const DEFAULT_SLUG = "phucanh08/alp-code";
@@ -47,6 +48,8 @@ if (git(["tag", "-l", tag]).trim()) die(`tag ${tag} đã tồn tại — không 
 // ------------------------------------------------------------------ soạn nội dung
 const changelog = rewriteChangelog(fs.readFileSync(changelogFile, "utf8"), next, today());
 const packageJson = rewriteVersion(fs.readFileSync(packageFile, "utf8"), current, next);
+const lock = fs.existsSync(lockFile) ? rewriteLockVersion(fs.readFileSync(lockFile, "utf8"), next) : null;
+const written = ["package.json", ...(lock ? ["package-lock.json"] : []), "CHANGELOG.md"];
 
 log("VERSION", `${current} → ${next}`);
 log("ENTRY", `[${next}] - ${today()} (${changelog.entryLines} dòng nội dung)`);
@@ -57,17 +60,18 @@ if (dryRun) {
 }
 
 fs.writeFileSync(packageFile, packageJson);
+if (lock) fs.writeFileSync(lockFile, lock);
 fs.writeFileSync(changelogFile, changelog.text);
-log("WRITE", "package.json + CHANGELOG.md");
+log("WRITE", written.join(" + "));
 
 if (noCommit) {
   log("SKIP", "--no-commit: chưa tạo commit/tag");
-  console.log(`NEXT     git add package.json CHANGELOG.md && git commit -m "chore(release): ${tag}" && git tag ${tag}`);
+  console.log(`NEXT     git add ${written.join(" ")} && git commit -m "chore(release): ${tag}" && git tag ${tag}`);
   process.exit(0);
 }
 
 // ------------------------------------------------------------------ commit + tag
-mustGit(["add", "package.json", "CHANGELOG.md"]);
+mustGit(["add", ...written]);
 mustGit(["commit", "-m", `chore(release): ${tag}`]);
 mustGit(["tag", tag]);
 log("COMMIT", `${git(["rev-parse", "--short", "HEAD"]).trim()} chore(release): ${tag}`);
@@ -99,6 +103,18 @@ function rewriteVersion(text, from, to) {
   const pattern = new RegExp(`("version"\\s*:\\s*")${escapeRegExp(from)}(")`);
   if (!pattern.test(text)) die("không tìm thấy dòng `\"version\"` trong package.json");
   return text.replace(pattern, `$1${to}$2`);
+}
+
+/**
+ * Lockfile giữ version ở hai chỗ: gốc và `packages[""]`. Không dùng regex vì một dependency
+ * bất kỳ cũng có dòng `"version"` cùng mức thụt lề — sửa nhầm thì lock hỏng âm thầm. Round-trip
+ * JSON.parse/stringify với indent 2 tái tạo đúng byte-for-byte định dạng npm ghi ra.
+ */
+function rewriteLockVersion(text, version) {
+  const lock = JSON.parse(text);
+  lock.version = version;
+  if (lock.packages && lock.packages[""]) lock.packages[""].version = version;
+  return `${JSON.stringify(lock, null, 2)}\n`;
 }
 
 /**
