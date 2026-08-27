@@ -2,6 +2,9 @@
 
 > Tài liệu kiến trúc hệ thống. Mô tả layer, contract giữa các layer, luồng dữ liệu và các
 > ranh giới tin cậy. Cập nhật từ source tại `main` (2026-08-27).
+>
+> Doc này mô tả hệ thống **đang là**. Hướng đi và các nguyên tắc quyết định nằm ở
+> [Triết lý thiết kế & Tầm nhìn](./alp-design-philosophy-and-vision.md).
 
 ## 1. Hệ thống này là gì
 
