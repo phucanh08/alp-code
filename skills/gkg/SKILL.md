@@ -38,7 +38,7 @@ gkg server start                          # bật server để query
 gkg server stop                           # PHẢI dừng trước khi index lại
 ```
 
-**Chỉ index workspace có trong `workspaces.read` của `loadout.yaml`.** Index một repo ngoài
+**Chỉ index workspace có trong `workspaces.read` của `compiled AgentDefinition`.** Index một repo ngoài
 danh sách là đọc thứ mình không được đọc, kể cả khi filesystem không chặn.
 
 Dữ liệu index nằm ở `~/.gkg/` — ngoài repo, nên nó sống qua nhiều phiên. Index lại khi code

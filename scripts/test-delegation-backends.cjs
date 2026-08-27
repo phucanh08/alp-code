@@ -302,7 +302,12 @@ function testAlpFacadePreservesCallerWorkspace() {
   assert.strictEqual(run.status, 0, run.stderr || run.stdout);
   const args = JSON.parse(fs.readFileSync(capture, "utf8"));
   assert.strictEqual(args[args.indexOf("--cwd") + 1], fs.realpathSync(project));
-  assert(args.at(-1).includes(fs.realpathSync(project)), "prepared prompt phải pin caller workspace");
+  const promptPointer = args.at(-1).match(/^ALP execution input is in (.+); read it before continuing\.$/);
+  assert(promptPointer, "Paseo phải nhận con trỏ prompt runtime ổn định");
+  assert(
+    fs.readFileSync(promptPointer[1], "utf8").includes(fs.realpathSync(project)),
+    "prepared prompt artifact phải pin caller workspace",
+  );
 }
 
 function testBackendSwitchCli() {

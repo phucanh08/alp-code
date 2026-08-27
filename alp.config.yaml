@@ -1,4 +1,4 @@
-# ALP runtime configuration. Identity, ACL, memory and delegates_to remain in loadout.yaml.
+# ALP machine/runtime configuration. Agent identity and policy live in compiled TypeScript.
 delegation:
   backend: herdr
   fallback_backend: ""

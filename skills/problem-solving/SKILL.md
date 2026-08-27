@@ -67,7 +67,7 @@ Cây quyết định để chọn năm cái trên. Dùng khi chẩn đoán khôn
    thật nằm trong reference.
 3. **Áp dụng theo đúng quy trình**, không rút gọn. Rút gọn là quay lại kiểu nghĩ cũ.
 4. **Ghi lại cái gì hiệu quả, cái gì không.** Bài học về chính cách bạn làm việc →
-   `identity/<vai>/journal/YYYY-MM.md`. Fact về project → báo lại; bên giao việc quyết
+   `memory/private/<vai>/journal/YYYY-MM.md`. Fact về project → báo lại; bên giao việc quyết
    định ghi vào `memory/` chung hay không.
 
 ## Kết hợp

@@ -14,18 +14,17 @@
 |---|---|---|
 | Bản | phiên hiện tại, model mặc định `opus` | `codex-cli 0.149.0` |
 | Giao role ALP | `alp delegate <role>` | `alp delegate <role>` |
-| Chọn model | loadout của role | **profile** sinh từ loadout |
-| Effort | ẩn (theo alias) | **profile** (`model_reasoning_effort`) |
+| Chọn model | compiled `AgentDefinition` | compiled `AgentDefinition` |
+| Effort | runtime adapter | runtime adapter |
 | Kết quả | `DelegationResult` | `DelegationResult` |
 | Chạy dài | backend execution | backend execution |
 
 Backend được chọn bằng config và adapter có thể dùng Herdr hoặc Paseo. Business code không
 gọi runtime trực tiếp; ALP policy/context luôn chạy trước backend.
 
-**Vai đã có loadout thì KHÔNG truyền model/effort bằng tay.** Model — cộng sandbox,
-approval, web search và hook boot — nằm trong `$CODEX_HOME/<role>.config.toml` do
-`compile-acl` sinh từ `loadout.yaml`; launcher chỉ gọi `codex -p <role>`. Flag `-m`/`-c`
-chỉ dùng cho thử nghiệm admin ad-hoc, không phải delegation của role (mục 6).
+**Agent đã có definition thì KHÔNG truyền model/effort bằng tay.** ALP chọn model, effort,
+sandbox và hooks từ compiled definition cùng immutable execution policy. Flag `-m`/`-c`
+chỉ dùng cho thử nghiệm admin ad-hoc, không phải delegation của agent (mục 6).
 
 **Ràng buộc quan trọng:** `Agent` tool chỉ nhận `model` ∈ `opus` · `sonnet` · `haiku` · `fable`.
 Không spawn được subagent trên Opus 4.8, Sonnet 4.6 hay bất kỳ ID cụ thể nào — muốn model khác
@@ -165,7 +164,7 @@ Propose 3 fundamentally different approaches. Do not refine mine."
 # Khảo sát rộng nhưng nông
 codex exec -m gpt-5.6-terra "<prompt>"
 
-# Vai đã có loadout — launcher tự lấy cả model lẫn effort từ profile
+# Agent đã đăng ký — launcher tự lấy cả model lẫn effort từ definition
 alp delegate compaction -- "<thread/context bundle>"
 alp delegate titling -- "<thread/context bundle>"
 alp delegate review --project ~/code/api --background -- "<concern>"
@@ -174,17 +173,14 @@ alp delegate review --project ~/code/api --background -- "<concern>"
 Việc dài hoặc chạy song song dùng `--background`, rồi theo dõi bằng
 `alp delegation status|wait <execution-id>`. Việc đồng bộ bỏ `--background`.
 
-**Profile thiếu thì `codex -p` KHÔNG báo lỗi** — nó im lặng chạy mặc định, mà mặc định của
-`codex exec` là `workspace-write`. `run-role` chặn trước ở chỗ đó; `alp doctor` báo
-`CODEX-PROFILE-MISSING`/`-DRIFT` khi profile lệch hoặc chưa sinh, kèm dòng `→ fix:`.
-Sửa loadout xong luôn chạy `compile-acl.sh`.
+ALP không dùng Codex role profile. Runtime adapter luôn truyền model, effort và sandbox từ
+execution snapshot; `alp doctor` kiểm compiled registry và build-source drift.
 
-**`main` cũng chạy được qua launcher** (`scripts/run-role.sh main -- "<việc>"`) — đường phụ
-khi muốn tiết kiệm quota Claude. Hai chỗ khác vai phụ, nhớ khi đọc loadout của main:
+**`main` chạy được trên cả hai runtime** (`alp --runtime codex`) — đường phụ khi muốn tiết
+kiệm quota Claude. Hai điểm khác specialist nằm trong `src/agents/main.ts`:
 
-- Model lấy từ **`codex_model:`** (`gpt-5.6-sol`), không phải `model:` — `model:` là
-  `claude-opus-5`, model của runtime **chính**. Đưa nó cho `codex -m` là hỏng câm.
-- Sandbox là `workspace-write`, nhưng **chỉ** ở repo alp-code hoặc trong `workspaces.write`.
+- Model Codex là `model.codex` (`gpt-5.6-sol`); Claude là `model.claude`.
+- Sandbox là `workspace-write`, nhưng **chỉ** ở workspace đã đăng ký machine-local.
   Ở cwd lạ main vẫn `read-only` như mọi vai khác.
 
 Đổi lại, Codex không nạp được skill `alp:plan`/`alp:cook` (marketplace của Claude Code) —

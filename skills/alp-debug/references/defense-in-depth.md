@@ -103,12 +103,12 @@ Repo này chọn **fail đóng** làm mặc định — hỏng thì hỏng to v�
 
 | Tầng | Trong alp-code |
 |---|---|
-| 1 | `L.validate()` — loadout sai thì `compile-acl` ném lỗi, không sinh settings hỏng |
+| 1 | `L.validate()` — loadout sai thì `npm run build` ném lỗi, không sinh settings hỏng |
 | 2 | `denyRules()` — deny của mọi vai anh em, enumerate từng cái |
 | 3 | `hooks/acl-guard.cjs` — chặn lúc chạy, kể cả khi settings hỏng |
 | 4 | `doctor.cjs` — tín hiệu `ACL-DRIFT`, `SKILL-DRIFT` khi hai bên lệch nhau |
 
-CHARTER §6 nói thẳng giới hạn: `acl-guard` là **guardrail, không phải sandbox**. Nhiều tầng
+compiled policy invariants nói thẳng giới hạn: `acl-guard` là **guardrail, không phải sandbox**. Nhiều tầng
 chặn nhầm lẫn và vượt quyền tình cờ — không chặn được kẻ cố tình lách. Khuyến nghị phòng
 thủ nhiều lớp thì đừng hứa nhiều hơn mức nó làm được.
 

@@ -14,10 +14,10 @@ của `research`.
 
 ## Đường dẫn
 
-CWD của phiên là thư mục vai (`identity/<vai>/`), nên script gọi qua symlink skill:
+CWD của phiên là active workspace; gọi script qua repo path hoặc skill path runtime cung cấp:
 
 ```
-.claude/skills/docs-seeker/scripts/<tên>.js
+<alp-repo>/skills/docs-seeker/scripts/<tên>.js
 ```
 
 Không dùng `node scripts/…` — đường dẫn đó tính từ CWD và sẽ không tìm thấy file.
@@ -55,7 +55,7 @@ tự làm bằng tay.
 `analyze-llms-txt.js` để biết đọc cái nào trước.
 
 Với truy vấn tổng quát, `analyze-llms-txt.js` có gợi ý chia việc cho nhiều agent song song.
-**Bỏ qua gợi ý đó** nếu loadout không cho giao việc. Dùng phần
+**Bỏ qua gợi ý đó** nếu execution policy không cho giao việc. Dùng phần
 xếp hạng critical/important/supplementary để tự chọn thứ tự đọc, và đọc trong ngân sách.
 
 ## Khoá API
@@ -66,7 +66,7 @@ Ba khoá đều **tuỳ chọn**, không có vẫn chạy: `CONTEXT7_API_KEY` (r
 Script đọc theo thứ tự: `process.env` → `.env` trong thư mục skill → `.claude/.env`.
 
 **Không tự tạo file `.env` trong `skills/`** — `skills/` là hạ tầng đóng băng, chỉ principal
-sửa (CHARTER §8). Cần khoá thì báo lại; principal sẽ đặt vào biến môi trường.
+sửa. Cần khoá thì báo lại; principal sẽ đặt vào biến môi trường.
 
 ## Tham chiếu
 

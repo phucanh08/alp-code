@@ -9,7 +9,12 @@ const { DelegationService } = require("./core/service.cjs");
 const { createDelegationLogger } = require("./core/logger.cjs");
 const { HerdrBackend } = require("./backends/herdr/backend.cjs");
 const { PaseoBackend } = require("./backends/paseo/backend.cjs");
-const { buildContextForRole } = require("../../../hooks/session-start.cjs");
+
+function buildContextForRole(repoRoot, role, options = {}) {
+  const registry = require(path.join(repoRoot, "dist", "src", "agents", "registry.js")).agentRegistry;
+  const definition = registry.get(role);
+  return definition.instructions({ task: "Delegated execution", workspace: options.workspace || repoRoot });
+}
 
 /** Composition root duy nhất biết concrete backends. Delegation Core không import chúng. */
 function createDelegationService(options = {}) {

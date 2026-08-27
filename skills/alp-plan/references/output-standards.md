@@ -52,8 +52,8 @@ Hai loại file **không bao giờ đưa vào danh sách sửa**:
 
 | Loại | Vì sao |
 |---|---|
-| `identity/*/.claude/**`, `$CODEX_HOME/*.config.toml` | sản phẩm của `compile-acl`. Sửa tay là mất ở lần compile sau |
-| `CHARTER.md`, `identity/_shared/**`, `identity/REGISTRY.md` | chỉ principal sửa (CHARTER §8) |
+| `~/.alp/executions/**`, `$CODEX_HOME/*.config.toml` | sản phẩm của `npm run build`. Sửa tay là mất ở lần compile sau |
+| `compiled policy invariants`, `src/agents/shared/**`, `src/agents/registry.ts` | chỉ principal sửa (compiled policy invariants) |
 
 Kế hoạch cần đổi chúng thì ghi vào mục **Cần principal duyệt**, đừng ghi vào danh sách việc.
 

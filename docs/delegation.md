@@ -17,9 +17,9 @@ Principal
    │
    ▼
 DelegationService
-   ├── RoleRegistry      identity/<role>/loadout.yaml
+   ├── AgentRegistry     compiled TypeScript definitions
    ├── DelegationPolicy exact delegates_to + reports_to
-   ├── ContextBuilder    identity + memory được phép + task + workspace policy
+   ├── ContextBuilder    immutable capsule + scoped memory + task + workspace policy
    └── BackendRegistry
           ├── HerdrBackend ── Herdr CLI/socket
           └── PaseoBackend ── Paseo public CLI/daemon
@@ -204,8 +204,8 @@ Environment override:
 trách nhiệm resolve tên; core không có chuỗi `if paseo / else herdr`.
 
 Main chạy trong sandbox cần ghi generic execution state và kết nối backend daemon local.
-`compile-acl`/`alp init` vì vậy chỉ mở `delegation.state_dir` làm writable root cho role có
-`delegates_to`, đồng thời bật command network cho Codex main để Herdr Unix socket/Paseo
+Execution policy snapshot vì vậy chỉ mở state/workspace đã đăng ký cho agent có
+`delegatesTo`; runtime adapter truyền đúng execution ID để Herdr Unix socket/Paseo
 localhost hoạt động. Specialist không nhận các quyền runtime này; `acl-guard` vẫn chặn raw
 `herdr`/`paseo`, nên đường được phép vẫn chỉ là Delegation API sau policy.
 
@@ -240,8 +240,8 @@ Adapter dùng public Paseo CLI và daemon API mà CLI cung cấp; không fork ha
 | cancel | `stop --json` |
 | cleanup | `agent archive --force --json` |
 
-Adapter inject context ALP đã chuẩn bị và marker `ALP_DELEGATED_ROLE`; Paseo không tự đọc
-identity/memory để quyết quyền. Paseo agent ID được lưu trong backend state và chỉ xuất hiện
+Adapter inject capsule ALP đã chuẩn bị và `ALP_DELEGATION_EXECUTION_ID`; Paseo không tự đọc
+memory hay agent definitions để quyết quyền. Paseo agent ID được lưu trong backend state và chỉ xuất hiện
 trong observability field `backend_execution_id`, không nằm trong `DelegationResult`.
 
 Paseo 0.5.x không expose Codex `read-only` như creation mode (`auto`, `auto-review`,

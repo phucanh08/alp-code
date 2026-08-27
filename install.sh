@@ -3,7 +3,6 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/phucanh08/alp-code/main/install.sh | bash
 #   curl -fsSL …/install.sh | bash -s -- --home ~/dev/alp-code
-#   curl -fsSL …/install.sh | bash -s -- --no-trust
 #   curl -fsSL …/install.sh | bash -s -- --no-path
 #
 # Biến môi trường: ALP_HOME (mặc định ~/.alp-code) · ALP_BRANCH (main) · ALP_REPO ·
@@ -11,7 +10,7 @@
 #
 # Script này CỐ Ý mỏng. Nó chỉ làm những việc buộc phải làm khi repo còn chưa có trên
 # máy: kiểm dependency và lấy code về. Mọi thứ sau đó giao cho scripts/bootstrap.cjs.
-# Chạy lại lệnh này = cập nhật (git pull + recompile), không đụng vào memory/.
+# Chạy lại lệnh này = cập nhật code + rebuild, không đụng memory/runtime/backend preferences.
 
 set -euo pipefail
 
@@ -31,9 +30,9 @@ while [ $# -gt 0 ]; do
     --branch) shift; [ $# -gt 0 ] || die "--branch thiếu giá trị"; BRANCH="$1" ;;
     --repo)   shift; [ $# -gt 0 ] || die "--repo thiếu giá trị";   REPO="$1" ;;
     -h|--help)
-      sed -n '2,11p' "$0" 2>/dev/null || say "install.sh [--home <path>] [--branch <x>] [--no-trust] [--no-path]"
+      sed -n '2,11p' "$0" 2>/dev/null || say "install.sh [--home <path>] [--branch <x>] [--no-path]"
       exit 0 ;;
-    # Còn lại chuyển thẳng cho bootstrap.cjs (ví dụ --no-trust).
+    # Còn lại chuyển thẳng cho bootstrap.cjs (ví dụ --no-path).
     *) FORWARD+=("$1") ;;
   esac
   shift

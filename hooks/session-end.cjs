@@ -1,78 +1,33 @@
 #!/usr/bin/env node
-// session-end.cjs — nhắc việc ghi nhớ khi phiên kết thúc.
-//
-// KHÔNG GỌI LLM. Chỉ việc cơ học: so mtime, đối chiếu index, chạy script.
-// Trích fact bằng LLM là việc của agent (skill `agent-memory`), không phải của hook —
-// tốn token, ghi rác, khó kiểm soát.
-//
-// Không có gì đáng nói → IM LẶNG. Nhắc thừa dạy agent bỏ qua lời nhắc.
-
-const fs = require("fs");
-const path = require("path");
-const { execFileSync } = require("child_process");
-const L = require(path.join(__dirname, "..", "scripts", "lib", "loadout.cjs"));
-
-main();
-
-function main() {
-  let notes = [];
+"use strict";
+const fs = require("node:fs");
+const path = require("node:path");
+function fail(reason) { process.stdout.write(JSON.stringify({ decision: "block", reason })); }
+function stopFailed(reason) { process.stdout.write(JSON.stringify({ continue: false, stopReason: reason, systemMessage: reason })); }
+async function main() {
+  let payload = {};
+  let bridge;
+  const executionId = process.env.ALP_DELEGATION_EXECUTION_ID || "";
   try {
-    notes = collect();
-  } catch (e) {
-    notes = [`session-end.cjs lỗi: ${e.message}`];
-  }
-  if (notes.length) {
-    process.stdout.write(
-      JSON.stringify({ systemMessage: ["Trước khi đóng phiên:", ...notes.map((n) => `- ${n}`)].join("\n") })
-    );
-  }
-  process.exit(0);
-}
-
-function collect() {
-  const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  const repoRoot = L.findRepoRoot(cwd);
-  if (!repoRoot) return [];
-
-  const notes = [];
-  const memDir = path.join(repoRoot, "memory");
-
-  // 1. File trong memory/shared/ chưa được trỏ trong INDEX.md.
-  const indexFile = path.join(memDir, "INDEX.md");
-  if (fs.existsSync(indexFile)) {
-    const index = fs.readFileSync(indexFile, "utf8");
-    const orphans = walk(path.join(memDir, "shared"))
-      .filter((f) => f.endsWith(".md"))
-      .map((f) => path.relative(memDir, f).split(path.sep).join("/"))
-      .filter((rel) => !index.includes(rel));
-    for (const o of orphans) notes.push(`\`memory/${o}\` chưa có dòng trong \`memory/INDEX.md\``);
-  }
-
-  // 2. L1 bị chạm mà `updated:` chưa đổi + 3. đồng bộ lại L0.
-  const sync = path.join(repoRoot, "scripts", "sync-project-index.sh");
-  if (fs.existsSync(sync)) {
-    const out = run(sync, ["--write"]);
-    for (const line of out.split("\n")) {
-      if (/^(DRIFT|ORPHAN|MISSING|MISMATCH)/.test(line)) notes.push(line.trim());
-      if (/^WROTE/.test(line)) notes.push("L0 `memory/projects/INDEX.md` đã được sinh lại");
+    payload = JSON.parse(fs.readFileSync(0, "utf8") || "{}");
+    bridge = require(path.join(__dirname, "..", "dist", "src", "hooks", "execution-bridge.js"));
+    const output = bridge.parseAssistantOutput(payload.last_assistant_message ?? payload.output ?? payload.final_output ?? payload.result);
+    const result = await bridge.finalizeExecution({ executionId, output });
+    if (!result.ok) {
+      const reason = `output validation failed (${result.status}): ${result.issues.join("; ")}${result.status === "failed" ? "; output repair budget exhausted" : ""}`;
+      return result.status === "failed" ? stopFailed(reason) : fail(reason);
     }
-  }
-
-  return notes;
-}
-
-function walk(dir) {
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-    const p = path.join(dir, e.name);
-    return e.isDirectory() ? walk(p) : [p];
-  });
-}
-
-function run(cmd, args) {
-  try {
-    return execFileSync(cmd, args, { encoding: "utf8", timeout: 20000, stdio: ["ignore", "pipe", "pipe"] });
-  } catch (e) {
-    return e.stdout || "";
+    process.stdout.write(JSON.stringify({ systemMessage: `execution ${executionId} finalized` }));
+  } catch (error) {
+    const reason = `execution finalization failed closed: ${error.message}`;
+    if (bridge && executionId) {
+      try {
+        const result = await bridge.finalizeExecution({ executionId, output: undefined });
+        const detail = `${reason}; ${result.issues.join("; ")}${result.status === "failed" ? "; output repair budget exhausted" : ""}`;
+        return result.status === "failed" ? stopFailed(detail) : fail(detail);
+      } catch { /* fall through to bounded fail-closed response */ }
+    }
+    return payload.stop_hook_active ? stopFailed(reason) : fail(reason);
   }
 }
+main();

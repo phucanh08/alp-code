@@ -28,6 +28,7 @@ try {
   testForeignWindowsCommand();
   testForeignWindowsUninstall();
   testBootstrapWiring();
+  testDoctorAndInstallerWiring();
 } finally {
   fs.rmSync(sandbox, { recursive: true, force: true });
 }
@@ -260,19 +261,94 @@ function testForeignWindowsUninstall() {
   });
 }
 
-// Bootstrap nằm ở repo thật, không ở fixture. Giữ kiểm tra wiring tách khỏi việc chạy
-// bootstrap vì bootstrap còn compile ACL/trust/doctor và không được đụng HOME thật trong test.
-function bootstrapSource() {
-  return fs.readFileSync(path.join(__dirname, "bootstrap.cjs"), "utf8");
+function testBootstrapWiring() {
+  const actualRepo = path.resolve(__dirname, "..");
+  const home = path.join(sandbox, "bootstrap-home");
+  const localAppData = path.join(home, "AppData", "Local");
+  const delegationState = path.join(home, ".alp", "delegation", "test");
+  const run = spawnSync(process.execPath, [path.join(__dirname, "bootstrap.cjs"), "--no-path"], {
+    cwd: actualRepo,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      LOCALAPPDATA: localAppData,
+      SHELL: "/bin/zsh",
+      PATH: process.env.PATH,
+      npm_config_cache: path.join(os.homedir(), ".npm"),
+      npm_config_offline: "true",
+      ALP_DELEGATION_STATE_DIR: delegationState,
+    },
+  });
+  check("bootstrap clean-install chạy dependencies/build/registry/runtime/state/doctor/CLI", () => {
+    assert.strictEqual(run.status, 0, (run.stdout || "") + (run.stderr || ""));
+    assert.match(run.stdout, /AgentRegistry 8 agents; runtime adapters claude,codex/);
+    assert.match(run.stdout, /BUILD-DRIFT\s+compiled artifacts match source hash/);
+    assert(fs.existsSync(path.join(home, ".alp", "executions")));
+    assert(fs.existsSync(delegationState));
+  });
+  check("bootstrap --no-path creates the shared CLI link without editing a shell profile", () => {
+    const cli = path.join(actualRepo, "scripts", "alp.cjs");
+    const command = process.platform === "win32"
+      ? path.join(localAppData, "alp", "bin", "alp.cmd")
+      : path.join(home, ".local", "bin", "alp");
+    if (process.platform === "win32") assert(fs.readFileSync(command, "utf8").includes(cli));
+    else assert.strictEqual(fs.realpathSync(command), cli);
+    if (process.platform !== "win32") assert(!fs.existsSync(path.join(home, ".zshrc")));
+    assert.match(run.stdout, /bỏ qua theo --no-path/);
+  });
+  check("bootstrap không compile/trust identity workspace", () => {
+    assert(!fs.existsSync(path.join(home, ".claude.json")));
+    assert(!fs.existsSync(path.join(home, ".codex")));
+  });
+  const deprecated = spawnSync(process.execPath, [path.join(__dirname, "bootstrap.cjs"), "--no-trust"], {
+    cwd: actualRepo,
+    encoding: "utf8",
+    env: { ...process.env, HOME: home, USERPROFILE: home, ALP_DELEGATION_STATE_DIR: delegationState },
+  });
+  check("bootstrap rejects the removed --no-trust option", () => {
+    assert.notStrictEqual(deprecated.status, 0);
+    assert.match((deprecated.stdout || "") + (deprecated.stderr || ""), /tham số lạ: --no-trust/);
+  });
 }
 
-function testBootstrapWiring() {
-  const source = bootstrapSource();
-  check("bootstrap dùng module cli-link chung", () =>
-    assert(source.includes('require("./lib/cli-link.cjs")')));
-  check("bootstrap nhận --no-path", () => {
-    assert(source.includes('args.includes("--no-path")'));
-    assert(source.includes("ALP_NO_PATH"));
+function testDoctorAndInstallerWiring() {
+  const home = path.join(sandbox, "doctor-home");
+  const memoryRoot = path.join(sandbox, "doctor-read-only-memory");
+  fs.mkdirSync(memoryRoot, { recursive: true, mode: 0o500 });
+  fs.chmodSync(memoryRoot, 0o500);
+  const checked = spawnSync(process.execPath, [path.join(__dirname, "doctor.cjs")], {
+    cwd: path.resolve(__dirname, ".."),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      ALP_MEMORY_ROOT: memoryRoot,
+      ALP_DELEGATION_STATE_DIR: path.join(home, ".alp", "delegation", "test"),
+    },
+  });
+  fs.chmodSync(memoryRoot, 0o700);
+  check("doctor executes every code-native health check", () => {
+    for (const tag of ["AGENT-REGISTRY", "RUNTIME-CLAUDE", "RUNTIME-CODEX", "MEMORY-ADAPTER", "EXECUTION-STATE", "BUILD-DRIFT"])
+      assert.match(checked.stdout, new RegExp(tag), `thiếu kết quả hành vi ${tag}`);
+  });
+  check("doctor behavior reports an unwritable memory adapter", () => {
+    if (process.platform === "win32") return;
+    assert.strictEqual(checked.status, 1, (checked.stdout || "") + (checked.stderr || ""));
+    assert.match(checked.stdout, /MEMORY-ADAPTER\s+(?:EACCES|EPERM):[^\n]*access/);
+    assert.match(checked.stdout, /MEMORY-ADAPTER[^\n]*\n\s+→ fix: node scripts\/bootstrap\.cjs --no-path/);
+  });
+
+  const unix = fs.readFileSync(path.join(__dirname, "..", "install.sh"), "utf8");
+  const windows = fs.readFileSync(path.join(__dirname, "..", "install.ps1"), "utf8");
+  check("installers no longer expose trust/compile identity behavior", () => {
+    for (const source of [unix, windows]) {
+      assert(!source.includes("ALP_NO_TRUST"));
+      assert(!source.includes("--no-trust"));
+      assert(!source.includes("recompile"));
+    }
   });
 }
 

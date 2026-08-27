@@ -28,7 +28,7 @@ git diff --cached --name-only | awk -F'/' '{
 | Đường dẫn | Vì sao |
 |---|---|
 | `memory/**` | trí nhớ là dữ liệu cục bộ từng máy, không đi theo git |
-| `identity/*/.claude/**` | sản phẩm của `compile-acl`, chứa path tuyệt đối của máy này |
+| `~/.alp/executions/**` | sản phẩm của `npm run build`, chứa path tuyệt đối của máy này |
 
 Báo principal. **Không tự `git rm`** — xoá nhầm trí nhớ là mất thật.
 

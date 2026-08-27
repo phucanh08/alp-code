@@ -93,7 +93,7 @@ Có thứ xuất hiện trong lúc chạy test mà không biết test nào tạo
 ```
 
 Chạy từng test một, dừng ở test đầu tiên gây nhiễm. Đường dẫn tính từ CWD của phiên
-(`identity/<vai>/`), qua symlink skill.
+(`active workspace`), qua symlink skill.
 
 ## Luật
 
