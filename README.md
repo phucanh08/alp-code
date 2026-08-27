@@ -40,7 +40,9 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/phucanh08/alp-code/main/install.ps1 | iex
 ```
 
-Installer cần Git và Node.js >= 18. Nó clone/pull source rồi gọi `scripts/bootstrap.cjs` để:
+Installer cần Git và Node.js >= 18. Mặc định nó clone rồi resolve tag GitHub Release mới nhất
+(`api.github.com/repos/.../releases/latest`, fallback `git ls-remote --tags` khi API không tới
+được) và checkout đúng tag đó, trước khi gọi `scripts/bootstrap.cjs` để:
 
 1. dựng phần memory/state còn thiếu mà không ghi đè dữ liệu;
 2. chạy `npm ci --include=dev` và build TypeScript;
@@ -52,11 +54,19 @@ Installer cần Git và Node.js >= 18. Nó clone/pull source rồi gọi `script
 |---|---|---|
 | Đổi vị trí cài | `bash -s -- --home ~/dev/alp` hoặc `ALP_HOME=…` | `$env:ALP_HOME = "D:\alp-code"` |
 | Không sửa PATH | `bash -s -- --no-path` hoặc `ALP_NO_PATH=1` | `$env:ALP_NO_PATH = "1"` |
-| Nhánh khác | `bash -s -- --branch dev` hoặc `ALP_BRANCH=…` | `$env:ALP_BRANCH = "dev"` |
+| Ghim một phiên bản | `bash -s -- --version v0.2.0` hoặc `ALP_VERSION=…` | `$env:ALP_VERSION = "v0.2.0"` |
+| Theo dõi một nhánh (dev, bỏ qua release) | `bash -s -- --branch dev` hoặc `ALP_BRANCH=…` | `$env:ALP_BRANCH = "dev"` |
 
-Chạy lại installer hoặc `alp update` sẽ fast-forward source rồi rebuild. Update backup và
-khôi phục nguyên trạng `memory/`, runtime preference và backend preference. Source edit,
-staged change hoặc pull không fast-forward làm update dừng; ALP không tự merge source.
+Chạy lại installer hoặc `alp update` sẽ resolve + checkout tag GitHub Release mới nhất rồi
+rebuild. Update backup và khôi phục nguyên trạng `memory/`, runtime preference và backend
+preference. Staged/tracked change chưa commit làm update dừng; ALP không tự merge hay clobber
+source. Đặt `--branch`/`ALP_BRANCH` để theo dõi trực tiếp một nhánh thay vì release (chỉ dùng
+khi phát triển) — khi đó `alp update` quay lại hành vi fast-forward pull như cũ.
+
+Mỗi lần chạy `alp` (bất kỳ lệnh nào), ALP kiểm tra ngầm xem có bản release mới không, dùng
+cache tại `~/.alp/update-check.json` với TTL 24h — việc kiểm tra không bao giờ chặn lệnh hiện
+tại. Nếu có bản mới, ALP chỉ in một dòng gợi ý `alp update`; nó không tự cập nhật hay hỏi lại.
+Đặt `ALP_SKIP_UPDATE_CHECK=1` để tắt hẳn (hữu ích cho môi trường test/CI cô lập).
 
 ## Bắt đầu một project
 
@@ -136,13 +146,25 @@ agent logic. Policy authorize trước mọi store call; optimistic versioning v
 | Lệnh | Việc |
 |---|---|
 | `alp doctor [--quiet]` | registry, runtimes, memory, execution state, stale legacy, build drift |
-| `alp update` | pull an toàn, rebuild, giữ memory/runtime/backend preferences |
+| `alp update` | resolve + checkout tag GitHub Release mới nhất, rebuild, giữ memory/runtime/backend preferences |
+| `alp --version` | in phiên bản đang cài (đọc `package.json`) |
 | `alp uninstall [--purge-memory] [--force]` | gỡ CLI/runtime state; backup memory mặc định |
 | `scripts/bootstrap.cjs [--no-path]` | clean install/build/validate/doctor/CLI link |
 
 Doctor exit `0` khi healthy, `1` khi có finding cần xử lý, `2` khi doctor tự lỗi. Mỗi finding
 có remediation cụ thể. Cutover đã hoàn tất, nên `STALE-LEGACY` chỉ xuất hiện khi máy còn sót
 artifact của bản ALP cũ (`identity/`, `CHARTER.md`, compiled ACL); doctor sẽ chỉ cách dọn.
+
+### Cắt bản release (cho maintainer)
+
+1. Viết mục `[Chưa phát hành]` trong `CHANGELOG.md` cho bản này.
+2. `node scripts/cut-release.cjs <patch|minor|major|X.Y.Z>` — bump `package.json.version`,
+   đóng mục CHANGELOG theo ngày, tạo commit `chore(release): vX.Y.Z` và tag. Thêm
+   `--dry-run` để xem trước. Script cố ý dừng trước push.
+3. `git push origin main --tags`.
+4. `.github/workflows/release.yml` chạy trên tag push: verify tag khớp `package.json.version`
+   rồi publish GitHub Release với auto-generated notes. Tag không khớp version sẽ fail workflow.
+5. Từ đây, `alp update` và installer trên máy khác sẽ resolve được `vX.Y.Z` làm bản mới nhất.
 
 ## Cấu trúc
 
