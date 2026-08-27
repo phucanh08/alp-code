@@ -9,7 +9,7 @@ export const mainAgent = defineAgent({
   id: "main",
   displayName: "Phở 🍜",
   model: { claude: "claude-opus-5", codex: "gpt-5.6-sol" },
-  reasoningEffort: { claude: "xhigh", codex: "low" },
+  reasoningEffort: { claude: "high", codex: "xhigh" },
   reportsTo: "principal",
   delegatesTo: ["search", "librarian", "read-thread", "review", "oracle", "compaction", "titling"],
   capabilities: {

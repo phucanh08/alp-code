@@ -9,7 +9,7 @@ export const oracleAgent = defineAgent({
   id: "oracle",
   displayName: "Oracle 🔮",
   model: { claude: "claude-opus-5", codex: "gpt-5.6-sol" },
-  reasoningEffort: { claude: "xhigh", codex: "high" },
+  reasoningEffort: { claude: "high", codex: "xhigh" },
   reportsTo: "main",
   delegatesTo: [],
   capabilities: {
