@@ -4,7 +4,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { execFileSync } = require("node:child_process");
+const { execFileSync, spawnSync } = require("node:child_process");
 const { preserveMaintenanceState, checkoutLatestRelease, updateInstallation } = require("./lib/update.cjs");
 
 const fakeResolve = async () => ({ ok: true, tag: "v1.0.0", source: "test" });
@@ -51,9 +51,36 @@ const fakeResolve = async () => ({ ok: true, tag: "v1.0.0", source: "test" });
       spawnProcess() { return { status: 0, error: null, stdout: "", stderr: "" }; },
     });
     assert.strictEqual(result.ok, true, result.message);
+    testAlpCjsAwaitsUpdate(root);
     console.log("OK               alp update preserves code-native machine-local state");
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 })().catch((error) => { console.error(error); process.exitCode = 1; });
+
+/**
+ * `alp.cjs update` chạy thẳng, không qua dist/. v0.1.0 và v0.1.1 gọi updateInstallation đồng
+ * bộ trong khi hàm này là async, nên đọc `result.ok` trên Promise luôn ra undefined: lệnh in
+ * "ERROR undefined", exit 1 và không update gì. Test này khoá lại hợp đồng async đó.
+ */
+function testAlpCjsAwaitsUpdate(root) {
+  const sourceRoot = path.resolve(__dirname, "..");
+  for (const [name, stub, wantStatus, wantText] of [
+    ["thành công", 'async () => ({ ok: true, tag: "v9.9.9" })', 0, "v9.9.9"],
+    ["thất bại", 'async () => ({ ok: false, message: "tree bẩn" })', 1, "tree bẩn"],
+  ]) {
+    const repo = path.join(root, `alp-cjs-${wantStatus}`);
+    fs.mkdirSync(path.join(repo, "scripts", "lib"), { recursive: true });
+    fs.copyFileSync(path.join(sourceRoot, "scripts", "alp.cjs"), path.join(repo, "scripts", "alp.cjs"));
+    fs.writeFileSync(path.join(repo, "scripts", "lib", "update.cjs"), `exports.updateInstallation = ${stub};\n`);
+    fs.writeFileSync(path.join(repo, "package.json"), '{"name":"alp-code","version":"0.0.0"}\n');
+
+    const run = spawnSync(process.execPath, [path.join(repo, "scripts", "alp.cjs"), "update"], { encoding: "utf8" });
+    const output = (run.stdout || "") + (run.stderr || "");
+    assert.strictEqual(run.status, wantStatus, `alp update (${name}) exit ${run.status}: ${output}`);
+    assert(output.includes(wantText), `alp update (${name}) thiếu "${wantText}": ${output}`);
+    assert(!output.includes("undefined"), `alp update (${name}) rò undefined: ${output}`);
+  }
+  console.log("OK               alp.cjs update await Promise thay vì đọc .ok trên nó");
+}
 
 function git(cwd, args) { return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(); }
 function commit(repo, message) { git(repo, ["add", "-A"]); git(repo, ["-c", "user.name=ALP Test", "-c", "user.email=test@alp.local", "commit", "-qm", message]); }

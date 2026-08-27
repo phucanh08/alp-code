@@ -8,6 +8,15 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Sửa
+
+- `alp update` chạy được trở lại. Từ 0.1.0, `scripts/alp.cjs` gọi `updateInstallation` đồng bộ
+  trong khi hàm này đã thành async, nên đọc `result.ok` trên một Promise luôn ra `undefined`:
+  lệnh in `ERROR undefined`, thoát 1 và **không update gì cả**. Nay await đúng Promise, in cả
+  tag vừa checkout. Thêm test chạy thật `alp.cjs update` để khoá hợp đồng async này.
+- `alp help` không còn bảng hardcode riêng trong `alp.cjs` lệch với `helpText()` — nay hiện
+  đủ, gồm `alp --version`.
+
 ## [0.1.1] - 2026-08-27
 
 ### Sửa

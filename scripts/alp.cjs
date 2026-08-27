@@ -9,21 +9,10 @@ const { spawnSync } = require("child_process");
 const repoRoot = path.resolve(__dirname, "..");
 const maintenance = process.argv[2];
 
-if (["help", "--help", "-h"].includes(maintenance)) {
-  console.log([
-    "alp — code-native agent launcher",
-    "",
-    "  alp [--runtime claude|codex]",
-    "  alp runtime show|set <runtime>",
-    "  alp init [path] [--backend name]",
-    "  alp deinit [path]",
-    "  alp delegate <role> [options] -- <task>",
-    "  alp doctor",
-    "  alp update",
-    "  alp uninstall [--purge-memory] [--force]",
-  ].join("\n"));
-  process.exit(0);
-}
+// Ba lệnh dưới đây cố ý chạy thẳng, không qua dist/: chúng phải dùng được cả khi build hỏng
+// — doctor để chẩn đoán, update để sửa, uninstall để gỡ một bản cài đã hỏng. Đánh đổi: chúng
+// không đi qua main() nên không hiện thông báo có bản mới. `help` thì không có lý do đó, nên
+// nó đi qua CLI đã compile để chỉ có một nguồn help duy nhất (helpText() trong cli/alp.ts).
 
 if (maintenance === "doctor") {
   const result = spawnSync(process.execPath, [path.join(repoRoot, "scripts", "doctor.cjs"), ...process.argv.slice(3)], { cwd: repoRoot, stdio: "inherit" });
@@ -32,10 +21,21 @@ if (maintenance === "doctor") {
 
 if (maintenance === "update") {
   const { updateInstallation } = require("./lib/update.cjs");
-  const result = updateInstallation(repoRoot);
-  if (!result.ok) console.error(`ERROR     ${result.message}`);
-  else console.log("READY     alp-code updated; memory/runtime/backend preferences preserved");
-  process.exit(result.ok ? 0 : 1);
+  // updateInstallation là async (resolve tag release cần gọi mạng). Gọi đồng bộ rồi đọc
+  // `result.ok` trên một Promise sẽ luôn ra undefined — v0.1.0/v0.1.1 in "ERROR undefined"
+  // và không update gì cả.
+  updateInstallation(repoRoot).then(
+    (result) => {
+      if (!result.ok) console.error(`ERROR     ${result.message}`);
+      else console.log(`READY     alp-code updated to ${result.tag}; memory/runtime/backend preferences preserved`);
+      process.exit(result.ok ? 0 : 1);
+    },
+    (error) => {
+      console.error(`ERROR     ${error && error.message ? error.message : String(error)}`);
+      process.exit(1);
+    },
+  );
+  return;
 }
 
 if (maintenance === "uninstall") {
