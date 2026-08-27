@@ -1,14 +1,10 @@
-// Safe `alp update` support for machine-local workspace registrations.
-//
-// `alp init` intentionally writes workspaces into tracked loadout files because they are
-// the ACL source of truth. Those paths are local state, however, and must not prevent a
-// fast-forward when upstream changes another field in the same loadout. We preserve only
-// workspace-only diffs; every other tracked edit remains a hard stop.
+// Safe `alp update` support for code-native ALP. Project registrations are machine-local,
+// so tracked source must be clean and the update itself is a plain fast-forward.
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const L = require("./loadout.cjs");
 
 function pullPreservingWorkspaces(repoRoot, options = {}) {
   const env = options.env || process.env;
@@ -23,69 +19,61 @@ function pullPreservingWorkspaces(repoRoot, options = {}) {
   const dirty = gitLines(repoRoot, ["diff", "--name-only"], env);
   if (!dirty.ok) return failure(`không kiểm tra được working tree: ${dirty.message}`);
 
-  const snapshots = [];
-  for (const relative of dirty.lines) {
-    const match = relative.match(/^identity\/([^/]+)\/loadout\.yaml$/);
-    if (!match)
-      return failure(`repo có thay đổi tracked ngoài workspace config: ${relative}`);
+  if (dirty.lines.length) return failure(`repo có tracked changes; không tự cất: ${dirty.lines.join(", ")}`);
+  log("CHECK", "tracked source clean; machine-local project registry is outside git");
+  return pullResult(runGit(repoRoot, ["pull", "--ff-only"], { env, stdio }), []);
+}
 
-    const currentFile = path.join(repoRoot, ...relative.split("/"));
-    if (!fs.existsSync(currentFile))
-      return failure(`loadout local đã bị xoá; không tự cất: ${relative}`);
-    const base = gitText(repoRoot, ["show", `HEAD:${relative}`], env);
-    if (!base.ok) return failure(`không đọc được bản HEAD của ${relative}: ${base.message}`);
+function preserveMaintenanceState(repoRoot, options = {}) {
+  const env = options.env || process.env;
+  const home = env.HOME || env.USERPROFILE;
+  const paths = [path.join(repoRoot, "memory")];
+  if (home) paths.push(path.join(home, ".alp", "runtime.json"), path.join(home, ".alp", "projects.json"), path.join(home, ".alp", "delegation"));
+  const backupRoot = fs.mkdtempSync(path.join(options.tempRoot || os.tmpdir(), "alp-update-state-"));
+  const entries = paths.filter((file) => fs.existsSync(file)).map((file, index) => {
+    const backup = path.join(backupRoot, String(index));
+    fs.cpSync(file, backup, { recursive: true, force: true });
+    return { file, backup };
+  });
+  Object.defineProperty(entries, "backupRoot", { value: backupRoot });
+  return entries;
+}
 
-    const currentText = fs.readFileSync(currentFile, "utf8");
-    if (!onlyWorkspaceChanged(base.text, currentText))
-      return failure(`loadout có thay đổi ngoài khối workspaces; không tự cất: ${relative}`);
-
-    const workspace = L.effectiveWorkspaces(L.parseYaml(currentText));
-    snapshots.push({ role: match[1], relative, ...workspace });
-  }
-
-  if (!snapshots.length) {
-    const pull = runGit(repoRoot, ["pull", "--ff-only"], { env, stdio });
-    return pullResult(pull, []);
-  }
-
-  log("PRESERVE", `${snapshots.length} loadout workspace local`);
-  const paths = snapshots.map((snapshot) => snapshot.relative);
-  const stash = runGit(
-    repoRoot,
-    ["stash", "push", "-m", "alp-update: preserve local workspaces", "--", ...paths],
-    { env, stdio }
-  );
-  if (!succeeded(stash)) return failure(commandFailure("git stash", stash));
-
-  const stashHead = gitText(repoRoot, ["rev-parse", "refs/stash"], env);
-  if (!stashHead.ok) return failure(`đã cất workspace nhưng không tìm thấy stash: ${stashHead.message}`);
-  const stashHash = stashHead.text.trim();
-
-  const pull = runGit(repoRoot, ["pull", "--ff-only"], { env, stdio });
-  if (!succeeded(pull)) {
-    const restored = restoreStash(repoRoot, stashHash, env, stdio);
-    const suffix = restored.ok
-      ? "workspace local đã được khôi phục"
-      : `workspace còn an toàn trong stash ${stashHash}; khôi phục tay bằng git stash apply ${stashHash}`;
-    return failure(`${commandFailure("git pull --ff-only", pull)}; ${suffix}`);
-  }
-
+function restoreMaintenanceState(snapshot) {
   try {
-    for (const snapshot of snapshots)
-      L.writeWorkspaces(repoRoot, snapshot.role, snapshot.read, snapshot.write);
-  } catch (error) {
-    return failure(
-      `đã update code nhưng không áp lại được workspace: ${error.message}; ` +
-      `bản cũ còn trong stash ${stashHash}`
-    );
+    for (const entry of snapshot) {
+      fs.rmSync(entry.file, { recursive: true, force: true });
+      fs.mkdirSync(path.dirname(entry.file), { recursive: true });
+      fs.cpSync(entry.backup, entry.file, { recursive: true, force: true });
+    }
+  } finally {
+    discardMaintenanceState(snapshot);
   }
+}
 
-  const dropped = dropStash(repoRoot, stashHash, env);
-  if (!dropped.ok)
-    return failure(`workspace đã áp lại nhưng không dọn được stash ${stashHash}: ${dropped.message}`);
+function discardMaintenanceState(snapshot) {
+  if (snapshot.backupRoot) fs.rmSync(snapshot.backupRoot, { recursive: true, force: true });
+}
 
-  log("RESTORE", `${snapshots.length} loadout workspace local`);
-  return { ok: true, status: pull.status, preserved: snapshots.map((snapshot) => snapshot.role) };
+function updateInstallation(repoRoot, options = {}) {
+  const snapshot = preserveMaintenanceState(repoRoot, options);
+  const pulled = pullPreservingWorkspaces(repoRoot, options);
+  if (!pulled.ok) {
+    discardMaintenanceState(snapshot);
+    return pulled;
+  }
+  const spawnProcess = options.spawnProcess || spawnSync;
+  let built;
+  try {
+    built = spawnProcess(process.execPath, [path.join(repoRoot, "scripts", "bootstrap.cjs"), "--no-path"], {
+      cwd: repoRoot,
+      env: options.env || process.env,
+      stdio: options.stdio || "inherit",
+    });
+  } finally {
+    restoreMaintenanceState(snapshot);
+  }
+  return succeeded(built) ? pulled : failure(commandFailure("bootstrap.cjs", built));
 }
 
 function onlyWorkspaceChanged(base, current) {
@@ -162,4 +150,11 @@ function normalizeNewlines(text) {
   return String(text).replace(/\r\n/g, "\n");
 }
 
-module.exports = { onlyWorkspaceChanged, pullPreservingWorkspaces };
+module.exports = {
+  onlyWorkspaceChanged,
+  pullPreservingWorkspaces,
+  preserveMaintenanceState,
+  restoreMaintenanceState,
+  discardMaintenanceState,
+  updateInstallation,
+};

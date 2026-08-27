@@ -22,3 +22,9 @@ identity/*/.agents/
 
 # Worktree cục bộ cho các nhánh triển khai cô lập.
 .worktrees/
+
+# TypeScript build output.
+dist/
+
+# Installed Node.js dependencies.
+node_modules/

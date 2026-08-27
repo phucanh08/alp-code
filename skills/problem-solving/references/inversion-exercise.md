@@ -77,8 +77,8 @@ Repo này có sẵn vài giả định đáng lật khi bế tắc:
   ra thiết kế fail đóng hiện tại.
 - "mỗi vai một phiên riêng" ↔ "nếu gộp thì sao?" — lật để thấy vì sao tách là đúng.
 
-Lật một nguyên tắc trong `CHARTER.md` là bài tập tư duy hợp lệ. **Đề xuất đổi nó thì phải
-qua principal** — chỉ principal sửa CHARTER (CHARTER §8).
+Lật một nguyên tắc trong `compiled policy invariants` là bài tập tư duy hợp lệ. **Đề xuất đổi nó thì phải
+qua principal** — chỉ principal sửa CHARTER (compiled policy invariants).
 
 ## Nhớ
 

@@ -23,7 +23,7 @@ chỗ kế hoạch **đang đoán thay principal**.
 Mỗi chủ đề → **một câu hỏi cụ thể, kèm 2–4 phương án**. Đánh dấu phương án bạn đề nghị và
 nói vì sao.
 
-**Chỉ hỏi điểm quyết định thật.** Câu hỏi mà bạn tự trả lời được từ code, từ `CHARTER.md`,
+**Chỉ hỏi điểm quyết định thật.** Câu hỏi mà bạn tự trả lời được từ code, từ `compiled policy invariants`,
 hoặc từ quy ước sẵn có thì **đừng hỏi** — đó là đẩy việc ngược về principal.
 
 Ba câu đủ thì hỏi ba. Kế hoạch đơn giản mà hỏi tám câu là làm phiền, không phải cẩn thận.
@@ -48,7 +48,7 @@ Thêm mục `## Nhật ký kiểm chứng` vào `plan.md`:
 | <câu hỏi> | <đáp án> | <phase nào phải sửa> |
 ```
 
-Ghi lại là bắt buộc, không phải tuỳ chọn: CHARTER §2.3 — markdown là source of truth. Câu
+Ghi lại là bắt buộc, không phải tuỳ chọn: compiled policy invariants — markdown là source of truth. Câu
 trả lời chỉ nằm trong context phiên thì phiên sau mất sạch.
 
 ## 6. Lan quyết định xuống phase

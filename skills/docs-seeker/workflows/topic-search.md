@@ -13,7 +13,7 @@ chỉ chuyển sang tìm cả thư viện khi đường này không ra.
 
 ## Quy trình
 
-Đường dẫn tính từ CWD của phiên (`identity/<vai>/`), qua symlink skill.
+Đường dẫn tính từ CWD của phiên (`active workspace`), qua symlink skill.
 
 ```bash
 # 1. Phân loại truy vấn

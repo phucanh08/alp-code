@@ -56,7 +56,7 @@ Phase nào không nêu được failure mode thì **chưa duyệt được**. B�
 - Xuống cấp có kiểm soát trông như thế nào?
 
 alp-code chọn **fail đóng**: hỏng thì hỏng to và thấy ngay. Thiết kế nào hỏng im lặng là
-thiết kế sai ở repo này — CHARTER §2 và cả `doctor.cjs` đều dựng trên nguyên tắc đó.
+thiết kế sai ở repo này — compiled policy invariants và cả `doctor.cjs` đều dựng trên nguyên tắc đó.
 
 ## Kiến trúc
 
@@ -64,7 +64,7 @@ thiết kế sai ở repo này — CHARTER §2 và cả `doctor.cjs` đều dự
 - Chiều phụ thuộc: ai được biết về ai. Phụ thuộc vòng là dấu hiệu ranh giới sai.
 - Dòng dữ liệu: vào đâu, biến đổi ở đâu, ra đâu.
 - Cái gì là **nguồn sự thật**, cái gì là **sản phẩm sinh ra**. Nhầm hai loại này là lớp
-  bug đắt nhất trong alp-code — `loadout.yaml` là nguồn, `identity/*/.claude/**` là sản phẩm.
+  bug đắt nhất trong alp-code — `compiled AgentDefinition` là nguồn, `~/.alp/executions/**` là sản phẩm.
 - Trạng thái giữ ở đâu, và ai được sửa.
 
 ## Quy tắc

@@ -367,14 +367,11 @@ function waitForExecution(pane, timeoutMs = 0, intervalMs = 500) {
   }
 }
 
-function readPane(pane, lines = 200) {
+function readPane(pane, lines = 200, invoke = herdr) {
   try {
-    const value = herdrJson(["pane", "read", pane, "--source", "visible", "--lines", String(lines)], 5000);
-    if (typeof value === "string") return value;
-    for (const key of ["content", "text", "output", "visible"]) {
-      if (typeof value?.[key] === "string") return value[key];
-    }
-    return value ? JSON.stringify(value) : "";
+    // Herdr 0.8 is the exception to the usual JSON envelope: `pane read` returns
+    // raw terminal text. Parsing it through `herdrJson` discards valid output.
+    return invoke(["pane", "read", pane, "--source", "recent-unwrapped", "--lines", String(lines)], 5000);
   } catch {
     return "";
   }

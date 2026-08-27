@@ -5,15 +5,14 @@
 # `iex` không nhận tham số dòng lệnh, nên tuỳ chọn đi qua biến môi trường:
 #
 #   $env:ALP_HOME = "D:\alp-code"; irm …/install.ps1 | iex
-#   $env:ALP_NO_TRUST = "1";       irm …/install.ps1 | iex
 #   $env:ALP_NO_PATH = "1";        irm …/install.ps1 | iex
 #
 # Biến: ALP_HOME (mặc định ~\.alp-code) · ALP_BRANCH (main) · ALP_REPO ·
-#       ALP_NO_TRUST · ALP_NO_PATH
+#       ALP_NO_PATH
 #
 # Bản song sinh của install.sh và cũng cố ý mỏng: kiểm dependency, lấy code, rồi giao
 # cho scripts/bootstrap.cjs — implementation thật, dùng chung cho cả ba OS.
-# Chạy lại lệnh này = cập nhật (git pull + recompile), không đụng vào memory/.
+# Chạy lại lệnh này = cập nhật code + rebuild, không đụng memory/runtime/backend preferences.
 
 # Chạy trong child scope để function/biến và ErrorActionPreference không rò vào terminal
 # đang gọi `iex`. Biến môi trường PATH vẫn thuộc process nên thay đổi bên dưới có hiệu lực
@@ -76,8 +75,6 @@
 
   # ---------------------------------------------------------------- bàn giao
   $forward = @()
-  if ($env:ALP_NO_TRUST) { $forward += '--no-trust' }
-
   & node $bootstrap @forward
   $bootstrapExit = $LASTEXITCODE
   if ($bootstrapExit -ne 0) { Die "bootstrap thất bại (exit $bootstrapExit)" }

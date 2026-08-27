@@ -1,7 +1,11 @@
 const fs = require("fs");
 const path = require("path");
-const L = require("../../loadout.cjs");
 const { InvalidConfiguration } = require("./errors.cjs");
+
+function within(root, target) {
+  const relation = path.relative(path.resolve(root), path.resolve(target));
+  return relation === "" || (!relation.startsWith("..") && !path.isAbsolute(relation));
+}
 
 class DelegationContextBuilder {
   constructor(options) {
@@ -15,12 +19,10 @@ class DelegationContextBuilder {
     if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory())
       throw new InvalidConfiguration(`Workspace không tồn tại: ${cwd}`);
 
-    const targetWorkspaces = L.effectiveWorkspaces(target);
-    const isAlpHome = L.isWithin(this.repoRoot, cwd);
-    // Backward compatibility: cwd lạ vẫn được mở ở mức read-only; chỉ workspaces.write
-    // mới nâng quyền. Đây cũng là contract của `alp` không tham số.
+    const targetWorkspaces = target.workspaces || { readRoots: [], writeRoots: [] };
+    const isAlpHome = within(this.repoRoot, cwd);
     const canWrite = target.role === "main" && (
-      isAlpHome || targetWorkspaces.write.some((root) => L.isWithin(root, cwd))
+      isAlpHome || (targetWorkspaces.writeRoots || []).some((root) => within(root, cwd))
     );
     const roleContext = this.buildRoleContext
       ? this.buildRoleContext(this.repoRoot, target.role, { workspace: cwd })

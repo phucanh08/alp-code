@@ -49,7 +49,7 @@ context của bạn sạch:
 | thư viện/cách làm bên ngoài | nghiên cứu nguồn ngoài |
 | đã từng quyết định gì về việc này | truy xuất trí nhớ |
 
-Ai đảm nhận vai nào: `identity/REGISTRY.md` và `delegates_to` trong loadout của bạn.
+Ai đảm nhận vai nào: `src/agents/registry.ts` và `delegates_to` trong loadout của bạn.
 Lệnh: `alp delegate <vai> "<task>"`.
 
 Giao được nhiều vai **song song** thì dùng `--background` và theo dõi qua
@@ -118,7 +118,7 @@ Mỗi file phase mở đầu bằng **Mục tiêu** một câu và **Phụ thu�
 4. **Không tự bắt tay làm.** Principal duyệt rồi mới chạy.
 
 Kế hoạch xong hẳn → `references/archive-workflow.md`: đổi `status: completed`, ghi bài học
-vào `identity/<vai>/journal/YYYY-MM.md`.
+vào `memory/private/<vai>/journal/YYYY-MM.md`.
 
 ## Ranh giới
 

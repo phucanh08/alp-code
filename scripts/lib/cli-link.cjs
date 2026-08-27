@@ -104,6 +104,7 @@ function installCli(repoRoot, opts = {}) {
   const log = [];
   const say = (level, text) => log.push({ level, text });
 
+  // Stable bootstrap only; parsing and policy remain in dist/src/cli/alp.js.
   const cli = path.join(repoRoot, "scripts", "alp.cjs");
   const dir = binDir(env, platform);
   const target = path.join(dir, platform === "win32" ? "alp.cmd" : "alp");

@@ -20,10 +20,10 @@ Trước khi đóng, rút ra cái gì học được. Hai chỗ, đừng nhầm:
 
 | Loại | Ghi vào |
 |---|---|
-| bài học về **cách bạn làm việc** — quyết định nào sai, vì sao | `identity/<vai>/journal/YYYY-MM.md` |
+| bài học về **cách bạn làm việc** — quyết định nào sai, vì sao | `memory/private/<vai>/journal/YYYY-MM.md` |
 | fact về **project / principal / thế giới** | `memory/shared/` hoặc `memory/projects/` |
 
-Đây là HOUSE-RULES §2 và CHARTER §2.4. Ghi fact chung vào journal riêng = nhân bản dữ liệu
+Đây là HOUSE-RULES §2 và compiled policy invariants. Ghi fact chung vào journal riêng = nhân bản dữ liệu
 rồi để nó lệch — cấm.
 
 Bài học phải cụ thể. "Cần lập kế hoạch kỹ hơn" thì vô dụng. "Spike ACL ở P1.0 đổi kiến trúc
@@ -68,7 +68,7 @@ sẽ bị chặn mãi mãi.
 | Kế hoạch | Trạng thái | Tạo ngày | Ghi chú |
 |---|---|---|---|
 
-Journal: identity/<vai>/journal/YYYY-MM.md — <mục nào thêm mới>
+Journal: memory/private/<vai>/journal/YYYY-MM.md — <mục nào thêm mới>
 Quan hệ chặn đã gỡ: <kế hoạch nào>
 Commit: <hash hoặc "chưa — chờ principal">
 

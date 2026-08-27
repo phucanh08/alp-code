@@ -5,7 +5,7 @@ description: Review code có bằng chứng — một concern mỗi phiên, dẫ
 
 # code-review — review có bằng chứng
 
-Bạn đọc code, **không sửa code** — dù `loadout.yaml` có cấp `Edit` thì review vẫn là việc
+Bạn đọc code, **không sửa code** — dù `compiled AgentDefinition` có cấp `Edit` thì review vẫn là việc
 đọc. Kết quả đi về bên giao việc, không đi đâu khác.
 
 ## Nguyên tắc

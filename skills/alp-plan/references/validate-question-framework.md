@@ -20,7 +20,7 @@ Từ **"mặc định"** và **"giả sử"** đáng soi nhất: chúng thườn
 - Mỗi câu **2–4 phương án cụ thể**, không hỏi mở.
 - Đánh dấu phương án bạn đề nghị, kèm một câu vì sao.
 - Câu hỏi phải làm **lộ ra một quyết định ngầm**, không phải hỏi cho có.
-- **Chỉ hỏi điểm quyết định thật.** Tự trả lời được từ code, từ `CHARTER.md`, hay từ quy
+- **Chỉ hỏi điểm quyết định thật.** Tự trả lời được từ code, từ `compiled policy invariants`, hay từ quy
   ước sẵn có thì đừng hỏi — đó là đẩy việc ngược về principal.
 
 ## Ví dụ
@@ -28,7 +28,7 @@ Từ **"mặc định"** và **"giả sử"** đáng soi nhất: chúng thườn
 **Kiến trúc**
 
 > Kết quả kiểm chứng lưu ở đâu?
-> 1. Thêm mục vào `plan.md` *(đề nghị — plan là nguồn sự thật duy nhất, CHARTER §2.3)*
+> 1. Thêm mục vào `plan.md` *(đề nghị — plan là nguồn sự thật duy nhất, compiled policy invariants)*
 > 2. Tạo file `validation-answers.md` riêng
 > 3. Không lưu
 

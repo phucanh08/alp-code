@@ -13,7 +13,7 @@ gkg index -v                   # log chi tiết
 gkg index --threads 4          # số luồng (mặc định = số nhân CPU)
 ```
 
-**Chỉ index workspace có trong `workspaces.read` của `loadout.yaml`.** Index repo ngoài
+**Chỉ index workspace có trong `workspaces.read` của `compiled AgentDefinition`.** Index repo ngoài
 danh sách là đọc thứ mình không được đọc, kể cả khi filesystem không chặn.
 
 Tự nhận diện: đường dẫn là workspace (nhiều repo) hay một repo đơn.

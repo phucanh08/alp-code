@@ -57,6 +57,10 @@ function runEngine(engine) {
       assert(output.includes("NODE_VERSION_MODE::dash-dash-version"), output);
       assert(!output.includes("NODE_VERSION_MODE::node-p"), output);
     });
+    check(`${engine}: bootstrap sở hữu npm ci/build code-native`, () => {
+      const source = fs.readFileSync(installer, "utf8");
+      assert(source.includes("scripts\\bootstrap.cjs"));
+    });
     check(`${engine}: alp dùng được ngay trong terminal hiện tại`, () => {
       assert(output.includes("PATH_ACTIVE::True"), output);
       assert(output.includes("ALP_OK"), output);

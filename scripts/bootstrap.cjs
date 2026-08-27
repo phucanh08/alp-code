@@ -1,8 +1,5 @@
 #!/usr/bin/env node
-// bootstrap.cjs — bước 2 của installer: repo đã nằm trên đĩa, giờ làm nó chạy được.
-//
-//   bootstrap.cjs              compile ACL mọi vai + trust workspace + doctor
-//   bootstrap.cjs --no-trust   bỏ bước ghi ~/.claude.json (CI, hoặc chỉ muốn xem thử)
+// bootstrap.cjs — bước 2 của installer: install/build code-native ALP rồi kiểm tra health.
 //   bootstrap.cjs --no-path    tạo lệnh `alp` nhưng không sửa shell profile/User PATH
 //
 // VÌ SAO TÁCH KHỎI install.sh: install.sh/install.ps1 chạy khi repo CHƯA tồn tại nên
@@ -12,43 +9,33 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const L = require("./lib/loadout.cjs");
 const CLI = require("./lib/cli-link.cjs");
 const D = require("./lib/delegation/config.cjs");
 
-const repoRoot = L.findRepoRoot(__dirname);
-if (!repoRoot) die("không tìm thấy repo root (thư mục có CHARTER.md)");
+const repoRoot = path.resolve(__dirname, "..");
+if (!fs.existsSync(path.join(repoRoot, "package.json"))) die("không tìm thấy package.json của alp-code");
 
 const args = process.argv.slice(2);
 if (args.includes("-h") || args.includes("--help")) usage(0);
-const skipTrust = args.includes("--no-trust");
 const skipPath = args.includes("--no-path") || process.env.ALP_NO_PATH === "1";
 for (const a of args)
-  if (a.startsWith("-") && !["--no-trust", "--no-path", "-h", "--help"].includes(a))
+  if (a.startsWith("-") && !["--no-path", "-h", "--help"].includes(a))
     die(`tham số lạ: ${a}`);
 
-const roles = L.listRoles(repoRoot);
-if (!roles.length) die("identity/ không có vai nào — repo hỏng hoặc clone thiếu");
-
-// 1. Trí nhớ. `memory/` KHÔNG nằm trong git (xem .gitignore) nên clone sạch không có
-//    nó. Thiếu `memory/projects/INDEX.md` thì `alp init` chết ngay ở marker END:INDEX,
-//    và hook SessionStart boot rỗng. Dựng khung trước mọi bước khác.
+// 1. Machine-local state. Never overwrite memory or preferences.
 console.log("---");
 ensureMemory();
-
-// Delegation state nằm ngoài source workspace. Tạo root trước khi sinh config để
-// Claude/Codex có một writable root tồn tại ngay từ phiên main đầu tiên.
 ensureDelegationState();
+ensureExecutionState();
 
-// 2. ACL. Bắt buộc --all: `deny` thắng `allow` nên settings mỗi vai phải liệt kê
-//    đủ các vai anh em. Thiếu một vai = rò rỉ im lặng.
+// 2. Deterministic dependency install and build.
 console.log("---");
-mustRun("compile-acl.cjs", []);
+mustNpm(["ci", "--include=dev"]);
+mustNpm(["run", "build"]);
+writeBuildHash();
 
-// 3. Trust. Chưa trust thì Claude Code BỎ QUA allow/additionalDirectories ⇒ vai mở
-//    được phiên nhưng không đọc nổi memory/. Hỏng theo kiểu "câm", khó phát hiện.
-if (skipTrust) console.log("SKIP     trust-role (--no-trust) — vai sẽ không đọc được memory/ cho tới khi trust");
-else mustRun("trust-role.cjs", []);
+// 3. Validate the compiled registry and both runtime adapters without launching them.
+validateCodeNative();
 
 // 4. Khám. doctor exit 1 = có finding (DRIFT, TEMPLATE-LEFT…) — đó là thông tin, không
 //    phải lỗi cài đặt. Chỉ exit 2 mới là doctor tự gãy.
@@ -62,25 +49,22 @@ console.log("---");
 for (const entry of CLI.installCli(repoRoot, { skipPath }))
   console.log(`${entry.level.padEnd(8)} ${entry.text}`);
 
-const mainRole = roles.includes("main") ? "main" : roles[0];
-const cdPath = path.join(repoRoot, "identity", mainRole);
-
 console.log("---");
-console.log(`READY    alp-code tại ${repoRoot} — ${roles.length} vai: ${roles.join(", ")}`);
+console.log(`READY    code-native alp-code tại ${repoRoot}`);
 if (health !== 0) console.log("CHECK    doctor còn cảnh báo ở trên — cài đặt vẫn dùng được, xử lý sau cũng kịp");
 console.log("");
-console.log(`  cd <project-bất-kỳ> && alp init   # rồi gõ \`claude\` là ra Phở`);
-console.log(`  cd ${cdPath} && claude`);
+console.log("  cd <project-bất-kỳ> && alp init");
+console.log("  alp                              # launch main agent");
 console.log("");
-console.log("Cập nhật về sau: `alp update` (hoặc chạy lại lệnh cài) — pull rồi recompile, không mất memory/.");
+console.log("Cập nhật về sau: chạy lại installer — rebuild code, giữ memory/runtime/backend preferences.");
 
 /**
  * Dựng `memory/` từ `scaffold/memory/` — chỉ những gì còn THIẾU.
  *
  * Trí nhớ là dữ liệu cục bộ của từng máy, không đi theo git. Hệ quả: clone sạch có đủ
  * code nhưng không có một byte trí nhớ nào, và hai file khung là bắt buộc mới chạy được —
- * `memory/projects/INDEX.md` (install-project.cjs đọc marker END:INDEX, thiếu là die) và
- * `memory/INDEX.md` (hook SessionStart lọc theo loadout rồi nạp vào boot set).
+ * `memory/projects/INDEX.md` và `memory/INDEX.md` vẫn là dữ liệu Markdown được
+ * `MarkdownFileStore` phục vụ qua code-native policy boundary.
  *
  * KHÔNG BAO GIỜ ĐÈ. Trí nhớ mất là thiệt hại thật và không có bản sao trên remote để lấy
  * lại — nên hàm này chỉ biết tạo cái vắng mặt, không biết sửa cái đã có.
@@ -98,7 +82,7 @@ function ensureMemory() {
     path.join(dest, "shared", "decisions"),
     path.join(dest, "shared", "people"),
     path.join(dest, "shared", "reference"),
-    ...roles.map((r) => path.join(dest, "private", r)),
+    path.join(dest, "private"),
   ];
   for (const d of dirs) {
     if (fs.existsSync(d)) continue;
@@ -108,6 +92,55 @@ function ensureMemory() {
 
   if (!made.length) console.log("OK       memory/ đã đủ khung — không đụng vào nội dung");
   else for (const m of made) console.log(`WROTE    ${m}`);
+}
+
+function ensureExecutionState() {
+  const home = process.env.HOME || process.env.USERPROFILE;
+  if (!home) die("không xác định được HOME/USERPROFILE để tạo execution state");
+  const root = path.join(home, ".alp", "executions");
+  fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+  try { fs.chmodSync(root, 0o700); } catch {}
+  console.log(`OK       execution state ${root}`);
+}
+
+function mustNpm(extra) {
+  const command = process.platform === "win32" ? "npm.cmd" : "npm";
+  const r = spawnSync(command, extra, { stdio: "inherit", cwd: repoRoot });
+  if (r.error || r.status !== 0)
+    die(`\`${command} ${extra.join(" ")}\` thất bại${r.error ? `: ${r.error.message}` : ` (exit ${r.status})`}`);
+}
+
+function validateCodeNative() {
+  try {
+    const { agentRegistry } = require(path.join(repoRoot, "dist", "src", "agents", "registry.js"));
+    const { ClaudeRuntimeAdapter } = require(path.join(repoRoot, "dist", "src", "runtime", "claude-adapter.js"));
+    const { CodexRuntimeAdapter } = require(path.join(repoRoot, "dist", "src", "runtime", "codex-adapter.js"));
+    const agents = agentRegistry.list();
+    if (!agents.length || !agentRegistry.has("main")) throw new Error("registry thiếu main agent");
+    if (new ClaudeRuntimeAdapter().name !== "claude" || new CodexRuntimeAdapter().name !== "codex")
+      throw new Error("runtime adapter name không hợp lệ");
+    console.log(`OK       AgentRegistry ${agents.length} agents; runtime adapters claude,codex`);
+  } catch (error) {
+    die(`code-native validation thất bại: ${error.message}`);
+  }
+}
+
+function writeBuildHash() {
+  const crypto = require("crypto");
+  const files = [];
+  collectTypeScript(path.join(repoRoot, "src"), files);
+  const hash = crypto.createHash("sha256");
+  for (const file of files.sort()) hash.update(path.relative(repoRoot, file)).update("\0").update(fs.readFileSync(file));
+  fs.mkdirSync(path.join(repoRoot, "dist"), { recursive: true });
+  fs.writeFileSync(path.join(repoRoot, "dist", ".alp-source-hash"), `${hash.digest("hex")}\n`);
+}
+
+function collectTypeScript(directory, files) {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) collectTypeScript(file, files);
+    else if (entry.isFile() && entry.name.endsWith(".ts")) files.push(file);
+  }
 }
 
 function ensureDelegationState() {
@@ -146,7 +179,7 @@ function mustRun(script, extra) {
 }
 
 function usage(code) {
-  console.log("bootstrap.cjs [--no-trust] [--no-path]   — compile ACL, trust, doctor, cài alp CLI");
+  console.log("bootstrap.cjs [--no-path]   — npm ci, build, validate, initialize state, doctor, install CLI");
   process.exit(code);
 }
 

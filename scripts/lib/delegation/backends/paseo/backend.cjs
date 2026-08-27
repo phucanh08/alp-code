@@ -46,9 +46,20 @@ class PaseoBackend {
   }
 
   spawn(input) {
-    const { executionId, request, target, context } = input;
+    const { executionId } = input;
+    const request = input.request || {
+      requestId: executionId,
+      parentRole: "main",
+      targetRole: input.launchSpec?.env.ALP_ROLE || "agent",
+      parentExecutionId: null,
+      executionOptions: { background: true, interactive: false, timeoutMs: null },
+    };
     const policy = this.runtimeToolPolicy();
     if (!policy.ok) throw new BackendUnavailable(policy.message);
+
+    if (input.launchSpec) return this.spawnPrepared({ ...input, request });
+
+    const { target, context } = input;
 
     const runtime = request.executionOptions.runtime || inferRuntime(target);
     const model = runtime === "codex" ? (target.codex_model || target.model) : target.model;
@@ -107,6 +118,35 @@ class PaseoBackend {
     return result(executionId, status, { metadata: { mode: "background" } });
   }
 
+  spawnPrepared({ executionId, request, launchSpec }) {
+    const runtime = path.basename(launchSpec.command).toLowerCase().startsWith("claude") ? "claude" : "codex";
+    const args = [
+      "run", "--background", "--json",
+      "--cwd", launchSpec.cwd,
+      "--title", `alp:${launchSpec.env.ALP_ROLE || "agent"}:${executionId.slice(-8)}`,
+      "--provider", runtime,
+      ...Object.entries(launchSpec.env).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
+      "--label", `alp.execution-id=${executionId}`,
+      "--label", `alp.request-id=${request.requestId}`,
+      "--", launchSpec.command, ...launchSpec.args,
+    ];
+    const call = this.call(args, { timeoutMs: request.executionOptions.timeoutMs || 30000 });
+    if (!call.ok) throw runtimeFailure("Paseo spawn thất bại", call, SpawnFailed);
+    const agentId = call.data?.agentId;
+    if (!agentId) throw new SpawnFailed("Paseo `run --json` không trả agentId");
+    const status = mapStatus(call.data.status);
+    this.state.put({
+      executionId,
+      runtimeId: agentId,
+      status,
+      cancelled: false,
+      workspace: launchSpec.cwd,
+      temporaryFiles: launchSpec.temporaryFiles,
+      createdAt: new Date().toISOString(),
+    });
+    return result(executionId, status, { metadata: { mode: "background" } });
+  }
+
   status(executionId) {
     const record = this.record(executionId);
     const call = this.call(["inspect", record.runtimeId, "--json"], { timeoutMs: 10000 });
@@ -148,8 +188,12 @@ class PaseoBackend {
   cleanup(executionId) {
     const record = this.record(executionId);
     const call = this.call(["agent", "archive", record.runtimeId, "--force", "--json"], { timeoutMs: 15000 });
-    if (!call.ok && !/already archived/i.test(call.message))
-      throw runtimeFailure("Paseo cleanup thất bại", call, ExecutionFailed);
+    try {
+      if (!call.ok && !/already archived/i.test(call.message))
+        throw runtimeFailure("Paseo cleanup thất bại", call, ExecutionFailed);
+    } finally {
+      cleanupTemporaryFiles(record.temporaryFiles);
+    }
   }
 
   orphanExecutions() { return []; }
@@ -226,6 +270,10 @@ class PaseoBackend {
     }
     return { ok: true };
   }
+}
+
+function cleanupTemporaryFiles(files = []) {
+  for (const file of files) fs.rmSync(file, { force: true });
 }
 
 function inferRuntime(target) {

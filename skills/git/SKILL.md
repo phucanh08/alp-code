@@ -5,7 +5,7 @@ description: Thao tác git với conventional commit — stage, quét secret, t�
 
 # git — commit có kỷ luật
 
-Skill này cần `Write`/`Edit` và `Bash`. Loadout không cấp đủ thì chỉ đọc được trạng thái
+Skill này cần `Write`/`Edit` và `Bash`. Execution policy không cấp đủ thì chỉ đọc được trạng thái
 repo, không commit được.
 
 ## Cổng chặn — đọc trước mọi thứ khác
@@ -48,8 +48,7 @@ là tên biến".
 Với alp-code còn hai thứ **không bao giờ được vào commit**:
 
 - `memory/` — trí nhớ là dữ liệu cục bộ từng máy, đã có trong `.gitignore`.
-- `identity/*/.claude/settings.json`, `.acl-stamp`, `skills/` — sản phẩm sinh ra bởi
-  `compile-acl`, chứa path tuyệt đối của máy này.
+- `dist/` và `~/.alp/executions/` — compiled output và machine-local execution state.
 
 Thấy chúng trong `--cached` nghĩa là `.gitignore` hỏng. Báo principal, đừng tự `git rm`.
 

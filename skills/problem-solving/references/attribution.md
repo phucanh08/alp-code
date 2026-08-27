@@ -29,9 +29,9 @@ Mẫu điều phối: `when-stuck` — khớp triệu chứng bế tắc với k
 
 Đổi:
 
-- Dịch sang tiếng Việt, khớp `CHARTER.md` và `HOUSE-RULES.md`.
+- Dịch sang tiếng Việt, khớp `compiled policy invariants` và `HOUSE-RULES.md`.
 - Viết cho **một lượt gỡ bế tắc**, không gắn với tên vai nào — vai nào được cấp skill này
-  là việc của `loadout.yaml`, không phải của nội dung skill.
+  là việc của `compiled AgentDefinition`, không phải của nội dung skill.
 - Thêm ranh giới theo **loadout**, không theo tên vai: không cấp `Edit` thì sản phẩm là
   khuyến nghị, không phải thay đổi trong code.
 - Thêm ví dụ lấy từ chính alp-code ở chỗ ví dụ gốc quá xa ngữ cảnh.

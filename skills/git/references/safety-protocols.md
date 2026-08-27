@@ -33,7 +33,7 @@ git diff --cached | grep -iE '(AKIA|api[_-]?key|token|password|secret|credential
 | Đường dẫn | Vì sao |
 |---|---|
 | `memory/**` | trí nhớ là dữ liệu cục bộ từng máy. Đẩy lên remote là rò dữ liệu của principal |
-| `identity/*/.claude/**` | `settings.json`, `.acl-stamp`, `skills/` đều do `compile-acl` sinh, chứa path tuyệt đối của máy này |
+| `~/.alp/executions/**` | `settings.json`, `.acl-stamp`, `skills/` đều do `npm run build` sinh, chứa path tuyệt đối của máy này |
 
 Thấy chúng trong `git diff --cached` nghĩa là `.gitignore` hỏng. Báo principal, không tự
 `git rm` — xoá nhầm `memory/` là mất thật, không khôi phục từ remote được.

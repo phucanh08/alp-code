@@ -9,15 +9,15 @@ Trí nhớ là **thói quen**, không phải tính năng. Agent mất hết gi�
 được ghi lại. Nhưng ghi bừa còn tệ hơn không ghi: fact sai, fact trùng, fact lệch nhau
 giữa các vai đều tốn tiền hơn là quên.
 
-Quyền ghi của bạn nằm ở `identity/<role>/loadout.yaml` → `memory.write`. Bảng dưới nói
-*nên* ghi vào đâu; `loadout.yaml` nói *được* ghi vào đâu. Không có quyền → **báo cho vai
+Quyền ghi của bạn nằm trong immutable execution policy → `memory.write`. Bảng dưới nói
+*nên* ghi vào đâu; compiled policy nói *được* ghi vào đâu. Không có quyền → **báo cho vai
 có quyền**, đừng ghi chỗ khác cho tiện.
 
 ## Bảng định tuyến
 
 | Tình huống | Đích | Ai thấy |
 |---|---|---|
-| Sở thích / ràng buộc lặp lại của principal | `identity/_shared/PRINCIPAL.md` | mọi vai — *principal sửa, agent đề xuất* |
+| Sở thích / ràng buộc lặp lại của principal | `memory/shared/people/principal.md` | mọi vai |
 | Quyết định chung, không thuộc project nào | `memory/shared/decisions/YYMMDD-slug.md` | mọi vai |
 | Người / tổ chức | `memory/shared/people/<ten>.md` | mọi vai |
 | Link / dashboard / ticket / tài liệu ngoài | `memory/shared/reference/<slug>.md` | mọi vai |
@@ -26,7 +26,7 @@ có quyền**, đừng ghi chỗ khác cho tiện.
 | Diễn biến một phiên | `memory/projects/<slug>/log/YYYY-MM.md` (L2) | mọi vai |
 | Tài liệu tra cứu cho một project | `memory/projects/<slug>/refs/<slug>.md` (L2) | mọi vai |
 | Nháp, giả thuyết **chưa kiểm chứng** | `memory/private/<role>/` | chỉ bạn |
-| Bài học về **chính agent này** | `identity/<role>/journal/YYYY-MM.md` | chỉ bạn |
+| Bài học về **chính agent này** | `memory/private/<role>/journal/YYYY-MM.md` | chỉ bạn |
 
 Giao thức Project Layer 3 tầng: `memory/projects/PROTOCOL.md`.
 
@@ -42,7 +42,7 @@ Giao thức Project Layer 3 tầng: `memory/projects/PROTOCOL.md`.
 2. **Một fact = một file.** Đừng dồn. Ngày luôn tuyệt đối (`2026-08-21`), không "tuần sau".
    Trùng thì gộp, sai thì **xoá** — trí nhớ sai nguy hiểm hơn không có trí nhớ.
 
-3. **Không ghi thứ repo đã ghi** — cấu trúc code, lịch sử git, nội dung `CLAUDE.md`.
+3. **Không ghi thứ repo đã ghi** — cấu trúc code, lịch sử git, compiled agent definitions.
    Nếu `grep` ra được trong 5 giây thì đừng chép vào `memory/`.
 
 4. **File mới trong `memory/shared/` → thêm một dòng vào `memory/INDEX.md`.**

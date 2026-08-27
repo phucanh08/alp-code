@@ -1,9 +1,9 @@
-const fs = require("fs");
 const crypto = require("crypto");
+const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const F = require("./herdr-client.cjs");
-const P = require("../../../codex-profile.cjs");
 const { FileExecutionStore } = require("../../core/execution-store.cjs");
 const { result } = require("../../core/types.cjs");
 const {
@@ -13,7 +13,6 @@ const {
   DelegationTimeout,
   CancelFailed,
 } = require("../../core/errors.cjs");
-const { delegatedPromptPointer } = require("../../core/context-builder.cjs");
 
 class HerdrBackend {
   constructor(options) {
@@ -56,12 +55,33 @@ class HerdrBackend {
   }
 
   spawn(input) {
-    const { executionId, request, target, context } = input;
+    const { executionId } = input;
+    const request = input.request || {
+      requestId: executionId,
+      parentExecutionId: null,
+      task: "prepared execution",
+      executionOptions: { background: true, interactive: false, timeoutMs: null },
+    };
     const background = request.executionOptions.background;
-    const runtimeKind = request.executionOptions.runtime || "codex";
-    const launch = this.launchBuilder
-      ? this.launchBuilder(target, context, request.executionOptions, runtimeKind)
-      : this.buildLaunch(target, context, request.executionOptions, runtimeKind);
+    const prepared = Boolean(input.launchSpec);
+    const target = input.target || { role: input.launchSpec?.env.ALP_ROLE || input.launchSpec?.env.ALP_DELEGATED_ROLE };
+    const context = input.context || {
+      workspace: input.launchSpec.cwd,
+      targetRole: target.role,
+      sandbox: input.launchSpec.env.ALP_READONLY_DIRS ? "read-only" : "workspace-write",
+    };
+    const runtimeKind = prepared ? inferRuntimeCommand(input.launchSpec.command) : request.executionOptions.runtime || "codex";
+    const launch = prepared
+      ? {
+          runtimeKind,
+          argv: [...input.launchSpec.args],
+          command: input.launchSpec.command,
+          env: input.launchSpec.env,
+          temporaryFiles: input.launchSpec.temporaryFiles,
+        }
+      : this.launchBuilder
+        ? this.launchBuilder(target, context, request.executionOptions, runtimeKind)
+        : this.buildLaunch(target, context, request.executionOptions, runtimeKind);
 
     if (background) {
       const fleet = this.runtime.available();
@@ -75,9 +95,9 @@ class HerdrBackend {
             kind: runtimeKind,
             argv: launch.argv,
             cwd: context.workspace,
-            message: `${target.role}: ${request.task.slice(0, 80)}`,
-            pointer: (file) => delegatedPromptPointer(file, request.parentRole, target.role),
-            env: {
+            message: `${target.role}: ${(request.task || "prepared execution").slice(0, 80)}`,
+            pointer: (file) => `ALP execution input is in ${file}; read it before continuing.`,
+            env: prepared ? launch.env : {
               ALP_DELEGATED_ROLE: target.role,
               ALP_DELEGATION_EXECUTION_ID: executionId,
               ALP_DELEGATION_WORKSPACE: context.workspace,
@@ -94,6 +114,7 @@ class HerdrBackend {
           mode: "background",
           status: "running",
           workspace: context.workspace,
+          temporaryFiles: prepared ? input.launchSpec.temporaryFiles : [],
           createdAt: new Date().toISOString(),
         });
         this.log("execution.runtime_spawned", {
@@ -159,6 +180,7 @@ class HerdrBackend {
       return;
     try { this.runtime.cleanup(runtimeId); }
     catch (error) { throw new ExecutionFailed(`Herdr cleanup thất bại: ${error.message}`, { cause: error }); }
+    finally { cleanupTemporaryFiles(record?.temporaryFiles); }
   }
 
   orphanExecutions() {
@@ -186,22 +208,18 @@ class HerdrBackend {
   }
 
   buildLaunch(target, context, executionOptions, runtimeKind) {
-    const profile = P.profilePath(P.codexHome(), target.role);
+    const profile = path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "profiles", `${target.role}.toml`);
     const settings = path.join(this.repoRoot, "identity", target.role, ".claude", "settings.json");
     const headless = !executionOptions.interactive;
     let argv;
 
     if (runtimeKind === "claude") {
-      if (!fs.existsSync(settings))
-        throw new BackendUnavailable(`Thiếu ${settings} — chạy scripts/compile-acl.sh`);
       argv = [
         "--settings", settings,
         ...(context.sandbox === "read-only" ? ["--permission-mode", "plan"] : []),
         context.prompt,
       ];
     } else {
-      if (!fs.existsSync(profile))
-        throw new BackendUnavailable(`Thiếu profile ${profile} — chạy scripts/compile-acl.sh`);
       argv = headless
         ? ["exec", "-p", target.role, "--dangerously-bypass-hook-trust", "-C", context.workspace, "--skip-git-repo-check"]
         : ["-p", target.role, "-C", context.workspace];
@@ -214,12 +232,13 @@ class HerdrBackend {
   runForeground(executionId, launch, context, executionOptions, backgroundFallback) {
     if (launch.runtimeKind === "claude")
       throw new BackendUnavailable("Herdr unavailable: Claude compatibility execution cần Herdr session");
-    const bin = process.platform === "win32" ? "codex.cmd" : "codex";
+    const bin = launch.command || (process.platform === "win32" ? "codex.cmd" : "codex");
     const interactive = executionOptions.interactive && !backgroundFallback;
     const spawned = this.spawnProcess(bin, launch.argv, {
       cwd: context.workspace,
       env: {
         ...process.env,
+        ...(launch.env || {}),
         ALP_DELEGATED_ROLE: context.targetRole,
         ALP_DELEGATION_EXECUTION_ID: executionId,
         ALP_DELEGATION_WORKSPACE: context.workspace,
@@ -229,24 +248,36 @@ class HerdrBackend {
       stdio: interactive ? "inherit" : ["ignore", "pipe", "pipe"],
       timeout: executionOptions.timeoutMs || undefined,
     });
-    if (spawned.error)
-      throw new SpawnFailed(`Không chạy được Codex CLI: ${spawned.error.message}`, { cause: spawned.error });
-    const status = spawned.status === 0 ? "completed" : "failed";
-    const output = interactive ? "" : [spawned.stdout, spawned.stderr].filter(Boolean).join("").trim();
-    this.state.put({
-      executionId,
-      mode: "foreground",
-      status,
-      workspace: context.workspace,
-      output,
-      createdAt: new Date().toISOString(),
-    });
-    return result(executionId, status, {
-      ...(output ? { output } : {}),
-      ...(status === "failed" ? { error: { code: "ExecutionFailed", message: `Codex exit ${spawned.status}` } } : {}),
-      ...(backgroundFallback ? { metadata: { fallback: "foreground" } } : {}),
-    });
+    try {
+      if (spawned.error)
+        throw new SpawnFailed(`Không chạy được Codex CLI: ${spawned.error.message}`, { cause: spawned.error });
+      const status = spawned.status === 0 ? "completed" : "failed";
+      const output = interactive ? "" : [spawned.stdout, spawned.stderr].filter(Boolean).join("").trim();
+      this.state.put({
+        executionId,
+        mode: "foreground",
+        status,
+        workspace: context.workspace,
+        output,
+        createdAt: new Date().toISOString(),
+      });
+      return result(executionId, status, {
+        ...(output ? { output } : {}),
+        ...(status === "failed" ? { error: { code: "ExecutionFailed", message: `Codex exit ${spawned.status}` } } : {}),
+        ...(backgroundFallback ? { metadata: { fallback: "foreground" } } : {}),
+      });
+    } finally {
+      cleanupTemporaryFiles(launch.temporaryFiles);
+    }
   }
+}
+
+function cleanupTemporaryFiles(files = []) {
+  for (const file of files) fs.rmSync(file, { force: true });
+}
+
+function inferRuntimeCommand(command) {
+  return path.basename(command).toLowerCase().startsWith("claude") ? "claude" : "codex";
 }
 
 function defaultRuntime() {

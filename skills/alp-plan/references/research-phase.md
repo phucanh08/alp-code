@@ -4,7 +4,7 @@
 
 Nguyên tắc: **đừng tự đọc hết**. Giao cho vai chuyên môn, gom kết quả, kiểm chứng trước
 khi tin. Đó vừa là lý do các vai chuyên môn tồn tại, vừa là cách giữ context của bạn sạch
-— CHARTER §2.6 giới hạn boot set ≤ 7 nguồn.
+— compiled policy invariants giới hạn boot set ≤ 7 nguồn.
 
 ## Giao cho ai
 
@@ -15,7 +15,7 @@ khi tin. Đó vừa là lý do các vai chuyên môn tồn tại, vừa là các
 | đã từng quyết định gì, thread nào còn hiệu lực | truy xuất trí nhớ |
 | phản biện một thiết kế rủi ro cao | phản biện độc lập |
 
-Ai đảm nhận vai nào: `identity/REGISTRY.md` và `delegates_to` trong loadout của bạn.
+Ai đảm nhận vai nào: `src/agents/registry.ts` và `delegates_to` trong loadout của bạn.
 Lệnh: `alp delegate <vai> "<task>"`; `scripts/run-role.sh <vai>` là facade compatibility.
 
 Ba việc đầu **độc lập với nhau** → giao background và theo dõi bằng

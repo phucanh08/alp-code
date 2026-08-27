@@ -11,8 +11,6 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const L = require("./loadout.cjs");
-const PC = require("./project-config.cjs");
 const CLI = require("./cli-link.cjs");
 
 function uninstall(repoRoot, opts = {}) {
@@ -30,8 +28,8 @@ function uninstall(repoRoot, opts = {}) {
     throw new Error(`cwd đang nằm trong ${repoRoot} — cd ra ngoài thư mục này rồi chạy lại \`alp uninstall\``);
   if (!force) assertGitSafe(repoRoot);
 
-  // Phải lấy danh sách trước khi xoá repo vì nguồn nằm trong identity/*/loadout.yaml.
-  const projects = opts.projectPaths || registeredProjects(repoRoot, platform);
+  // Lấy registry machine-local trước khi xoá repo.
+  const projects = opts.projectPaths || registeredProjects(repoRoot, platform, env);
   const memory = path.join(repoRoot, "memory");
   let memoryBackup = null;
 
@@ -55,6 +53,7 @@ function uninstall(repoRoot, opts = {}) {
 
   // Module đã được Node nạp vào RAM nên vẫn tiếp tục cleanup được sau khi repo biến mất.
   cleanupProjects(projects, say);
+  cleanupRuntimeState(opts.runtimeStateRoot || defaultRuntimeStateRoot(env), say);
   try {
     for (const entry of CLI.uninstallCli(repoRoot, { ...opts, env, platform }))
       say(entry.level, entry.text);
@@ -68,10 +67,24 @@ function uninstall(repoRoot, opts = {}) {
   return { log, memoryBackup, projects };
 }
 
+function defaultRuntimeStateRoot(env) {
+  const home = env.HOME || env.USERPROFILE;
+  return home ? path.join(home, ".alp") : null;
+}
+
+function cleanupRuntimeState(root, say) {
+  if (!root || !fs.existsSync(root)) {
+    say("ABSENT", "runtime/execution state");
+    return;
+  }
+  fs.rmSync(root, { recursive: true, force: true });
+  say("REMOVED", `${root} — runtime preferences, backend preferences và execution state`);
+}
+
 function assertInstallRoot(repoRoot) {
   if (path.dirname(repoRoot) === repoRoot)
     throw new Error(`từ chối uninstall đường dẫn gốc: ${repoRoot}`);
-  for (const required of ["CHARTER.md", path.join("scripts", "alp.cjs")]) {
+  for (const required of ["package.json", path.join("scripts", "alp.cjs")]) {
     if (!fs.existsSync(path.join(repoRoot, required)))
       throw new Error(`${repoRoot} không phải một bản cài alp-code (thiếu ${required})`);
   }
@@ -99,18 +112,15 @@ function git(repoRoot, args, allowFailure = false) {
   return r;
 }
 
-function registeredProjects(repoRoot, platform) {
-  const byPath = new Map();
-  for (const role of L.listRoles(repoRoot)) {
-    const ws = L.effectiveWorkspaces(L.loadLoadout(repoRoot, role));
-    for (const candidate of [...ws.read, ...ws.write]) {
-      const resolved = path.resolve(candidate);
-      if (isWithin(repoRoot, resolved)) continue;
-      const key = platform === "win32" ? resolved.toLowerCase() : resolved;
-      byPath.set(key, resolved);
-    }
-  }
-  return [...byPath.values()];
+function registeredProjects(repoRoot, platform, env = process.env) {
+  const home = env.HOME || env.USERPROFILE;
+  const file = home && path.join(home, ".alp", "projects.json");
+  if (!file || !fs.existsSync(file)) return [];
+  const projects = JSON.parse(fs.readFileSync(file, "utf8")).projects || [];
+  return [...new Map(projects.map((entry) => {
+    const resolved = path.resolve(entry.path);
+    return [platform === "win32" ? resolved.toLowerCase() : resolved, resolved];
+  })).values()];
 }
 
 function cleanupProjects(projects, say) {
@@ -120,12 +130,15 @@ function cleanupProjects(projects, say) {
       continue;
     }
     try {
-      for (const { file, action } of PC.uninstall(project)) {
-        if (action === "ABSENT") continue;
-        if (action === "FOREIGN") say("KEEP", `${file} — không phải file do alp init sinh`);
-        else say(action, file);
+      for (const file of [path.join(project, ".claude", "settings.local.json"), path.join(project, ".codex", "config.toml")]) {
+        if (!fs.existsSync(file)) continue;
+        const body = fs.readFileSync(file, "utf8");
+        if (!body.toLowerCase().includes("alp init")) { say("KEEP", `${file} — không phải file do alp init sinh`); continue; }
+        fs.rmSync(file);
+        say("REMOVED", file);
+        const backup = `${file}.alp-backup`;
+        if (fs.existsSync(backup)) { fs.renameSync(backup, file); say("RESTORED", file); }
       }
-      if (PC.setGitExclude(project, false)) say("WROTE", `${project} — gỡ khối exclude per-clone`);
     } catch (e) {
       say("WARN", `${project} — không gỡ hết config cục bộ: ${e.message}`);
     }
@@ -152,4 +165,5 @@ module.exports = {
   registeredProjects,
   nextBackupPath,
   isWithin,
+  cleanupRuntimeState,
 };
