@@ -169,6 +169,7 @@ function testDeletesOwnRunningRepo() {
         HOME: fakeHome,
         USERPROFILE: fakeHome,
         LOCALAPPDATA: path.join(fakeHome, "AppData", "Local"),
+        ALP_SKIP_UPDATE_CHECK: "1",
       },
     }
   );
@@ -184,6 +185,7 @@ function testCliWiring() {
   const r = spawnSync(process.execPath, [path.join(repoRoot, "scripts", "alp.cjs"), "help"], {
     cwd: repoRoot,
     encoding: "utf8",
+    env: { ...process.env, ALP_SKIP_UPDATE_CHECK: "1" },
   });
   check("alp help công bố code-native maintenance commands", () => {
     assert.strictEqual(r.status, 0, (r.stdout || "") + (r.stderr || ""));

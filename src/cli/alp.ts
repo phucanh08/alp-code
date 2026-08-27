@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { accessSync } from "node:fs";
+import { accessSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
@@ -20,6 +20,7 @@ import { createDefaultDelegationComposition, runDelegateCommand, runDelegationLi
 import { deinitializeProject, initializeProject, ProjectRegistryStore } from "./commands/init";
 import { runMainSession, type RunMainInput } from "./commands/run-main";
 import { runRuntimeCommand, type RuntimeCommandInput } from "./commands/runtime";
+import { checkForUpdate, FileUpdateCheckStore } from "./update-check";
 
 export type AlpCommand =
   | { readonly command: "run-main"; readonly runtime?: RuntimeId }
@@ -29,6 +30,7 @@ export type AlpCommand =
   | { readonly command: "delegate"; readonly args: readonly string[] }
   | { readonly command: "delegation"; readonly args: readonly string[] }
   | { readonly command: "maintenance"; readonly action: "doctor" | "update" | "uninstall"; readonly args: readonly string[] }
+  | { readonly command: "version" }
   | { readonly command: "help" };
 
 function runtimeId(value: string | undefined): RuntimeId {
@@ -47,6 +49,10 @@ export function parseAlpArgs(argv: readonly string[]): AlpCommand {
   if (argv[0].startsWith("--runtime=")) {
     if (argv.length !== 1) throw new Error("alp --runtime accepts exactly one runtime");
     return { command: "run-main", runtime: runtimeId(argv[0].slice("--runtime=".length)) };
+  }
+  if (argv[0] === "--version" || argv[0] === "-v") {
+    if (argv.length !== 1) throw new Error("alp --version does not accept arguments");
+    return { command: "version" };
   }
   if (["claude", "codex", "run-role"].includes(argv[0]) || argv[0] === "--role") {
     throw new Error("direct raw runtime launch is unsupported; use `alp` or `alp --runtime <name>`");
@@ -106,6 +112,8 @@ export interface AlpDependencies {
   readonly cwd: string;
   readonly stdout: AlpIo;
   readonly stderr: AlpIo;
+  readonly version: string;
+  readonly checkForUpdate: () => Promise<string | null>;
   readonly runMain: (input: RunMainInput) => Promise<number>;
   readonly runtimeCommand: (input: RuntimeCommandInput) => Promise<number>;
   readonly initProject: (input: { readonly project: string; readonly backend?: string }) => Promise<void>;
@@ -124,8 +132,18 @@ function findRepoRoot(start: string): string {
   }
 }
 
+function readVersion(repoRoot: string): string {
+  try {
+    const parsed = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
+    return typeof parsed?.version === "string" ? parsed.version : "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
 function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDependencies {
   const repoRoot = process.env.ALP_REPO_ROOT || findRepoRoot(__dirname);
+  const version = readVersion(repoRoot);
   const policy = new PolicyEngine({ registry: agentRegistry });
   const memory = new MemoryService({
     store: new MarkdownFileStore({ root: join(repoRoot, "memory") }),
@@ -150,6 +168,15 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
     cwd,
     stdout,
     stderr,
+    version,
+    async checkForUpdate() {
+      if (process.env.ALP_SKIP_UPDATE_CHECK === "1") return null;
+      try {
+        return await checkForUpdate({ repoRoot, store: new FileUpdateCheckStore(), currentVersion: version });
+      } catch {
+        return null;
+      }
+    },
     async runMain(input) {
       const result = await runMainSession(input, {
         registry: agentRegistry,
@@ -229,9 +256,9 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
       }
       if (input.action === "update") {
         const updater = createRequire(__filename)(join(repoRoot, "scripts", "lib", "update.cjs")) as {
-          updateInstallation(root: string, options: { env: NodeJS.ProcessEnv; stdio: "inherit"; log(level: string, message: string): void }): { ok: boolean; message?: string };
+          updateInstallation(root: string, options: { env: NodeJS.ProcessEnv; stdio: "inherit"; log(level: string, message: string): void }): Promise<{ ok: boolean; message?: string }>;
         };
-        const result = updater.updateInstallation(repoRoot, {
+        const result = await updater.updateInstallation(repoRoot, {
           env: process.env,
           stdio: "inherit",
           log(level, message) { stdout.write(`${level.padEnd(9)}${message}\n`); },
@@ -266,6 +293,7 @@ function helpText(): string {
     "  alp doctor",
     "  alp update",
     "  alp uninstall [--purge-memory] [--force]",
+    "  alp --version",
     "",
     "Direct `claude`, `codex`, and identity-aware raw-runtime shortcuts are unsupported.",
   ].join("\n") + "\n";
@@ -277,6 +305,9 @@ export async function main(argv: readonly string[] = process.argv.slice(2), inje
   const stderr = injected?.stderr ?? process.stderr;
   const dependencies = injected ?? defaultDependencies(cwd, stdout, stderr);
   const command = parseAlpArgs(argv);
+  const notice = await dependencies.checkForUpdate().catch(() => null);
+  if (notice) stdout.write(notice);
+  if (command.command === "version") { stdout.write(`alp ${dependencies.version}\n`); return 0; }
   if (command.command === "run-main") return dependencies.runMain({ cwd, ...(command.runtime ? { requestedRuntime: command.runtime } : {}) });
   if (command.command === "runtime") return dependencies.runtimeCommand(command);
   if (command.command === "init") { await dependencies.initProject({ project: resolve(cwd, command.project ?? "."), ...(command.backend ? { backend: command.backend } : {}) }); return 0; }

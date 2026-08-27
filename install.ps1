@@ -7,8 +7,13 @@
 #   $env:ALP_HOME = "D:\alp-code"; irm …/install.ps1 | iex
 #   $env:ALP_NO_PATH = "1";        irm …/install.ps1 | iex
 #
-# Biến: ALP_HOME (mặc định ~\.alp-code) · ALP_BRANCH (main) · ALP_REPO ·
-#       ALP_NO_PATH
+# Biến: ALP_HOME (mặc định ~\.alp-code) · ALP_VERSION (tag release cụ thể) ·
+#       ALP_BRANCH (theo dõi một nhánh — bỏ qua release resolution, chỉ dùng khi phát triển) ·
+#       ALP_REPO · ALP_NO_PATH
+#
+# Mặc định (release mode): cài đặt/cập nhật resolve tag GitHub Release mới nhất (qua
+# scripts/checkout-release.cjs) rồi checkout đúng tag đó. Đặt ALP_BRANCH để bỏ qua release
+# resolution và theo dõi trực tiếp một nhánh (dev mode, ff-only pull như cũ).
 #
 # Bản song sinh của install.sh và cũng cố ý mỏng: kiểm dependency, lấy code, rồi giao
 # cho scripts/bootstrap.cjs — implementation thật, dùng chung cho cả ba OS.
@@ -24,9 +29,11 @@
   # Không dùng `exit`: qua `irm | iex`, exit sẽ đóng luôn PowerShell của người dùng.
   function Die([string]$m) { throw "ERROR    $m" }
 
-  $repo   = if ($env:ALP_REPO)   { $env:ALP_REPO }   else { 'https://github.com/phucanh08/alp-code.git' }
-  $branch = if ($env:ALP_BRANCH) { $env:ALP_BRANCH } else { 'main' }
-  $target = if ($env:ALP_HOME)   { $env:ALP_HOME }   else { Join-Path $HOME '.alp-code' }
+  $repo    = if ($env:ALP_REPO)    { $env:ALP_REPO }    else { 'https://github.com/phucanh08/alp-code.git' }
+  $branch  = if ($env:ALP_BRANCH)  { $env:ALP_BRANCH }  else { '' }
+  $version = if ($env:ALP_VERSION) { $env:ALP_VERSION } else { '' }
+  $target  = if ($env:ALP_HOME)    { $env:ALP_HOME }    else { Join-Path $HOME '.alp-code' }
+  $releaseMode = -not $branch
   $nodeMin = 18
 
   # ---------------------------------------------------------------- preflight
@@ -51,27 +58,52 @@
   if ($nodeMajor -lt $nodeMin) { Die "Node $nodeVersion quá cũ — alp-code cần >= v$nodeMin" }
 
   # ---------------------------------------------------------------- lấy code
+  function CheckoutRelease {
+    $checkoutScript = Join-Path $target 'scripts\checkout-release.cjs'
+    $checkoutArgs = @($checkoutScript)
+    if ($version) { $checkoutArgs += @('--version', $version) }
+    & node @checkoutArgs
+    if ($LASTEXITCODE -ne 0) { Die "$target: checkout release thất bại — chạy ``node `"$checkoutScript`"`` để xem chi tiết" }
+  }
+
   if (Test-Path (Join-Path $target '.git')) {
-    Say "PULL     $target"
-    # --ff-only: nhánh nội bộ đã rẽ thì DỪNG. Không tự merge/stash hộ người dùng.
-    & git -C $target pull --ff-only
-    if ($LASTEXITCODE -ne 0) {
-      Die "$target không fast-forward được — nhánh nội bộ đã rẽ hoặc đang dở việc.`n         Tự xử lý (git -C `"$target`" status) rồi chạy lại lệnh cài."
+    if ($releaseMode) {
+      Say "UPDATE   $target (release)"
+      CheckoutRelease
+    }
+    else {
+      Say "PULL     $target (nhánh $branch)"
+      # --ff-only: nhánh nội bộ đã rẽ thì DỪNG. Không tự merge/stash hộ người dùng.
+      & git -C $target fetch origin $branch
+      $ok = ($LASTEXITCODE -eq 0)
+      if ($ok) { & git -C $target checkout $branch; $ok = ($LASTEXITCODE -eq 0) }
+      if ($ok) { & git -C $target pull --ff-only; $ok = ($LASTEXITCODE -eq 0) }
+      if (-not $ok) {
+        Die "$target không cập nhật được nhánh ``$branch`` — nhánh nội bộ đã rẽ hoặc đang dở việc.`n         Tự xử lý (git -C `"$target`" status) rồi chạy lại lệnh cài."
+      }
     }
   }
   elseif (Test-Path $target) {
     Die "$target đã tồn tại nhưng không phải git repo — installer không đụng vào.`n         Dọn thủ công, hoặc cài chỗ khác: `$env:ALP_HOME = `"D:\alp-code`""
   }
   else {
-    Say "CLONE    $repo -> $target"
     $parent = Split-Path -Parent $target
     if ($parent -and -not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
-    & git clone --branch $branch $repo $target
-    if ($LASTEXITCODE -ne 0) { Die "git clone thất bại" }
+    if ($releaseMode) {
+      Say "CLONE    $repo -> $target"
+      & git clone $repo $target
+      if ($LASTEXITCODE -ne 0) { Die "git clone thất bại" }
+      CheckoutRelease
+    }
+    else {
+      Say "CLONE    $repo (nhánh $branch) -> $target"
+      & git clone --branch $branch $repo $target
+      if ($LASTEXITCODE -ne 0) { Die "git clone thất bại" }
+    }
   }
 
   $bootstrap = Join-Path $target 'scripts\bootstrap.cjs'
-  if (-not (Test-Path $bootstrap)) { Die "$target thiếu scripts\bootstrap.cjs — clone hỏng hoặc nhánh ``$branch`` quá cũ" }
+  if (-not (Test-Path $bootstrap)) { Die "$target thiếu scripts\bootstrap.cjs — clone hỏng hoặc phiên bản quá cũ" }
 
   # ---------------------------------------------------------------- bàn giao
   $forward = @()

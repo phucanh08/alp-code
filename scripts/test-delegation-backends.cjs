@@ -297,6 +297,7 @@ function testAlpFacadePreservesCallerWorkspace() {
       PASEO_HOME: paseoHome,
       ALP_DELEGATION_STATE_DIR: stateDir,
       ALP_TEST_PASEO_CAPTURE: capture,
+      ALP_SKIP_UPDATE_CHECK: "1",
     },
   });
   assert.strictEqual(run.status, 0, run.stderr || run.stdout);
@@ -328,6 +329,7 @@ function testBackendSwitchCli() {
     ALP_DELEGATION_STATE_DIR: stateDir,
     PASEO_CLI: fakeCli,
     PASEO_HOME: paseoHome,
+    ALP_SKIP_UPDATE_CHECK: "1",
   };
   const alp = (...args) => spawnSync(process.execPath, [
     path.join(process.cwd(), "scripts", "alp.cjs"), "delegation", ...args,

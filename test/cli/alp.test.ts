@@ -16,6 +16,8 @@ describe("alp CLI parsing", () => {
     [["doctor", "--quiet"], { command: "maintenance", action: "doctor", args: ["--quiet"] }],
     [["update"], { command: "maintenance", action: "update", args: [] }],
     [["uninstall", "--purge-memory", "--force"], { command: "maintenance", action: "uninstall", args: ["--purge-memory", "--force"] }],
+    [["--version"], { command: "version" }],
+    [["-v"], { command: "version" }],
   ])("parses %j", (argv, expected) => {
     expect(parseAlpArgs(argv)).toEqual(expected);
   });
@@ -28,6 +30,7 @@ describe("alp CLI parsing", () => {
     ["codex"],
     ["run-role", "search"],
     ["--role", "main"],
+    ["--version", "extra"],
   ])("rejects ambiguous or direct raw-runtime input: %j", (...argv) => {
     expect(() => parseAlpArgs(argv)).toThrow();
   });
@@ -38,6 +41,8 @@ describe("alp CLI parsing", () => {
       cwd: "/caller/project",
       stdout: { write: () => true },
       stderr: { write: () => true },
+      version: "0.0.0",
+      checkForUpdate: async () => null,
       runMain,
       runtimeCommand: async () => 0,
       initProject: async () => undefined,
@@ -54,6 +59,8 @@ describe("alp CLI parsing", () => {
       cwd: "/caller/project",
       stdout: { write: () => true },
       stderr: { write: () => true },
+      version: "0.0.0",
+      checkForUpdate: async () => null,
       runMain: async () => 0,
       runtimeCommand: async () => 0,
       initProject: async () => undefined,
@@ -62,6 +69,42 @@ describe("alp CLI parsing", () => {
       maintenanceCommand,
     })).resolves.toBe(7);
     expect(maintenanceCommand).toHaveBeenCalledWith({ action: "uninstall", args: ["--purge-memory", "--force"] });
+  });
+
+  it("prints the installed version", async () => {
+    const writes: string[] = [];
+    await expect(main(["--version"], {
+      cwd: "/caller/project",
+      stdout: { write: (text: string) => writes.push(text) },
+      stderr: { write: () => true },
+      version: "1.2.3",
+      checkForUpdate: async () => null,
+      runMain: async () => 0,
+      runtimeCommand: async () => 0,
+      initProject: async () => undefined,
+      deinitProject: async () => undefined,
+      delegateCommand: async () => 0,
+      maintenanceCommand: async () => 0,
+    })).resolves.toBe(0);
+    expect(writes).toEqual(["alp 1.2.3\n"]);
+  });
+
+  it("prints an update notice before dispatching when one is available", async () => {
+    const writes: string[] = [];
+    await main([], {
+      cwd: "/caller/project",
+      stdout: { write: (text: string) => writes.push(text) },
+      stderr: { write: () => true },
+      version: "0.0.0",
+      checkForUpdate: async () => "UPDATE    new version available\n",
+      runMain: async () => 0,
+      runtimeCommand: async () => 0,
+      initProject: async () => undefined,
+      deinitProject: async () => undefined,
+      delegateCommand: async () => 0,
+      maintenanceCommand: async () => 0,
+    });
+    expect(writes).toEqual(["UPDATE    new version available\n"]);
   });
 });
 

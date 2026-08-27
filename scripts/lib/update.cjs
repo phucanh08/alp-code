@@ -1,16 +1,14 @@
 // Safe `alp update` support for code-native ALP. Project registrations are machine-local,
-// so tracked source must be clean and the update itself is a plain fast-forward.
+// so tracked source must be clean; the update itself resolves and checks out the latest
+// GitHub Release tag (detached HEAD) instead of fast-forwarding a branch.
 
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const semver = require("./semver-lite.cjs");
 
-function pullPreservingWorkspaces(repoRoot, options = {}) {
-  const env = options.env || process.env;
-  const stdio = options.stdio || "inherit";
-  const log = options.log || (() => {});
-
+function assertCleanWorkingTree(repoRoot, env) {
   const staged = gitLines(repoRoot, ["diff", "--cached", "--name-only"], env);
   if (!staged.ok) return failure(`không kiểm tra được staged changes: ${staged.message}`);
   if (staged.lines.length)
@@ -20,8 +18,66 @@ function pullPreservingWorkspaces(repoRoot, options = {}) {
   if (!dirty.ok) return failure(`không kiểm tra được working tree: ${dirty.message}`);
 
   if (dirty.lines.length) return failure(`repo có tracked changes; không tự cất: ${dirty.lines.join(", ")}`);
+  return { ok: true };
+}
+
+async function resolveLatestReleaseTag(repoRoot, options = {}) {
+  const repoSlug = options.repoSlug || "phucanh08/alp-code";
+  const fetchImpl = options.fetch || globalThis.fetch;
+  if (fetchImpl) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), options.timeoutMs || 5000);
+      const response = await fetchImpl(`https://api.github.com/repos/${repoSlug}/releases/latest`, {
+        signal: controller.signal,
+        headers: { "User-Agent": "alp-code-updater" },
+      });
+      clearTimeout(timer);
+      if (response.ok) {
+        const body = await response.json();
+        if (body && typeof body.tag_name === "string" && semver.isValid(body.tag_name)) {
+          return { ok: true, tag: body.tag_name, source: "github-api" };
+        }
+      }
+    } catch {
+      /* fall through to git-based fallback */
+    }
+  }
+  const remote = options.remote || "origin";
+  const listed = gitText(repoRoot, ["ls-remote", "--tags", "--refs", remote], options.env || process.env);
+  if (!listed.ok) return { ok: false, message: `không lấy được danh sách tag: ${listed.message}` };
+  const tags = listed.text
+    .split(/\r?\n/)
+    .map((line) => line.split("refs/tags/")[1])
+    .filter(Boolean)
+    .filter((tag) => semver.isValid(tag));
+  if (!tags.length) return { ok: false, message: "không tìm thấy tag phiên bản (vX.Y.Z) trên remote" };
+  tags.sort(semver.compare);
+  return { ok: true, tag: tags[tags.length - 1], source: "git-ls-remote" };
+}
+
+async function checkoutLatestRelease(repoRoot, options = {}) {
+  const env = options.env || process.env;
+  const stdio = options.stdio || "inherit";
+  const log = options.log || (() => {});
+
+  const clean = assertCleanWorkingTree(repoRoot, env);
+  if (!clean.ok) return clean;
   log("CHECK", "tracked source clean; machine-local project registry is outside git");
-  return pullResult(runGit(repoRoot, ["pull", "--ff-only"], { env, stdio }), []);
+
+  const remote = options.remote || "origin";
+  const fetched = runGit(repoRoot, ["fetch", "--tags", "--force", remote], { env, stdio });
+  if (!succeeded(fetched)) return failure(commandFailure("git fetch --tags", fetched));
+
+  const resolved = options.pinTag
+    ? { ok: true, tag: options.pinTag.startsWith("v") ? options.pinTag : `v${options.pinTag}`, source: "pinned" }
+    : await (options.resolveLatestReleaseTag || resolveLatestReleaseTag)(repoRoot, options);
+  if (!resolved.ok) return failure(resolved.message);
+
+  log("CHECKOUT", `${resolved.tag} (${resolved.source})`);
+  const checkedOut = runGit(repoRoot, ["checkout", "--detach", resolved.tag], { env, stdio });
+  if (!succeeded(checkedOut)) return failure(commandFailure(`git checkout ${resolved.tag}`, checkedOut));
+  return { ok: true, status: 0, tag: resolved.tag, source: resolved.source, preserved: [] };
 }
 
 function preserveMaintenanceState(repoRoot, options = {}) {
@@ -55,12 +111,12 @@ function discardMaintenanceState(snapshot) {
   if (snapshot.backupRoot) fs.rmSync(snapshot.backupRoot, { recursive: true, force: true });
 }
 
-function updateInstallation(repoRoot, options = {}) {
+async function updateInstallation(repoRoot, options = {}) {
   const snapshot = preserveMaintenanceState(repoRoot, options);
-  const pulled = pullPreservingWorkspaces(repoRoot, options);
-  if (!pulled.ok) {
+  const checkedOut = await checkoutLatestRelease(repoRoot, options);
+  if (!checkedOut.ok) {
     discardMaintenanceState(snapshot);
-    return pulled;
+    return checkedOut;
   }
   const spawnProcess = options.spawnProcess || spawnSync;
   let built;
@@ -73,7 +129,7 @@ function updateInstallation(repoRoot, options = {}) {
   } finally {
     restoreMaintenanceState(snapshot);
   }
-  return succeeded(built) ? pulled : failure(commandFailure("bootstrap.cjs", built));
+  return succeeded(built) ? checkedOut : failure(commandFailure("bootstrap.cjs", built));
 }
 
 function onlyWorkspaceChanged(base, current) {
@@ -104,12 +160,6 @@ function dropStash(repoRoot, stashHash, env) {
   return succeeded(dropped)
     ? { ok: true }
     : { ok: false, message: commandFailure("git stash drop", dropped) };
-}
-
-function pullResult(result, preserved) {
-  return succeeded(result)
-    ? { ok: true, status: result.status, preserved }
-    : failure(commandFailure("git pull --ff-only", result));
 }
 
 function gitLines(repoRoot, args, env) {
@@ -152,7 +202,9 @@ function normalizeNewlines(text) {
 
 module.exports = {
   onlyWorkspaceChanged,
-  pullPreservingWorkspaces,
+  assertCleanWorkingTree,
+  resolveLatestReleaseTag,
+  checkoutLatestRelease,
   preserveMaintenanceState,
   restoreMaintenanceState,
   discardMaintenanceState,
