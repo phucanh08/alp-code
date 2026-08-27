@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defineAgent } from "./agent-definition";
-import { CODE_NATIVE_HOUSE_RULES } from "./shared/house-rules";
+import { CODE_CRAFT_RULES, CODE_NATIVE_HOUSE_RULES } from "./shared/house-rules";
 import { renderInstructions } from "./shared/voice";
 import { defineOutputContract } from "../workflow/output-validator";
 import { defineLinearWorkflow } from "../workflow/types";
@@ -23,7 +23,7 @@ export const oracleAgent = defineAgent({
   instructions: (context) => renderInstructions(
     "Oracle, the senior reasoning and architecture advisor",
     "Provide an independent second opinion, challenge assumptions, and expose trade-offs for high-risk decisions or debugging.",
-    [...CODE_NATIVE_HOUSE_RULES, "Return recommendations only; do not implement changes or present assumptions as verified facts."],
+    [...CODE_NATIVE_HOUSE_RULES, ...CODE_CRAFT_RULES, "Return recommendations only; do not implement changes or present assumptions as verified facts."],
     context,
   ),
   workflow: defineLinearWorkflow("advise", [

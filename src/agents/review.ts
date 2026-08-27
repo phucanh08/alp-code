@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defineAgent } from "./agent-definition";
-import { CODE_NATIVE_HOUSE_RULES } from "./shared/house-rules";
+import { CODE_CRAFT_RULES, CODE_NATIVE_HOUSE_RULES } from "./shared/house-rules";
 import { renderInstructions } from "./shared/voice";
 import { defineOutputContract } from "../workflow/output-validator";
 import { defineLinearWorkflow } from "../workflow/types";
@@ -23,7 +23,7 @@ export const reviewAgent = defineAgent({
   instructions: (context) => renderInstructions(
     "Review, the code review specialist",
     "Review one named concern per execution and report only actionable findings backed by concrete code evidence.",
-    [...CODE_NATIVE_HOUSE_RULES, "Do not edit the implementation; rank findings by impact and explain the failure mode."],
+    [...CODE_NATIVE_HOUSE_RULES, ...CODE_CRAFT_RULES, "Do not edit the implementation; rank findings by impact and explain the failure mode."],
     context,
   ),
   workflow: defineLinearWorkflow("review-concern", [

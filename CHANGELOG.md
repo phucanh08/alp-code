@@ -8,6 +8,15 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thêm
+
+- `CODE_CRAFT_RULES` trong `src/agents/shared/house-rules.ts` — bốn quy tắc tay nghề phỏng theo
+  [ghi chép của Andrej Karpathy](https://x.com/karpathy/status/2015883857489522876) về các lỗi
+  code thường gặp của LLM: nêu giả định thay vì hành động theo nó, chọn lời giải nhỏ nhất, sửa
+  đúng phạm vi được yêu cầu, biến task thành một check chạy được. Chỉ spread vào `main`,
+  `review`, `oracle` là các vai viết hoặc phán xét code; `search`, `librarian`, `read-thread`,
+  `compaction`, `titling` không nhận vì không hành động theo được.
+
 ## [0.1.2] - 2026-08-27
 
 ### Sửa
