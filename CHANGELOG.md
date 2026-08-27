@@ -8,6 +8,11 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Sửa
+
+- `cut-release.cjs` bump cả `package-lock.json`, không chỉ `package.json`. Trước đó hai file
+  lệch version sau mỗi lần cắt release mà `git status` vẫn sạch nên không có gì báo động.
+
 ### Gỡ
 
 - Bỏ `.github/workflows/release.yml`. Release nay publish bằng `gh release create` từ máy
