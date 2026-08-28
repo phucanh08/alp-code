@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -10,13 +10,14 @@ import {
 } from "../../src/runtime/runtime-preference-store";
 import { RuntimeSelector } from "../../src/runtime/runtime-selector";
 import type { RuntimeId } from "../../src/runtime/types";
+import { removeTemporary } from "../support/temporary-root";
 
 const temporaryRoots: string[] = [];
 
 afterEach(async () => {
   for (const root of temporaryRoots.splice(0)) {
     await chmod(root, 0o700).catch(() => undefined);
-    await rm(root, { recursive: true, force: true });
+    await removeTemporary(root);
   }
 });
 

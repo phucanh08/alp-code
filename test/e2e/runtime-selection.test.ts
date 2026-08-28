@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -6,10 +6,12 @@ import { runRuntimeCommand } from "../../src/cli/commands/runtime";
 import { FileRuntimePreferenceStore } from "../../src/runtime/runtime-preference-store";
 import { RuntimeSelector } from "../../src/runtime/runtime-selector";
 import type { TerminalKey } from "../../src/runtime/types";
+import { expectPosixMode } from "../support/file-mode";
+import { removeTemporary } from "../support/temporary-root";
 
 const roots: string[] = [];
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(roots.splice(0).map((root) => removeTemporary(root)));
 });
 
 async function preferenceFile(): Promise<string> {
@@ -38,7 +40,7 @@ describe("e2e: runtime selection", () => {
       source: "interactive",
     });
     expect(JSON.parse(await readFile(file, "utf8"))).toEqual({ runtime: "codex" });
-    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    await expectPosixMode(file, 0o600);
 
     // Second session, non-interactive: the persisted choice wins over the default.
     const second = new RuntimeSelector({ preferenceStore: new FileRuntimePreferenceStore({ file }), output });

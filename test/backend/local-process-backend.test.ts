@@ -1,14 +1,15 @@
 import { EventEmitter } from "node:events";
-import { mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { LocalProcessBackend } from "../../src/backend/local-process-backend";
 import type { RuntimeLaunchSpec } from "../../src/runtime/runtime-adapter";
+import { removeTemporary } from "../support/temporary-root";
 
 const roots: string[] = [];
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(roots.splice(0).map((root) => removeTemporary(root)));
 });
 
 class FakeChild extends EventEmitter {

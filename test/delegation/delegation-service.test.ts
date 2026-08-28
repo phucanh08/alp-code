@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -9,6 +9,7 @@ import { DelegationError } from "../../src/delegation/types";
 import type { ExecutionBackend } from "../../src/backend/execution-backend";
 import type { PreparedExecution, PrepareExecutionInput } from "../../src/execution/types";
 import type { RuntimeAdapter, RuntimeLaunchSpec } from "../../src/runtime/runtime-adapter";
+import { removeTemporary } from "../support/temporary-root";
 
 function prepared(executionId: string, target = "search"): PreparedExecution {
   const workspace = process.cwd();
@@ -196,7 +197,7 @@ describe("DelegationService", () => {
         output: JSON.stringify({ status: "clear", findings: [] }),
       });
     } finally {
-      await rm(root, { recursive: true, force: true });
+      await removeTemporary(root);
     }
   });
 
@@ -258,7 +259,7 @@ describe("FileDelegationExecutionStore", () => {
       second.update("exec-persisted", { status: "completed" });
       expect(new FileDelegationExecutionStore({ file }).get("exec-persisted")).toMatchObject({ status: "completed" });
     } finally {
-      await rm(root, { recursive: true, force: true });
+      await removeTemporary(root);
     }
   });
 });

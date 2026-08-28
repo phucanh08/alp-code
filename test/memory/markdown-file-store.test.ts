@@ -5,13 +5,14 @@ import { describe, expect, it } from "vitest";
 import { InvalidMemoryIdError } from "../../src/memory/errors";
 import { MarkdownFileStore } from "../../src/memory/adapters/markdown-file-store";
 import { memoryStoreContract } from "./memory-store.contract";
+import { removeTemporary } from "../support/temporary-root";
 
 async function temporaryStore() {
   const directory = await mkdtemp(join(tmpdir(), "alp-memory-store-"));
   return {
     root: directory,
     store: new MarkdownFileStore({ root: directory }),
-    cleanup: () => rm(directory, { recursive: true, force: true }),
+    cleanup: () => removeTemporary(directory),
   };
 }
 
@@ -45,7 +46,7 @@ describe("MarkdownFileStore filesystem behavior", () => {
       await expect(readdir(outside)).resolves.toEqual([]);
     } finally {
       await fixture.cleanup();
-      await rm(outside, { recursive: true, force: true });
+      await removeTemporary(outside);
     }
   });
 
@@ -69,7 +70,7 @@ describe("MarkdownFileStore filesystem behavior", () => {
         await expect(readFile(outsideFile, "utf8")).resolves.toBe("outside-secret");
       } finally {
         await fixture.cleanup();
-        await rm(outside, { recursive: true, force: true });
+        await removeTemporary(outside);
       }
     },
   );
@@ -83,7 +84,7 @@ describe("MarkdownFileStore filesystem behavior", () => {
       await expect(store.update("shared:clock", { expectedVersion: 1, content: "v2" })).resolves.toMatchObject({ version: 2 });
       await expect(store.update("shared:clock", { expectedVersion: 2, content: "v3" })).resolves.toMatchObject({ version: 3 });
     } finally {
-      await rm(directory, { recursive: true, force: true });
+      await removeTemporary(directory);
     }
   });
 
@@ -104,7 +105,7 @@ describe("MarkdownFileStore filesystem behavior", () => {
       });
       await expect(readFile(path, "utf8")).resolves.toBe(markdown);
     } finally {
-      await rm(directory, { recursive: true, force: true });
+      await removeTemporary(directory);
     }
   });
 
@@ -138,7 +139,7 @@ describe("MarkdownFileStore filesystem behavior", () => {
         { id: "shared:reference:zod:validation" },
       ]);
     } finally {
-      await rm(directory, { recursive: true, force: true });
+      await removeTemporary(directory);
     }
   });
 
