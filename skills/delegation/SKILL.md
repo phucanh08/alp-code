@@ -14,13 +14,13 @@ alp delegation status <execution-id>
 alp delegation wait <execution-id>
 alp delegation cancel <execution-id>
 alp delegation cleanup <execution-id>
-alp delegation switch [herdr|paseo|default]
+alp delegation switch [local|paseo|default]
 ```
 
 `scripts/run-role.*` remains a compatibility facade and calls the same service.
 
 Do not invoke runtime-specific delegation tools directly. In particular, do not call
-`herdr`, `paseo`, `create_agent`, or `spawn_agent` to delegate ALP work.
+`paseo`, `create_agent`, or `spawn_agent` to delegate ALP work.
 
 ALP policy determines:
 
@@ -30,10 +30,10 @@ ALP policy determines:
 - what project/shared/private memory is visible;
 - which workspace and write policy apply.
 
-The configured backend only runs the prepared execution. It may be Herdr, Paseo, or a
+The configured backend only runs the prepared execution. It may be local, Paseo, or a
 future backend. Changing it must not change role, ACL, memory, or task ownership.
-Use the `delegation-switch` skill when the principal asks to inspect or persistently change
-the backend. Keep `--backend` for a one-request override.
+Run `alp delegation switch` to inspect or persistently change the backend. Keep
+`--backend` for a one-request override.
 
 If `--project` is omitted, the execution workspace is the caller's current directory. ALP
 pins that canonical path into context and blocks access to other registered source workspaces

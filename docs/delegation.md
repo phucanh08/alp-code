@@ -1,7 +1,7 @@
 # ALP Delegation API
 
 > Interface chuẩn để Phở giao việc cho role khác. Agent nên nạp `skills/delegation/`;
-> tài liệu `docs/herdr/` chỉ dành cho bảo trì adapter runtime.
+> backend chỉ chạy execution đã được ALP chuẩn bị.
 
 Invariant của hệ:
 
@@ -21,13 +21,17 @@ DelegationService
    ├── DelegationPolicy exact delegates_to + reports_to
    ├── ContextBuilder    immutable capsule + scoped memory + task + workspace policy
    └── BackendRegistry
-          ├── HerdrBackend ── Herdr CLI/socket
+          ├── LocalProcessBackend ── child process
           └── PaseoBackend ── Paseo public CLI/daemon
 ```
 
-`scripts/lib/delegation/core/` không import adapter. `create-service.cjs` là composition
-root duy nhất register implementation. Thêm backend mới bằng cách implement contract rồi
-register ở composition root; không sửa policy, role, memory hay context core.
+`createDefaultDelegationComposition` (`src/cli/commands/delegate.ts`) là composition root
+duy nhất register implementation. Thêm backend mới bằng cách implement `ExecutionBackend`
+rồi register ở đó; không sửa policy, role, memory hay context core.
+
+`scripts/lib/delegation/` chỉ còn phần CJS mà composition root thật sự load: `config.cjs`,
+`core/{errors,types,execution-store}.cjs` và `backends/{command-runner,paseo}`. Mọi thứ
+khác đã chuyển sang TypeScript trong `src/`.
 
 ALP sở hữu:
 
@@ -37,7 +41,7 @@ ALP sở hữu:
 - task ownership và ALP `requestId`/`executionId`/`parentExecutionId`.
 
 Backend chỉ sở hữu process/session/workspace execution, runtime status, output, cancel và
-cleanup. Herdr pane ID hoặc Paseo agent ID chỉ tồn tại trong state/log nội bộ adapter.
+cleanup. Paseo agent ID chỉ tồn tại trong state/log nội bộ adapter.
 
 ## Contract trung lập runtime
 
@@ -127,42 +131,27 @@ biết runtime ID. `--release <id>` được giữ làm alias cũ cho cleanup; n
 
 ## Cấu hình backend
 
-Khi chạy trong terminal, `alp init` hỏi backend mặc định trước khi đăng ký project:
-
-```text
-Chọn delegation backend mặc định cho các request tiếp theo:
-  ❯ Herdr — terminal workspace/pane runtime
-    Paseo — daemon/agent runtime
-↑/↓ chọn · Enter xác nhận · Ctrl+C huỷ
-```
-
-Nếu terminal không hỗ trợ raw TTY, prompt tự fallback về nhập `1/2` rồi `Enter`.
-
-ALP chỉ kiểm/cài runtime được chọn. Herdr dùng `brew install herdr` khi Homebrew có sẵn,
-nếu không dùng installer chính thức từ `https://herdr.dev/install.sh`; Paseo dùng
-`npm install -g @getpaseo/cli`. Sau install, ALP start Herdr headless server hoặc Paseo
-daemon local và chạy adapter health check trước khi persist selection. Paseo luôn start với
-`--no-inject-mcp` để raw runtime delegation tool không lọt vào role.
-
-Non-interactive init không tự cài package ngoài ý muốn. CI/automation phải chọn rõ:
+`alp init` ghi backend đã chọn vào `~/.alp/projects.json`. Nó **không** cài runtime — cài
+là việc của principal:
 
 ```bash
-alp init /path/to/project --backend herdr
-alp init /path/to/project --backend paseo
+alp init /path/to/project --backend local   # child process, không cần cài gì
+alp init /path/to/project --backend paseo   # cần `npm install -g @getpaseo/cli` sẵn
 ```
+
+Bỏ `--backend` thì lựa chọn đã đăng ký trước đó được giữ nguyên; project chưa từng chọn
+thì rơi về thứ tự ưu tiên bên dưới. Kiểm tra runtime đã sẵn sàng chưa bằng
+`alp delegation health <backend>`.
 
 `alp.config.yaml`:
 
 ```yaml
 delegation:
-  backend: herdr
+  backend: paseo
   fallback_backend: ""
   state_dir: ""
 
   backends:
-    herdr:
-      enabled: true
-
     paseo:
       enabled: true
       cli: paseo
@@ -170,22 +159,24 @@ delegation:
       runtime_tools_disabled: true
 ```
 
-Không có config thì default là `herdr` để giữ backward compatibility. Đổi một dòng sang
-`backend: paseo` không làm thay đổi identity, memory, role hay policy.
+Không có config thì default là `paseo`. `local` luôn được đăng ký và không cần khai trong
+`backends:`. Đổi backend không làm thay đổi identity, memory, role hay policy.
+
+`fallback_backend` để rỗng là chủ ý: fallback chuyển execution sang backend khác một cách
+im lặng, khó chẩn đoán hơn là fail rõ ràng.
 
 Chuyển tương tác, dùng chung giữa Claude Code và Codex:
 
 ```bash
 alp delegation switch                 # xem effective backend + nguồn lựa chọn
 alp delegation switch paseo           # các request tiếp theo dùng Paseo
-alp delegation switch herdr            # các request tiếp theo dùng Herdr
+alp delegation switch local            # các request tiếp theo dùng local
 alp delegation switch default          # bỏ lựa chọn, quay về env/config
 ```
 
-Claude Code expose skill dưới dạng `/delegation-switch paseo`; Codex dùng
-`$delegation-switch paseo`. Selection từ `alp init` hoặc switch lưu trong generic ALP state,
-không sửa source config. Thứ tự ưu tiên là request `--backend` → persisted init/switch
-selection → environment → config → Herdr.
+Selection từ `alp init` hoặc switch lưu trong generic ALP state, không sửa source config.
+Thứ tự ưu tiên là request `--backend` → persisted init/switch selection → environment →
+config → Paseo.
 Execution đã spawn luôn giữ backend trong execution record và không bị chuyển giữa chừng.
 
 Environment override:
@@ -200,30 +191,30 @@ Environment override:
 | `PASEO_HOME` | config home cho local safety check |
 | `ALP_PASEO_RUNTIME_TOOLS_DISABLED` | attestation cho remote daemon |
 
-`--backend herdr|paseo` chỉ là override cho đúng một request. Registry vẫn chịu
-trách nhiệm resolve tên; core không có chuỗi `if paseo / else herdr`.
+`--backend local|paseo` chỉ là override cho đúng một request. Registry vẫn chịu
+trách nhiệm resolve tên; core không có chuỗi `if paseo / else local`.
 
 Main chạy trong sandbox cần ghi generic execution state và kết nối backend daemon local.
 Execution policy snapshot vì vậy chỉ mở state/workspace đã đăng ký cho agent có
-`delegatesTo`; runtime adapter truyền đúng execution ID để Herdr Unix socket/Paseo
-localhost hoạt động. Specialist không nhận các quyền runtime này; `acl-guard` vẫn chặn raw
+`delegatesTo`; runtime adapter truyền đúng execution ID để Paseo localhost hoạt động.
+Specialist không nhận các quyền runtime này; deny rule sinh cho Claude/Codex vẫn chặn raw
 `herdr`/`paseo`, nên đường được phép vẫn chỉ là Delegation API sau policy.
 
-## HerdrBackend
+## LocalProcessBackend
 
-Adapter giữ behavior cũ:
+Backend mặc định khi không có daemon nào: spawn runtime CLI làm child process của chính
+tiến trình `alp`.
 
-| ALP | Herdr nội bộ |
+| ALP | Local nội bộ |
 |---|---|
-| execution | pane/agent session |
-| parent execution | anchor pane, chỉ resolve trong adapter |
-| background spawn | split shell + agent start |
-| status/wait/output | agent/pane state + bounded pane read |
-| cancel | stop process trong pane |
-| cleanup | release agent metadata |
+| execution | child process |
+| background spawn | không hỗ trợ — execution gắn với vòng đời tiến trình cha |
+| status/wait/output | exit code + signal của child |
+| cancel | `kill(SIGTERM)` |
+| cleanup | xoá `launchSpec.temporaryFiles` |
 
-Khi Herdr fleet không chạy, Codex foreground compatibility vẫn hoạt động. Chi tiết protocol,
-version và maintenance ở `docs/herdr/`; business code không gọi các lệnh đó.
+Không cài gì, không health check nào có thể fail. Đánh đổi: không có execution nào sống sót
+qua khi `alp` thoát, nên nó không thay được Paseo cho việc chạy nền.
 
 ## PaseoBackend
 
@@ -257,7 +248,7 @@ Với daemon remote, `runtime_tools_disabled: true` là attestation bắt buộc
 
 `ContextBuilder` gọi cùng boot-context builder của ALP cho target role. Context truyền sang
 backend gồm target identity, task và phần memory mà loadout cho phép. Runtime chỉ nhận bundle
-đã chuẩn bị; Paseo agent/Herdr pane không phải ALP identity và không là source of truth của
+đã chuẩn bị; Paseo agent không phải ALP identity và không là source of truth của
 memory.
 
 Role phụ luôn `read-only` theo ALP guard/policy. `main` chỉ được `workspace-write` tại
@@ -290,15 +281,16 @@ Doctor dùng terminology generic: `DELEGATION-BACKEND`, `BACKEND-HEALTH`,
 Log lifecycle có `request_id`, `execution_id`, `parent_role`, `target_role`, `backend`; adapter
 log thêm `backend_execution_id` để debug. Backend ID không trở thành domain identifier.
 
-Debug Paseo: kiểm `paseo daemon status --json`, `PASEO_HOST` và raw-tool policy. Debug Herdr:
-dùng tài liệu maintenance trong `docs/herdr/`, nhưng cleanup thường ngày vẫn qua ALP ID.
+Debug Paseo: kiểm `paseo daemon status --json`, `PASEO_HOST` và raw-tool policy.
 
-## Migration từ Herdr
+## Bỏ Herdr
 
-1. Giữ `backend: herdr`, recompile ACL và chạy toàn bộ tests.
-2. Cài/chạy Paseo, đảm bảo raw MCP tool injection tắt, chạy `alp delegation health paseo`.
-3. Thử từng request bằng `--backend paseo`.
-4. Đổi `delegation.backend: paseo` khi parity đã đạt.
-5. Giữ Herdr enabled làm lựa chọn/fallback trong giai đoạn migration.
+Herdr backend đã bị gỡ khỏi repo. Nếu bạn còn checkout cũ trỏ `backend: herdr`:
 
-Không đổi loadout, skill của role, memory layout hay business orchestration khi chuyển backend.
+1. Đổi `delegation.backend` sang `paseo` (hoặc `local`), hoặc chạy
+   `alp delegation switch paseo`.
+2. Chạy `alp delegation health paseo` để xác nhận daemon reachable.
+3. Execution cũ do Herdr sở hữu không còn resolve được; dọn bằng tay ở `state_dir`.
+
+Regex chặn raw `herdr` trong `src/policy/invariants.ts` và deny rule sinh cho Claude/Codex
+vẫn giữ nguyên làm defense-in-depth.

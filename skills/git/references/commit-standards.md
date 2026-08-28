@@ -27,7 +27,7 @@ cái đầu tiên.
 
 Lấy theo vùng thật của repo, không tự đặt mới:
 
-`acl` · `herdr` · `hooks` · `installer` · `identity` · `skills` · `scripts` · `memory`
+`agents` · `delegation` · `runtime` · `hooks` · `installer` · `skills` · `scripts` · `memory`
 
 Scope là tuỳ chọn. Thay đổi trải rộng nhiều vùng thì bỏ scope, đừng liệt kê ba scope một lúc.
 
@@ -67,8 +67,8 @@ lịch sử repo là nguồn sự thật, không phải tài liệu skill.
 ## Ví dụ đúng
 
 ```
-feat(acl): register alp-plugin workspace
-fix(herdr): avoid false server stopped status
+feat(agents): register alp-plugin workspace
+fix(runtime): resolve claude/codex command via PATHEXT
 docs: báo cáo chẩn đoán repoRoot + gitignore session-state ở gốc repo
 ```
 

@@ -17,7 +17,7 @@ Ba invariant định hình toàn bộ thiết kế:
 | **ALP quyết ai giao việc cho ai; backend chỉ quyết execution chạy thế nào** | Policy chạy trước mọi runtime probe / backend health / spawn |
 | **Fail-closed** | Unknown tool/path/role/request → deny. Không có nhánh "mặc định cho phép" |
 
-Runtime (Claude/Codex) và backend (local/Herdr/Paseo) đều là **plugin thay được**, không phải
+Runtime (Claude/Codex) và backend (local/Paseo) đều là **plugin thay được**, không phải
 nguồn sự thật của identity hay quyền.
 
 ## 2. Sơ đồ layer
@@ -52,11 +52,11 @@ nguồn sự thật của identity hay quyền.
                                 │
 ┌───────────────────────────────▼──────────────────────────────────────┐
 │  backend/        ExecutionBackend contract                           │
-│                  LocalProcessBackend (TS) · Herdr/Paseo (CJS adapt.) │
+│                  LocalProcessBackend (TS) · Paseo (CJS adapter)      │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │
 ┌───────────────────────────────▼──────────────────────────────────────┐
-│  hooks/          acl-guard.cjs (PreToolUse) · session-end.cjs (Stop) │
+│  hooks/          session-boot.cjs (SessionStart) · session-end (Stop) │
 │                  → src/hooks/execution-bridge.ts                     │
 │                  enforce policy *bên trong* tiến trình runtime       │
 └──────────────────────────────────────────────────────────────────────┘
@@ -122,7 +122,7 @@ sự tồn tại của backend cho một request đã bị policy từ chối.
 ```ts
 { id, displayName, model: {claude, codex}, reasoningEffort: {claude, codex},
   reportsTo, delegatesTo, capabilities: {tools, memory, workspace},
-  instructions(context), workflow, output }
+  instructions(), workflow, output }
 ```
 
 `defineAgent()` deep-clone rồi `Object.freeze` đệ quy — definition không thể bị mutate sau khi
@@ -249,10 +249,13 @@ state. Ví dụ `main`: `ASSESS` (chỉ đọc) → `EXECUTE` (đầy đủ) →
 `REPORT` (không tool).
 
 `WorkflowRunner` quản `running → awaiting-output → completed | repairing → failed`, kèm
-`cancelled`. `MAX_OUTPUT_REPAIR_ATTEMPTS = 1` — sai schema được sửa đúng một lần rồi fail.
+`cancelled`. `MAX_OUTPUT_REPAIR_ATTEMPTS = 1` — thiếu output được sửa đúng một lần rồi fail.
 
-Output contract dựng từ Zod (`defineOutputContract`), sinh JSON Schema qua `toJSONSchema` để
-nhúng vào prompt. Agent bắt buộc trả đúng một JSON value, không prose, không fence.
+Output contract là `textOutput(name)` (`src/agents/shared/voice.ts`): agent trả **prose**,
+contract chỉ từ chối chuỗi rỗng. Trước đây contract dựng từ Zod và nhúng JSON Schema vào
+prompt, buộc agent trả đúng một JSON value — kể cả vai `main` vốn nói chuyện trực tiếp với
+principal. Máy móc không đọc field lẻ nào của output đó, nên ràng buộc chỉ đổi lấy một
+regression trải nghiệm. `defineOutputContract` vẫn còn cho trường hợp cần schema thật.
 
 ### 4.6 `src/runtime/` — dịch sang launch spec
 
@@ -265,7 +268,8 @@ Cả hai adapter ghi vào `~/.alp/executions/<id>/runtime/` (atomic, `0600`):
 | | Claude | Codex |
 |---|---|---|
 | Config | `claude-settings.json` (`--settings`) | `codex-config.toml` + loạt `-c` |
-| Hook | `hooks.PreToolUse` / `hooks.Stop` | tương tự, qua `-c hooks.*` + `--enable hooks` |
+| Hook | `hooks.SessionStart` / `hooks.Stop` | tương tự, qua `-c hooks.*` + `--enable hooks` |
+| ACL | `permissions.{additionalDirectories,deny}` | `[sandbox_workspace_write]` + `[[rules]]` |
 | Read-only | `sandbox.filesystem.denyWrite` + `--permission-mode plan` | `-s read-only` |
 | Headless | — (main luôn interactive) | `exec --skip-git-repo-check` |
 
@@ -284,13 +288,13 @@ Preference hỏng → warning + fallback claude, không throw.
 
 `ExecutionBackend` là contract 6 method: `healthCheck · spawn · status · wait · cancel · cleanup`.
 `BackendExecutionStatus` chỉ có 5 giá trị: `queued | running | completed | failed | cancelled` —
-mọi state riêng của Herdr/Paseo phải được adapter map về đây.
+mọi state riêng của Paseo phải được adapter map về đây.
 
 `LocalProcessBackend` là implementation thuần TS: spawn child process, theo dõi `close`/`error`,
 xoá temporary file khi settle.
 
 `BackendRegistry` validate backend có đủ 6 method trước khi register — không có `if paseo /
-else herdr` trong core.
+else paseo` trong core.
 
 `DelegationService` sở hữu:
 - **Backend pinning**: backend được ghi vào execution record lúc spawn. `status/wait/cancel/
@@ -305,32 +309,32 @@ Store có hai bản: `InMemoryDelegationExecutionStore` (test) và `FileDelegati
 
 ### 4.8 `hooks/` + `src/hooks/execution-bridge.ts` — enforcement tại runtime
 
-Đây là tầng phòng thủ thứ hai: policy đã quyết trước khi spawn, nhưng model *bên trong* runtime
-vẫn có thể thử vượt rào. Hook chạy trong tiến trình runtime và nối về compiled bridge.
+Chỉ còn hai hook, và **không hook nào chặn tool call**. ACL đã chuyển sang khai báo trong
+config của chính runtime (`src/runtime/permission-rules.ts`) — xem bảng ở §4.6.
 
-**`acl-guard.cjs`** (PreToolUse) → `authorizeHookTool()`:
+**`session-boot.cjs`** (SessionStart) — nạp identity vào context trước turn đầu tiên. Nó đọc
+đúng một file `.alp/agents/<role>.md` rồi ghi
+`hookSpecificOutput.additionalContext`. Cố tình **không** `require()` gì từ `dist/`: đó là
+lý do nó tồn tại. Trước đây identity đi qua `prompt.md` và agent phải tự Read file — tốn một
+lượt gọi tool trước khi làm bất cứ việc gì. Hook này **fail-open**: lỗi thì session vẫn mở,
+`additionalContext` rỗng và cảnh báo hiện ở `systemMessage`.
 
-1. `loadExecution` — đọc `policy.json` + `state.json`, kiểm execution ID khớp, `policyHash`
-   khớp, và **tính lại** policy từ registry hiện tại rồi so sánh nguyên văn. Snapshot cũ hoặc
-   bị sửa tay → `INVALID_EXECUTION`.
-2. Normalize tool (`apply_patch` của Codex → `Write`/`Edit`).
-3. `PolicyEngine.authorize({ type: "tool" })` với registry đã thu hẹp workspace về đúng
-   `policy.workspace`.
-4. Advance workflow tới state cho phép tool đó; không tới được → deny.
-5. Trích path candidate từ `file_path`/`path`/`notebook_path`, từ patch header của
-   `apply_patch`, và từ token của lệnh Bash (kể cả redirect). Mỗi candidate phải nằm trong
-   workspace — trừ hai ngoại lệ read-only: runtime artifact của chính execution, và skill root
-   khi agent có tool `Skill`.
-6. Path trong `memory/` được map ngược về logical scope rồi authorize lần nữa qua memory policy.
-7. `isWriteCapableShell` bắt lệnh có khả năng ghi (`rm|mv|cp|tee|sed -i|git add|npm install|>` …)
-   và chặn trong execution read-only.
+Tài liệu `.md` do `alp identity sync` sinh từ registry (`renderIdentityDocument`); registry
+vẫn là nguồn sự thật duy nhất, file chỉ là cache phẳng cho tốc độ boot.
 
-Chỉ khi mọi bước qua, state mới được persist với workflow đã advance.
+**`session-end.cjs`** (Stop) → `finalizeExecution()`: advance workflow tới output state rồi
+`submitOutput`. Message cuối được ghi thẳng vào `state.json` dưới dạng text. Hook này **không
+bao giờ** trả `decision: block` — phiên bản cũ parse JSON và block khi thất bại, đó chính là
+cơ chế ép agent nói JSON.
 
-**`session-end.cjs`** (Stop) → `finalizeExecution()`: parse JSON từ message cuối (gỡ fence nếu
-có), advance workflow tới output state, `submitOutput` qua contract. Sai schema lần đầu →
-`block` để model sửa; lần hai → `continue: false`, execution failed. Mọi exception đều
-fail-closed, kể cả khi bridge không load được.
+**Đã mất khi bỏ `acl-guard.cjs`** (không có tương đương khai báo, ghi ở đây để đừng tưởng vẫn còn):
+
+- `hasIndirectCommand` — chặn `$(...)`, backtick, `eval`, `bash -c`, `xargs`, `base64`.
+- Tool gating theo workflow state (tool cho phép ở `EXECUTE` nhưng không ở `REPORT`).
+- Trên **Codex**: sandbox chỉ chặn **ghi**, không chặn **đọc**. Cách ly private memory theo
+  đường đọc chỉ còn ở mức instruction. Claude vẫn cưỡng chế được qua `deny Read(...)`.
+
+`PolicyEngine` vẫn chạy đầy đủ lúc `prepare`; mất mát chỉ nằm ở lớp chặn từng tool call.
 
 ### 4.9 `src/cli/` — composition root
 
@@ -351,7 +355,7 @@ Repo có hai thế giới, cố ý:
 
 | | `src/**.ts` → `dist/` | `scripts/**.cjs` |
 |---|---|---|
-| Chứa | policy, identity, memory, execution, runtime, delegation core | installer, doctor, update/uninstall, Herdr/Paseo backend adapter, config loader |
+| Chứa | policy, identity, memory, execution, runtime, delegation core | installer, doctor, update/uninstall, Paseo backend adapter, config loader |
 | Vì sao | type safety, test được, là nguồn sự thật | phải chạy được *trước khi* build tồn tại, và trên máy chỉ có Node |
 
 Cầu nối duy nhất là `createRequire` trong `cli/commands/delegate.ts`: TS load
@@ -374,7 +378,7 @@ không có logic policy riêng.
     runtime/                 capsule, prompt.md, config, skill-roots
   delegation/<repo-key>/
     code-native-executions.json
-    herdr.json · paseo.json  state riêng của backend adapter
+    paseo.json               state riêng của backend adapter
     execution-snapshots/
 
 <repo>/memory/               không theo Git; scaffold từ scaffold/memory/
@@ -390,7 +394,7 @@ với mode `0700`.
 |---|---|
 | Agent tự leo quyền bằng cách sửa definition | Definition freeze; `configuration` request luôn deny; `definitionHash` trong policy |
 | Dùng execution snapshot cũ/sửa tay | Bridge tính lại policy từ registry và so nguyên văn mỗi lần hook chạy |
-| Gọi thẳng `herdr`/`paseo` để bypass policy | `invariants.ts` + `acl-guard` + generated settings deny binary |
+| Gọi thẳng `herdr`/`paseo` để bypass policy | `invariants.ts` + `permissions.deny` (Claude) / `[[rules]] allow = false` (Codex) |
 | Che lệnh bằng `eval`/`$()`/`base64` | `hasIndirectCommand` deny thay vì cố parse |
 | Path escape qua symlink | `realpath` ở workspace policy, memory mapper và bridge |
 | Đọc private memory của role khác | Chặn 2 lần: registry validate lúc load, memory policy lúc chạy |

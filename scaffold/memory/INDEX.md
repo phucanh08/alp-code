@@ -1,8 +1,8 @@
 # INDEX — mục lục trí nhớ dùng chung
 
 > **Mục lục, không phải nơi chứa nội dung.** Mỗi dòng trỏ tới một file trong `shared/`.
-> Hook `SessionStart` **lọc** file này theo `loadout.yaml` của vai đang chạy — mỗi vai chỉ
-> thấy dòng trỏ tới thứ nó được đọc. Quy ước & luật ghi: [`README.md`](README.md).
+> Memory grant của vai (khai trong `src/agents/`) **lọc** danh sách này khi dựng execution
+> — mỗi vai chỉ thấy dòng trỏ tới thứ nó được đọc. Quy ước & luật ghi: [`README.md`](README.md).
 >
 > **Phạm vi:** chỉ fact **xuyên project**. Thứ gắn với một project ở `projects/<slug>/`.
 > Nháp riêng của một vai ở `private/<role>/` và **không** được liệt kê ở đây.
