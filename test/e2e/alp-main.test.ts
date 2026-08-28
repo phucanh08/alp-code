@@ -61,8 +61,16 @@ describe("e2e: alp main session", () => {
     }
     expect(claude.capsule.instructions).toBe(codex.capsule.instructions);
     expect(claude.capsule.allowedTools).toEqual(codex.capsule.allowedTools);
-    expect(claude.prompt.replace(claude.capsule.executionId, ""))
-      .toBe(codex.prompt.replace(codex.capsule.executionId, ""));
+
+    // The identity is the same; only its delivery differs. Claude Code applies the
+    // SessionStart hook's context before turn 1, so repeating it in the prompt would pay
+    // for it twice; Codex rejects that hook, so its prompt has to carry the identity.
+    // Strip that one section and the two prompts are identical again.
+    expect(claude.prompt).not.toContain(claude.capsule.instructions);
+    expect(codex.prompt).toContain(codex.capsule.instructions);
+    const withoutIdentity = codex.prompt.replace(`## Identity\n\n${codex.capsule.instructions}\n\n`, "");
+    expect(withoutIdentity.replace(codex.capsule.executionId, ""))
+      .toBe(claude.prompt.replace(claude.capsule.executionId, ""));
 
     // Only launch syntax and the per-runtime model differ.
     expect(claude.argv).toContain(definition.model.claude);

@@ -336,6 +336,23 @@ cơ chế ép agent nói JSON.
 
 `PolicyEngine` vẫn chạy đầy đủ lúc `prepare`; mất mát chỉ nằm ở lớp chặn từng tool call.
 
+**Windows: không có sandbox, nên đổi tool grant chứ không đổi bất biến.** Claude Code không
+kích hoạt filesystem sandbox trên Windows (báo feature gate off), mà ALP xin kèm
+`failIfUnavailable` — kết quả là mọi delegated execution chết ngay lúc khởi động. Adapter nay
+chỉ xin sandbox ở nơi cấp được. Bảo đảm read-only **không** bị bỏ theo: role read-only không
+có grant `Write`/`Edit`, nên đường ghi duy nhất còn lại là shell, và `claudePermissions` rút
+`Bash` khi không có sandbox. Specialist yếu đi; policy của nó không thành lời nói dối.
+
+Hệ quả phụ: `.alp/agents/<role>.md` liệt kê grant trong registry, không phải grant đã điều
+chỉnh theo nền tảng — trên Windows một role đọc thấy mình có `Bash` rồi bị deny khi dùng.
+`deny` thắng nên an toàn, chỉ là agent phải chịu một lần từ chối để biết.
+
+**Codex không nhận identity qua hook.** Cùng một `session-boot.cjs` chạy tốt trên Claude Code
+lại bị Codex báo `SessionStart Failed`, và phiên không hề biết role của mình. Vì vậy prompt
+của Codex mang thêm mục `## Identity` (`renderCapsulePrompt(capsule, { identityFromHook: false })`);
+Claude Code vẫn đi đường hook, không trả tiền hai lần. Chưa rõ nguyên nhân phía Codex — gộp
+lại một đường khi nào quan sát thấy Codex chấp nhận hook.
+
 ### 4.9 `src/cli/` — composition root
 
 `parseAlpArgs` là hàm thuần, tách khỏi I/O — test parse không cần filesystem. Nó cũng chặn

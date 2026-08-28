@@ -132,6 +132,33 @@ describe("runtime adapters", () => {
     });
   });
 
+  it("keeps a read-only role read-only on Windows by withdrawing the shell", async () => {
+    const { root, project, prepared } = await fixture();
+    // A grant that includes Bash — otherwise the tool is already denied for being outside
+    // the policy and the assertion below would prove nothing.
+    const withShell = {
+      ...prepared,
+      policy: { ...prepared.policy, allowedTools: ["Read", "Grep", "Bash"] },
+    } satisfies PreparedExecution;
+    const adapter = new ClaudeRuntimeAdapter({ platform: "win32", env: { HOME: root, ALP_REPO_ROOT: root } });
+
+    const launch = await adapter.prepare({
+      execution: withShell,
+      model: "claude-test",
+      reasoningEffort: "high",
+      interactive: true,
+    });
+    const settings = JSON.parse(await readFile(launch.temporaryFiles[2], "utf8"));
+
+    // Claude Code does not activate its sandbox on Windows, and asking for one with
+    // `failIfUnavailable` makes it refuse to start at all.
+    expect(settings).not.toHaveProperty("sandbox");
+    // The workspace guarantee survives the missing sandbox: with no Write/Edit grant, a
+    // shell was the only way left to write, so the shell goes instead.
+    expect(settings.permissions.deny).toContain("Bash");
+    expect(settings.permissions.additionalDirectories).toContain(project);
+  });
+
   it("prepares a Codex launch spec from the same capsule and pins sandbox/cwd", async () => {
     const { root, project, prepared } = await fixture();
     const adapter = new CodexRuntimeAdapter({ platform: "win32", env: { HOME: root, ALP_REPO_ROOT: root } });

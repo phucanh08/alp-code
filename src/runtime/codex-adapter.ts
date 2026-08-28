@@ -44,7 +44,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
       join(artifacts.runtimeDirectory, "identity-capsule.json"),
       `${JSON.stringify(capsule, null, 2)}\n`,
     );
-    const prompt = renderCapsulePrompt(capsule);
+    const prompt = renderCapsulePrompt(capsule, { identityFromHook: false });
     const skillRoots = runtimeSkillRoots(this.env);
     const bootCommand = hookCommand(join(this.hooksDirectory, "session-boot.cjs"));
     const stopCommand = hookCommand(join(this.hooksDirectory, "session-end.cjs"));

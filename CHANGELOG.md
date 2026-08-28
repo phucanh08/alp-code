@@ -53,6 +53,13 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   bước đầu của bootstrap là `npm ci`, lệnh này xoá `node_modules` trước khi cài lại, và với
   `npm_config_offline` bật cứng thì chỉ cần cache thiếu một tarball là bỏ lại checkout rỗng.
   Nay bootstrap trên một bản copy tạm và spawn `bootstrap.cjs` của chính bản copy đó.
+- `alp delegate --runtime claude` chết ngay lúc khởi động trên Windows: adapter xin sandbox
+  kèm `failIfUnavailable` nhưng Claude Code không kích hoạt filesystem sandbox trên nền tảng
+  này. Nay chỉ xin sandbox ở nơi cấp được, và bù lại bằng cách rút `Bash` khỏi role read-only
+  — mất shell chứ không mất bất biến read-only.
+- Phiên Codex không nhận được identity: cùng `session-boot.cjs` chạy tốt trên Claude Code lại
+  bị Codex báo `SessionStart Failed`. Prompt của Codex mang thêm mục `## Identity`; Claude
+  Code vẫn đi đường hook.
 - Test suite chạy được thật trên Windows. Harness e2e ghi fake runtime là script `#!` không
   đuôi và ghim adapter vào `platform: "linux"` — cả sáu test e2e chết ở `spawn ENOENT` và
   không phủ gì; bốn assertion `mode & 0o777` không thể pass vì Windows không có POSIX

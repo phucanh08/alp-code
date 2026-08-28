@@ -47,19 +47,30 @@ export async function atomicRuntimeFile(path: string, content: string): Promise<
   return path;
 }
 
-export function renderCapsulePrompt(capsule: IdentityCapsule): string {
+export interface CapsulePromptOptions {
+  /**
+   * Whether this runtime's SessionStart hook actually delivers the role identity.
+   *
+   * Claude Code applies `additionalContext` before turn 1, so repeating the identity in
+   * the prompt would only pay for it twice. Codex reports `SessionStart Failed` against
+   * the same hook and the session shows no awareness of its role, so there the prompt is
+   * the only channel that works. Drop this back to a single path once Codex is observed
+   * accepting the hook.
+   */
+  readonly identityFromHook?: boolean;
+}
+
+export function renderCapsulePrompt(capsule: IdentityCapsule, options: CapsulePromptOptions = {}): string {
   const memory = capsule.memoryContext.entries.length === 0
     ? "(no memory entries selected)"
     : capsule.memoryContext.entries
       .map((entry) => `## ${entry.id}\n\n${entry.content}`)
       .join("\n\n");
-  // Static identity (`capsule.instructions`) is deliberately absent: the SessionStart hook
-  // injects it from `.alp/agents/<role>.md` before turn 1. This file carries only what
-  // varies per execution, so reading it costs nothing the hook already paid for.
   return [
     `# ALP execution ${capsule.executionId}`,
     `Role: ${capsule.displayName} (${capsule.role})`,
     `Workspace: ${capsule.activeWorkspace}`,
+    ...(options.identityFromHook === false ? ["## Identity", capsule.instructions] : []),
     "## Invariants",
     capsule.memoryContext.invariantContext,
     "## Policy",

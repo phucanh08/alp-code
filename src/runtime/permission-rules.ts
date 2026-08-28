@@ -23,6 +23,12 @@ export interface RuntimePermissionInput {
   readonly memoryRoot: string;
   /** Every role in the registry — needed to enumerate siblings for the deny list. */
   readonly allRoles: readonly AgentId[];
+  /**
+   * Whether the runtime can actually sandbox the filesystem here. False on Windows, whose
+   * sandbox Claude Code does not currently activate — see `sandboxAvailable` in the Claude
+   * adapter for why that changes the tool grant rather than the workspace guarantee.
+   */
+  readonly sandboxed?: boolean;
 }
 
 export interface ClaudePermissions {
@@ -64,6 +70,14 @@ export function claudePermissions(input: RuntimePermissionInput): ClaudePermissi
   // argument on Read and Edit; on the others a bare name is the only rule that applies.
   for (const tool of TOOL_CATALOG) {
     if (!policy.allowedTools.includes(tool as ToolId)) deny.push(tool);
+  }
+
+  // A read-only role keeps that property through two independent mechanisms: no Write/Edit
+  // grant, and a sandbox that denies writes to the workspace. Only the second one stops a
+  // shell redirect, so where no sandbox exists the shell has to go instead. Losing Bash
+  // makes a specialist less capable; losing read-only makes its policy a lie.
+  if (policy.workspaceMode === "read-only" && input.sandboxed === false && !deny.includes("Bash")) {
+    deny.push("Bash");
   }
 
   // Defence in depth: a delegated role must never shell out to a raw runtime, whatever

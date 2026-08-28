@@ -22,6 +22,18 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
     this.hooksDirectory = options.hooksDirectory ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "hooks");
   }
 
+  /**
+   * Claude Code does not activate its filesystem sandbox on Windows — it reports the
+   * feature gate as off and, because ALP asks for `failIfUnavailable`, refuses to start at
+   * all. Requesting a sandbox that cannot exist turns every delegated execution on Windows
+   * into a startup failure, so the request is made only where it can be honoured. The
+   * read-only guarantee is not dropped with it: `claudePermissions` withdraws `Bash`
+   * instead, since a shell is the only remaining way such a role could write.
+   */
+  private sandboxAvailable(): boolean {
+    return this.platform !== "win32";
+  }
+
   private memoryRoot(): string {
     return this.env.ALP_MEMORY_ROOT ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "memory");
   }
@@ -56,8 +68,9 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
           policy,
           memoryRoot: this.memoryRoot(),
           allRoles: agentRegistry.list().map((definition) => definition.id),
+          sandboxed: this.sandboxAvailable(),
         }),
-        ...(policy.workspaceMode === "read-only" ? {
+        ...(policy.workspaceMode === "read-only" && this.sandboxAvailable() ? {
           sandbox: {
             enabled: true,
             failIfUnavailable: true,
