@@ -8,6 +8,78 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thay đổi
+
+- **Role trả lời bằng văn xuôi, không còn JSON.** Trước đây `renderCapsulePrompt` nhét
+  JSON Schema (sinh từ Zod) vào prompt và Stop hook trả `{"decision":"block"}` khi output
+  không parse được — nên mọi phiên, kể cả phiên `main` nói chuyện trực tiếp với principal,
+  đều đáp lại bằng một cục JSON. Cả 8 role nay dùng contract `textOutput` vốn đã có sẵn
+  trong `shared/voice.ts`; chỉ chuỗi rỗng bị từ chối. Không consumer nào đọc field lẻ nên
+  giữ schema cho specialist không mang lại gì.
+- **Identity vào context qua `SessionStart` hook thay vì con trỏ trong `prompt.md`.**
+  `hooks/session-boot.cjs` đọc đúng một file `.alp/agents/<role>.md` phẳng và không
+  `require()` gì từ `dist/` (~45ms). Trước đó agent phải đốt một tool call `Read` trước khi
+  làm bất cứ việc gì. Hook fail-open: lỗi thì trả context rỗng kèm cảnh báo, vì phiên thiếu
+  identity còn cứu được còn phiên bị chặn thì không.
+- **ACL chuyển từ chặn từng tool call sang khai báo trong runtime config.** Claude nhận
+  `permissions.{additionalDirectories,deny}`; Codex nhận `[sandbox_workspace_write]` và
+  `[[rules]]`. `hooks/acl-guard.cjs` spawn một process Node và load `dist/` cho **mọi** tool
+  call — đây là nửa còn lại của việc boot chậm.
+- `AgentDefinition.instructions` không còn nhận tham số. Identity vì thế giống hệt nhau
+  giữa các execution, điều kiện để render một lần ra file cho hook đọc; workspace và task
+  chuyển sang prompt của từng execution.
+- Backend mặc định là `paseo`. `fallback_backend` cố ý để trống: âm thầm nhảy sang backend
+  khác khi backend chính có vẻ unhealthy thì khó chẩn đoán hơn là fail rõ ràng — chọn
+  `local` tường minh bằng `alp delegation switch local`.
+
+### Thêm
+
+- `alp identity sync` — render identity của cả 8 role ra `.alp/agents/<role>.md` (mode 0600).
+  `alp init` cũng gọi tự động và cài `SessionStart` hook vào `.claude/settings.local.json`
+  của project, loại trừ qua `.git/info/exclude` nên `git status` của project không đổi.
+
+### Sửa
+
+- `LocalProcessBackend` không spawn được runtime cài qua npm trên Windows: Node từ chối
+  chạy thẳng `.cmd`/`.bat`, nên `alp run` và `alp delegate` đều chết với `EINVAL` khi gặp
+  `claude.cmd`/`codex.cmd`. Bản cài native (`.exe`) không dính, nên lỗi này lọt lâu.
+  `shell: true` không phải cách sửa ở đây — cmd.exe sẽ diễn giải lại tham số prompt vốn
+  chứa dấu cách và dấu nháy; `resolveSpawnCommand` đọc shim, lấy ra script Node bên trong
+  rồi spawn trực tiếp, argv qua nguyên vẹn.
+- `hookCommand` quote bằng `JSON.stringify` — sai loại: nó escape backslash chứ không quote
+  shell, nên path Windows nằm trong settings.json dưới dạng `C:\\Users\\…`.
+- `scripts/test-cli-link.cjs` **xoá `node_modules` của chính repo**. Nó chạy `bootstrap.cjs`
+  với `cwd` trỏ vào repo này, nhưng bootstrap lấy root từ `__dirname` nên `cwd` vô tác dụng;
+  bước đầu của bootstrap là `npm ci`, lệnh này xoá `node_modules` trước khi cài lại, và với
+  `npm_config_offline` bật cứng thì chỉ cần cache thiếu một tarball là bỏ lại checkout rỗng.
+  Nay bootstrap trên một bản copy tạm và spawn `bootstrap.cjs` của chính bản copy đó.
+- Test suite chạy được thật trên Windows. Harness e2e ghi fake runtime là script `#!` không
+  đuôi và ghim adapter vào `platform: "linux"` — cả sáu test e2e chết ở `spawn ENOENT` và
+  không phủ gì; bốn assertion `mode & 0o777` không thể pass vì Windows không có POSIX
+  permission bit; và `rm` recursive trên thư mục temp mới tạo trả `ENOTEMPTY` đủ thường để
+  khoảng một nửa số lần chạy đỏ ở `afterEach`, mỗi lần một test khác nhau.
+
+### Gỡ
+
+- Backend Herdr (`scripts/lib/delegation/backends/herdr/`, `herdr-fleet.cjs`, skill
+  `herdr`). `LocalProcessBackend` nay luôn được register — nó không cần daemon, nên là
+  backend giữ cho delegation chạy được trên máy chưa cài gì. Regex chặn `herdr`/`paseo`
+  trong `src/policy/invariants.ts` giữ nguyên làm defense-in-depth.
+- Cụm CJS delegation đã chết: `create-service`, `index`, `init-backend`, `runtime-installer`,
+  `core/{backend,backend-registry,context-builder,logger,policy,role-registry,service}`,
+  `testing/fake-backend` và `scripts/lib/delegation.cjs`. Composition root thật chỉ load 6
+  file từ thư mục này lúc chạy; phần còn lại đã được TypeScript trong `src/` thay thế và chỉ
+  còn test của chính nó gọi tới. Thư mục từ 18 file còn 6.
+- Skill `delegation-switch` — lệnh `alp delegation switch` mà nó bọc thì giữ nguyên.
+- Đoạn docs mô tả `alp init` hỏi và tự cài runtime: `alp init` chỉ ghi backend đã chọn vào
+  `~/.alp/projects.json` và không cài gì, nên prompt tương tác và bước
+  `npm install -g @getpaseo/cli` được tả trong docs là một flow không còn tồn tại.
+
+**Mất mát phải chấp nhận, ghi trong `docs/architecture.md`:** ACL khai báo không diễn đạt
+được ba thứ mà hook cũ cưỡng chế — guardrail `hasIndirectCommand` (`$(...)`, `eval`,
+`bash -c`, `xargs`), tool gating theo workflow state, và cách ly private-memory phía **đọc**
+trên Codex (sandbox của nó chặn ghi, không chặn đọc). `PolicyEngine` vẫn chạy lúc prepare.
+
 ## [0.1.4] - 2026-08-28
 
 ### Sửa
