@@ -37,7 +37,7 @@ describe("identity capsules", () => {
         },
         workspace: { readRoots: ["/workspace"], writeRoots: [] },
       },
-      instructions: ({ task, workspace }) => `Search ${task} in ${workspace}`,
+      instructions: () => "Search the workspace",
       workflow: {
         id: "search-workflow",
         initial: "RETRIEVE",
@@ -95,7 +95,9 @@ describe("identity capsules", () => {
       allowedTools: ["Read", "Grep"],
       outputContract: { name: "search-output", schema: expect.objectContaining({ type: "object" }) },
     });
-    expect(capsule.instructions).toContain("find the entrypoint");
+    // Instructions are static role identity now — the task travels in `capsule.task`
+    // and the prompt, so the same text can be rendered once into `.alp/agents/<role>.md`.
+    expect(capsule.instructions).not.toContain("find the entrypoint");
     expect(capsule.memoryContext.entries.map(({ id }) => id)).toEqual([
       "shared:voice",
       "private:search:notes",

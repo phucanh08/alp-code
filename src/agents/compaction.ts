@@ -1,8 +1,6 @@
-import { z } from "zod";
 import { defineAgent } from "./agent-definition";
 import { CODE_NATIVE_HOUSE_RULES } from "./shared/house-rules";
-import { renderInstructions } from "./shared/voice";
-import { defineOutputContract } from "../workflow/output-validator";
+import { renderInstructions, textOutput } from "./shared/voice";
 import { defineLinearWorkflow } from "../workflow/types";
 
 export const compactionAgent = defineAgent({
@@ -20,11 +18,10 @@ export const compactionAgent = defineAgent({
     },
     workspace: { readRoots: [], writeRoots: [] },
   },
-  instructions: (context) => renderInstructions(
+  instructions: () => renderInstructions(
     "Compaction, the continuation-context specialist",
     "Produce a continuation-ready handoff preserving objectives, constraints, decisions, state, open items, next actions, and exact anchors.",
     [...CODE_NATIVE_HOUSE_RULES, "Do not continue the underlying task, research missing facts, or communicate directly with the principal."],
-    context,
   ),
   workflow: defineLinearWorkflow("compact-context", [
     { id: "EXTRACT", allowedTools: ["Read", "Glob", "Grep"] },
@@ -32,17 +29,5 @@ export const compactionAgent = defineAgent({
     { id: "PRESERVE_ANCHORS", allowedTools: ["Read", "Glob", "Grep"] },
     { id: "HANDOFF", allowedTools: [] },
   ]),
-  output: defineOutputContract(
-    "context-handoff",
-    z.object({
-      status: z.enum(["ready", "blocked"]),
-      objective: z.string().min(1),
-      constraints: z.array(z.string().min(1)),
-      decisions: z.array(z.string().min(1)),
-      currentState: z.string().min(1),
-      openItems: z.array(z.string().min(1)),
-      nextActions: z.array(z.string().min(1)),
-      anchors: z.array(z.string().min(1)),
-    }).strict(),
-  ),
+  output: textOutput("context-handoff"),
 });
