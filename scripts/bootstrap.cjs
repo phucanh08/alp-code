@@ -9,6 +9,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { spawnSyncCommand } = require("./lib/delegation/backends/command-runner.cjs");
 const CLI = require("./lib/cli-link.cjs");
 const D = require("./lib/delegation/config.cjs");
 
@@ -104,10 +105,12 @@ function ensureExecutionState() {
 }
 
 function mustNpm(extra) {
-  const command = process.platform === "win32" ? "npm.cmd" : "npm";
-  const r = spawnSync(command, extra, { stdio: "inherit", cwd: repoRoot });
+  // spawnSync("npm.cmd", ...) trực tiếp trên Windows ăn EINVAL từ bản Node vá
+  // CVE-2024-27980 (chặn spawn .cmd/.bat không qua shell). spawnSyncCommand đã giải
+  // quyết đúng việc này ở chỗ khác trong repo — dùng lại thay vì viết version yếu hơn.
+  const r = spawnSyncCommand("npm", extra, { stdio: "inherit", cwd: repoRoot });
   if (r.error || r.status !== 0)
-    die(`\`${command} ${extra.join(" ")}\` thất bại${r.error ? `: ${r.error.message}` : ` (exit ${r.status})`}`);
+    die(`\`npm ${extra.join(" ")}\` thất bại${r.error ? `: ${r.error.message}` : ` (exit ${r.status})`}`);
 }
 
 function validateCodeNative() {
