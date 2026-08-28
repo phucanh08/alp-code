@@ -1,5 +1,7 @@
 import { delimiter, dirname, join } from "node:path";
+import { agentRegistry } from "../agents/registry";
 import { atomicRuntimeFile, baseRuntimeEnvironment, hookCommand, renderCapsulePrompt, resolveRuntimeCommand, runtimeSkillRoots } from "./adapter-files";
+import { codexSandboxLines } from "./permission-rules";
 import type { PrepareRuntimeInput, RuntimeAdapter, RuntimeHealth, RuntimeLaunchSpec } from "./runtime-adapter";
 
 export interface CodexRuntimeAdapterOptions {
@@ -24,6 +26,10 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
     this.hooksDirectory = options.hooksDirectory ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "hooks");
   }
 
+  private memoryRoot(): string {
+    return this.env.ALP_MEMORY_ROOT ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "memory");
+  }
+
   async probe(): Promise<RuntimeHealth> {
     const resolved = await resolveRuntimeCommand("codex", this.platform, this.env);
     const command = resolved ?? (this.platform === "win32" ? "codex.cmd" : "codex");
@@ -40,9 +46,9 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
     );
     const prompt = renderCapsulePrompt(capsule);
     const skillRoots = runtimeSkillRoots(this.env);
-    const preToolCommand = hookCommand(join(this.hooksDirectory, "acl-guard.cjs"));
+    const bootCommand = hookCommand(join(this.hooksDirectory, "session-boot.cjs"));
     const stopCommand = hookCommand(join(this.hooksDirectory, "session-end.cjs"));
-    const preToolHooks = `[{ hooks = [{ type = "command", command = ${tomlString(preToolCommand)}, timeout = 30 }] }]`;
+    const bootHooks = `[{ hooks = [{ type = "command", command = ${tomlString(bootCommand)}, timeout = 30 }] }]`;
     const stopHooks = `[{ hooks = [{ type = "command", command = ${tomlString(stopCommand)}, timeout = 30 }] }]`;
     const promptFile = await atomicRuntimeFile(join(artifacts.runtimeDirectory, "prompt.md"), `${prompt}\n`);
     const configFile = await atomicRuntimeFile(
@@ -51,7 +57,11 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
         `model = ${tomlString(input.model)}`,
         `model_reasoning_effort = ${tomlString(input.reasoningEffort)}`,
         `sandbox_mode = ${tomlString(policy.workspaceMode)}`,
-        "",
+        ...codexSandboxLines({
+          policy,
+          memoryRoot: this.memoryRoot(),
+          allRoles: agentRegistry.list().map((definition) => definition.id),
+        }),
         "[alp]",
         `execution_id = ${tomlString(capsule.executionId)}`,
         `capsule = ${tomlString(capsuleFile)}`,
@@ -66,7 +76,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
     const env = {
       ...baseRuntimeEnvironment(capsule),
       ALP_EXECUTION_ROOT: dirname(artifacts.directory),
-      ALP_MEMORY_ROOT: this.env.ALP_MEMORY_ROOT ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "memory"),
+      ALP_MEMORY_ROOT: this.memoryRoot(),
       ALP_IDENTITY_CAPSULE: capsuleFile,
       ALP_RUNTIME_CONFIG: configFile,
       ALP_SKILL_ROOTS: skillRoots,
@@ -83,7 +93,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
         "-C", capsule.activeWorkspace,
         "-m", input.model,
         "-c", `model_reasoning_effort=${tomlString(input.reasoningEffort)}`,
-        "-c", `hooks.PreToolUse=${preToolHooks}`,
+        "-c", `hooks.SessionStart=${bootHooks}`,
         "-c", `hooks.Stop=${stopHooks}`,
         "-s", policy.workspaceMode,
         `ALP execution input is in ${promptFile}; read it before continuing.`,

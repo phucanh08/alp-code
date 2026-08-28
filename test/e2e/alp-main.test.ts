@@ -7,12 +7,7 @@ import { runMainSession } from "../../src/cli/commands/run-main";
 import type { BackendExecutionResult } from "../../src/backend/execution-backend";
 import { cleanupEnvironments, createE2eEnvironment, type E2eEnvironment } from "./harness";
 
-const MAIN_OUTPUT = {
-  status: "completed",
-  summary: "entrypoint located",
-  evidence: ["index.ts:1"],
-  questions: [],
-};
+const MAIN_OUTPUT = "Completed — entrypoint located at index.ts:1.";
 
 afterEach(cleanupEnvironments);
 
@@ -41,7 +36,7 @@ describe("e2e: alp main session", () => {
     const codexResult = await runMain(environment, "codex");
 
     for (const result of [claudeResult, codexResult]) {
-      expect(result).toMatchObject({ status: "completed", output: JSON.stringify(MAIN_OUTPUT) });
+      expect(result).toMatchObject({ status: "completed", output: MAIN_OUTPUT });
     }
 
     const claude = await environment.capture("claude");
@@ -74,9 +69,9 @@ describe("e2e: alp main session", () => {
     expect(claude.argv).toContain("--settings");
     expect(codex.argv).toContain(definition.model.codex);
     expect(codex.argv.slice(0, 3)).toEqual(["--dangerously-bypass-hook-trust", "--enable", "hooks"]);
-    expect(JSON.parse(claude.runtimeConfig).hooks).toHaveProperty("PreToolUse");
+    expect(JSON.parse(claude.runtimeConfig).hooks).toHaveProperty("SessionStart");
     // Codex carries the same hook bridges as `-c` overrides rather than in its config file.
-    expect(codex.argv.some((arg) => arg.startsWith("hooks.PreToolUse="))).toBe(true);
+    expect(codex.argv.some((arg) => arg.startsWith("hooks.SessionStart="))).toBe(true);
     expect(codex.runtimeConfig).toContain(`model = "${definition.model.codex}"`);
   });
 

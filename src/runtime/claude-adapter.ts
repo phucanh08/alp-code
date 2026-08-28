@@ -1,5 +1,7 @@
 import { delimiter, dirname, join } from "node:path";
+import { agentRegistry } from "../agents/registry";
 import { atomicRuntimeFile, baseRuntimeEnvironment, hookCommand, renderCapsulePrompt, resolveRuntimeCommand, runtimeSkillRoots } from "./adapter-files";
+import { claudePermissions } from "./permission-rules";
 import type { PrepareRuntimeInput, RuntimeAdapter, RuntimeHealth, RuntimeLaunchSpec } from "./runtime-adapter";
 
 export interface ClaudeRuntimeAdapterOptions {
@@ -18,6 +20,10 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
     this.platform = options.platform ?? process.platform;
     this.env = options.env ?? process.env;
     this.hooksDirectory = options.hooksDirectory ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "hooks");
+  }
+
+  private memoryRoot(): string {
+    return this.env.ALP_MEMORY_ROOT ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "memory");
   }
 
   async probe(): Promise<RuntimeHealth> {
@@ -43,9 +49,14 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
         $schema: "https://json.schemastore.org/claude-code-settings.json",
         alp: { executionId: capsule.executionId, policyHash: capsule.policyHash, capsuleFile, promptFile },
         hooks: {
-          PreToolUse: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "acl-guard.cjs")) }] }],
+          SessionStart: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-boot.cjs")) }] }],
           Stop: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-end.cjs")) }] }],
         },
+        permissions: claudePermissions({
+          policy,
+          memoryRoot: this.memoryRoot(),
+          allRoles: agentRegistry.list().map((definition) => definition.id),
+        }),
         ...(policy.workspaceMode === "read-only" ? {
           sandbox: {
             enabled: true,
@@ -63,7 +74,7 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
     const env = {
       ...baseRuntimeEnvironment(capsule),
       ALP_EXECUTION_ROOT: dirname(artifacts.directory),
-      ALP_MEMORY_ROOT: this.env.ALP_MEMORY_ROOT ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "memory"),
+      ALP_MEMORY_ROOT: this.memoryRoot(),
       ALP_IDENTITY_CAPSULE: capsuleFile,
       ALP_RUNTIME_CONFIG: settingsFile,
       ALP_SKILL_ROOTS: skillRoots,

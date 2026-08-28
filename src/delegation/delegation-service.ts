@@ -347,7 +347,11 @@ export class DelegationService {
         if (["completed", "failed", "cancelled"].includes(String(state.status))) {
           status = state.status as BackendExecutionStatus;
         }
-        if (state.output !== undefined) output = JSON.stringify(state.output);
+        // Roles answer in prose, so the common case is already a string. Wrapping it in
+        // JSON would hand the caller an escaped blob instead of the report.
+        if (state.output !== undefined) {
+          output = typeof state.output === "string" ? state.output : JSON.stringify(state.output);
+        }
       } catch { /* backend result remains authoritative when state is unavailable */ }
     }
     return Object.freeze({

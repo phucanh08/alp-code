@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 "use strict";
+
+// Process-level check of the two runtime hooks, exercised the way a runtime invokes them:
+// a real child process, real stdin payload, real `dist/` load. The in-process vitest suite
+// covers the bridge functions; this covers the wiring around them.
+
 const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -8,121 +13,124 @@ const { spawnSync } = require("node:child_process");
 
 const repoRoot = path.resolve(__dirname, "..");
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "alp-execution-hooks-"));
+
+function runHook(script, options) {
+  return spawnSync(process.execPath, [path.join(repoRoot, "hooks", script)], {
+    encoding: "utf8",
+    ...options,
+  });
+}
+
 try {
   const { agentRegistry } = require(path.join(repoRoot, "dist", "src", "agents", "registry.js"));
   const { createExecutionPolicy } = require(path.join(repoRoot, "dist", "src", "execution", "execution-policy.js"));
   const { WorkflowRunner } = require(path.join(repoRoot, "dist", "src", "workflow", "workflow-runner.js"));
-  const executionId = "exec_process_hook";
-  const directory = path.join(root, executionId);
-  const workspace = path.join(root, "workspace");
-  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-  fs.mkdirSync(workspace, { recursive: true });
-  fs.mkdirSync(path.join(directory, "runtime"));
-  const promptFile = path.join(directory, "runtime", "prompt.md");
-  fs.writeFileSync(promptFile, "task");
-  const definition = agentRegistry.get("main");
-  const policy = createExecutionPolicy({
-    executionId,
-    definition,
-    workspace,
-    workspaceMode: "workspace-write",
-    createdAt: "2026-08-27T00:00:00.000Z",
-  });
-  const workflow = new WorkflowRunner().initialize(definition.workflow);
-  fs.writeFileSync(path.join(directory, "policy.json"), JSON.stringify(policy), { mode: 0o600 });
-  fs.writeFileSync(path.join(directory, "state.json"), JSON.stringify({
-    executionId,
-    status: "prepared",
-    workflow,
-    policyHash: policy.policyHash,
-    createdAt: policy.createdAt,
-  }), { mode: 0o600 });
 
-  const env = {
+  const workspace = path.join(root, "workspace");
+  fs.mkdirSync(workspace, { recursive: true });
+
+  function seedExecution(executionId, role, workspaceMode) {
+    const directory = path.join(root, executionId);
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const definition = agentRegistry.get(role);
+    const policy = createExecutionPolicy({
+      executionId,
+      definition,
+      workspace,
+      workspaceMode,
+      createdAt: "2026-08-27T00:00:00.000Z",
+    });
+    fs.writeFileSync(path.join(directory, "policy.json"), JSON.stringify(policy), { mode: 0o600 });
+    fs.writeFileSync(path.join(directory, "state.json"), JSON.stringify({
+      executionId,
+      status: "prepared",
+      workflow: new WorkflowRunner().initialize(definition.workflow),
+      policyHash: policy.policyHash,
+      createdAt: policy.createdAt,
+    }), { mode: 0o600 });
+    return directory;
+  }
+
+  const baseEnv = {
     ...process.env,
-    ALP_DELEGATION_EXECUTION_ID: executionId,
     ALP_EXECUTION_ROOT: root,
     ALP_MEMORY_ROOT: path.join(root, "memory"),
   };
-  const preTool = spawnSync(process.execPath, [path.join(repoRoot, "hooks", "acl-guard.cjs")], {
-    cwd: workspace,
-    env,
-    input: JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: path.join(workspace, "result.txt") }, cwd: workspace }),
-    encoding: "utf8",
-  });
-  assert.strictEqual(preTool.status, 0, preTool.stderr);
-  assert.strictEqual(JSON.parse(preTool.stdout).hookSpecificOutput.permissionDecision, "allow");
 
-  const promptRead = spawnSync(process.execPath, [path.join(repoRoot, "hooks", "acl-guard.cjs")], {
-    cwd: workspace,
-    env,
-    input: JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Read", tool_input: { file_path: promptFile }, cwd: workspace }),
-    encoding: "utf8",
-  });
-  assert.strictEqual(JSON.parse(promptRead.stdout).hookSpecificOutput.permissionDecision, "allow");
+  // --- SessionStart: identity reaches the agent before its first turn -----------------
+  const agentsDirectory = path.join(root, ".alp", "agents");
+  fs.mkdirSync(agentsDirectory, { recursive: true });
+  fs.writeFileSync(path.join(agentsDirectory, "search.md"), "# Search\n\nStatic identity.\n");
 
-  const stop = spawnSync(process.execPath, [path.join(repoRoot, "hooks", "session-end.cjs")], {
+  const boot = runHook("session-boot.cjs", {
     cwd: workspace,
-    env,
-    input: JSON.stringify({
-      hook_event_name: "Stop",
-      last_assistant_message: JSON.stringify({ status: "completed", summary: "done", evidence: [], questions: [] }),
-    }),
-    encoding: "utf8",
+    env: { ...baseEnv, ALP_REPO_ROOT: root, ALP_ROLE: "search" },
+    input: JSON.stringify({ hook_event_name: "SessionStart" }),
+  });
+  assert.strictEqual(boot.status, 0, boot.stderr);
+  const bootOutput = JSON.parse(boot.stdout);
+  assert.strictEqual(bootOutput.hookSpecificOutput.hookEventName, "SessionStart");
+  assert.match(bootOutput.hookSpecificOutput.additionalContext, /Static identity/);
+  assert.strictEqual(bootOutput.systemMessage, undefined);
+
+  // Fail-open: a missing identity document warns, it does not abort the session.
+  const bootMissing = runHook("session-boot.cjs", {
+    cwd: workspace,
+    env: { ...baseEnv, ALP_REPO_ROOT: root, ALP_ROLE: "oracle" },
+    input: JSON.stringify({ hook_event_name: "SessionStart" }),
+  });
+  assert.strictEqual(bootMissing.status, 0, bootMissing.stderr);
+  const missingOutput = JSON.parse(bootMissing.stdout);
+  assert.strictEqual(missingOutput.hookSpecificOutput.additionalContext, "");
+  assert.match(missingOutput.systemMessage, /identity sync/);
+
+  // --- Stop: a prose answer is recorded, never blocked -------------------------------
+  const proseId = "exec_process_hook";
+  const proseDirectory = seedExecution(proseId, "main", "workspace-write");
+  const prose = "Completed — patched src/index.ts and ran `npm test`: 12 passed.";
+  const stop = runHook("session-end.cjs", {
+    cwd: workspace,
+    env: { ...baseEnv, ALP_DELEGATION_EXECUTION_ID: proseId },
+    input: JSON.stringify({ hook_event_name: "Stop", last_assistant_message: prose }),
   });
   assert.strictEqual(stop.status, 0, stop.stderr);
-  assert.match(JSON.parse(stop.stdout).systemMessage, /finalized/);
-  const finalState = JSON.parse(fs.readFileSync(path.join(directory, "state.json"), "utf8"));
+  const stopOutput = JSON.parse(stop.stdout);
+  assert.match(stopOutput.systemMessage, /finalized/);
+  // The regression this guards: prose used to come back as `{"decision":"block"}`.
+  assert.strictEqual(stopOutput.decision, undefined);
+  assert.strictEqual(stopOutput.continue, undefined);
+  const finalState = JSON.parse(fs.readFileSync(path.join(proseDirectory, "state.json"), "utf8"));
   assert.strictEqual(finalState.status, "completed");
-  assert.deepStrictEqual(finalState.output, { status: "completed", summary: "done", evidence: [], questions: [] });
+  assert.strictEqual(finalState.output, prose);
 
-  const repairExecutionId = "exec_process_hook_repair";
-  const repairDirectory = path.join(root, repairExecutionId);
-  fs.mkdirSync(repairDirectory, { recursive: true, mode: 0o700 });
-  const repairDefinition = agentRegistry.get("search");
-  const repairPolicy = createExecutionPolicy({
-    executionId: repairExecutionId,
-    definition: repairDefinition,
-    workspace,
-    workspaceMode: "read-only",
-    createdAt: "2026-08-27T00:00:00.000Z",
-  });
-  fs.writeFileSync(path.join(repairDirectory, "policy.json"), JSON.stringify(repairPolicy), { mode: 0o600 });
-  fs.writeFileSync(path.join(repairDirectory, "state.json"), JSON.stringify({
-    executionId: repairExecutionId,
-    status: "prepared",
-    workflow: new WorkflowRunner().initialize(repairDefinition.workflow),
-    policyHash: repairPolicy.policyHash,
-    createdAt: repairPolicy.createdAt,
-  }), { mode: 0o600 });
-  const repairEnv = { ...env, ALP_DELEGATION_EXECUTION_ID: repairExecutionId };
-  const firstInvalidStop = spawnSync(process.execPath, [path.join(repoRoot, "hooks", "session-end.cjs")], {
+  // --- Stop: an absent answer is still recoverable, then terminal --------------------
+  const emptyId = "exec_process_hook_repair";
+  const emptyDirectory = seedExecution(emptyId, "search", "read-only");
+  const emptyEnv = { ...baseEnv, ALP_DELEGATION_EXECUTION_ID: emptyId };
+  const firstEmpty = runHook("session-end.cjs", {
     cwd: workspace,
-    env: repairEnv,
-    input: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false, last_assistant_message: "prose" }),
-    encoding: "utf8",
+    env: emptyEnv,
+    input: JSON.stringify({ hook_event_name: "Stop", last_assistant_message: "" }),
   });
-  assert.strictEqual(JSON.parse(firstInvalidStop.stdout).decision, "block");
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(repairDirectory, "state.json"), "utf8")).status, "repairing");
-  const secondInvalidStop = spawnSync(process.execPath, [path.join(repoRoot, "hooks", "session-end.cjs")], {
+  assert.strictEqual(firstEmpty.status, 0, firstEmpty.stderr);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(emptyDirectory, "state.json"), "utf8")).status, "repairing");
+  runHook("session-end.cjs", {
     cwd: workspace,
-    env: repairEnv,
-    input: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: true, last_assistant_message: "still prose" }),
-    encoding: "utf8",
+    env: emptyEnv,
+    input: JSON.stringify({ hook_event_name: "Stop", last_assistant_message: "" }),
   });
-  const terminalStop = JSON.parse(secondInvalidStop.stdout);
-  assert.strictEqual(terminalStop.continue, false);
-  assert.match(terminalStop.stopReason, /repair budget exhausted|failed closed/);
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(repairDirectory, "state.json"), "utf8")).status, "failed");
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(emptyDirectory, "state.json"), "utf8")).status, "failed");
 
-  const denied = spawnSync(process.execPath, [path.join(repoRoot, "hooks", "acl-guard.cjs")], {
+  // --- Stop: an unknown execution is reported, not fatal -----------------------------
+  const orphan = runHook("session-end.cjs", {
     cwd: workspace,
-    env: { ...env, ALP_DELEGATION_EXECUTION_ID: "" },
-    input: JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Read", tool_input: {}, cwd: workspace }),
-    encoding: "utf8",
+    env: { ...baseEnv, ALP_DELEGATION_EXECUTION_ID: "" },
+    input: JSON.stringify({ hook_event_name: "Stop", last_assistant_message: "prose" }),
   });
-  assert.strictEqual(JSON.parse(denied.stdout).hookSpecificOutput.permissionDecision, "deny");
-  console.log("OK               execution hooks: compiled policy + workflow process bridge");
+  assert.strictEqual(orphan.status, 0, orphan.stderr);
+  assert.match(JSON.parse(orphan.stdout).systemMessage, /could not be finalized/);
+
+  console.log("OK               execution hooks: SessionStart identity + Stop prose finalization");
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }
