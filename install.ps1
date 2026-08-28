@@ -63,7 +63,7 @@
     $checkoutArgs = @($checkoutScript)
     if ($version) { $checkoutArgs += @('--version', $version) }
     & node @checkoutArgs
-    if ($LASTEXITCODE -ne 0) { Die "$target: checkout release thất bại — chạy ``node `"$checkoutScript`"`` để xem chi tiết" }
+    if ($LASTEXITCODE -ne 0) { Die "${target}: checkout release thất bại — chạy ``node `"$checkoutScript`"`` để xem chi tiết" }
   }
 
   if (Test-Path (Join-Path $target '.git')) {
