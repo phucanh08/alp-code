@@ -8,6 +8,20 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Sửa
+
+- `install.ps1`: chuỗi lỗi `"$target: checkout release thất bại…"` khiến PowerShell parse
+  `$target:` như scope qualifier (giống `$env:`), làm `irm .../install.ps1 | iex` gãy ngay ở
+  bước parse trước khi script kịp chạy. Đổi thành `${target}:`.
+- `bootstrap.cjs`/`alp.cjs`/`run-role.cjs`/`delegate.cjs`: gọi thẳng
+  `spawnSync("npm.cmd", …)` ăn `EINVAL` trên các bản Node đã vá CVE-2024-27980 (chặn spawn
+  `.cmd`/`.bat` khi không có `shell: true`), khiến `npm ci`/`npm run build` gãy trên Windows —
+  gồm cả installer một dòng. Route qua `spawnSyncCommand` (đã có sẵn cho delegation backends,
+  resolve `npm.cmd` về `npm-cli.js` rồi spawn Node trực tiếp) thay vì tự viết lại yếu hơn.
+- `cut-release.cjs` không cắt được release trên working tree CRLF (vd. Windows với
+  `core.autocrlf=true`): `text.indexOf(UNRELEASED + "\n")` không khớp dù nội dung committed
+  luôn là LF. Chuẩn hoá CRLF→LF khi đọc CHANGELOG.md trước khi so khớp.
+
 ## [0.1.2] - 2026-08-27
 
 ### Sửa
