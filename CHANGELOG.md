@@ -8,6 +8,14 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Sửa
+
+- `RuntimeAdapter.probe()`/`prepare()` của Claude và Codex hardcode đuôi `claude.cmd`/
+  `codex.cmd` trên Windows, chỉ khớp bản cài qua npm. Bản cài qua winget/native installer
+  (vd. `claude.exe`) đã có sẵn trên PATH và chạy tốt — kể cả chính phiên Claude Code đang
+  gõ commit này — nhưng `alp doctor`/`alp` vẫn báo "not found". Thêm
+  `resolveRuntimeCommand()` resolve theo PATHEXT thay vì hardcode một đuôi.
+
 ## [0.1.3] - 2026-08-28
 
 ### Sửa

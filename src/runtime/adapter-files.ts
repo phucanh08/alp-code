@@ -1,8 +1,39 @@
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { basename, delimiter, dirname, join, resolve } from "node:path";
 import type { IdentityCapsule } from "../execution/types";
 
 let sequence = 0;
+
+const DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD";
+
+/**
+ * Resolve a runtime CLI's real command name on PATH. Windows installs of `claude`/`codex`
+ * are `.cmd` from npm, `.exe` from winget/native installers, or anything else PATHEXT
+ * lists — hardcoding `.cmd` misses every non-npm install even though it's on PATH and
+ * working (e.g. this very Claude Code session). Returns null when nothing on PATH matches,
+ * so callers can fall back to a platform-appropriate default for error messages.
+ */
+export async function resolveRuntimeCommand(
+  name: string,
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+): Promise<string | null> {
+  const directories = (env.PATH ?? env.Path ?? "").split(delimiter).filter(Boolean);
+  if (platform !== "win32") {
+    for (const directory of directories) {
+      try { await access(join(directory, name)); return name; } catch { /* continue */ }
+    }
+    return null;
+  }
+  const extensions = (env.PATHEXT || DEFAULT_PATHEXT).split(";").map((value) => value.trim()).filter(Boolean);
+  for (const directory of directories) {
+    for (const extension of extensions) {
+      const candidate = name + extension;
+      try { await access(join(directory, candidate)); return candidate; } catch { /* continue */ }
+    }
+  }
+  return null;
+}
 
 export async function atomicRuntimeFile(path: string, content: string): Promise<string> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });

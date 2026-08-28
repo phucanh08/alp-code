@@ -1,19 +1,11 @@
-import { access } from "node:fs/promises";
 import { delimiter, dirname, join } from "node:path";
-import { atomicRuntimeFile, baseRuntimeEnvironment, hookCommand, renderCapsulePrompt, runtimeSkillRoots } from "./adapter-files";
+import { atomicRuntimeFile, baseRuntimeEnvironment, hookCommand, renderCapsulePrompt, resolveRuntimeCommand, runtimeSkillRoots } from "./adapter-files";
 import type { PrepareRuntimeInput, RuntimeAdapter, RuntimeHealth, RuntimeLaunchSpec } from "./runtime-adapter";
 
 export interface ClaudeRuntimeAdapterOptions {
   readonly platform?: NodeJS.Platform;
   readonly env?: NodeJS.ProcessEnv;
   readonly hooksDirectory?: string;
-}
-
-async function commandExists(command: string, env: NodeJS.ProcessEnv): Promise<boolean> {
-  for (const directory of (env.PATH ?? "").split(delimiter).filter(Boolean)) {
-    try { await access(join(directory, command)); return true; } catch { /* continue */ }
-  }
-  return false;
 }
 
 export class ClaudeRuntimeAdapter implements RuntimeAdapter {
@@ -29,9 +21,9 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
   }
 
   async probe(): Promise<RuntimeHealth> {
-    const command = this.platform === "win32" ? "claude.cmd" : "claude";
-    const ok = await commandExists(command, this.env);
-    return ok
+    const resolved = await resolveRuntimeCommand("claude", this.platform, this.env);
+    const command = resolved ?? (this.platform === "win32" ? "claude.cmd" : "claude");
+    return resolved
       ? { ok: true, runtime: this.name, message: `${command} available` }
       : { ok: false, runtime: this.name, message: `${command} not found`, remediation: "Install Claude Code and ensure it is on PATH." };
   }
@@ -77,8 +69,10 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
       ALP_SKILL_ROOTS: skillRoots,
       ...(policy.workspaceMode === "read-only" ? { ALP_READONLY_DIRS: capsule.activeWorkspace } : {}),
     };
+    const command = (await resolveRuntimeCommand("claude", this.platform, this.env))
+      ?? (this.platform === "win32" ? "claude.cmd" : "claude");
     return Object.freeze({
-      command: this.platform === "win32" ? "claude.cmd" : "claude",
+      command,
       args: Object.freeze([
         "--settings", settingsFile,
         "--model", input.model,
