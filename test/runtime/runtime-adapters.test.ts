@@ -4,6 +4,7 @@ import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ClaudeRuntimeAdapter } from "../../src/runtime/claude-adapter";
 import { CodexRuntimeAdapter } from "../../src/runtime/codex-adapter";
+import { absoluteRule } from "../../src/runtime/permission-rules";
 import type { PreparedExecution } from "../../src/execution/types";
 import { removeTemporary } from "../support/temporary-root";
 
@@ -122,8 +123,12 @@ describe("runtime adapters", () => {
     expect(settings.hooks.SessionStart[0].hooks[0].command).toContain(process.execPath);
     expect(settings.permissions.additionalDirectories).toContain(project);
     expect(settings.permissions.deny).toContain(
-      `Read(//${join(root, "memory", "private", "main").replace(/\\/g, "/")}/**)`,
+      absoluteRule("Read", join(root, "memory", "private", "main")),
     );
+    // The format itself, pinned once: two leading slashes and no more, whatever the
+    // platform's absolute paths look like.
+    expect(absoluteRule("Read", "/home/a/memory")).toBe("Read(//home/a/memory/**)");
+    expect(absoluteRule("Read", "C:\\Users\\a\\memory")).toBe("Read(//C:/Users/a/memory/**)");
     expect(settings.sandbox).toEqual({
       enabled: true,
       failIfUnavailable: true,

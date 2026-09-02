@@ -40,9 +40,16 @@ export interface ClaudePermissions {
 /**
  * Claude Code reads an absolute path in a permission rule as relative to the directory
  * holding the settings file unless it carries a DOUBLE leading slash. A single slash
- * silently matches nothing, which disables the rule with no warning at all.
+ * silently matches nothing, which disables the rule with no warning at all. Exactly two
+ * is the whole contract, so the path's own leading separator has to go: a POSIX path is
+ * already `/…`, and concatenating it after `//` yields three slashes — a rule that is
+ * just as silently dead as one slash.
+ *
+ * Exported so tests can assert against this format rather than restate it. The one
+ * assertion that did restate it agreed only on Windows, where `C:\…` carries no leading
+ * separator to strip, and so was red on every POSIX machine from the day it was written.
  */
-function absoluteRule(verb: string, path: string): string {
+export function absoluteRule(verb: string, path: string): string {
   return `${verb}(//${path.replace(/\\/g, "/").replace(/^\/+/, "")}/**)`;
 }
 

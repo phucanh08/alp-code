@@ -65,6 +65,11 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   không phủ gì; bốn assertion `mode & 0o777` không thể pass vì Windows không có POSIX
   permission bit; và `rm` recursive trên thư mục temp mới tạo trả `ENOTEMPTY` đủ thường để
   khoảng một nửa số lần chạy đỏ ở `afterEach`, mỗi lần một test khác nhau.
+- …và chạy được cả trên macOS/Linux: assertion về deny rule của Claude tự chép lại format
+  thay vì gọi hàm sinh ra nó, nên nối `//` vào một path POSIX vốn đã có `/` đầu và kỳ vọng
+  ba dấu gạch. Nó chỉ xanh trên Windows, nơi `C:\…` không có gạch đầu để cộng dồn.
+  `absoluteRule` nay được export và test gọi thẳng, kèm assertion ghim format cho cả hai
+  nền tảng. Deny list sinh ra không đổi.
 
 ### Gỡ
 
