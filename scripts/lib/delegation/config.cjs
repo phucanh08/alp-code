@@ -37,7 +37,7 @@ function loadDelegationConfig(repoRoot, env = process.env) {
   // `alp delegation switch` là lựa chọn tương tác kiểu `/model`: nó phải thắng default
   // được truyền khi mở session. `switch default` xoá lựa chọn này để quay về env/config.
   const switched = readBackendSelection(stateDir);
-  const configured = env.ALP_DELEGATION_BACKEND || raw.backend || "herdr";
+  const configured = env.ALP_DELEGATION_BACKEND || raw.backend || "paseo";
   const selected = switched || configured;
 
   const config = {
@@ -49,8 +49,10 @@ function loadDelegationConfig(repoRoot, env = process.env) {
     fallbackBackend: fallbackBackend || null,
     stateDir: path.resolve(stateDir),
     backends: {
-      herdr: {
-        enabled: booleanValue(rawBackends.herdr?.enabled, true),
+      // `local` spawns the runtime as a child process — no daemon, nothing to install.
+      // It cannot be disabled: it is the floor that keeps delegation working everywhere.
+      local: {
+        enabled: true,
       },
       paseo: {
         enabled: booleanValue(rawBackends.paseo?.enabled, true),

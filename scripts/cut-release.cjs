@@ -46,7 +46,9 @@ if (!dryRun && !noCommit) {
 if (git(["tag", "-l", tag]).trim()) die(`tag ${tag} đã tồn tại — không ghi đè; chọn số kế tiếp`);
 
 // ------------------------------------------------------------------ soạn nội dung
-const changelog = rewriteChangelog(fs.readFileSync(changelogFile, "utf8"), next, today());
+// CRLF trên working tree (vd. core.autocrlf=true của Windows) làm `text.indexOf(UNRELEASED
+// + "\n")` không khớp dù nội dung committed luôn là LF — chuẩn hoá trước khi so khớp.
+const changelog = rewriteChangelog(fs.readFileSync(changelogFile, "utf8").replace(/\r\n/g, "\n"), next, today());
 const packageJson = rewriteVersion(fs.readFileSync(packageFile, "utf8"), current, next);
 const lock = fs.existsSync(lockFile) ? rewriteLockVersion(fs.readFileSync(lockFile, "utf8"), next) : null;
 const written = ["package.json", ...(lock ? ["package-lock.json"] : []), "CHANGELOG.md"];

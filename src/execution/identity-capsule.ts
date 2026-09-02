@@ -76,10 +76,7 @@ export function createIdentityCapsule(
     policyHash: input.policy.policyHash,
     role: input.definition.id,
     displayName: input.definition.displayName,
-    instructions: input.definition.instructions({
-      task: input.task,
-      workspace: input.policy.workspace,
-    }),
+    instructions: input.definition.instructions(),
     task: input.task,
     activeWorkspace: input.policy.workspace,
     memoryContext: {

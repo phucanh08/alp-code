@@ -5,6 +5,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { spawnSyncCommand } = require("./lib/delegation/backends/command-runner.cjs");
 
 const repoRoot = path.resolve(__dirname, "..");
 const maintenance = process.argv[2];
@@ -56,7 +57,7 @@ if (maintenance === "uninstall") {
 }
 const entry = path.join(repoRoot, "dist", "src", "cli", "alp.js");
 if (!fs.existsSync(entry)) {
-  const built = spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build"], {
+  const built = spawnSyncCommand("npm", ["run", "build"], {
     cwd: repoRoot,
     stdio: "inherit",
   });

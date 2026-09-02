@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, mkdir, readFile, stat } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -12,13 +12,15 @@ import { ExecutionService } from "../../src/execution/execution-service";
 import { defineOutputContract } from "../../src/workflow/output-validator";
 import { WorkflowRunner } from "../../src/workflow/workflow-runner";
 import type { WorkflowDefinition, WorkflowExecutionState } from "../../src/workflow/types";
+import { expectPosixMode } from "../support/file-mode";
+import { removeTemporary } from "../support/temporary-root";
 
 const temporaryRoots: string[] = [];
 
 afterEach(async () => {
   for (const root of temporaryRoots.splice(0)) {
     await chmod(root, 0o700).catch(() => undefined);
-    await import("node:fs/promises").then(({ rm }) => rm(root, { recursive: true, force: true }));
+    await import("node:fs/promises").then(({ rm }) => removeTemporary(root));
   }
 });
 
@@ -42,9 +44,9 @@ function role(
         writeRoots: id === "main" ? ["/workspace"] : [],
       },
     },
-    instructions: ({ task }) => {
+    instructions: () => {
       events.push("capsule");
-      return `${id}: ${task}`;
+      return `${id} instructions`;
     },
     workflow: {
       id: `${id}-workflow`,
@@ -196,9 +198,9 @@ describe("ExecutionService", () => {
       status: "prepared",
       policyHash: prepared.policy.policyHash,
     });
-    expect((await stat(join(root, "executions", "exec-immutable"))).mode & 0o777).toBe(0o700);
-    expect((await stat(policyPath)).mode & 0o777).toBe(0o600);
-    expect((await stat(statePath)).mode & 0o777).toBe(0o600);
+    await expectPosixMode(join(root, "executions", "exec-immutable"), 0o700);
+    await expectPosixMode(policyPath, 0o600);
+    await expectPosixMode(statePath, 0o600);
     await expect((await import("node:fs/promises")).readdir(join(root, "executions", "exec-immutable"))).resolves.toEqual([
       "policy.json",
       "runtime",

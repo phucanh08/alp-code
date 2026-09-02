@@ -105,22 +105,27 @@ describe("code-native role definitions", () => {
     expect(Object.keys(titling.workflow.states)).toEqual(["TITLE"]);
     expect(titling.workflow.states.TITLE).toMatchObject({ terminal: true });
     expect(titling.output.validate("Tên thread ngắn")).toMatchObject({ ok: true });
-    expect(titling.output.validate("Label: title\nExplanation")).toMatchObject({ ok: false });
+    // Shape is now a role instruction rather than a schema: contracts accept any prose so
+    // that roles answer in text. Emptiness is the only thing still rejected.
+    expect(titling.output.validate("   ")).toMatchObject({ ok: false });
     expect(titling.capabilities.memory.read).not.toContain("shared");
     expect(titling.capabilities.memory.read.some((grant) => grant.startsWith("project:"))).toBe(false);
   });
 
-  it.each(ROLE_IDS)("uses a deterministic workflow and structural output contract for %s", (id) => {
+  it.each(ROLE_IDS)("uses a deterministic workflow and a text output contract for %s", (id) => {
     const definition = agentRegistry.get(id);
     expect(definition.workflow.states[definition.workflow.initial]).toBeDefined();
     expect(definition.output.validate(null)).toMatchObject({ ok: false });
+    expect(definition.output.validate("a prose answer")).toMatchObject({ ok: true });
   });
 
-  it.each(ROLE_IDS)("renders non-empty role instructions for %s", (id) => {
-    const instructions = agentRegistry.get(id).instructions({ task: "Do the task", workspace: "/work" });
-    expect(instructions).toContain("Do the task");
-    expect(instructions).toContain("/work");
+  it.each(ROLE_IDS)("renders static, task-free role instructions for %s", (id) => {
+    const instructions = agentRegistry.get(id).instructions();
     expect(instructions.length).toBeGreaterThan(80);
+    // Instructions must stay identical across executions — they are rendered once into
+    // `.alp/agents/<role>.md` and injected by the SessionStart hook, so nothing
+    // execution-specific may leak in.
+    expect(instructions).toBe(agentRegistry.get(id).instructions());
   });
 
   it("returns frozen definitions and grants", () => {

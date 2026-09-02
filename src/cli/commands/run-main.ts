@@ -70,7 +70,10 @@ export async function runMainSession(
     return {
       ...backendResult,
       status,
-      ...(state.output === undefined ? {} : { output: JSON.stringify(state.output) }),
+      ...(state.output === undefined
+        ? {}
+        // Prose answers pass through unchanged; only a non-string is serialized.
+        : { output: typeof state.output === "string" ? state.output : JSON.stringify(state.output) }),
     };
   } catch { return backendResult; }
 }

@@ -47,6 +47,7 @@ describe("alp CLI parsing", () => {
       runtimeCommand: async () => 0,
       initProject: async () => undefined,
       deinitProject: async () => undefined,
+      syncIdentity: async () => undefined,
       delegateCommand: async () => 0,
       maintenanceCommand: async () => 0,
     })).resolves.toBe(0);
@@ -65,6 +66,7 @@ describe("alp CLI parsing", () => {
       runtimeCommand: async () => 0,
       initProject: async () => undefined,
       deinitProject: async () => undefined,
+      syncIdentity: async () => undefined,
       delegateCommand: async () => 0,
       maintenanceCommand,
     })).resolves.toBe(7);
@@ -83,6 +85,7 @@ describe("alp CLI parsing", () => {
       runtimeCommand: async () => 0,
       initProject: async () => undefined,
       deinitProject: async () => undefined,
+      syncIdentity: async () => undefined,
       delegateCommand: async () => 0,
       maintenanceCommand: async () => 0,
     })).resolves.toBe(0);
@@ -101,6 +104,7 @@ describe("alp CLI parsing", () => {
       runtimeCommand: async () => 0,
       initProject: async () => undefined,
       deinitProject: async () => undefined,
+      syncIdentity: async () => undefined,
       delegateCommand: async () => 0,
       maintenanceCommand: async () => 0,
     });

@@ -4,79 +4,20 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const { DelegationBackendRegistry } = require("./lib/delegation/core/backend-registry.cjs");
-const { RoleRegistry } = require("./lib/delegation/core/role-registry.cjs");
-const { DelegationPolicy } = require("./lib/delegation/core/policy.cjs");
-const { DelegationContextBuilder } = require("./lib/delegation/core/context-builder.cjs");
-const { DelegationService } = require("./lib/delegation/core/service.cjs");
-const { HerdrBackend } = require("./lib/delegation/backends/herdr/backend.cjs");
 const { PaseoBackend } = require("./lib/delegation/backends/paseo/backend.cjs");
+const { resolveWindowsCommand, spawnSyncCommand } = require("./lib/delegation/backends/command-runner.cjs");
 const { BackendUnavailable } = require("./lib/delegation/core/errors.cjs");
 const TEMP_DIRS = [];
 process.on("exit", () => TEMP_DIRS.forEach((dir) => fs.rmSync(dir, { recursive: true, force: true })));
 
-testHerdr();
-testHerdrForegroundCompatibility();
-testHerdrLegacyOrphanMapping();
 testPaseo();
 testPaseoClaudeMode();
 testPaseoUnsafeConfig();
 testPaseoConnectionError();
-testPaseoServiceIntegration();
 testAlpFacadePreservesCallerWorkspace();
 testBackendSwitchCli();
-console.log("OK               delegation backends: Herdr + Paseo mapping · mocked integration");
-
-function testHerdr() {
-  const calls = [];
-  const state = memoryStore();
-  state.put({ executionId: "exec_parent_herdr", runtimeId: "w1:p1", status: "running" });
-  const runtime = {
-    available: () => ({ ok: true, version: "0.8.0" }),
-    spawn: (input) => { calls.push(["spawn", input]); return { pane: "w1:p2", label: "search-x" }; },
-    status: () => ({ status: "running" }),
-    wait: () => ({ status: "completed" }),
-    output: () => "herdr result",
-    cancel: (id) => calls.push(["cancel", id]),
-    cleanup: (id) => calls.push(["cleanup", id]),
-    orphans: () => [],
-  };
-  const backend = new HerdrBackend({
-    repoRoot: process.cwd(),
-    stateDir: "/unused",
-    runtime,
-    state,
-    logger: () => {},
-    launchBuilder: () => ({ runtimeKind: "codex", argv: ["exec", "probe"] }),
-  });
-  const input = backendInput("exec_herdr");
-  input.request.parentExecutionId = "exec_parent_herdr";
-  const spawned = backend.spawn(input);
-  assert.deepStrictEqual(spawned, { executionId: "exec_herdr", status: "running", metadata: { mode: "background" } });
-  assert(!JSON.stringify(spawned).includes("w1:p2"), "public result không lộ pane ID");
-  assert.strictEqual(backend.status("exec_herdr").status, "running");
-  assert.strictEqual(backend.wait("exec_herdr").output, "herdr result");
-  backend.cancel("exec_herdr");
-  backend.cleanup("exec_herdr");
-  assert(calls.some(([name, id]) => name === "cancel" && id === "w1:p2"));
-  assert(calls.some(([name, id]) => name === "cleanup" && id === "w1:p2"));
-  assert.strictEqual(calls[0][1].env.ALP_DELEGATED_ROLE, "search");
-  assert.strictEqual(calls[0][1].env.ALP_DELEGATION_WORKSPACE, process.cwd());
-  assert.strictEqual(calls[0][1].env.ALP_READONLY_DIRS, process.cwd());
-  assert.strictEqual(calls[0][1].anchor, "w1:p1", "parent ALP execution phải map sang anchor pane trong adapter");
-
-  const claudeLaunch = backend.buildLaunch(
-    { role: "search" },
-    { ...backendInput("exec_launch").context, prompt: "probe" },
-    { interactive: false },
-    "claude"
-  );
-  assert.deepStrictEqual(
-    claudeLaunch.argv.slice(2, 4),
-    ["--permission-mode", "plan"],
-    "Herdr/Claude subordinate phải chạy read-only plan mode"
-  );
-}
+testWindowsCommandShim();
+console.log("OK               delegation backends: Paseo mapping · command shim · switch CLI");
 
 function testPaseo() {
   const calls = [];
@@ -134,52 +75,6 @@ function testPaseo() {
   assert(calls.some((args) => args[0] === "agent" && args[1] === "archive"));
 }
 
-function testHerdrForegroundCompatibility() {
-  const backend = new HerdrBackend({
-    repoRoot: process.cwd(),
-    stateDir: "/unused",
-    runtime: {
-      available: () => ({ ok: false, reason: "fleet absent" }),
-      orphans: () => [],
-    },
-    state: memoryStore(),
-    logger: () => {},
-    launchBuilder: () => ({ runtimeKind: "codex", argv: ["exec", "probe"] }),
-    spawnProcess: (_bin, _args, options) => ({
-      status: 0,
-      stdout: "foreground result\n",
-      stderr: "",
-      env: options.env,
-    }),
-  });
-  const input = backendInput("exec_herdr_foreground");
-  input.request.executionOptions.background = true;
-  const completed = backend.spawn(input);
-  assert.strictEqual(completed.status, "completed");
-  assert.strictEqual(completed.output, "foreground result");
-  assert.strictEqual(completed.metadata.fallback, "foreground");
-}
-
-function testHerdrLegacyOrphanMapping() {
-  const cleaned = [];
-  const backend = new HerdrBackend({
-    repoRoot: process.cwd(),
-    stateDir: "/unused",
-    state: memoryStore(),
-    runtime: {
-      available: () => ({ ok: true, version: "0.8.0" }),
-      orphans: () => [{ pane: "w9:p9", agent: "legacy-search", status: "working" }],
-      cleanup: (runtimeId) => cleaned.push(runtimeId),
-    },
-    logger: () => {},
-  });
-  const orphans = backend.orphanExecutions();
-  assert(orphans[0].executionId.startsWith("exec_legacy_"));
-  assert(!JSON.stringify(orphans).includes("w9:p9"), "doctor không được expose legacy pane ID");
-  backend.cleanup(orphans[0].executionId);
-  assert.deepStrictEqual(cleaned, ["w9:p9"]);
-}
-
 function testPaseoUnsafeConfig() {
   const backend = new PaseoBackend({
     config: { cli: "paseo", runtimeToolsDisabled: true, home: tempPaseoHome(true) },
@@ -227,45 +122,6 @@ function testPaseoConnectionError() {
   assert.throws(() => backend.status("exec_disconnected"), BackendUnavailable);
 }
 
-function testPaseoServiceIntegration() {
-  const backend = new PaseoBackend({
-    config: { cli: "paseo", runtimeToolsDisabled: true, home: tempPaseoHome(false) },
-    stateDir: "/unused",
-    state: memoryStore(),
-    runner: (args) => {
-      if (args[0] === "run") return response({ agentId: "integration-agent", status: "running" });
-      if (args[0] === "wait") return response({ agentId: "integration-agent", status: "idle", message: "done" });
-      if (args[0] === "logs") return { status: 0, stdout: "integrated result\n", stderr: "", error: null };
-      throw new Error(`unexpected integration command: ${args.join(" ")}`);
-    },
-    logger: () => {},
-  });
-  const service = new DelegationService({
-    roleRegistry: new RoleRegistry(process.cwd()),
-    policy: new DelegationPolicy(),
-    contextBuilder: new DelegationContextBuilder({
-      repoRoot: process.cwd(),
-      buildRoleContext: (_root, role) => `identity and allowed memory for ${role}`,
-    }),
-    backendRegistry: new DelegationBackendRegistry().register(backend),
-    executionStore: memoryStore(),
-    config: { backend: "paseo", fallbackBackend: null },
-    logger: () => {},
-  });
-  const spawned = service.delegate({
-    parentRole: "main",
-    targetRole: "search",
-    task: "integration probe",
-    workspace: process.cwd(),
-    executionOptions: { background: true, runtime: "codex" },
-  });
-  assert(spawned.executionId.startsWith("exec_"));
-  assert(!JSON.stringify(spawned).includes("integration-agent"));
-  const completed = service.wait(spawned.executionId);
-  assert.strictEqual(completed.status, "completed");
-  assert.strictEqual(completed.output, "integrated result");
-}
-
 function testAlpFacadePreservesCallerWorkspace() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alp-delegate-cwd-"));
   TEMP_DIRS.push(dir);
@@ -302,11 +158,15 @@ function testAlpFacadePreservesCallerWorkspace() {
   });
   assert.strictEqual(run.status, 0, run.stderr || run.stdout);
   const args = JSON.parse(fs.readFileSync(capture, "utf8"));
-  assert.strictEqual(args[args.indexOf("--cwd") + 1], fs.realpathSync(project));
+  // Windows paths compare case-insensitively, and `realpath` can report `%TEMP%` with a
+  // different case in the child than in this process — which says nothing about the
+  // workspace being preserved, the only thing under test here.
+  const samePath = (value) => (process.platform === "win32" ? value.toLowerCase() : value);
+  assert.strictEqual(samePath(args[args.indexOf("--cwd") + 1]), samePath(fs.realpathSync(project)));
   const promptPointer = args.at(-1).match(/^ALP execution input is in (.+); read it before continuing\.$/);
   assert(promptPointer, "Paseo phải nhận con trỏ prompt runtime ổn định");
   assert(
-    fs.readFileSync(promptPointer[1], "utf8").includes(fs.realpathSync(project)),
+    samePath(fs.readFileSync(promptPointer[1], "utf8")).includes(samePath(fs.realpathSync(project))),
     "prepared prompt artifact phải pin caller workspace",
   );
 }
@@ -325,7 +185,7 @@ function testBackendSwitchCli() {
   fs.chmodSync(fakeCli, 0o755);
   const env = {
     ...process.env,
-    ALP_DELEGATION_BACKEND: "herdr",
+    ALP_DELEGATION_BACKEND: "local",
     ALP_DELEGATION_STATE_DIR: stateDir,
     PASEO_CLI: fakeCli,
     PASEO_HOME: paseoHome,
@@ -343,7 +203,7 @@ function testBackendSwitchCli() {
   assert.match(current.stdout, /^backend\s+paseo$/m);
   const reset = alp("switch", "default");
   assert.strictEqual(reset.status, 0, reset.stderr || reset.stdout);
-  assert.match(reset.stdout, /^backend\s+herdr$/m);
+  assert.match(reset.stdout, /^backend\s+local$/m);
   assert.match(reset.stdout, /^source\s+environment$/m);
 }
 
@@ -384,4 +244,47 @@ function tempPaseoHome(unsafe) {
   TEMP_DIRS.push(dir);
   fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ daemon: { mcp: { injectIntoAgents: unsafe } } }));
   return dir;
+}
+
+/**
+ * `command-runner.cjs` is the only thing standing between an npm-generated Windows shim
+ * and Node's refusal to spawn a `.cmd` directly, so it is covered here rather than left
+ * behind with the interactive installer that used to own this test.
+ */
+function testWindowsCommandShim() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "alp-windows-command-"));
+  TEMP_DIRS.push(root);
+  const shim = path.join(root, "fake-tool.cmd");
+  const npmBin = path.join(root, "AppData", "Roaming", "npm");
+  const globalShim = path.join(npmBin, "global-tool.cmd");
+  fs.mkdirSync(npmBin, { recursive: true });
+  fs.writeFileSync(shim, [
+    "@echo off",
+    "SET _prog=node",
+    '"%_prog%" "%dp0%\\fake-tool.cjs" %*',
+    "",
+  ].join("\r\n"));
+  fs.writeFileSync(path.join(root, "fake-tool.cjs"), "process.stdout.write(JSON.stringify(process.argv.slice(2)));\n");
+  fs.writeFileSync(globalShim, "@echo off\r\necho global-tool %1\r\n");
+  const env = { ...process.env, PATH: root, PATHEXT: ".EXE;.CMD" };
+
+  assert.strictEqual(
+    resolveWindowsCommand("fake-tool", env).toLowerCase(),
+    shim.toLowerCase(),
+    "PATHEXT phải tìm ra npm-style .cmd shim",
+  );
+  // npm's per-user global bin is often missing from an already-open terminal's PATH.
+  const isolated = { PATH: root, PATHEXT: ".EXE;.CMD", APPDATA: path.dirname(npmBin) };
+  assert.strictEqual(
+    resolveWindowsCommand("global-tool", isolated).toLowerCase(),
+    globalShim.toLowerCase(),
+    "npm global bin phải được dò kể cả khi ngoài PATH",
+  );
+  if (process.platform !== "win32") return;
+
+  // argv phải qua nguyên vẹn: một shell sẽ diễn giải lại `&`, `%PATH%` và khoảng trắng.
+  const args = ["ready & echo not-a-command", "%PATH%", "value with spaces"];
+  const result = spawnSyncCommand("fake-tool", args, { env, encoding: "utf8" }, "win32");
+  assert.strictEqual(result.status, 0, result.stderr || result.error?.message);
+  assert.deepStrictEqual(JSON.parse(result.stdout), args);
 }

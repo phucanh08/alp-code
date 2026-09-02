@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { agentRegistry } from "../../src/agents/registry";
@@ -14,14 +14,14 @@ import { ClaudeRuntimeAdapter } from "../../src/runtime/claude-adapter";
 import { CodexRuntimeAdapter } from "../../src/runtime/codex-adapter";
 import type { RuntimeAdapter } from "../../src/runtime/runtime-adapter";
 import { WorkflowRunner } from "../../src/workflow/workflow-runner";
+import { removeTemporary } from "../support/temporary-root";
 
 /**
  * Fake runtime binaries stand in for `claude` and `codex` so end-to-end tests never
  * reach a paid model. Each one records the launch contract it was given and then
  * finalizes its own execution state the way a real runtime would.
  */
-const FAKE_RUNTIME = (runtime: RuntimeId) => `#!${process.execPath}
-"use strict";
+const FAKE_RUNTIME = (runtime: RuntimeId) => `"use strict";
 const { readFileSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 
@@ -43,7 +43,7 @@ writeFileSync(join(process.env.ALP_E2E_CAPTURE, ${JSON.stringify(runtime)} + ".j
 if (process.env.ALP_E2E_OUTPUT) {
   const stateFile = join(process.env.ALP_EXECUTION_ROOT, process.env.ALP_DELEGATION_EXECUTION_ID, "state.json");
   const state = JSON.parse(readFileSync(stateFile, "utf8"));
-  writeFileSync(stateFile, JSON.stringify({ ...state, status: "completed", output: JSON.parse(process.env.ALP_E2E_OUTPUT) }));
+  writeFileSync(stateFile, JSON.stringify({ ...state, status: "completed", output: process.env.ALP_E2E_OUTPUT }));
 }
 process.exit(Number(process.env.ALP_E2E_EXIT || 0));
 `;
@@ -86,7 +86,7 @@ export interface RuntimeCapture {
 const roots: string[] = [];
 
 export async function cleanupEnvironments(): Promise<void> {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(roots.splice(0).map((root) => removeTemporary(root)));
 }
 
 /**
@@ -94,7 +94,8 @@ export async function cleanupEnvironments(): Promise<void> {
  * adapters, local process backend — around a throwaway filesystem and fake binaries.
  */
 export async function createE2eEnvironment(options: {
-  readonly output?: unknown;
+  /** Prose the fake runtime writes back as the execution's answer. */
+  readonly output?: string;
   readonly exitCode?: number;
 } = {}): Promise<E2eEnvironment> {
   // Canonical from the start: the execution service realpaths every workspace it prepares.
@@ -110,9 +111,22 @@ export async function createE2eEnvironment(options: {
     .map((directory) => mkdir(directory, { recursive: true })));
   await writeFile(join(project, "index.ts"), "export const entrypoint = true;\n");
 
+  // The adapters emit a bare command name (`claude`), so the fake has to be findable on
+  // PATH the way the platform finds executables. A `#!` script is not executable on
+  // Windows at all, so there the launcher is a `.cmd` that libuv resolves via PATHEXT.
   for (const runtime of ["claude", "codex"] as const) {
+    const script = join(binDirectory, `${runtime}.js`);
+    await writeFile(script, FAKE_RUNTIME(runtime));
+    if (process.platform === "win32") {
+      // Shaped like an npm-generated shim so the spawn path exercises the real unwrapper.
+      await writeFile(
+        join(binDirectory, `${runtime}.cmd`),
+        `@ECHO off\r\nSETLOCAL\r\nSET "_prog=${process.execPath}"\r\n"%_prog%" "%~dp0\\${runtime}.js" %*\r\n`,
+      );
+      continue;
+    }
     const executable = join(binDirectory, runtime);
-    await writeFile(executable, FAKE_RUNTIME(runtime), { mode: 0o755 });
+    await writeFile(executable, `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`, { mode: 0o755 });
     await chmod(executable, 0o755);
   }
 
@@ -137,14 +151,16 @@ export async function createE2eEnvironment(options: {
   // Adapters probe PATH, so the fake bin directory is the only runtime they can find.
   const adapterEnv = { HOME: root, PATH: binDirectory, ALP_REPO_ROOT: root, ALP_MEMORY_ROOT: memoryRoot };
   const adapters = new Map<RuntimeId, RuntimeAdapter>([
-    ["claude", new ClaudeRuntimeAdapter({ platform: "linux", env: adapterEnv, hooksDirectory })],
-    ["codex", new CodexRuntimeAdapter({ platform: "linux", env: adapterEnv, hooksDirectory })],
+    // No pinned platform: these adapters really spawn, so they must resolve the command
+    // the way the host does. Pinning "linux" on Windows yields a name nothing can launch.
+    ["claude", new ClaudeRuntimeAdapter({ env: adapterEnv, hooksDirectory })],
+    ["codex", new CodexRuntimeAdapter({ env: adapterEnv, hooksDirectory })],
   ]);
   const runtimeEnv: NodeJS.ProcessEnv = {
     PATH: binDirectory,
     HOME: root,
     ALP_E2E_CAPTURE: captureDirectory,
-    ...(options.output === undefined ? {} : { ALP_E2E_OUTPUT: JSON.stringify(options.output) }),
+    ...(options.output === undefined ? {} : { ALP_E2E_OUTPUT: options.output }),
     ...(options.exitCode === undefined ? {} : { ALP_E2E_EXIT: String(options.exitCode) }),
   };
 

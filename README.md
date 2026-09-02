@@ -2,7 +2,7 @@
 
 ALP là launcher code-native cho một nhóm agent dùng chung policy, workflow và memory. Mỗi
 execution nhận một `AgentDefinition` bất biến, policy snapshot và identity capsule trước khi
-được chuyển thành lệnh Claude Code hoặc Codex. Runtime chỉ chạy launch spec; Herdr/Paseo chỉ
+được chuyển thành lệnh Claude Code hoặc Codex. Runtime chỉ chạy launch spec; Paseo/local chỉ
 quản lifecycle. Không runtime/backend nào là nguồn sự thật của identity hay quyền.
 
 Phở 🍜 (`main`) là coordinator mặc định. Principal có thể chọn Claude hoặc Codex cho phiên
@@ -72,15 +72,27 @@ tại. Nếu có bản mới, ALP chỉ in một dòng gợi ý `alp update`; n�
 
 ```bash
 cd ~/code/my-app
-alp init --backend herdr        # hoặc paseo
+alp init --backend paseo        # hoặc local
 alp                             # chọn runtime tương tác
 alp --runtime claude
 alp --runtime codex
 ```
 
-`alp init` chỉ canonicalize và đăng ký project trong `~/.alp/projects.json`, kèm backend
-nếu được chọn. Nó không tạo `.claude/`, `.codex/`, skill link hay runtime identity config
-trong project, nên `git status --porcelain` không đổi.
+`alp init` canonicalize và đăng ký project trong `~/.alp/projects.json` (kèm backend nếu
+được chọn), sinh lại tài liệu identity trong `.alp/agents/`, rồi ghi
+`<project>/.claude/settings.local.json` chỉ chứa hook `SessionStart`. Hook đó nạp identity
+của vai vào context ngay turn đầu — mở `claude` bằng tay trong project cũng có identity mà
+không tốn một lượt gọi tool. `alp deinit` xoá lại đúng file đó (nhận diện qua marker
+`alp init`) và phục hồi backup nếu bạn đã có file riêng.
+
+File đó được ghi vào `.git/info/exclude` của chính clone — per-clone, không commit — nên
+`git status --porcelain` vẫn không đổi và cộng tác viên khác không thấy gì.
+
+Khi sửa `src/agents/`, chạy lại `alp identity sync` để tài liệu phẳng khớp registry:
+
+```bash
+alp identity sync
+```
 
 Project đã đăng ký cho phiên `main` quyền `workspace-write`; cwd chưa đăng ký là
 `read-only`. `alp deinit` gỡ registration và dọn artifact cũ do các bản ALP trước tạo ra,
@@ -91,7 +103,7 @@ Runtime preference độc lập với backend preference:
 ```bash
 alp runtime show
 alp runtime set codex
-alp delegation switch herdr
+alp delegation switch local
 alp delegation switch paseo
 alp delegation switch default
 ```
@@ -116,7 +128,7 @@ caller role
   -> DelegationService
   -> AgentRegistry + PolicyEngine + MemoryService + ExecutionService
   -> RuntimeAdapter (Claude/Codex launch spec)
-  -> ExecutionBackend (local/Herdr/Paseo lifecycle)
+  -> ExecutionBackend (local/Paseo lifecycle)
 ```
 
 Unauthorized delegation bị từ chối trước runtime probe, backend health hay spawn. Backend

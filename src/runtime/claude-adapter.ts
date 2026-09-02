@@ -1,19 +1,13 @@
-import { access } from "node:fs/promises";
 import { delimiter, dirname, join } from "node:path";
-import { atomicRuntimeFile, baseRuntimeEnvironment, hookCommand, renderCapsulePrompt, runtimeSkillRoots } from "./adapter-files";
+import { agentRegistry } from "../agents/registry";
+import { atomicRuntimeFile, baseRuntimeEnvironment, hookCommand, renderCapsulePrompt, resolveRuntimeCommand, runtimeSkillRoots } from "./adapter-files";
+import { claudePermissions } from "./permission-rules";
 import type { PrepareRuntimeInput, RuntimeAdapter, RuntimeHealth, RuntimeLaunchSpec } from "./runtime-adapter";
 
 export interface ClaudeRuntimeAdapterOptions {
   readonly platform?: NodeJS.Platform;
   readonly env?: NodeJS.ProcessEnv;
   readonly hooksDirectory?: string;
-}
-
-async function commandExists(command: string, env: NodeJS.ProcessEnv): Promise<boolean> {
-  for (const directory of (env.PATH ?? "").split(delimiter).filter(Boolean)) {
-    try { await access(join(directory, command)); return true; } catch { /* continue */ }
-  }
-  return false;
 }
 
 export class ClaudeRuntimeAdapter implements RuntimeAdapter {
@@ -28,10 +22,26 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
     this.hooksDirectory = options.hooksDirectory ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "hooks");
   }
 
+  /**
+   * Claude Code does not activate its filesystem sandbox on Windows — it reports the
+   * feature gate as off and, because ALP asks for `failIfUnavailable`, refuses to start at
+   * all. Requesting a sandbox that cannot exist turns every delegated execution on Windows
+   * into a startup failure, so the request is made only where it can be honoured. The
+   * read-only guarantee is not dropped with it: `claudePermissions` withdraws `Bash`
+   * instead, since a shell is the only remaining way such a role could write.
+   */
+  private sandboxAvailable(): boolean {
+    return this.platform !== "win32";
+  }
+
+  private memoryRoot(): string {
+    return this.env.ALP_MEMORY_ROOT ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "memory");
+  }
+
   async probe(): Promise<RuntimeHealth> {
-    const command = this.platform === "win32" ? "claude.cmd" : "claude";
-    const ok = await commandExists(command, this.env);
-    return ok
+    const resolved = await resolveRuntimeCommand("claude", this.platform, this.env);
+    const command = resolved ?? (this.platform === "win32" ? "claude.cmd" : "claude");
+    return resolved
       ? { ok: true, runtime: this.name, message: `${command} available` }
       : { ok: false, runtime: this.name, message: `${command} not found`, remediation: "Install Claude Code and ensure it is on PATH." };
   }
@@ -51,10 +61,16 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
         $schema: "https://json.schemastore.org/claude-code-settings.json",
         alp: { executionId: capsule.executionId, policyHash: capsule.policyHash, capsuleFile, promptFile },
         hooks: {
-          PreToolUse: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "acl-guard.cjs")) }] }],
+          SessionStart: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-boot.cjs")) }] }],
           Stop: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-end.cjs")) }] }],
         },
-        ...(policy.workspaceMode === "read-only" ? {
+        permissions: claudePermissions({
+          policy,
+          memoryRoot: this.memoryRoot(),
+          allRoles: agentRegistry.list().map((definition) => definition.id),
+          sandboxed: this.sandboxAvailable(),
+        }),
+        ...(policy.workspaceMode === "read-only" && this.sandboxAvailable() ? {
           sandbox: {
             enabled: true,
             failIfUnavailable: true,
@@ -71,14 +87,16 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
     const env = {
       ...baseRuntimeEnvironment(capsule),
       ALP_EXECUTION_ROOT: dirname(artifacts.directory),
-      ALP_MEMORY_ROOT: this.env.ALP_MEMORY_ROOT ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "memory"),
+      ALP_MEMORY_ROOT: this.memoryRoot(),
       ALP_IDENTITY_CAPSULE: capsuleFile,
       ALP_RUNTIME_CONFIG: settingsFile,
       ALP_SKILL_ROOTS: skillRoots,
       ...(policy.workspaceMode === "read-only" ? { ALP_READONLY_DIRS: capsule.activeWorkspace } : {}),
     };
+    const command = (await resolveRuntimeCommand("claude", this.platform, this.env))
+      ?? (this.platform === "win32" ? "claude.cmd" : "claude");
     return Object.freeze({
-      command: this.platform === "win32" ? "claude.cmd" : "claude",
+      command,
       args: Object.freeze([
         "--settings", settingsFile,
         "--model", input.model,

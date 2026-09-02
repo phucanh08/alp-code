@@ -54,8 +54,8 @@ Thấy chúng trong `--cached` nghĩa là `.gitignore` hỏng. Báo principal, �
 
 ### 3. Quyết định tách commit
 
-**Tách khi:** trộn nhiều type (`feat` + `fix`, code + docs) · nhiều scope (`acl` +
-`herdr`) · trộn config/deps với code · trên 10 file không liên quan nhau.
+**Tách khi:** trộn nhiều type (`feat` + `fix`, code + docs) · nhiều scope (`agents` +
+`runtime`) · trộn config/deps với code · trên 10 file không liên quan nhau.
 
 **Một commit khi:** cùng type và scope, ≤ 3 file, ≤ 50 dòng.
 

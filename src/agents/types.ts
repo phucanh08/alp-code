@@ -38,11 +38,6 @@ export interface AgentCapabilities {
   readonly workspace: WorkspaceGrants;
 }
 
-export interface InstructionContext {
-  readonly task: string;
-  readonly workspace: string;
-}
-
 export type OutputValidation<TOutput> =
   | { readonly ok: true; readonly value?: TOutput }
   | { readonly ok: false; readonly issues: readonly string[] };
@@ -61,7 +56,8 @@ export interface AgentDefinition<TOutput> {
   readonly reportsTo: AgentId | "principal";
   readonly delegatesTo: readonly AgentId[];
   readonly capabilities: AgentCapabilities;
-  readonly instructions: (context: InstructionContext) => string;
+  /** Static identity text — no per-execution context. See `renderInstructions`. */
+  readonly instructions: () => string;
   readonly workflow: WorkflowDefinition;
   readonly output: OutputContract<TOutput>;
 }

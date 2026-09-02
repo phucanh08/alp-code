@@ -17,6 +17,7 @@ import { CodexRuntimeAdapter } from "../runtime/codex-adapter";
 import { RuntimeSelector } from "../runtime/runtime-selector";
 import { WorkflowRunner } from "../workflow/workflow-runner";
 import { createDefaultDelegationComposition, runDelegateCommand, runDelegationLifecycleCommand } from "./commands/delegate";
+import { syncIdentityDocuments } from "./commands/identity-sync";
 import { deinitializeProject, initializeProject, ProjectRegistryStore } from "./commands/init";
 import { runMainSession, type RunMainInput } from "./commands/run-main";
 import { runRuntimeCommand, type RuntimeCommandInput } from "./commands/runtime";
@@ -27,6 +28,7 @@ export type AlpCommand =
   | { readonly command: "runtime"; readonly action: "show" | "set"; readonly runtime?: RuntimeId }
   | { readonly command: "init"; readonly project?: string; readonly backend?: string }
   | { readonly command: "deinit"; readonly project?: string }
+  | { readonly command: "identity"; readonly action: "sync" }
   | { readonly command: "delegate"; readonly args: readonly string[] }
   | { readonly command: "delegation"; readonly args: readonly string[] }
   | { readonly command: "maintenance"; readonly action: "doctor" | "update" | "uninstall"; readonly args: readonly string[] }
@@ -84,6 +86,10 @@ export function parseAlpArgs(argv: readonly string[]): AlpCommand {
     if (argv.length > 2 || argv[1]?.startsWith("-")) throw new Error("usage: alp deinit [path]");
     return { command: "deinit", ...(argv[1] ? { project: argv[1] } : {}) };
   }
+  if (argv[0] === "identity") {
+    if (argv[1] === "sync" && argv.length === 2) return { command: "identity", action: "sync" };
+    throw new Error("usage: alp identity sync");
+  }
   if (argv[0] === "delegate") return { command: "delegate", args: Object.freeze(argv.slice(1)) };
   if (argv[0] === "delegation") return { command: "delegation", args: Object.freeze(argv.slice(1)) };
   if (argv[0] === "doctor") {
@@ -118,6 +124,7 @@ export interface AlpDependencies {
   readonly runtimeCommand: (input: RuntimeCommandInput) => Promise<number>;
   readonly initProject: (input: { readonly project: string; readonly backend?: string }) => Promise<void>;
   readonly deinitProject: (input: { readonly project: string }) => Promise<void>;
+  readonly syncIdentity: () => Promise<void>;
   readonly delegateCommand: (args: readonly string[]) => Promise<number>;
   readonly maintenanceCommand: (input: { readonly action: "doctor" | "update" | "uninstall"; readonly args: readonly string[] }) => Promise<number>;
 }
@@ -197,12 +204,19 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
       return 0;
     },
     async initProject(input) {
-      const registered = await initializeProject(input, { store: projectRegistry });
+      const registered = await initializeProject({ ...input, repoRoot }, { store: projectRegistry });
+      // Identity documents are what the SessionStart hook reads; a project registered
+      // without them would boot with an empty identity and a warning.
+      await syncIdentityDocuments({ repoRoot }, { registry: agentRegistry });
       stdout.write(`READY    ${registered.path}${registered.backend ? ` (backend ${registered.backend})` : ""}\n`);
     },
     async deinitProject(input) {
       await deinitializeProject({ ...input, repoRoot }, { store: projectRegistry });
       stdout.write(`REMOVED  ${resolve(input.project)}\n`);
+    },
+    async syncIdentity() {
+      const written = await syncIdentityDocuments({ repoRoot }, { registry: agentRegistry });
+      for (const file of written) stdout.write(`IDENTITY ${file}\n`);
     },
     async delegateCommand(args) {
       const lifecycle = args[0] === "__lifecycle";
@@ -289,6 +303,7 @@ function helpText(): string {
     "  alp runtime show|set <runtime>",
     "  alp init [path] [--backend name]",
     "  alp deinit [path]",
+    "  alp identity sync",
     "  alp delegate <role> [options] -- <task>",
     "  alp doctor",
     "  alp update",
@@ -312,6 +327,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2), inje
   if (command.command === "runtime") return dependencies.runtimeCommand(command);
   if (command.command === "init") { await dependencies.initProject({ project: resolve(cwd, command.project ?? "."), ...(command.backend ? { backend: command.backend } : {}) }); return 0; }
   if (command.command === "deinit") { await dependencies.deinitProject({ project: resolve(cwd, command.project ?? ".") }); return 0; }
+  if (command.command === "identity") { await dependencies.syncIdentity(); return 0; }
   if (command.command === "delegate") return dependencies.delegateCommand(command.args);
   if (command.command === "delegation") return dependencies.delegateCommand(Object.freeze(["__lifecycle", ...command.args]));
   if (command.command === "maintenance") return dependencies.maintenanceCommand({ action: command.action, args: command.args });

@@ -22,7 +22,9 @@ const forbiddenSources = [
 
 const runtimeRoots = ["hooks", "scripts", "src"] as const;
 const runtimeFiles = ["install.sh", "install.ps1", "package.json"] as const;
-const ignoredDirectories = new Set(["node_modules", "dist", ".git"]);
+// `.worktrees` holds checkouts of other branches — including pre-cutover ones that still
+// contain the legacy files by design. `.alp` holds the generated identity documents.
+const ignoredDirectories = new Set(["node_modules", "dist", ".git", ".worktrees", ".alp"]);
 const textExtensions = new Set([".cjs", ".js", ".json", ".ps1", ".sh", ".ts"]);
 const legacyReference = /(?:CHARTER\.md|(?:^|[\\/'"`])identity[\\/]|loadout\.yaml|AGENTS\.md|CLAUDE\.md|compile-acl|trust-role|lib[\\/]loadout|claude-settings\.cjs|codex-profile|skill-links|session-start)/;
 
@@ -41,9 +43,18 @@ async function collectFiles(relativePath: string): Promise<string[]> {
   return files;
 }
 
+/**
+ * `path.join` yields backslashes on Windows, but every pattern below is written with
+ * forward slashes. Without this the whole suite silently passes on Windows while catching
+ * real violations on CI — the worst of both.
+ */
+function posix(file: string): string {
+  return file.split(path.sep).join("/");
+}
+
 describe("code-native identity cutover", () => {
   it("has no legacy identity sources or runtime read/import paths", async () => {
-    const repositoryFiles = await collectFiles(".");
+    const repositoryFiles = (await collectFiles(".")).map(posix);
     const sourceViolations = forbiddenSources.filter((source) =>
       repositoryFiles.some((file) => file === source || file.startsWith(`${source}/`)),
     );

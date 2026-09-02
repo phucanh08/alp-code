@@ -1,13 +1,13 @@
 # ALP machine/runtime configuration. Agent identity and policy live in compiled TypeScript.
 delegation:
-  backend: herdr
+  backend: paseo
+  # Left empty on purpose. A fallback silently moves an execution to a different backend
+  # when the chosen one looks unhealthy, which is harder to diagnose than a clear failure.
+  # Select `local` explicitly (`alp delegation switch local`) when there is no daemon.
   fallback_backend: ""
   state_dir: ""
 
   backends:
-    herdr:
-      enabled: true
-
     paseo:
       enabled: true
       cli: paseo

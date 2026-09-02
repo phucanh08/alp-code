@@ -68,8 +68,12 @@ function testAlpCjsAwaitsUpdate(root) {
     ["thất bại", 'async () => ({ ok: false, message: "tree bẩn" })', 1, "tree bẩn"],
   ]) {
     const repo = path.join(root, `alp-cjs-${wantStatus}`);
-    fs.mkdirSync(path.join(repo, "scripts", "lib"), { recursive: true });
+    // `alp.cjs` loads the command runner at require time, so the fixture has to carry it
+    // even though this test never spawns anything through it.
+    const commandRunner = path.join("scripts", "lib", "delegation", "backends", "command-runner.cjs");
+    fs.mkdirSync(path.join(repo, path.dirname(commandRunner)), { recursive: true });
     fs.copyFileSync(path.join(sourceRoot, "scripts", "alp.cjs"), path.join(repo, "scripts", "alp.cjs"));
+    fs.copyFileSync(path.join(sourceRoot, commandRunner), path.join(repo, commandRunner));
     fs.writeFileSync(path.join(repo, "scripts", "lib", "update.cjs"), `exports.updateInstallation = ${stub};\n`);
     fs.writeFileSync(path.join(repo, "package.json"), '{"name":"alp-code","version":"0.0.0"}\n');
 

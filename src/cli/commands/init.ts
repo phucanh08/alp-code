@@ -101,10 +101,53 @@ export class ProjectRegistryStore {
 export interface InitializeProjectInput {
   readonly project: string;
   readonly backend?: string | null;
+  /**
+   * alp-code checkout. When given, `alp init` writes a project-level SessionStart hook so
+   * a hand-opened `claude` in that project loads its ALP identity at turn 1. Without it
+   * only delegated executions get identity, because they carry their own settings file.
+   */
+  readonly repoRoot?: string;
 }
 
 export interface InitializeProjectDependencies {
   readonly store?: ProjectRegistryStore;
+}
+
+/**
+ * Marker string `deinitializeProject` looks for before deleting the file — it is how we
+ * tell a config we generated from one the user wrote themselves.
+ */
+const EXCLUDE_ENTRY = ".claude/settings.local.json";
+
+/**
+ * Keeps the generated settings file out of `git status` without touching a tracked file.
+ * `.git/info/exclude` is per-clone and never committed, so this stays invisible to the
+ * project's collaborators — unlike appending to `.gitignore`.
+ */
+async function excludeLocally(project: string): Promise<void> {
+  const file = join(project, ".git", "info", "exclude");
+  try {
+    const current = (await exists(file)) ? await readFile(file, "utf8") : "";
+    if (current.split(/\r?\n/).some((line) => line.trim() === EXCLUDE_ENTRY)) return;
+    await mkdir(dirname(file), { recursive: true });
+    const separator = current === "" || current.endsWith("\n") ? "" : "\n";
+    await writeFile(file, `${current}${separator}${EXCLUDE_ENTRY}\n`, "utf8");
+  } catch { /* not a git checkout, or exclude unwritable — the settings file still works */ }
+}
+
+async function writeProjectSettings(project: string, repoRoot: string): Promise<void> {
+  const file = join(project, ".claude", "settings.local.json");
+  if (await exists(file)) {
+    const content = await readFile(file, "utf8");
+    if (!content.toLowerCase().includes("alp init")) await rename(file, `${file}.alp-backup`);
+  }
+  await mkdir(dirname(file), { recursive: true });
+  const hook = `${JSON.stringify(process.execPath)} ${JSON.stringify(join(repoRoot, "hooks", "session-boot.cjs"))}`;
+  await writeFile(file, `${JSON.stringify({
+    $generatedBy: "alp init",
+    hooks: { SessionStart: [{ hooks: [{ type: "command", command: hook }] }] },
+  }, null, 2)}\n`, "utf8");
+  await excludeLocally(project);
 }
 
 export async function initializeProject(
@@ -121,6 +164,7 @@ export async function initializeProject(
   const previous = (await store.read()).projects.find((entry) => entry.path === project);
   const registered = Object.freeze({ path: project, backend: input.backend ?? previous?.backend ?? null });
   await store.register(registered);
+  if (input.repoRoot) await writeProjectSettings(project, input.repoRoot);
   return registered;
 }
 

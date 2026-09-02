@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { rm } from "node:fs/promises";
+import { resolveSpawnCommand } from "../runtime/windows-shim";
 import type { BackendExecutionResult, ExecutionBackend, SpawnExecutionInput } from "./execution-backend";
 
 export interface LocalChildProcess {
@@ -56,9 +57,13 @@ export class LocalProcessBackend implements ExecutionBackend {
 
   async spawn(input: SpawnExecutionInput): Promise<BackendExecutionResult> {
     if (this.executions.has(input.executionId)) throw new Error(`execution \`${input.executionId}\` already exists`);
-    const child = this.spawnProcess(input.launchSpec.command, input.launchSpec.args, {
+    const env = { ...this.env, ...input.launchSpec.env };
+    // A Windows `.cmd` runtime shim cannot be spawned directly; unwrap it to the Node
+    // script it fronts so argv reaches the runtime unmodified.
+    const spec = resolveSpawnCommand(input.launchSpec.command, input.launchSpec.args, env);
+    const child = this.spawnProcess(spec.command, spec.args, {
       cwd: input.launchSpec.cwd,
-      env: { ...this.env, ...input.launchSpec.env },
+      env,
       stdio: this.stdio,
     });
     let resolveSettled!: (result: BackendExecutionResult) => void;
