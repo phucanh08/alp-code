@@ -47,7 +47,20 @@ export async function atomicRuntimeFile(path: string, content: string): Promise<
   return path;
 }
 
-export function renderCapsulePrompt(capsule: IdentityCapsule): string {
+export interface CapsulePromptOptions {
+  /**
+   * Whether this runtime's SessionStart hook actually delivers the role identity.
+   *
+   * Claude Code applies `additionalContext` before turn 1, so repeating the identity in
+   * the prompt would only pay for it twice. Codex reports `SessionStart Failed` against
+   * the same hook and the session shows no awareness of its role, so there the prompt is
+   * the only channel that works. Drop this back to a single path once Codex is observed
+   * accepting the hook.
+   */
+  readonly identityFromHook?: boolean;
+}
+
+export function renderCapsulePrompt(capsule: IdentityCapsule, options: CapsulePromptOptions = {}): string {
   const memory = capsule.memoryContext.entries.length === 0
     ? "(no memory entries selected)"
     : capsule.memoryContext.entries
@@ -57,8 +70,7 @@ export function renderCapsulePrompt(capsule: IdentityCapsule): string {
     `# ALP execution ${capsule.executionId}`,
     `Role: ${capsule.displayName} (${capsule.role})`,
     `Workspace: ${capsule.activeWorkspace}`,
-    "## Instructions",
-    capsule.instructions,
+    ...(options.identityFromHook === false ? ["## Identity", capsule.instructions] : []),
     "## Invariants",
     capsule.memoryContext.invariantContext,
     "## Policy",
@@ -67,9 +79,8 @@ export function renderCapsulePrompt(capsule: IdentityCapsule): string {
     memory,
     "## Task",
     capsule.task,
-    "## Required final output",
-    `Return only one JSON value for contract \`${capsule.outputContract.name}\`, with no prose or Markdown fence. It must satisfy this JSON Schema:`,
-    JSON.stringify(capsule.outputContract.schema, null, 2),
+    "## Reporting",
+    "Answer in prose. Close with your status, what you actually did, and the evidence for it — commands you ran, files you changed, output you saw. Do not claim a step you skipped.",
   ].join("\n\n");
 }
 
@@ -94,6 +105,12 @@ export function runtimeSkillRoots(env: NodeJS.ProcessEnv): string {
   return [...new Set(roots)].join(delimiter);
 }
 
+/**
+ * Quotes for a shell, not for JSON. `JSON.stringify` escapes backslashes, so a Windows
+ * path came out as `C:\\Users\\...` inside the command — tolerated by path resolution,
+ * but wrong, and unreadable in the settings file. Plain double quotes are enough: these
+ * are paths we generate ourselves, and neither Windows nor our layout admits a `"`.
+ */
 export function hookCommand(script: string, nodeExecutable = process.execPath): string {
-  return `${JSON.stringify(nodeExecutable)} ${JSON.stringify(script)}`;
+  return `"${nodeExecutable}" "${script}"`;
 }

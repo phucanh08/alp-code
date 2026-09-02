@@ -261,13 +261,34 @@ function testForeignWindowsUninstall() {
   });
 }
 
+/**
+ * Bootstrap is exercised against a throwaway copy of the repository, never the working
+ * one. `bootstrap.cjs` resolves its root from `__dirname`, not the caller's cwd, so
+ * pointing `cwd` elsewhere does nothing — the copy's own script has to be the one spawned.
+ * That matters because the first thing bootstrap does is `npm ci`, which deletes
+ * `node_modules` before reinstalling: aimed at this repo, a failed reinstall leaves the
+ * checkout without its dependencies.
+ */
+function copyRepositoryForBootstrap() {
+  const source = path.resolve(__dirname, "..");
+  const destination = path.join(sandbox, "bootstrap-repo");
+  // Skipped: rebuilt by bootstrap (`node_modules`, `dist`), irrelevant to it (`.git`,
+  // `.worktrees`), or machine state it must not inherit (`.alp`).
+  const skipped = new Set(["node_modules", "dist", ".git", ".worktrees", ".alp"]);
+  fs.cpSync(source, destination, {
+    recursive: true,
+    filter: (from) => !skipped.has(path.basename(from)),
+  });
+  return destination;
+}
+
 function testBootstrapWiring() {
-  const actualRepo = path.resolve(__dirname, "..");
+  const repoCopy = copyRepositoryForBootstrap();
   const home = path.join(sandbox, "bootstrap-home");
   const localAppData = path.join(home, "AppData", "Local");
   const delegationState = path.join(home, ".alp", "delegation", "test");
-  const run = spawnSync(process.execPath, [path.join(__dirname, "bootstrap.cjs"), "--no-path"], {
-    cwd: actualRepo,
+  const run = spawnSync(process.execPath, [path.join(repoCopy, "scripts", "bootstrap.cjs"), "--no-path"], {
+    cwd: repoCopy,
     encoding: "utf8",
     env: {
       ...process.env,
@@ -277,7 +298,9 @@ function testBootstrapWiring() {
       SHELL: "/bin/zsh",
       PATH: process.env.PATH,
       npm_config_cache: path.join(os.homedir(), ".npm"),
-      npm_config_offline: "true",
+      // Cache-first, but able to fetch what the cache lacks. Hard `offline` made the whole
+      // step fail the moment one tarball was missing.
+      npm_config_prefer_offline: "true",
       ALP_DELEGATION_STATE_DIR: delegationState,
     },
   });
@@ -289,7 +312,7 @@ function testBootstrapWiring() {
     assert(fs.existsSync(delegationState));
   });
   check("bootstrap --no-path creates the shared CLI link without editing a shell profile", () => {
-    const cli = path.join(actualRepo, "scripts", "alp.cjs");
+    const cli = path.join(repoCopy, "scripts", "alp.cjs");
     const command = process.platform === "win32"
       ? path.join(localAppData, "alp", "bin", "alp.cmd")
       : path.join(home, ".local", "bin", "alp");
@@ -302,8 +325,8 @@ function testBootstrapWiring() {
     assert(!fs.existsSync(path.join(home, ".claude.json")));
     assert(!fs.existsSync(path.join(home, ".codex")));
   });
-  const deprecated = spawnSync(process.execPath, [path.join(__dirname, "bootstrap.cjs"), "--no-trust"], {
-    cwd: actualRepo,
+  const deprecated = spawnSync(process.execPath, [path.join(repoCopy, "scripts", "bootstrap.cjs"), "--no-trust"], {
+    cwd: repoCopy,
     encoding: "utf8",
     env: { ...process.env, HOME: home, USERPROFILE: home, ALP_DELEGATION_STATE_DIR: delegationState },
   });

@@ -48,8 +48,8 @@ Báo principal. **Không tự `git rm`** — xoá nhầm trí nhớ là mất th
 Deps trước code vì code có thể phụ thuộc deps mới — commit ngược thứ tự thì có một commit
 ở giữa không build được.
 
-Scope trong alp-code lấy theo vùng thật: `acl`, `herdr`, `installer`, `hooks`, `skills`,
-`identity`. Xem `git log --oneline -20` để theo scope đã dùng, đừng tự đặt scope mới.
+Scope trong alp-code lấy theo vùng thật: `agents`, `delegation`, `runtime`, `installer`,
+`hooks`, `skills`. Xem `git log --oneline -20` để theo scope đã dùng, đừng tự đặt scope mới.
 
 ## 3. Commit
 

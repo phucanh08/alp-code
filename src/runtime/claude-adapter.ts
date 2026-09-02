@@ -1,5 +1,7 @@
 import { delimiter, dirname, join } from "node:path";
+import { agentRegistry } from "../agents/registry";
 import { atomicRuntimeFile, baseRuntimeEnvironment, hookCommand, renderCapsulePrompt, resolveRuntimeCommand, runtimeSkillRoots } from "./adapter-files";
+import { claudePermissions } from "./permission-rules";
 import type { PrepareRuntimeInput, RuntimeAdapter, RuntimeHealth, RuntimeLaunchSpec } from "./runtime-adapter";
 
 export interface ClaudeRuntimeAdapterOptions {
@@ -18,6 +20,22 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
     this.platform = options.platform ?? process.platform;
     this.env = options.env ?? process.env;
     this.hooksDirectory = options.hooksDirectory ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "hooks");
+  }
+
+  /**
+   * Claude Code does not activate its filesystem sandbox on Windows — it reports the
+   * feature gate as off and, because ALP asks for `failIfUnavailable`, refuses to start at
+   * all. Requesting a sandbox that cannot exist turns every delegated execution on Windows
+   * into a startup failure, so the request is made only where it can be honoured. The
+   * read-only guarantee is not dropped with it: `claudePermissions` withdraws `Bash`
+   * instead, since a shell is the only remaining way such a role could write.
+   */
+  private sandboxAvailable(): boolean {
+    return this.platform !== "win32";
+  }
+
+  private memoryRoot(): string {
+    return this.env.ALP_MEMORY_ROOT ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "memory");
   }
 
   async probe(): Promise<RuntimeHealth> {
@@ -43,10 +61,16 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
         $schema: "https://json.schemastore.org/claude-code-settings.json",
         alp: { executionId: capsule.executionId, policyHash: capsule.policyHash, capsuleFile, promptFile },
         hooks: {
-          PreToolUse: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "acl-guard.cjs")) }] }],
+          SessionStart: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-boot.cjs")) }] }],
           Stop: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-end.cjs")) }] }],
         },
-        ...(policy.workspaceMode === "read-only" ? {
+        permissions: claudePermissions({
+          policy,
+          memoryRoot: this.memoryRoot(),
+          allRoles: agentRegistry.list().map((definition) => definition.id),
+          sandboxed: this.sandboxAvailable(),
+        }),
+        ...(policy.workspaceMode === "read-only" && this.sandboxAvailable() ? {
           sandbox: {
             enabled: true,
             failIfUnavailable: true,
@@ -63,7 +87,7 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
     const env = {
       ...baseRuntimeEnvironment(capsule),
       ALP_EXECUTION_ROOT: dirname(artifacts.directory),
-      ALP_MEMORY_ROOT: this.env.ALP_MEMORY_ROOT ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "memory"),
+      ALP_MEMORY_ROOT: this.memoryRoot(),
       ALP_IDENTITY_CAPSULE: capsuleFile,
       ALP_RUNTIME_CONFIG: settingsFile,
       ALP_SKILL_ROOTS: skillRoots,

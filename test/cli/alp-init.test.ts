@@ -1,13 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, realpath, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { deinitializeProject, initializeProject, ProjectRegistryStore } from "../../src/cli/commands/init";
+import { removeTemporary } from "../support/temporary-root";
 
 const roots: string[] = [];
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(roots.splice(0).map((root) => removeTemporary(root)));
 });
 
 async function gitProject(): Promise<{ root: string; project: string; home: string }> {
@@ -41,6 +42,28 @@ describe("alp init", () => {
     });
   });
 
+  it("installs the SessionStart hook when given a repo root, without dirtying git status", async () => {
+    const { root, project, home } = await gitProject();
+    const repoRoot = join(root, "alp-code");
+    const store = new ProjectRegistryStore({ file: join(home, ".alp", "projects.json") });
+    const before = execFileSync("git", ["status", "--porcelain"], { cwd: project, encoding: "utf8" });
+
+    await initializeProject({ project, backend: "paseo", repoRoot }, { store });
+    await initializeProject({ project, backend: "paseo", repoRoot }, { store });
+
+    const settings = JSON.parse(await readFile(join(project, ".claude", "settings.local.json"), "utf8"));
+    expect(settings.$generatedBy).toBe("alp init");
+    expect(settings.hooks.SessionStart[0].hooks[0].command).toContain("session-boot.cjs");
+    // The generated file is excluded per-clone, so the project stays visibly clean and the
+    // exclude entry is written exactly once across repeated inits.
+    expect(execFileSync("git", ["status", "--porcelain"], { cwd: project, encoding: "utf8" })).toBe(before);
+    const exclude = await readFile(join(project, ".git", "info", "exclude"), "utf8");
+    expect(exclude.split(/\r?\n/).filter((line) => line.trim() === ".claude/settings.local.json")).toHaveLength(1);
+
+    await deinitializeProject({ project, repoRoot }, { store });
+    await expect(stat(join(project, ".claude", "settings.local.json"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("deinit removes owned legacy runtime artifacts, restores backups, preserves foreign files, and is idempotent", async () => {
     const { root, project, home } = await gitProject();
     const repoRoot = join(root, "alp-code");
@@ -58,7 +81,7 @@ describe("alp init", () => {
     await symlink(skill, join(project, ".claude", "skills", "owned"));
     await symlink(skill, join(project, ".agents", "skills", "owned"));
     const store = new ProjectRegistryStore({ file: join(home, ".alp", "projects.json") });
-    await initializeProject({ project, backend: "herdr" }, { store });
+    await initializeProject({ project, backend: "paseo" }, { store });
 
     await deinitializeProject({ project, repoRoot }, { store });
     await deinitializeProject({ project, repoRoot }, { store });

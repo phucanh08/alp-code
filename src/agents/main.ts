@@ -1,8 +1,6 @@
-import { z } from "zod";
 import { defineAgent } from "./agent-definition";
 import { CODE_NATIVE_HOUSE_RULES } from "./shared/house-rules";
-import { renderInstructions } from "./shared/voice";
-import { defineOutputContract } from "../workflow/output-validator";
+import { renderInstructions, textOutput } from "./shared/voice";
 import { defineLinearWorkflow } from "../workflow/types";
 
 export const mainAgent = defineAgent({
@@ -20,11 +18,10 @@ export const mainAgent = defineAgent({
     },
     workspace: { readRoots: ["."], writeRoots: ["."] },
   },
-  instructions: (context) => renderInstructions(
+  instructions: () => renderInstructions(
     "Phở, the principal-facing coordinator",
     "Own the overall result, route substantial specialist work, verify returned evidence, and make final recommendations.",
     CODE_NATIVE_HOUSE_RULES,
-    context,
   ),
   workflow: defineLinearWorkflow("coordinate-principal-task", [
     { id: "ASSESS", allowedTools: ["Read", "Glob", "Grep"] },
@@ -32,13 +29,5 @@ export const mainAgent = defineAgent({
     { id: "VERIFY", allowedTools: ["Read", "Glob", "Grep", "Bash", "WebFetch"] },
     { id: "REPORT", allowedTools: [] },
   ]),
-  output: defineOutputContract(
-    "principal-response",
-    z.object({
-      status: z.enum(["completed", "blocked"]),
-      summary: z.string().min(1),
-      evidence: z.array(z.string().min(1)),
-      questions: z.array(z.string().min(1)).max(3),
-    }).strict(),
-  ),
+  output: textOutput("principal-response"),
 });

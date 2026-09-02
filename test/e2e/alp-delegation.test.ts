@@ -4,14 +4,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { agentRegistry } from "../../src/agents/registry";
 import { BackendRegistry } from "../../src/delegation/backend-registry";
 import { DelegationService, InMemoryDelegationExecutionStore } from "../../src/delegation/delegation-service";
-import { authorizeHookTool } from "../../src/hooks/execution-bridge";
 import { cleanupEnvironments, createE2eEnvironment, type E2eEnvironment } from "./harness";
 
-const SEARCH_OUTPUT = {
-  status: "found",
-  summary: "entrypoint located",
-  evidence: [{ path: "index.ts", line: 1, detail: "export const entrypoint" }],
-};
+const SEARCH_OUTPUT = "Entrypoint located at index.ts:1 — `export const entrypoint`.";
 
 afterEach(cleanupEnvironments);
 
@@ -43,7 +38,8 @@ describe("e2e: specialist delegation", () => {
     });
     const result = await service.wait(spawned.executionId);
 
-    expect(result).toMatchObject({ status: "completed", output: JSON.stringify(SEARCH_OUTPUT) });
+    // Prose reaches the caller as prose — not as an escaped JSON blob.
+    expect(result).toMatchObject({ status: "completed", output: SEARCH_OUTPUT });
     const capture = await environment.capture("codex");
     expect(capture.capsule).toMatchObject({
       role: "search",
@@ -90,21 +86,13 @@ describe("e2e: specialist delegation", () => {
     });
     await service.wait(spawned.executionId);
 
-    const hookInput = { executionId: "exec_scoped", executionRoot: environment.executionsRoot, cwd: environment.project };
-    await expect(authorizeHookTool({
-      ...hookInput,
-      tool: "Read",
-      input: { file_path: join(environment.project, "index.ts") },
-    })).resolves.toEqual({ allowed: true });
-    await expect(authorizeHookTool({
-      ...hookInput,
-      tool: "Read",
-      input: { file_path: join(other, "secret.ts") },
-    })).resolves.toMatchObject({ allowed: false, code: "INVALID_EXECUTION" });
-    await expect(authorizeHookTool({
-      ...hookInput,
-      tool: "Write",
-      input: { file_path: join(environment.project, "index.ts") },
-    })).resolves.toMatchObject({ allowed: false });
+    // Workspace scoping is declared in the runtime's own config rather than intercepted
+    // per tool call, so the assertion is on what the runtime was actually handed.
+    const capture = await environment.capture("codex");
+    expect(capture.cwd).toBe(environment.project);
+    expect(capture.runtimeConfig).toContain(`sandbox_mode = "read-only"`);
+    // Read-only means no writable root at all — not even the execution's own workspace.
+    expect(capture.runtimeConfig).toContain("writable_roots = []");
+    expect(capture.runtimeConfig).not.toContain(other);
   });
 });

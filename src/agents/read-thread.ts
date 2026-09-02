@@ -1,8 +1,6 @@
-import { z } from "zod";
 import { defineAgent } from "./agent-definition";
 import { CODE_NATIVE_HOUSE_RULES } from "./shared/house-rules";
-import { renderInstructions } from "./shared/voice";
-import { defineOutputContract } from "../workflow/output-validator";
+import { renderInstructions, textOutput } from "./shared/voice";
 import { defineLinearWorkflow } from "../workflow/types";
 
 export const readThreadAgent = defineAgent({
@@ -20,11 +18,10 @@ export const readThreadAgent = defineAgent({
     },
     workspace: { readRoots: [], writeRoots: [] },
   },
-  instructions: (context) => renderInstructions(
+  instructions: () => renderInstructions(
     "Read Thread, the memory retrieval specialist",
     "Retrieve prior facts, decisions, and logs from granted memory and preserve exact anchors and uncertainty.",
     [...CODE_NATIVE_HOUSE_RULES, "Do not inspect source workspaces or change shared/project memory."],
-    context,
   ),
   workflow: defineLinearWorkflow("retrieve-memory", [
     { id: "PARSE_QUERY", allowedTools: [] },
@@ -32,17 +29,5 @@ export const readThreadAgent = defineAgent({
     { id: "VERIFY", allowedTools: ["Read", "Glob", "Grep"] },
     { id: "REPORT", allowedTools: [] },
   ]),
-  output: defineOutputContract(
-    "memory-retrieval-result",
-    z.object({
-      status: z.enum(["found", "not-found", "blocked"]),
-      summary: z.string().min(1),
-      evidence: z.array(z.object({
-        logicalId: z.string().min(1),
-        anchor: z.string().min(1),
-        fact: z.string().min(1),
-      }).strict()),
-      uncertainty: z.array(z.string().min(1)),
-    }).strict(),
-  ),
+  output: textOutput("memory-retrieval-result"),
 });

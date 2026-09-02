@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { agentRegistry } from "../../agents/registry";
 import type { RuntimeId } from "../../agents/types";
 import type { BackendExecutionResult, ExecutionBackend, SpawnExecutionInput } from "../../backend/execution-backend";
+import { LocalProcessBackend } from "../../backend/local-process-backend";
 import { BackendRegistry } from "../../delegation/backend-registry";
 import { DelegationService, FileDelegationExecutionStore } from "../../delegation/delegation-service";
 import type { DelegationResult } from "../../delegation/types";
@@ -161,16 +162,10 @@ export async function createDefaultDelegationComposition(
   const cjsStateStore = localRequire(join(repoRoot, "scripts", "lib", "delegation", "core", "execution-store.cjs")) as {
     FileExecutionStore: new (file: string) => unknown;
   };
-  if (config.backends.herdr?.enabled) {
-    const { HerdrBackend } = localRequire(join(repoRoot, "scripts", "lib", "delegation", "backends", "herdr", "backend.cjs")) as {
-      HerdrBackend: new (options: Record<string, unknown>) => CjsBackend;
-    };
-    backendRegistry.register(new CjsExecutionBackendAdapter(new HerdrBackend({
-      repoRoot,
-      stateDir: config.stateDir,
-      state: new cjsStateStore.FileExecutionStore(join(config.stateDir, "herdr.json")),
-    })));
-  }
+  // `local` is always registered: it needs no daemon, so it is the backend that keeps
+  // delegation working on a machine where nothing else is installed. Every other backend
+  // is opt-in through `alp.config.yaml`.
+  backendRegistry.register(new LocalProcessBackend({ env }));
   if (config.backends.paseo?.enabled) {
     const { PaseoBackend } = localRequire(join(repoRoot, "scripts", "lib", "delegation", "backends", "paseo", "backend.cjs")) as {
       PaseoBackend: new (options: Record<string, unknown>) => CjsBackend;

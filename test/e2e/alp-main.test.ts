@@ -7,12 +7,7 @@ import { runMainSession } from "../../src/cli/commands/run-main";
 import type { BackendExecutionResult } from "../../src/backend/execution-backend";
 import { cleanupEnvironments, createE2eEnvironment, type E2eEnvironment } from "./harness";
 
-const MAIN_OUTPUT = {
-  status: "completed",
-  summary: "entrypoint located",
-  evidence: ["index.ts:1"],
-  questions: [],
-};
+const MAIN_OUTPUT = "Completed — entrypoint located at index.ts:1.";
 
 afterEach(cleanupEnvironments);
 
@@ -41,7 +36,7 @@ describe("e2e: alp main session", () => {
     const codexResult = await runMain(environment, "codex");
 
     for (const result of [claudeResult, codexResult]) {
-      expect(result).toMatchObject({ status: "completed", output: JSON.stringify(MAIN_OUTPUT) });
+      expect(result).toMatchObject({ status: "completed", output: MAIN_OUTPUT });
     }
 
     const claude = await environment.capture("claude");
@@ -66,17 +61,25 @@ describe("e2e: alp main session", () => {
     }
     expect(claude.capsule.instructions).toBe(codex.capsule.instructions);
     expect(claude.capsule.allowedTools).toEqual(codex.capsule.allowedTools);
-    expect(claude.prompt.replace(claude.capsule.executionId, ""))
-      .toBe(codex.prompt.replace(codex.capsule.executionId, ""));
+
+    // The identity is the same; only its delivery differs. Claude Code applies the
+    // SessionStart hook's context before turn 1, so repeating it in the prompt would pay
+    // for it twice; Codex rejects that hook, so its prompt has to carry the identity.
+    // Strip that one section and the two prompts are identical again.
+    expect(claude.prompt).not.toContain(claude.capsule.instructions);
+    expect(codex.prompt).toContain(codex.capsule.instructions);
+    const withoutIdentity = codex.prompt.replace(`## Identity\n\n${codex.capsule.instructions}\n\n`, "");
+    expect(withoutIdentity.replace(codex.capsule.executionId, ""))
+      .toBe(claude.prompt.replace(claude.capsule.executionId, ""));
 
     // Only launch syntax and the per-runtime model differ.
     expect(claude.argv).toContain(definition.model.claude);
     expect(claude.argv).toContain("--settings");
     expect(codex.argv).toContain(definition.model.codex);
     expect(codex.argv.slice(0, 3)).toEqual(["--dangerously-bypass-hook-trust", "--enable", "hooks"]);
-    expect(JSON.parse(claude.runtimeConfig).hooks).toHaveProperty("PreToolUse");
+    expect(JSON.parse(claude.runtimeConfig).hooks).toHaveProperty("SessionStart");
     // Codex carries the same hook bridges as `-c` overrides rather than in its config file.
-    expect(codex.argv.some((arg) => arg.startsWith("hooks.PreToolUse="))).toBe(true);
+    expect(codex.argv.some((arg) => arg.startsWith("hooks.SessionStart="))).toBe(true);
     expect(codex.runtimeConfig).toContain(`model = "${definition.model.codex}"`);
   });
 

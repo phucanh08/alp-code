@@ -1,13 +1,12 @@
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
+import { removeTemporary } from "../support/temporary-root";
 
 const localRequire = createRequire(join(process.cwd(), "test", "backend", "delegated-backends.test.ts"));
-const { HerdrBackend } = localRequire("../../scripts/lib/delegation/backends/herdr/backend.cjs");
 const { PaseoBackend } = localRequire("../../scripts/lib/delegation/backends/paseo/backend.cjs");
-const herdrClient = localRequire("../../scripts/lib/delegation/backends/herdr/herdr-client.cjs");
 
 function state() {
   const rows = new Map<string, Record<string, unknown>>();
@@ -28,96 +27,6 @@ const launchSpec = {
 };
 
 describe("delegated backends", () => {
-  it("reads Herdr pane output as raw text", () => {
-    const calls: string[][] = [];
-    const output = herdrClient.readPane("w1:p2", 40, (args: string[]) => {
-      calls.push(args);
-      return "review result\n";
-    });
-
-    expect(output).toBe("review result\n");
-    expect(calls).toEqual([["pane", "read", "w1:p2", "--source", "recent-unwrapped", "--lines", "40"]]);
-  });
-
-  it("Herdr executes a prepared launch spec without rebuilding identity/runtime config", () => {
-    const calls: Record<string, unknown>[] = [];
-    const backend = new HerdrBackend({
-      repoRoot: process.cwd(),
-      stateDir: "/unused",
-      state: state(),
-      runtime: {
-        available: () => ({ ok: true, version: "0.8.0" }),
-        spawn: (input: Record<string, unknown>) => { calls.push(input); return { pane: "pane-1", label: "prepared" }; },
-        orphans: () => [],
-      },
-    });
-
-    const result = backend.spawn({
-      executionId: "exec-prepared",
-      request: { requestId: "req-1", parentExecutionId: null, executionOptions: { background: true } },
-      launchSpec,
-    });
-
-    expect(result.status).toBe("running");
-    expect(calls[0]).toMatchObject({ kind: "codex", argv: launchSpec.args, cwd: launchSpec.cwd, env: launchSpec.env });
-  });
-
-  it("Herdr cleanup removes prepared runtime temporary files", async () => {
-    const root = await mkdtemp(join(tmpdir(), "alp-herdr-cleanup-"));
-    const temporaryFile = join(root, "prompt.md");
-    await writeFile(temporaryFile, "temporary");
-    try {
-      const backend = new HerdrBackend({
-        repoRoot: process.cwd(),
-        stateDir: "/unused",
-        state: state(),
-        runtime: {
-          available: () => ({ ok: true, version: "0.8.0" }),
-          spawn: () => ({ pane: "pane-cleanup", label: "prepared" }),
-          cleanup: () => undefined,
-          orphans: () => [],
-        },
-      });
-      backend.spawn({
-        executionId: "exec-cleanup-herdr",
-        request: { requestId: "req-cleanup", parentExecutionId: null, executionOptions: { background: true } },
-        launchSpec: { ...launchSpec, temporaryFiles: [temporaryFile] },
-      });
-
-      backend.cleanup("exec-cleanup-herdr");
-
-      await expect(access(temporaryFile)).rejects.toMatchObject({ code: "ENOENT" });
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  it("Herdr foreground completion removes prepared runtime temporary files", async () => {
-    const root = await mkdtemp(join(tmpdir(), "alp-herdr-foreground-cleanup-"));
-    const temporaryFile = join(root, "prompt.md");
-    await writeFile(temporaryFile, "temporary");
-    try {
-      const backend = new HerdrBackend({
-        repoRoot: process.cwd(),
-        stateDir: "/unused",
-        state: state(),
-        runtime: { available: () => ({ ok: false, reason: "headless" }), orphans: () => [] },
-        spawnProcess: () => ({ status: 0, stdout: "done", stderr: "", error: null }),
-      });
-
-      const completed = backend.spawn({
-        executionId: "exec-cleanup-herdr-foreground",
-        request: { requestId: "req-cleanup", parentExecutionId: null, executionOptions: { background: false, interactive: false, timeoutMs: null } },
-        launchSpec: { ...launchSpec, temporaryFiles: [temporaryFile] },
-      });
-
-      expect(completed.status).toBe("completed");
-      await expect(access(temporaryFile)).rejects.toMatchObject({ code: "ENOENT" });
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
   it("Paseo receives the prepared runtime command, args, cwd, and env", () => {
     const calls: string[][] = [];
     const backend = new PaseoBackend({
@@ -168,13 +77,12 @@ describe("delegated backends", () => {
 
       await expect(access(temporaryFile)).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
-      await rm(root, { recursive: true, force: true });
+      await removeTemporary(root);
     }
   });
 
   it("delegated backends do not import registry, memory, policy, or identity builders", async () => {
     for (const file of [
-      "scripts/lib/delegation/backends/herdr/backend.cjs",
       "scripts/lib/delegation/backends/paseo/backend.cjs",
     ]) {
       const source = await readFile(join(process.cwd(), file), "utf8");

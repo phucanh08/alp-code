@@ -1,4 +1,0 @@
-interface:
-  display_name: "Delegation Backend"
-  short_description: "Switch ALP delegation between Herdr and Paseo"
-  default_prompt: "Show or switch the ALP delegation backend."

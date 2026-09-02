@@ -1,15 +1,17 @@
-import { mkdtemp, mkdir, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ClaudeRuntimeAdapter } from "../../src/runtime/claude-adapter";
 import { CodexRuntimeAdapter } from "../../src/runtime/codex-adapter";
+import { absoluteRule } from "../../src/runtime/permission-rules";
 import type { PreparedExecution } from "../../src/execution/types";
+import { removeTemporary } from "../support/temporary-root";
 
 const roots: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(roots.splice(0).map((root) => removeTemporary(root)));
 });
 
 async function fixture(): Promise<{ root: string; project: string; prepared: PreparedExecution }> {
@@ -111,17 +113,55 @@ describe("runtime adapters", () => {
     const settings = JSON.parse(await readFile(launch.temporaryFiles[2], "utf8"));
     expect(JSON.parse(await readFile(launch.temporaryFiles[3], "utf8"))).toContain(join(root, ".agents", "skills"));
     expect(settings.hooks).toMatchObject({
-      PreToolUse: [{ hooks: [{ type: "command", command: expect.stringMatching(/hooks\/acl-guard\.cjs"?$/) }] }],
-      Stop: [{ hooks: [{ type: "command", command: expect.stringMatching(/hooks\/session-end\.cjs"?$/) }] }],
+      // `[\\/]` because the command carries native separators — a `/`-only pattern
+      // silently never matches on Windows.
+      SessionStart: [{ hooks: [{ type: "command", command: expect.stringMatching(/hooks[\\/]session-boot\.cjs"?$/) }] }],
+      Stop: [{ hooks: [{ type: "command", command: expect.stringMatching(/hooks[\\/]session-end\.cjs"?$/) }] }],
     });
-    expect(settings.hooks).not.toHaveProperty("SessionStart");
-    expect(settings.hooks.PreToolUse[0].hooks[0].command).toContain(process.execPath);
+    // Per-tool interception is gone: the ACL is declared up front instead.
+    expect(settings.hooks).not.toHaveProperty("PreToolUse");
+    expect(settings.hooks.SessionStart[0].hooks[0].command).toContain(process.execPath);
+    expect(settings.permissions.additionalDirectories).toContain(project);
+    expect(settings.permissions.deny).toContain(
+      absoluteRule("Read", join(root, "memory", "private", "main")),
+    );
+    // The format itself, pinned once: two leading slashes and no more, whatever the
+    // platform's absolute paths look like.
+    expect(absoluteRule("Read", "/home/a/memory")).toBe("Read(//home/a/memory/**)");
+    expect(absoluteRule("Read", "C:\\Users\\a\\memory")).toBe("Read(//C:/Users/a/memory/**)");
     expect(settings.sandbox).toEqual({
       enabled: true,
       failIfUnavailable: true,
       allowUnsandboxedCommands: false,
       filesystem: { denyWrite: [project] },
     });
+  });
+
+  it("keeps a read-only role read-only on Windows by withdrawing the shell", async () => {
+    const { root, project, prepared } = await fixture();
+    // A grant that includes Bash — otherwise the tool is already denied for being outside
+    // the policy and the assertion below would prove nothing.
+    const withShell = {
+      ...prepared,
+      policy: { ...prepared.policy, allowedTools: ["Read", "Grep", "Bash"] },
+    } satisfies PreparedExecution;
+    const adapter = new ClaudeRuntimeAdapter({ platform: "win32", env: { HOME: root, ALP_REPO_ROOT: root } });
+
+    const launch = await adapter.prepare({
+      execution: withShell,
+      model: "claude-test",
+      reasoningEffort: "high",
+      interactive: true,
+    });
+    const settings = JSON.parse(await readFile(launch.temporaryFiles[2], "utf8"));
+
+    // Claude Code does not activate its sandbox on Windows, and asking for one with
+    // `failIfUnavailable` makes it refuse to start at all.
+    expect(settings).not.toHaveProperty("sandbox");
+    // The workspace guarantee survives the missing sandbox: with no Write/Edit grant, a
+    // shell was the only way left to write, so the shell goes instead.
+    expect(settings.permissions.deny).toContain("Bash");
+    expect(settings.permissions.additionalDirectories).toContain(project);
   });
 
   it("prepares a Codex launch spec from the same capsule and pins sandbox/cwd", async () => {
@@ -138,7 +178,8 @@ describe("runtime adapters", () => {
     expect(launch.args).toContain("--dangerously-bypass-hook-trust");
     expect(launch.args).toContain("--enable");
     expect(launch.args).toContain("hooks");
-    expect(launch.args.some((arg) => arg.startsWith("hooks.PreToolUse="))).toBe(true);
+    expect(launch.args.some((arg) => arg.startsWith("hooks.SessionStart="))).toBe(true);
+    expect(launch.args.some((arg) => arg.startsWith("hooks.PreToolUse="))).toBe(false);
     expect(launch.args.some((arg) => arg.startsWith("hooks.Stop="))).toBe(true);
 
     expect(launch.command).toBe("codex.cmd");
