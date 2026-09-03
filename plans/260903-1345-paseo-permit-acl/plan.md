@@ -65,7 +65,17 @@ thay vì `running` vô hạn.
 **Đã rút lại:** nghi ngờ `wait --timeout` sai đơn vị là **sai**. Đo thực tế: `--timeout 8` và
 `--timeout 8s` đều chờ ~9.2s rồi trả `timeout`. Paseo nhận cả hai dạng. Không cần sửa.
 
-## Phase 2 — Arbiter `permit`. Recon xong, API đã verify đủ
+## Phase 2 — Arbiter `permit`. **DỪNG** (2026-09-03)
+
+Recon xong, API đủ dùng, nhưng không xây. Lý do: giá trị thu về chỉ còn ACL theo tên tool —
+thứ `capsule.allowedTools` đã nói ở tầng chỉ dẫn và `PolicyEngine` đã chặn ở `prepare`. Lỗ hổng
+thật (một role đọc file private memory của role khác) **không** vá được vì permission request
+không mang path. Đổi một stateful component phải quản lifecycle lấy một lớp phòng thủ mỏng là
+không đáng. Chỗ giải quyết được là backend `local` — Phase 4.
+
+Phần dưới giữ lại làm hồ sơ recon, để lần sau không phải đo lại.
+
+### Recon đã verify
 
 Vòng đầy đủ đã chạy thật ngày 2026-09-03 trên một agent `--mode default` được giao lệnh `rm` rồi
 đọc `/etc/hosts`:
@@ -123,11 +133,17 @@ Việc phải làm: kiểm lại giả định 0.5.x hard-code trong comment `co
 `local` là đường duy nhất hiện có enforcement đầy đủ, vì nó exec trực tiếp launch spec kèm
 `--settings`. Kiểm tra cho hoàn chỉnh ở phase sau.
 
-## Câu chưa có lời đáp
+## Trạng thái các phase
 
-- **Phase 2 có đáng làm không**, khi nó chỉ lấy lại được ACL theo tên tool chứ không theo path?
-  Đây là câu duy nhất còn chặn.
-- Poll interval và TTL của permission request.
+| Phase | Trạng thái |
+|---|---|
+| 0 — gate `permit` | xong, xanh |
+| 1 — ba bug che khuất block | xong, đã release |
+| 2 — arbiter `permit` | **dừng**, không đáng làm |
+| 3 — nâng Paseo 0.7.x | chưa làm |
+| 4 — backend `local` | chưa làm, là chỗ duy nhất lấy lại được ACL theo path |
+
+## Câu chưa có lời đáp
 
 Đã trả lời xong:
 
