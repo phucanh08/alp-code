@@ -131,9 +131,10 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
       ]),
       cwd: capsule.activeWorkspace,
       env: Object.freeze(env),
-      // Paseo 0.5.x exposes no Codex `read-only` creation mode, and `auto-review` is
+      // Paseo exposes no Codex `read-only` creation mode, and `auto-review` is
       // workspace-write too, so `auto` is the only honest choice; the delegated workspace
-      // and `ALP_READONLY_DIRS` are what hold the line there.
+      // and `ALP_READONLY_DIRS` are what hold the line there. Rechecked on 0.7.2, which
+      // still offers Codex only `Default Permissions, Auto-review, Full Access`.
       intent: Object.freeze({
         prompt: contextFiles.taskFile === null ? null : taskArguments(contextFiles)[0] ?? null,
         model: input.model,
