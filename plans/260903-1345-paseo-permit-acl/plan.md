@@ -65,31 +65,46 @@ thay vì `running` vô hạn.
 **Đã rút lại:** nghi ngờ `wait --timeout` sai đơn vị là **sai**. Đo thực tế: `--timeout 8` và
 `--timeout 8s` đều chờ ~9.2s rồi trả `timeout`. Paseo nhận cả hai dạng. Không cần sửa.
 
-## Phase 2 — Arbiter `permit`
+## Phase 2 — Arbiter `permit`. Recon xong, API đã verify đủ
 
-Một thành phần đứng giữa `DelegationService` và Paseo.
+Vòng đầy đủ đã chạy thật ngày 2026-09-03 trên một agent `--mode default` được giao lệnh `rm` rồi
+đọc `/etc/hosts`:
 
-- Poll `permit ls --json`, lọc theo agent thuộc execution đang quản (`agentId` === `runtimeId`).
-- Với mỗi request: quyết định từ `ExecutionPolicy` — tool có trong `allowedTools` không, path có
-  nằm trong workspace / own private memory không.
-- `permit allow <agent> <req_id>` hoặc `permit deny`; ghi quyết định vào execution artifacts.
-- Không quyết định được → `deny` (fail-closed, khớp `PolicyEngine`).
+1. **Detect** — `paseo inspect <agent> --json` trả `PendingPermissions: [{id, tool}]` với id đầy
+   đủ `permission-<uuid>`. Không cần gọi `permit ls`.
+2. **Decide** — theo `ExecutionPolicy.allowedTools`.
+3. **Act** — `paseo permit deny <agent> <full-id>` → `{"result":"denied"}`;
+   `paseo permit allow …` → `{"result":"allowed"}`.
+4. **Agent chạy tiếp.** Bị deny `Bash` (file `victim.txt` không bị xoá), agent không chết, đi tiếp
+   và sinh request mới cho `Read`. Allow xong thì agent về `idle`.
 
-Khi có arbiter, mode có thể bỏ `bypass` quay về `default`: cứ để runtime hỏi, ALP trả lời. Đó là
-enforcement **mạnh hơn** deny list tĩnh vì nó per-call và đọc được cả tham số.
+### Giới hạn cứng: không có tham số tool
 
-Đánh đổi phải nói rõ: quay lại per-call interception mà `permission-rules.ts:8-11` đã cố tình bỏ.
-Lần này chi phí là polling daemon chứ không phải spawn process mỗi tool call, nhưng vẫn là
-stateful component mới phải quản lifecycle.
+`PendingPermissions` chỉ có `{id, tool}`. `permit ls` chỉ có
+`{id, agentId, agentShortId, name, description}` với `description` luôn là `-`.
+`logs --filter permissions` trả **"No activity to display"** — filter đó không bắt được gì.
 
-Chưa biết:
+Hệ quả: arbiter **chỉ quyết định được theo tên tool**, không theo path. Nghĩa là
+**cách ly private memory giữa các role vẫn không lấy lại được** — đó vốn là lý do ban đầu muốn
+làm Phase 2. Enforcement lấy lại được đúng phần "tool ngoài policy".
 
-- Poll interval bao nhiêu để agent không chờ lâu mà cũng không đốt CPU.
-- Request có TTL không; `permit ls` chỉ trả `{id, agentId, agentShortId, name, description}` —
-  `description` là `-` trong mẫu quan sát được, nên **chưa rõ lấy tham số tool ở đâu** để quyết
-  định theo path. Có thể phải đọc `logs --filter permissions`. Đây là rủi ro lớn nhất của Phase 2.
-- `id` quan sát được là `"permissi"` (8 ký tự, trông như bị cắt) — cần xác minh trước khi dùng làm
-  `req_id`, hoặc dùng `--all` cho mỗi agent.
+Tham số tool **có** trong transcript (`[Shell] rm victim.txt && ls -la`, `[Read] /etc/hosts` là
+đúng lệnh đang chờ duyệt), nhưng phải ghép dòng log cuối với `PendingPermissions[].tool` — racy,
+phụ thuộc format hiển thị. Không nên xây ACL lên nền đó.
+
+### Bug Paseo phát hiện được
+
+`permit ls --json` cắt `id` còn 8 ký tự: mọi entry đều là `"permissi"`, bất kể agent hay tool —
+truncation của bảng rò vào cả `--json`. Chỉ `inspect` cho id dùng được. Nên báo upstream.
+
+### Còn phải quyết
+
+- Poll interval; request có TTL không.
+- Đánh đổi: quay lại per-call interception mà `permission-rules.ts:8-11` đã cố tình bỏ. Chi phí
+  giờ là polling daemon chứ không phải spawn process mỗi tool call, nhưng vẫn là stateful
+  component mới phải quản lifecycle.
+- **Có đáng làm không**, khi giá trị thu về chỉ còn ACL theo tên tool — thứ mà `capsule.allowedTools`
+  đã nói cho agent biết ở tầng chỉ dẫn. Câu này nên trả lời trước khi viết code.
 
 ## Phase 3 — Nâng Paseo lên 0.7.x
 
@@ -110,8 +125,15 @@ Việc phải làm: kiểm lại giả định 0.5.x hard-code trong comment `co
 
 ## Câu chưa có lời đáp
 
-- `permit ls` có đủ thông tin để quyết định theo path không, hay phải ghép với
-  `logs --filter permissions`? (chặn Phase 2)
-- `permit ls` field `id` có bị cắt không?
-- Execution treo 12 phút hôm 2026-09-03: **đã giải thích** — parked ở permission prompt, `inspect`
-  báo `running` nên không ai thấy. Không còn là câu hỏi mở.
+- **Phase 2 có đáng làm không**, khi nó chỉ lấy lại được ACL theo tên tool chứ không theo path?
+  Đây là câu duy nhất còn chặn.
+- Poll interval và TTL của permission request.
+
+Đã trả lời xong:
+
+- `permit` có nổ cho agent Claude do ALP spawn — **có**.
+- Tham số tool có trong `permit`/`inspect` không — **không**, chỉ có tên tool.
+- `permit ls` field `id` có bị cắt không — **có**, còn 8 ký tự; dùng `inspect` thay thế.
+- Execution treo 12 phút hôm 2026-09-03 — parked ở permission prompt, `inspect` báo `running` nên
+  không ai thấy.
+- `wait --timeout` có sai đơn vị không — **không**.

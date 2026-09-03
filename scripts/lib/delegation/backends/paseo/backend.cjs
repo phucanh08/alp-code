@@ -169,9 +169,9 @@ class PaseoBackend {
     // `inspect` reports a parked agent as `running` — only `wait` names the `permission`
     // state, and `wait` blocks. Measured against a delegated `search` sitting on an
     // `ExitPlanMode` request: `inspect` said `running`, `wait` said
-    // `permission` / "Agent is waiting for permission: plan". Asking the permission queue
-    // directly is what lets a poll see the block without waiting for it.
-    const blocked = isPermissionBlocked(raw) || this.awaitingPermission(record);
+    // `permission` / "Agent is waiting for permission: plan". The queue the same response
+    // already carries is what lets a poll see the block without waiting for it.
+    const blocked = isPermissionBlocked(raw) || pendingPermissions(call.data).length > 0;
     let status = blocked ? "failed" : mapStatus(raw);
     if (record.cancelled && ["completed", "cancelled"].includes(status)) status = "cancelled";
     // Polling `status` is exactly when the caller wants to see progress, and `wait` blocks.
@@ -186,18 +186,6 @@ class PaseoBackend {
     });
   }
 
-  /**
-   * Whether Paseo holds a pending permission request for this execution's agent.
-   *
-   * False when the queue cannot be read: an unreachable daemon is not evidence of a block,
-   * and turning a transient CLI error into a `failed` execution would be worse than the
-   * missed detection it is meant to prevent.
-   */
-  awaitingPermission(record) {
-    const call = this.call(["permit", "ls", "--json"], { timeoutMs: 10000 });
-    if (!call.ok || !Array.isArray(call.data)) return false;
-    return call.data.some((entry) => entry?.agentId === record.runtimeId);
-  }
 
   wait(executionId, options = {}) {
     const record = this.record(executionId);
@@ -369,6 +357,23 @@ function inferRuntime(target) {
  */
 function isPermissionBlocked(status) {
   return String(status || "").toLowerCase() === "permission";
+}
+
+/**
+ * Pending permission requests carried by an `inspect --json` response.
+ *
+ * `paseo inspect` answers `Status: running` for a parked agent but still lists the queue in
+ * `PendingPermissions`, so the block is visible in a call the backend already makes — no
+ * second round-trip to `permit ls`, which reports the same queue with its `id` truncated to
+ * eight characters (`"permissi"` for every entry, whatever the agent or tool). The ids here
+ * are whole (`permission-<uuid>`) and are what `permit allow|deny` accepts.
+ *
+ * Each entry is `{id, tool}` and carries no arguments, so a decision can be made on the tool
+ * name and nothing finer; the tool's own parameters appear only in the transcript.
+ */
+function pendingPermissions(data) {
+  const pending = data?.PendingPermissions ?? data?.pendingPermissions;
+  return Array.isArray(pending) ? pending : [];
 }
 
 function permissionBlockedError(executionId) {

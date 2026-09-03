@@ -140,15 +140,16 @@ describe("delegated backends", () => {
 
   /**
    * `paseo inspect` reports a parked agent as `running`; only `wait` names `permission`, and
-   * `wait` blocks. Measured against a delegated `search` sitting on an `ExitPlanMode`
-   * request. The permission queue is what lets a poll see the block without waiting for it.
+   * `wait` blocks. It does list the queue though, so the block is visible in a call the
+   * backend already makes. Shape measured against a real parked agent.
    */
-  it("Paseo detects a block from the permission queue when inspect hides it", () => {
+  it("Paseo detects a block from the queue inspect already carries", () => {
     const backend = paseo((args) => {
       if (args[0] === "run") return json({ agentId: "agent-parked", status: "running" });
-      if (args[0] === "inspect") return json({ Status: "running" });
-      if (args[0] === "permit") return { status: 0, stdout: JSON.stringify([{ id: "p1", agentId: "agent-parked", name: "ExitPlanMode" }]), stderr: "", error: null };
-      if (args[0] === "logs") return { status: 0, stdout: "[ExitPlanMode]", stderr: "", error: null };
+      if (args[0] === "inspect") {
+        return json({ Status: "running", PendingPermissions: [{ id: "permission-87bf7d4a-0c9c-4558-aa56-24d063547c8c", tool: "Bash" }] });
+      }
+      if (args[0] === "logs") return { status: 0, stdout: "[Shell] rm victim.txt", stderr: "", error: null };
       throw new Error(`unexpected command: ${args.join(" ")}`);
     });
     spawn(backend, "exec-parked");
@@ -159,11 +160,10 @@ describe("delegated backends", () => {
     expect(status.error.message).toContain("permission prompt");
   });
 
-  it("Paseo leaves a running execution alone when the permission queue holds another agent", () => {
+  it("Paseo leaves a running execution alone when its queue is empty", () => {
     const backend = paseo((args) => {
       if (args[0] === "run") return json({ agentId: "agent-mine", status: "running" });
-      if (args[0] === "inspect") return json({ Status: "running" });
-      if (args[0] === "permit") return { status: 0, stdout: JSON.stringify([{ id: "p1", agentId: "someone-else", name: "Bash" }]), stderr: "", error: null };
+      if (args[0] === "inspect") return json({ Status: "running", PendingPermissions: [] });
       if (args[0] === "logs") return { status: 0, stdout: "[Read] a.ts", stderr: "", error: null };
       throw new Error(`unexpected command: ${args.join(" ")}`);
     });
