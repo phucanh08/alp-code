@@ -151,10 +151,19 @@ class PaseoBackend {
     const record = this.record(executionId);
     const call = this.call(["inspect", record.runtimeId, "--json"], { timeoutMs: 10000 });
     if (!call.ok) throw runtimeFailure("Paseo status thất bại", call, ExecutionFailed);
-    let status = mapStatus(call.data?.Status || call.data?.status);
+    const raw = call.data?.Status || call.data?.status;
+    let status = mapStatus(raw);
     if (record.cancelled && ["completed", "cancelled"].includes(status)) status = "cancelled";
-    this.state.update(executionId, { status });
-    return result(executionId, status);
+    // Polling `status` is exactly when the caller wants to see progress, and `wait` blocks.
+    // Reading the transcript here is what makes the two agree: before this, `wait` fetched
+    // the logs and `status` returned nothing, so a caller who polled after waiting watched
+    // the output it had already been given disappear.
+    const output = this.transcript(record) || record.output || "";
+    this.state.update(executionId, { status, ...(output ? { output } : {}) });
+    return result(executionId, status, {
+      ...(output ? { output } : {}),
+      ...(isPermissionBlocked(raw) ? { error: permissionBlockedError(executionId) } : {}),
+    });
   }
 
   wait(executionId, options = {}) {
@@ -167,15 +176,23 @@ class PaseoBackend {
     if (call.data?.status === "timeout")
       throw new DelegationTimeout(`Paseo execution \`${executionId}\` chưa xong trước timeout`);
 
-    let status = mapStatus(call.data?.status);
+    const raw = call.data?.status;
+    let status = mapStatus(raw);
     if (record.cancelled && status === "completed") status = "cancelled";
-    const logs = this.callText(["logs", record.runtimeId, "--tail", "200"], { timeoutMs: 15000 });
-    const output = logs.ok ? logs.output.trim() : call.data?.message || "";
+    const output = this.transcript(record) || call.data?.message || "";
     this.state.update(executionId, { status, output });
     return result(executionId, status, {
       ...(output ? { output } : {}),
-      ...(status === "failed" ? { error: { code: "ExecutionFailed", message: call.data?.message || "Paseo agent failed" } } : {}),
+      ...(isPermissionBlocked(raw)
+        ? { error: permissionBlockedError(executionId) }
+        : status === "failed" ? { error: { code: "ExecutionFailed", message: call.data?.message || "Paseo agent failed" } } : {}),
     });
+  }
+
+  /** Last 200 lines of the agent transcript, or "" when Paseo cannot produce them. */
+  transcript(record) {
+    const logs = this.callText(["logs", record.runtimeId, "--tail", "200"], { timeoutMs: 15000 });
+    return logs.ok ? logs.output.trim() : "";
   }
 
   cancel(executionId) {
@@ -280,13 +297,40 @@ function inferRuntime(target) {
   return String(target.model || "").startsWith("claude-") ? "claude" : "codex";
 }
 
+/**
+ * Paseo reports `permission` when the runtime has stopped to ask a human.
+ *
+ * A delegated execution is spawned `--background` and non-interactive, so there is no one to
+ * answer and the agent parks until something kills it — one sat twelve minutes on nine
+ * seconds of CPU before being cancelled by hand. Reporting that as `running` made it
+ * indistinguishable from work in progress, and `wait` would have blocked on it for its full
+ * 24-hour ceiling.
+ *
+ * It is `failed` rather than a status of its own because the five-value contract in
+ * `execution-backend.ts` is what every caller switches on, and because the condition is
+ * genuinely terminal: `PolicyEngine` already decided what this role may do, so a prompt
+ * means the runtime and the policy disagree. That is a bug to fix in the grant, not a state
+ * to sit in.
+ */
+function isPermissionBlocked(status) {
+  return String(status || "").toLowerCase() === "permission";
+}
+
+function permissionBlockedError(executionId) {
+  return {
+    code: "ExecutionFailed",
+    message: `Paseo execution \`${executionId}\` dừng ở permission prompt; delegated run chạy background nên không ai trả lời được. `
+      + "Kiểm tra tool grant của role trong src/agents/ và deny list trong src/runtime/permission-rules.ts.",
+  };
+}
+
 function mapStatus(status) {
   const value = String(status || "").toLowerCase();
   if (["initializing", "created", "queued", "starting"].includes(value)) return "queued";
-  if (["running", "permission"].includes(value)) return "running";
+  if (value === "running") return "running";
   if (["idle", "completed", "archived"].includes(value)) return "completed";
   if (["cancelled", "canceled", "stopped", "closed"].includes(value)) return "cancelled";
-  if (["error", "failed", "timeout"].includes(value)) return "failed";
+  if (["error", "failed", "timeout"].includes(value) || isPermissionBlocked(value)) return "failed";
   return "running";
 }
 
@@ -299,4 +343,4 @@ function runtimeFailure(prefix, call, Fallback) {
   return new Fallback(message);
 }
 
-module.exports = { PaseoBackend, inferRuntime, mapStatus, runtimeFailure };
+module.exports = { PaseoBackend, inferRuntime, isPermissionBlocked, mapStatus, runtimeFailure };

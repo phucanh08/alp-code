@@ -26,6 +26,30 @@ const launchSpec = {
   temporaryFiles: [],
 };
 
+type Runner = (args: string[]) => { status: number; stdout: string; stderr: string; error: null };
+
+function json(payload: Record<string, unknown>): ReturnType<Runner> {
+  return { status: 0, stdout: JSON.stringify(payload), stderr: "", error: null };
+}
+
+/** A backend wired to a scripted Paseo CLI, with the home path pointed at nothing. */
+function paseo(runner: Runner, rows = state()) {
+  return new PaseoBackend({
+    config: { runtimeToolsDisabled: true, home: join(process.cwd(), ".missing-paseo-home") },
+    stateDir: "/unused",
+    state: rows,
+    runner,
+  });
+}
+
+function spawn(backend: ReturnType<typeof paseo>, executionId: string): void {
+  backend.spawn({
+    executionId,
+    request: { requestId: `req-${executionId}`, parentExecutionId: null, executionOptions: { background: true } },
+    launchSpec,
+  });
+}
+
 describe("delegated backends", () => {
   it("Paseo receives the prepared runtime command, args, cwd, and env", () => {
     const calls: string[][] = [];
@@ -79,6 +103,74 @@ describe("delegated backends", () => {
     } finally {
       await removeTemporary(root);
     }
+  });
+
+  /**
+   * A delegated agent runs `--background` with nobody at the keyboard, so Paseo's
+   * `permission` state is terminal rather than transient: reported as `running` it was
+   * indistinguishable from work, and `wait` would sit on it for its 24-hour ceiling.
+   */
+  it("Paseo reports a permission-blocked execution as failed, not running", () => {
+    const backend = paseo((args) => {
+      if (args[0] === "run") return json({ agentId: "agent-blocked", status: "running" });
+      if (args[0] === "inspect") return json({ status: "permission" });
+      if (args[0] === "logs") return { status: 0, stdout: "[Shell] git status", stderr: "", error: null };
+      throw new Error(`unexpected command: ${args.join(" ")}`);
+    });
+    spawn(backend, "exec-blocked");
+
+    const status = backend.status("exec-blocked");
+
+    expect(status.status).toBe("failed");
+    expect(status.error.message).toContain("permission prompt");
+  });
+
+  it("Paseo surfaces the same block from wait", () => {
+    const backend = paseo((args) => {
+      if (args[0] === "run") return json({ agentId: "agent-blocked", status: "running" });
+      if (args[0] === "wait") return json({ status: "permission" });
+      if (args[0] === "logs") return { status: 0, stdout: "[Shell] git status", stderr: "", error: null };
+      throw new Error(`unexpected command: ${args.join(" ")}`);
+    });
+    spawn(backend, "exec-blocked-wait");
+
+    const waited = backend.wait("exec-blocked-wait");
+
+    expect(waited.status).toBe("failed");
+    expect(waited.error.message).toContain("permission prompt");
+  });
+
+  /**
+   * `wait` read the transcript and `status` did not, so a caller who polled after waiting
+   * watched the output it had already been handed disappear.
+   */
+  it("Paseo returns the transcript from status, not only from wait", () => {
+    const backend = paseo((args) => {
+      if (args[0] === "run") return json({ agentId: "agent-logs", status: "running" });
+      if (args[0] === "inspect") return json({ status: "running" });
+      if (args[0] === "logs") return { status: 0, stdout: "[Read] src/index.ts\n", stderr: "", error: null };
+      throw new Error(`unexpected command: ${args.join(" ")}`);
+    });
+    spawn(backend, "exec-logs");
+
+    expect(backend.status("exec-logs").output).toBe("[Read] src/index.ts");
+  });
+
+  /**
+   * Losing the transcript must not cost the caller what an earlier `wait` already stored.
+   */
+  it("Paseo falls back to the stored transcript when Paseo cannot produce logs", () => {
+    const rows = state();
+    const backend = paseo((args) => {
+      if (args[0] === "run") return json({ agentId: "agent-fallback", status: "running" });
+      if (args[0] === "inspect") return json({ status: "running" });
+      if (args[0] === "logs") return { status: 1, stdout: "", stderr: "log stream gone", error: null };
+      throw new Error(`unexpected command: ${args.join(" ")}`);
+    }, rows);
+    spawn(backend, "exec-fallback");
+    rows.update("exec-fallback", { output: "[Read] earlier.ts" });
+
+    expect(backend.status("exec-fallback").output).toBe("[Read] earlier.ts");
   });
 
   it("delegated backends do not import registry, memory, policy, or identity builders", async () => {
