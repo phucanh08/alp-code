@@ -138,6 +138,66 @@ describe("delegated backends", () => {
     expect(status.error.message).toContain("permission prompt");
   });
 
+  /**
+   * `paseo inspect` reports a parked agent as `running`; only `wait` names `permission`, and
+   * `wait` blocks. Measured against a delegated `search` sitting on an `ExitPlanMode`
+   * request. The permission queue is what lets a poll see the block without waiting for it.
+   */
+  it("Paseo detects a block from the permission queue when inspect hides it", () => {
+    const backend = paseo((args) => {
+      if (args[0] === "run") return json({ agentId: "agent-parked", status: "running" });
+      if (args[0] === "inspect") return json({ Status: "running" });
+      if (args[0] === "permit") return { status: 0, stdout: JSON.stringify([{ id: "p1", agentId: "agent-parked", name: "ExitPlanMode" }]), stderr: "", error: null };
+      if (args[0] === "logs") return { status: 0, stdout: "[ExitPlanMode]", stderr: "", error: null };
+      throw new Error(`unexpected command: ${args.join(" ")}`);
+    });
+    spawn(backend, "exec-parked");
+
+    const status = backend.status("exec-parked");
+
+    expect(status.status).toBe("failed");
+    expect(status.error.message).toContain("permission prompt");
+  });
+
+  it("Paseo leaves a running execution alone when the permission queue holds another agent", () => {
+    const backend = paseo((args) => {
+      if (args[0] === "run") return json({ agentId: "agent-mine", status: "running" });
+      if (args[0] === "inspect") return json({ Status: "running" });
+      if (args[0] === "permit") return { status: 0, stdout: JSON.stringify([{ id: "p1", agentId: "someone-else", name: "Bash" }]), stderr: "", error: null };
+      if (args[0] === "logs") return { status: 0, stdout: "[Read] a.ts", stderr: "", error: null };
+      throw new Error(`unexpected command: ${args.join(" ")}`);
+    });
+    spawn(backend, "exec-mine");
+
+    expect(backend.status("exec-mine").status).toBe("running");
+  });
+
+  /**
+   * `--json` is not a promise that stdout holds only JSON: naming a new workspace prints two
+   * human lines first, which made the first delegation into any new project fail.
+   */
+  it("Paseo parses JSON that follows a human-readable preamble", () => {
+    const backend = paseo((args) => {
+      if (args[0] === "run") {
+        return {
+          status: 0,
+          stdout: `Created workspace wks_97dc35 - scratchpad\nTip: pass --workspace <id> to run in an existing workspace.\n${JSON.stringify({ agentId: "agent-preamble", status: "running" })}`,
+          stderr: "",
+          error: null,
+        };
+      }
+      throw new Error(`unexpected command: ${args.join(" ")}`);
+    });
+
+    expect(() => spawn(backend, "exec-preamble")).not.toThrow();
+  });
+
+  it("Paseo still rejects output that carries no JSON document", () => {
+    const backend = paseo(() => ({ status: 0, stdout: "Created workspace wks_1 - only prose\n", stderr: "", error: null }));
+
+    expect(() => spawn(backend, "exec-prose")).toThrow(/JSON không hợp lệ/);
+  });
+
   it("Paseo surfaces the same block from wait", () => {
     const backend = paseo((args) => {
       if (args[0] === "run") return json({ agentId: "agent-blocked", status: "running" });

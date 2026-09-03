@@ -8,6 +8,13 @@ export interface BackendExecutionResult {
   readonly exitCode?: number | null;
   readonly signal?: NodeJS.Signals | null;
   readonly output?: string;
+  /**
+   * Why a `failed` execution failed. Backends produced this long before the type admitted
+   * it, and the omission was load-bearing: `DelegationService` could not copy a field it did
+   * not know about, so every failure reached the caller as a bare `failed` with the reason
+   * discarded — including one that names the exact grant to fix.
+   */
+  readonly error?: Readonly<{ code: string; message: string }>;
   readonly metadata?: Readonly<Record<string, unknown>>;
 }
 

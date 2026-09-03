@@ -166,7 +166,13 @@ class PaseoBackend {
     const call = this.call(["inspect", record.runtimeId, "--json"], { timeoutMs: 10000 });
     if (!call.ok) throw runtimeFailure("Paseo status thất bại", call, ExecutionFailed);
     const raw = call.data?.Status || call.data?.status;
-    let status = mapStatus(raw);
+    // `inspect` reports a parked agent as `running` — only `wait` names the `permission`
+    // state, and `wait` blocks. Measured against a delegated `search` sitting on an
+    // `ExitPlanMode` request: `inspect` said `running`, `wait` said
+    // `permission` / "Agent is waiting for permission: plan". Asking the permission queue
+    // directly is what lets a poll see the block without waiting for it.
+    const blocked = isPermissionBlocked(raw) || this.awaitingPermission(record);
+    let status = blocked ? "failed" : mapStatus(raw);
     if (record.cancelled && ["completed", "cancelled"].includes(status)) status = "cancelled";
     // Polling `status` is exactly when the caller wants to see progress, and `wait` blocks.
     // Reading the transcript here is what makes the two agree: before this, `wait` fetched
@@ -176,8 +182,21 @@ class PaseoBackend {
     this.state.update(executionId, { status, ...(output ? { output } : {}) });
     return result(executionId, status, {
       ...(output ? { output } : {}),
-      ...(isPermissionBlocked(raw) ? { error: permissionBlockedError(executionId) } : {}),
+      ...(blocked ? { error: permissionBlockedError(executionId) } : {}),
     });
+  }
+
+  /**
+   * Whether Paseo holds a pending permission request for this execution's agent.
+   *
+   * False when the queue cannot be read: an unreachable daemon is not evidence of a block,
+   * and turning a transient CLI error into a `failed` execution would be worse than the
+   * missed detection it is meant to prevent.
+   */
+  awaitingPermission(record) {
+    const call = this.call(["permit", "ls", "--json"], { timeoutMs: 10000 });
+    if (!call.ok || !Array.isArray(call.data)) return false;
+    return call.data.some((entry) => entry?.agentId === record.runtimeId);
   }
 
   wait(executionId, options = {}) {
@@ -238,8 +257,10 @@ class PaseoBackend {
   call(args, options = {}) {
     const text = this.callText(args, options);
     if (!text.ok) return text;
-    try { return { ok: true, data: JSON.parse(text.output || "{}") }; }
-    catch { return { ok: false, message: `Paseo trả JSON không hợp lệ: ${(text.output || "").slice(0, 200)}` }; }
+    const payload = jsonPayload(text.output || "{}");
+    if (payload === null)
+      return { ok: false, message: `Paseo trả JSON không hợp lệ: ${(text.output || "").slice(0, 200)}` };
+    return { ok: true, data: payload };
   }
 
   callText(args, options = {}) {
@@ -301,6 +322,26 @@ class PaseoBackend {
     }
     return { ok: true };
   }
+}
+
+/**
+ * The JSON document in Paseo's stdout, or null when there is none.
+ *
+ * `--json` is not a promise that stdout holds only JSON. Creating a workspace prints two
+ * human lines first — `Created workspace wks_… - name` and a `Tip:` about `--workspace` —
+ * and parsing the whole stream then threw `Paseo trả JSON không hợp lệ`. Since Paseo names
+ * a workspace after the directory the first time it sees one, that made the *first*
+ * delegation into any new project fail while every later one succeeded.
+ *
+ * Scanning from the first `{` or `[` keeps the preamble out without assuming how many lines
+ * it takes, and a document that is merely malformed still returns null and surfaces as the
+ * same error it always did.
+ */
+function jsonPayload(output) {
+  const start = output.search(/[{[]/);
+  if (start === -1) return null;
+  try { return JSON.parse(output.slice(start)); }
+  catch { return null; }
 }
 
 function cleanupTemporaryFiles(files = []) {
