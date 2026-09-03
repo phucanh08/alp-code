@@ -8,6 +8,8 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+## [0.3.2] - 2026-09-03
+
 ### Sửa
 
 - **Hook của Codex vẫn hỏng trên Windows sau v0.3.1 — chẩn đoán trước đó sai nguyên nhân.**
@@ -287,7 +289,8 @@ Bản release đánh số đầu tiên. Trước mốc này alp-code chưa có v
 - `alp init`/`alp deinit`, `alp delegate`, `alp doctor`, `alp uninstall`, installer một dòng
   cho macOS/Linux/WSL và Windows.
 
-[Chưa phát hành]: https://github.com/phucanh08/alp-code/compare/v0.3.1...HEAD
+[Chưa phát hành]: https://github.com/phucanh08/alp-code/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/phucanh08/alp-code/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/phucanh08/alp-code/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/phucanh08/alp-code/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/phucanh08/alp-code/compare/v0.1.4...v0.2.0
