@@ -8,6 +8,26 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thêm
+
+- **Tên principal và cách xưng hô không còn hard-code trong source.** `src/agents/shared/principal.ts`
+  từng giữ hằng `PRINCIPAL_CONTEXT = { name: "Lê Phúc Anh", … }`, nên tên một người đi vào
+  prompt của cả 8 vai ở mọi bản cài. Nay profile sống ở `~/.alp/principal.json` (0600, cạnh
+  `runtime.json`/`projects.json`) với ba trường: `name`, `addressAs` (agent gọi principal là
+  gì), `selfAs` (agent tự xưng là gì). `alp init` hỏi một lần khi profile chưa có **và** có
+  TTY, ghi xong mới sinh `.alp/agents/<role>.md` để tài liệu identity mang đúng tên. Không có
+  TTY thì init vẫn thành công, in `NOTE` gợi ý `alp principal set` và mọi vai dùng bản trung
+  tính `Serve the principal.` — không chặn CI, không đoán tên từ `git config`.
+- **`alp principal show|set`.** `show` in profile và đường dẫn file (exit 1 khi chưa đặt);
+  `set` hỏi lại ba câu, ghi đè, rồi chạy luôn `identity sync` để `.alp/agents/` không giữ tên
+  cũ. Giá trị nhập vào bị gộp khoảng trắng, cấm rỗng và giới hạn 60 ký tự — chúng được nội
+  suy thẳng vào prompt nên một ký tự xuống dòng sẽ lặng lẽ thành một dòng chỉ thị mới.
+
+### Sửa
+
+- Bỏ hai trường chết `PRINCIPAL_CONTEXT.language` và `.timezone`: không nơi nào đọc chúng, và
+  `"Vietnamese"` thực ra là literal viết cứng lần thứ hai ngay trong câu instruction.
+
 ## [0.3.2] - 2026-09-03
 
 ### Sửa

@@ -164,7 +164,14 @@ Chỉ `main` có `delegatesTo` khác rỗng. Cây delegation phẳng: `principal
 `shared/` chứa phần dùng chung: `house-rules.ts` (`CODE_NATIVE_HOUSE_RULES` — 4 quy tắc
 code-native cho mọi vai; `CODE_CRAFT_RULES` — 4 quy tắc tay nghề chỉ spread vào `main`,
 `review`, `oracle` là các vai viết hoặc phán xét code), `voice.ts` (`renderInstructions` —
-khuôn prompt thống nhất), `principal.ts` (ngôn ngữ/timezone của principal).
+khuôn prompt thống nhất), `principal.ts` (một dòng "phục vụ ai, xưng hô thế nào").
+
+`principal.ts` **không** chứa tên ai cả: nó đọc `~/.alp/principal.json` qua
+`src/principal/principal-profile-store.ts`. `alp init` hỏi ba câu (tên, agent gọi principal
+là gì, agent tự xưng là gì) lần đầu trên TTY và ghi profile 0600; không có profile thì mọi
+vai nhận bản trung tính `Serve the principal.` — không chặn phiên, không đoán tên. Đọc bằng
+`readFileSync` vì `instructions()` là hàm sync và được gọi ở đúng hai chỗ:
+`renderIdentityDocument` (lúc `alp init`/`identity sync`) và `createIdentityCapsule`.
 
 ### 4.2 `src/policy/` — authorization fail-closed
 
@@ -421,6 +428,7 @@ không có logic policy riêng.
 ~/.alp/
   projects.json              danh sách project đã init + backend  (0600)
   runtime.json               runtime preference                    (0600)
+  principal.json             tên + xưng hô của principal           (0600)
   executions/<exec_id>/
     policy.json              ExecutionPolicy snapshot              (0600)
     state.json               StoredExecutionState                  (0600)

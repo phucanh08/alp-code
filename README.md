@@ -88,6 +88,17 @@ không tốn một lượt gọi tool. `alp deinit` xoá lại đúng file đó 
 File đó được ghi vào `.git/info/exclude` của chính clone — per-clone, không commit — nên
 `git status --porcelain` vẫn không đổi và cộng tác viên khác không thấy gì.
 
+Lần `alp init` đầu tiên trên máy, khi `~/.alp/principal.json` chưa có và đang chạy trên TTY,
+ALP hỏi ba câu: tên bạn, agent gọi bạn là gì, agent tự xưng là gì. Câu trả lời đi thẳng vào
+dòng đầu prompt của mọi vai. Không có TTY (CI, script) thì init vẫn chạy tiếp với bản trung
+tính và in một dòng gợi ý — ALP không đoán tên từ `git config`. Xem hoặc đổi lúc nào cũng
+được:
+
+```bash
+alp principal show
+alp principal set                # ghi đè, rồi sinh lại .alp/agents/
+```
+
 Khi sửa `src/agents/`, chạy lại `alp identity sync` để tài liệu phẳng khớp registry:
 
 ```bash

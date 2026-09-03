@@ -12,6 +12,8 @@ describe("alp CLI parsing", () => {
     [["runtime", "set", "codex"], { command: "runtime", action: "set", runtime: "codex" }],
     [["init", "/tmp/project", "--backend", "paseo"], { command: "init", project: "/tmp/project", backend: "paseo" }],
     [["deinit", "/tmp/project"], { command: "deinit", project: "/tmp/project" }],
+    [["principal", "show"], { command: "principal", action: "show" }],
+    [["principal", "set"], { command: "principal", action: "set" }],
     [["delegate", "search", "find", "launcher"], { command: "delegate", args: ["search", "find", "launcher"] }],
     [["doctor", "--quiet"], { command: "maintenance", action: "doctor", args: ["--quiet"] }],
     [["update"], { command: "maintenance", action: "update", args: [] }],
@@ -31,6 +33,8 @@ describe("alp CLI parsing", () => {
     ["run-role", "search"],
     ["--role", "main"],
     ["--version", "extra"],
+    ["principal"],
+    ["principal", "reset"],
   ])("rejects ambiguous or direct raw-runtime input: %j", (...argv) => {
     expect(() => parseAlpArgs(argv)).toThrow();
   });
@@ -48,6 +52,7 @@ describe("alp CLI parsing", () => {
       initProject: async () => undefined,
       deinitProject: async () => undefined,
       syncIdentity: async () => undefined,
+      principalCommand: async () => 0,
       delegateCommand: async () => 0,
       maintenanceCommand: async () => 0,
     })).resolves.toBe(0);
@@ -67,6 +72,7 @@ describe("alp CLI parsing", () => {
       initProject: async () => undefined,
       deinitProject: async () => undefined,
       syncIdentity: async () => undefined,
+      principalCommand: async () => 0,
       delegateCommand: async () => 0,
       maintenanceCommand,
     })).resolves.toBe(7);
@@ -86,6 +92,7 @@ describe("alp CLI parsing", () => {
       initProject: async () => undefined,
       deinitProject: async () => undefined,
       syncIdentity: async () => undefined,
+      principalCommand: async () => 0,
       delegateCommand: async () => 0,
       maintenanceCommand: async () => 0,
     })).resolves.toBe(0);
@@ -105,6 +112,7 @@ describe("alp CLI parsing", () => {
       initProject: async () => undefined,
       deinitProject: async () => undefined,
       syncIdentity: async () => undefined,
+      principalCommand: async () => 0,
       delegateCommand: async () => 0,
       maintenanceCommand: async () => 0,
     });
