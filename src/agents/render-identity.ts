@@ -3,13 +3,14 @@ import type { AgentDefinition } from "./types";
 /**
  * Renders a role's static identity as a standalone Markdown document.
  *
- * This is what `alp identity sync` writes to `.alp/agents/<role>.md` and what the
- * SessionStart hook injects verbatim. Keeping it a flat file is the point: the hook can
- * read it with one `readFileSync` and no `dist/` load, so identity is present at turn 1
- * instead of costing the agent a tool round-trip.
+ * This is what `alp identity sync` writes to `.alp/agents/<role>.md`, and what the
+ * SessionStart hook injects on the native path — the principal ran `claude`/`codex`
+ * directly, so no adapter wrote a session context. Keeping it a flat file is the point:
+ * the hook reads it with one `readFileSync` and no `dist/` load.
  *
- * Only static facts belong here. Anything that varies per execution (task, active
- * workspace, selected memory) is rendered into `prompt.md` by `renderCapsulePrompt`.
+ * Only static facts belong here. A launch through `alp` gets `renderSessionContext`
+ * instead, which adds what only an execution knows: invariants, policy context, and the
+ * workspace grant. Per-task facts belong to `renderTaskInput`.
  */
 export function renderIdentityDocument(definition: AgentDefinition<unknown>): string {
   const list = (values: readonly string[]): string => values.length === 0 ? "—" : values.join(", ");

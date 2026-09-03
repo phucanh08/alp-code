@@ -40,7 +40,10 @@ export async function runMainSession(
     executionId,
     parent: "principal",
     target: definition.id,
-    task: "Principal-facing main session",
+    // Never rendered into a turn — an interactive launch writes no task file. It exists as
+    // audit metadata in `identity-capsule.json`, saying what this execution was opened for.
+    // The real task arrives as the principal's own first message.
+    task: "Interactive principal session; the task arrives from the principal.",
     workspace: input.cwd,
     workspaceMode,
     memoryQueries: [],

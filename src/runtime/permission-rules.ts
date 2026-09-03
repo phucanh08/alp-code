@@ -98,8 +98,21 @@ export function claudePermissions(input: RuntimePermissionInput): ClaudePermissi
   };
 }
 
+/**
+ * The single TOML basic-string serializer for everything ALP writes into Codex config.
+ *
+ * `JSON.stringify` is the right primitive rather than a coincidence: TOML basic strings use
+ * the same double-quote delimiter and the same `\"`, `\\`, `\n`, `\t`, `\uXXXX` escapes, so
+ * the output is valid TOML for any input — including Windows paths full of backslashes and
+ * non-ASCII text. It lived in two copies before; keeping one means an escaping bug can only
+ * be fixed once.
+ */
+export function tomlString(value: string): string {
+  return JSON.stringify(value);
+}
+
 function tomlStringArray(values: readonly string[]): string {
-  return `[${values.map((value) => JSON.stringify(value)).join(", ")}]`;
+  return `[${values.map(tomlString).join(", ")}]`;
 }
 
 /**

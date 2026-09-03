@@ -57,20 +57,26 @@ describe("e2e: alp main session", () => {
         expect(definition.capabilities.tools).toContain(tool);
       }
       expect(capture.cwd).toBe(environment.project);
-      expect(capture.prompt).toContain(definition.displayName);
+      expect(capture.sessionContext).toContain(definition.displayName);
     }
     expect(claude.capsule.instructions).toBe(codex.capsule.instructions);
     expect(claude.capsule.allowedTools).toEqual(codex.capsule.allowedTools);
 
-    // The identity is the same; only its delivery differs. Claude Code applies the
-    // SessionStart hook's context before turn 1, so repeating it in the prompt would pay
-    // for it twice; Codex rejects that hook, so its prompt has to carry the identity.
-    // Strip that one section and the two prompts are identical again.
-    expect(claude.prompt).not.toContain(claude.capsule.instructions);
-    expect(codex.prompt).toContain(codex.capsule.instructions);
-    const withoutIdentity = codex.prompt.replace(`## Identity\n\n${codex.capsule.instructions}\n\n`, "");
-    expect(withoutIdentity.replace(codex.capsule.executionId, ""))
-      .toBe(claude.prompt.replace(claude.capsule.executionId, ""));
+    // Identity now reaches both runtimes the same way — `ALP_SESSION_CONTEXT`, read by the
+    // SessionStart hook, which Claude Code and Codex alike turn into a developer-role
+    // message ahead of turn 1. No per-runtime section, so the two files are byte-identical.
+    expect(claude.sessionContext).toContain(claude.capsule.instructions);
+    expect(codex.sessionContext).toBe(claude.sessionContext);
+
+    // The invariant this whole change exists for, proven end to end: a main session is
+    // interactive, so no task is ever submitted and the runtime sits idle waiting for the
+    // principal. The capsule still records what the execution was opened for — that is
+    // audit metadata, and it must not reach the model as a turn.
+    for (const capture of [claude, codex]) {
+      expect(capture.task).toBeNull();
+      expect(capture.argv.some((argument) => argument.includes("task.md"))).toBe(false);
+      expect(capture.sessionContext).not.toContain(capture.capsule.task);
+    }
 
     // Only launch syntax and the per-runtime model differ.
     expect(claude.argv).toContain(definition.model.claude);

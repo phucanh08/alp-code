@@ -26,8 +26,12 @@ const { readFileSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 
 const argv = process.argv.slice(2);
-const promptMatch = /input is in (.+); read it before continuing\\.$/.exec(argv[argv.length - 1] || "");
+// The two channels, captured separately because the whole point is that they are separate:
+// session context always arrives via env for the SessionStart hook to read, while a task
+// only exists as a positional argument, and only for a headless run.
+const taskMatch = /^ALP task is in (.+); execute it\\.$/.exec(argv[argv.length - 1] || "");
 const capsuleFile = process.env.ALP_IDENTITY_CAPSULE;
+const sessionContextFile = process.env.ALP_SESSION_CONTEXT;
 const record = {
   runtime: ${JSON.stringify(runtime)},
   command: process.env.ALP_E2E_COMMAND,
@@ -35,7 +39,8 @@ const record = {
   cwd: process.cwd(),
   env: Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith("ALP_"))),
   capsule: capsuleFile ? JSON.parse(readFileSync(capsuleFile, "utf8")) : null,
-  prompt: promptMatch ? readFileSync(promptMatch[1], "utf8") : null,
+  sessionContext: sessionContextFile ? readFileSync(sessionContextFile, "utf8") : null,
+  task: taskMatch ? readFileSync(taskMatch[1], "utf8") : null,
   runtimeConfig: process.env.ALP_RUNTIME_CONFIG ? readFileSync(process.env.ALP_RUNTIME_CONFIG, "utf8") : null,
 };
 writeFileSync(join(process.env.ALP_E2E_CAPTURE, ${JSON.stringify(runtime)} + ".json"), JSON.stringify(record, null, 2));
@@ -75,11 +80,14 @@ export interface RuntimeCapture {
     readonly role: string;
     readonly displayName: string;
     readonly instructions: string;
+    readonly task: string;
     readonly activeWorkspace: string;
     readonly allowedTools: readonly string[];
     readonly outputContract: { readonly name: string };
   };
-  readonly prompt: string;
+  readonly sessionContext: string;
+  /** Null for an interactive launch — there is no task until the principal sends one. */
+  readonly task: string | null;
   readonly runtimeConfig: string;
 }
 

@@ -1,17 +1,13 @@
 import { delimiter, dirname, join } from "node:path";
 import { agentRegistry } from "../agents/registry";
-import { atomicRuntimeFile, baseRuntimeEnvironment, hookCommand, renderCapsulePrompt, resolveRuntimeCommand, runtimeSkillRoots } from "./adapter-files";
-import { codexSandboxLines } from "./permission-rules";
+import { atomicRuntimeFile, baseRuntimeEnvironment, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
+import { codexSandboxLines, tomlString } from "./permission-rules";
 import type { PrepareRuntimeInput, RuntimeAdapter, RuntimeHealth, RuntimeLaunchSpec } from "./runtime-adapter";
 
 export interface CodexRuntimeAdapterOptions {
   readonly platform?: NodeJS.Platform;
   readonly env?: NodeJS.ProcessEnv;
   readonly hooksDirectory?: string;
-}
-
-function tomlString(value: string): string {
-  return JSON.stringify(value);
 }
 
 export class CodexRuntimeAdapter implements RuntimeAdapter {
@@ -44,13 +40,12 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
       join(artifacts.runtimeDirectory, "identity-capsule.json"),
       `${JSON.stringify(capsule, null, 2)}\n`,
     );
-    const prompt = renderCapsulePrompt(capsule, { identityFromHook: false });
+    const contextFiles = await writeRuntimeContextFiles(input.execution, input.interactive);
     const skillRoots = runtimeSkillRoots(this.env);
     const bootCommand = hookCommand(join(this.hooksDirectory, "session-boot.cjs"));
     const stopCommand = hookCommand(join(this.hooksDirectory, "session-end.cjs"));
     const bootHooks = `[{ hooks = [{ type = "command", command = ${tomlString(bootCommand)}, timeout = 30 }] }]`;
     const stopHooks = `[{ hooks = [{ type = "command", command = ${tomlString(stopCommand)}, timeout = 30 }] }]`;
-    const promptFile = await atomicRuntimeFile(join(artifacts.runtimeDirectory, "prompt.md"), `${prompt}\n`);
     const configFile = await atomicRuntimeFile(
       join(artifacts.runtimeDirectory, "codex-config.toml"),
       [
@@ -65,7 +60,8 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
         "[alp]",
         `execution_id = ${tomlString(capsule.executionId)}`,
         `capsule = ${tomlString(capsuleFile)}`,
-        `prompt = ${tomlString(promptFile)}`,
+        `session_context = ${tomlString(contextFiles.sessionContextFile)}`,
+        ...(contextFiles.taskFile === null ? [] : [`task = ${tomlString(contextFiles.taskFile)}`]),
         "",
       ].join("\n"),
     );
@@ -74,7 +70,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
       `${JSON.stringify(skillRoots.split(delimiter).filter(Boolean), null, 2)}\n`,
     );
     const env = {
-      ...baseRuntimeEnvironment(capsule),
+      ...baseRuntimeEnvironment(capsule, contextFiles),
       ALP_EXECUTION_ROOT: dirname(artifacts.directory),
       ALP_MEMORY_ROOT: this.memoryRoot(),
       ALP_IDENTITY_CAPSULE: capsuleFile,
@@ -102,11 +98,20 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
         ...(input.interactive
           ? ["--dangerously-bypass-approvals-and-sandbox"]
           : ["-s", policy.workspaceMode]),
-        `ALP execution input is in ${promptFile}; read it before continuing.`,
+        // Measured on codex-cli 0.149.0: a positional PROMPT becomes a `role: user` message,
+        // i.e. turn 1. Interactive must not have one — identity reaches the model as a
+        // `role: developer` message from the SessionStart hook, ahead of the user's turn.
+        ...taskArguments(contextFiles),
       ]),
       cwd: capsule.activeWorkspace,
       env: Object.freeze(env),
-      temporaryFiles: Object.freeze([capsuleFile, promptFile, configFile, skillRootsFile]),
+      temporaryFiles: Object.freeze([
+        capsuleFile,
+        contextFiles.sessionContextFile,
+        ...(contextFiles.taskFile === null ? [] : [contextFiles.taskFile]),
+        configFile,
+        skillRootsFile,
+      ]),
     });
   }
 }

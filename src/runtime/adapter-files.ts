@@ -1,6 +1,8 @@
 import { access, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { basename, delimiter, dirname, join, resolve } from "node:path";
-import type { IdentityCapsule } from "../execution/types";
+import type { IdentityCapsule, PreparedExecution } from "../execution/types";
+import { renderSessionContext } from "./render-session-context";
+import { renderTaskInput } from "./render-task-input";
 
 let sequence = 0;
 
@@ -47,49 +49,65 @@ export async function atomicRuntimeFile(path: string, content: string): Promise<
   return path;
 }
 
-export interface CapsulePromptOptions {
-  /**
-   * Whether this runtime's SessionStart hook actually delivers the role identity.
-   *
-   * Claude Code applies `additionalContext` before turn 1, so repeating the identity in
-   * the prompt would only pay for it twice. Codex reports `SessionStart Failed` against
-   * the same hook and the session shows no awareness of its role, so there the prompt is
-   * the only channel that works. Drop this back to a single path once Codex is observed
-   * accepting the hook.
-   */
-  readonly identityFromHook?: boolean;
+export interface RuntimeContextFiles {
+  /** Always written. Delivered by the SessionStart hook, never as a turn. */
+  readonly sessionContextFile: string;
+  /** Written only for a headless run — an interactive session's first turn is the principal's. */
+  readonly taskFile: string | null;
 }
 
-export function renderCapsulePrompt(capsule: IdentityCapsule, options: CapsulePromptOptions = {}): string {
-  const memory = capsule.memoryContext.entries.length === 0
-    ? "(no memory entries selected)"
-    : capsule.memoryContext.entries
-      .map((entry) => `## ${entry.id}\n\n${entry.content}`)
-      .join("\n\n");
-  return [
-    `# ALP execution ${capsule.executionId}`,
-    `Role: ${capsule.displayName} (${capsule.role})`,
-    `Workspace: ${capsule.activeWorkspace}`,
-    ...(options.identityFromHook === false ? ["## Identity", capsule.instructions] : []),
-    "## Invariants",
-    capsule.memoryContext.invariantContext,
-    "## Policy",
-    capsule.memoryContext.policyContext,
-    "## Selected memory",
-    memory,
-    "## Task",
-    capsule.task,
-    "## Reporting",
-    "Answer in prose. Close with your status, what you actually did, and the evidence for it — commands you ran, files you changed, output you saw. Do not claim a step you skipped.",
-  ].join("\n\n");
+/**
+ * Writes the two context files every runtime needs, and decides which of them exists.
+ *
+ * Both adapters share this because the split is a property of ALP, not of a harness:
+ * session context describes the agent for the whole session and must never create a turn;
+ * task input *is* a turn, so it exists only where ALP is the one starting the conversation.
+ * Interactive therefore gets no task file at all — there is nothing for an adapter to
+ * accidentally hand to the CLI as a positional prompt.
+ */
+export async function writeRuntimeContextFiles(
+  execution: PreparedExecution,
+  interactive: boolean,
+): Promise<RuntimeContextFiles> {
+  const { capsule, policy, artifacts } = execution;
+  const sessionContextFile = await atomicRuntimeFile(
+    join(artifacts.runtimeDirectory, "session-context.md"),
+    renderSessionContext(capsule, policy),
+  );
+  const taskFile = interactive
+    ? null
+    : await atomicRuntimeFile(
+      join(artifacts.runtimeDirectory, "task.md"),
+      renderTaskInput(capsule),
+    );
+  return Object.freeze({ sessionContextFile, taskFile });
 }
 
-export function baseRuntimeEnvironment(capsule: IdentityCapsule): Record<string, string> {
+/**
+ * The positional argument that turns a task file into the session's first turn.
+ *
+ * Empty for an interactive launch. That emptiness is the whole point of this change, so it
+ * is expressed once here rather than repeated as a conditional in each adapter.
+ */
+export function taskArguments(files: RuntimeContextFiles): readonly string[] {
+  return files.taskFile === null
+    ? Object.freeze([])
+    : Object.freeze([`ALP task is in ${files.taskFile}; execute it.`]);
+}
+
+export function baseRuntimeEnvironment(
+  capsule: IdentityCapsule,
+  files: RuntimeContextFiles,
+): Record<string, string> {
   return {
     ALP_ROLE: capsule.role,
     ALP_DELEGATED_ROLE: capsule.role,
     ALP_DELEGATION_EXECUTION_ID: capsule.executionId,
     ALP_DELEGATION_WORKSPACE: capsule.activeWorkspace,
+    // Read by `hooks/session-boot.cjs`. Taking it here rather than in each adapter is what
+    // stops a runtime from being wired up without it and silently falling back to the
+    // static role document, which carries no invariants or policy context.
+    ALP_SESSION_CONTEXT: files.sessionContextFile,
   };
 }
 
