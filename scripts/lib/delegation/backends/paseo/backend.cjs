@@ -118,17 +118,31 @@ class PaseoBackend {
     return result(executionId, status, { metadata: { mode: "background" } });
   }
 
+  /**
+   * `paseo run` is `run [options] <prompt>` and spawns the runtime itself — there is no exec
+   * passthrough. The old `"--", launchSpec.command, ...launchSpec.args` therefore handed the
+   * parser `claude` as the prompt and dropped everything after it: every delegated agent
+   * started with the literal word `claude` as its task, on Paseo's own model and permission
+   * mode. Identity still arrived, because `--env` survives and the SessionStart hook reads
+   * `ALP_SESSION_CONTEXT`, which is why the failure looked like a hang rather than a crash.
+   *
+   * `launchSpec.intent` is that launch expressed in the only vocabulary this CLI accepts.
+   */
   spawnPrepared({ executionId, request, launchSpec }) {
     const runtime = path.basename(launchSpec.command).toLowerCase().startsWith("claude") ? "claude" : "codex";
+    const intent = launchSpec.intent || {};
+    if (!intent.prompt) throw new SpawnFailed("launchSpec.intent.prompt trống; Paseo không có task để giao");
     const args = [
       "run", "--background", "--json",
       "--cwd", launchSpec.cwd,
       "--title", `alp:${launchSpec.env.ALP_ROLE || "agent"}:${executionId.slice(-8)}`,
       "--provider", runtime,
+      ...(intent.model ? ["--model", intent.model] : []),
+      ...(intent.mode ? ["--mode", intent.mode] : []),
       ...Object.entries(launchSpec.env).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
       "--label", `alp.execution-id=${executionId}`,
       "--label", `alp.request-id=${request.requestId}`,
-      "--", launchSpec.command, ...launchSpec.args,
+      intent.prompt,
     ];
     const call = this.call(args, { timeoutMs: request.executionOptions.timeoutMs || 30000 });
     if (!call.ok) throw runtimeFailure("Paseo spawn thất bại", call, SpawnFailed);

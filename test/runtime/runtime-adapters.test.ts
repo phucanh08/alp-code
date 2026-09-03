@@ -323,6 +323,22 @@ describe.each([
     }
   });
 
+  /**
+   * A backend that spawns the runtime itself reads `intent` instead of `command`/`args`.
+   * The task has to be in it, or the agent wakes with nothing to do — and it must stay
+   * absent when interactive, for the same reason no task file is written then.
+   */
+  it("carries the task in the launch intent, and only when headless", async () => {
+    const headless = await launch(false);
+    const interactive = await launch(true);
+
+    expect(headless.spec.intent.prompt).toContain("task.md");
+    expect(headless.spec.intent.model).toBe("m");
+    // The suite's fixture role is read-only, which keeps `plan` rather than `bypass`.
+    expect(["plan", "auto"]).toContain(headless.spec.intent.mode);
+    expect(interactive.spec.intent.prompt).toBeNull();
+  });
+
   it("submits no task and writes no task file when interactive", async () => {
     const { spec, capsuleTask } = await launch(true);
 

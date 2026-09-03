@@ -73,6 +73,7 @@ class FakeRuntime implements RuntimeAdapter {
       cwd: input.execution.capsule.activeWorkspace,
       env: { ALP_DELEGATION_EXECUTION_ID: input.execution.capsule.executionId },
       temporaryFiles: [],
+      intent: { prompt: input.execution.capsule.task, model: input.model, mode: "auto" },
     };
   }
 }
