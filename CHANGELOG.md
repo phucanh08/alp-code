@@ -8,6 +8,45 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thêm
+
+- **Vai được cấp quyền delegate giờ biết delegate bằng cách nào.** Bảng Authority in
+  `| Delegates to | search, librarian, … |` như một quyền hạn, nhưng không runtime nào có
+  tool delegation — `DelegationService` chỉ với tới được qua CLI `alp delegate`. Vai cầm
+  quyền đó tìm không ra tool nào khớp và **báo blocked**, đúng theo dòng "do not route around
+  it" ngay dưới bảng. Session context nay có mục `## Delegation` nêu thẳng cú pháp. Chỉ hiện
+  khi vai thật sự có `delegatesTo` và có `Bash` trong grant toàn phiên — không phải grant đã
+  bị lọc theo workflow state, vốn không có shell ở state mở màn của `main` và sẽ giấu mục này
+  suốt phiên.
+
+### Sửa
+
+- **Delegation qua backend Paseo chưa từng nhận được task.** `paseo run` là
+  `run [options] <prompt>` và tự spawn runtime — CLI không có exec passthrough. ALP truyền
+  `-- claude --settings … "ALP task is in …"`, parser đọc `claude` làm prompt rồi vứt phần còn
+  lại. Mọi specialist thức dậy với đúng chữ `claude` làm việc phải làm, chạy model và
+  permission mode mặc định của Paseo thay vì của ALP. Identity vẫn tới nơi qua `--env` +
+  SessionStart hook, nên triệu chứng nhìn như treo chứ không như crash. `RuntimeLaunchSpec`
+  nay mang thêm `intent` — cùng một launch nhưng diễn đạt khai báo — và Paseo dịch nó thành
+  `--model`, `--mode` cùng prompt ở positional cuối. Spec không có prompt bị từ chối ngay tại
+  chỗ gọi, vì agent không tự báo được lỗi đó.
+- **Execution kẹt ở permission prompt bị báo là đang chạy.** `paseo inspect` trả
+  `Status: running` cho agent đã dừng chờ duyệt; chỉ `paseo wait` gọi đúng tên `permission`,
+  mà `wait` thì block. `alp delegation status` nay đọc `PendingPermissions` có sẵn trong chính
+  response của `inspect`, và báo `failed` kèm lý do. Không ai trả lời được prompt đó: delegated
+  run chạy background.
+- **Delegation đầu tiên vào một project mới luôn thất bại.** `paseo run` in
+  `Created workspace wks_… - <tên>` và một dòng `Tip:` **trước** JSON ở lần đầu nó đặt tên cho
+  workspace, còn ALP thì `JSON.parse` cả stdout. Lần sau qua được vì workspace đã tồn tại.
+  Nay parse bắt đầu từ `{` hoặc `[` đầu tiên.
+- **Lý do thất bại bị nuốt trên đường về.** Backend sinh `error` từ lâu nhưng
+  `BackendExecutionResult` không khai báo trường đó, nên `DelegationService` không thể copy
+  thứ nó không biết — mọi thất bại tới tay người gọi dưới dạng `failed` trơ trọi. Đã khai báo
+  ở cả hai kiểu kết quả và propagate.
+- **`alp delegation status` không còn làm mất output.** `wait` đọc transcript rồi lưu lại,
+  `status` thì không trả gì — poll sau khi `wait` là thấy output vừa nhận biến mất. Cả hai nay
+  đi qua một `transcript()` chung, `status` fallback về bản đã lưu khi Paseo không đọc được log.
+
 ## [0.4.0] - 2026-09-03
 
 ### Thêm
