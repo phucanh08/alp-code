@@ -116,17 +116,33 @@ truncation của bảng rò vào cả `--json`. Chỉ `inspect` cho id dùng đ�
 - **Có đáng làm không**, khi giá trị thu về chỉ còn ACL theo tên tool — thứ mà `capsule.allowedTools`
   đã nói cho agent biết ở tầng chỉ dẫn. Câu này nên trả lời trước khi viết code.
 
-## Phase 3 — Nâng Paseo lên 0.7.x
+## Phase 3 — Nâng Paseo lên 0.7.x. **Xong 2026-09-03**, nhưng ba lợi ích ghi ở draft là sai
 
-Rủi ro thấp: `wait`/`logs`/`inspect` giống hệt giữa 0.5.1 và 0.7.2. Lợi ích:
+Draft liệt kê ba lợi ích rút từ danh sách cờ grep trong bundle 0.7.2 mà **không kiểm chúng thuộc
+lệnh nào**. Kiểm lại bằng `--help` từng lệnh thì cả ba đều rỗng:
 
-- `--prompt-file <path>` → đưa thẳng `task.md`, bỏ chuỗi `"ALP task is in …; execute it."`.
-- `--no-inject-mcp` → thay cho việc `runtimeToolPolicy()` phải đọc `~/.paseo/config.json` và bắt
-  principal sửa `daemon.mcp.injectIntoAgents`.
-- `--isolation <local|worktree>`.
+| Lợi ích ghi ở draft | Thực tế |
+|---|---|
+| `--prompt-file` đưa thẳng `task.md` | thuộc `paseo send`, **không** có trên `run` — mà ALP spawn bằng `run` |
+| `--no-inject-mcp` thay cho việc đọc `config.json` | là cờ của `daemon start`, tức cùng một setting global; và **đã có trong 0.5.1** |
+| `--isolation <local\|worktree>` | thuộc `schedule`; `run` có `--new-workspace` ở cả hai bản |
 
-Việc phải làm: kiểm lại giả định 0.5.x hard-code trong comment `codex-adapter.ts` (Codex
-`read-only` mode) xem 0.7.x đã expose chưa.
+Đã nâng lên 0.7.2 và verify compat, vì đó là phần còn thực chất:
+
+- `alp delegation health` → `Paseo daemon reachable (0.7.2)`.
+- Delegation end-to-end: `search` đếm file `src/runtime/*.ts`, trả **11**, khớp khi chạy độc lập.
+- Phát hiện parked: execution kẹt `ExitPlanMode` → `failed` kèm lý do, ở poll thứ 2.
+- `inspect --json` → `Status: running` + `PendingPermissions: [{id: "permission-<uuid>", tool}]`.
+  Shape **không đổi** so với 0.5.1.
+- `permit ls --json` **vẫn cắt `id` còn `"permissi"`** trên 0.7.2 — bug chưa được sửa upstream.
+- 238 test + `test-delegation-backends.cjs` xanh trên daemon 0.7.2.
+
+Kết luận về Codex read-only: **vẫn chưa có.** `paseo provider ls` trên 0.7.2 báo Codex chỉ có
+`Default Permissions, Auto-review, Full Access`. Comment trong `codex-adapter.ts` và
+`backend.cjs` giữ nguyên nội dung, chỉ bỏ ghim "0.5.x" và ghi rõ đã kiểm tới 0.7.2.
+
+Bài học ghi lại: grep cờ trong bundle cho biết cờ **tồn tại**, không cho biết nó thuộc lệnh nào.
+Phải `--help` từng lệnh trước khi ghi vào plan.
 
 ## Phase 4 — Backend `local` (ngoài phạm vi bản này)
 
@@ -140,7 +156,7 @@ Việc phải làm: kiểm lại giả định 0.5.x hard-code trong comment `co
 | 0 — gate `permit` | xong, xanh |
 | 1 — ba bug che khuất block | xong, đã release |
 | 2 — arbiter `permit` | **dừng**, không đáng làm |
-| 3 — nâng Paseo 0.7.x | chưa làm |
+| 3 — nâng Paseo 0.7.x | xong; đã lên 0.7.2, compat xanh, ba lợi ích ở draft là sai |
 | 4 — backend `local` | chưa làm, là chỗ duy nhất lấy lại được ACL theo path |
 
 ## Câu chưa có lời đáp

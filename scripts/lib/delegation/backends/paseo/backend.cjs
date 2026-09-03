@@ -63,9 +63,10 @@ class PaseoBackend {
 
     const runtime = request.executionOptions.runtime || inferRuntime(target);
     const model = runtime === "codex" ? (target.codex_model || target.model) : target.model;
-    // Paseo 0.5.x không expose Codex `read-only` như một mode tạo agent. `auto-review`
-    // cũng là workspace-write, nên dùng `auto` và để ALP hook enforce delegated workspace
-    // + ALP_READONLY_DIRS. Claude có mode read-only tương đương là `plan`.
+    // Paseo không expose Codex `read-only` như một mode tạo agent. `auto-review` cũng là
+    // workspace-write, nên dùng `auto` và để ALP hook enforce delegated workspace
+    // + ALP_READONLY_DIRS. Claude có mode read-only tương đương là `plan`. Kiểm lại trên
+    // 0.7.2: Codex vẫn chỉ có `Default Permissions, Auto-review, Full Access`.
     const mode = runtime === "codex"
       ? "auto"
       : context.sandbox === "read-only" ? "plan" : "default";
