@@ -95,7 +95,13 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
         "-c", `model_reasoning_effort=${tomlString(input.reasoningEffort)}`,
         "-c", `hooks.SessionStart=${bootHooks}`,
         "-c", `hooks.Stop=${stopHooks}`,
-        "-s", policy.workspaceMode,
+        // Đối xứng với `--dangerously-skip-permissions` của Claude: phiên interactive bỏ approval
+        // và sandbox. `-s` bị bỏ đi chứ không để lẫn — Codex không báo lỗi khi có cả hai (chỉ
+        // `--approve-for-me` mới khai `conflicts_with`), cờ bypass thắng và `-s` thành dòng chết
+        // nói sai về chế độ đang chạy. Delegate luôn interactive=false nên vẫn đi nhánh `-s`.
+        ...(input.interactive
+          ? ["--dangerously-bypass-approvals-and-sandbox"]
+          : ["-s", policy.workspaceMode]),
         `ALP execution input is in ${promptFile}; read it before continuing.`,
       ]),
       cwd: capsule.activeWorkspace,

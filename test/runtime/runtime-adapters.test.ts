@@ -80,7 +80,10 @@ describe("runtime adapters", () => {
       execution: prepared,
       model: "claude-test",
       reasoningEffort: "high",
-      interactive: true,
+      // A read-only role only ever reaches a runtime through `alp delegate`, which pins
+      // interactive to false. Interactive is the `main` session, and it takes the bypass
+      // branch covered below.
+      interactive: false,
     });
 
     expect(launch.command).toBe("claude");
@@ -135,6 +138,51 @@ describe("runtime adapters", () => {
       allowUnsandboxedCommands: false,
       filesystem: { denyWrite: [project] },
     });
+  });
+
+  it("bypasses permission prompts only for the interactive session, on both runtimes", async () => {
+    const { root, prepared } = await fixture();
+    const options = { execution: prepared, model: "m", reasoningEffort: "high" } as const;
+    const env = { HOME: root, ALP_REPO_ROOT: root };
+
+    const claude = new ClaudeRuntimeAdapter({ platform: "linux", env });
+    const claudeLive = await claude.prepare({ ...options, interactive: true });
+    const claudeDelegated = await claude.prepare({ ...options, interactive: false });
+
+    expect(claudeLive.args).toContain("--dangerously-skip-permissions");
+    // The two are mutually exclusive: skipping permissions makes plan mode meaningless.
+    expect(claudeLive.args).not.toContain("--permission-mode");
+    expect(claudeDelegated.args).not.toContain("--dangerously-skip-permissions");
+    expect(claudeDelegated.args).toContain("--permission-mode");
+
+    const codex = new CodexRuntimeAdapter({ platform: "linux", env });
+    const codexLive = await codex.prepare({ ...options, interactive: true });
+    const codexDelegated = await codex.prepare({ ...options, interactive: false });
+
+    expect(codexLive.args).toContain("--dangerously-bypass-approvals-and-sandbox");
+    // `-s` is dropped rather than left alongside: Codex accepts both and silently lets the
+    // bypass win, so keeping it would leave an argument that misstates the running mode.
+    expect(codexLive.args).not.toContain("-s");
+    expect(codexDelegated.args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+    expect(codexDelegated.args).toContain("-s");
+  });
+
+  it("still denies a delegated role its siblings' private memory when main runs unrestricted", async () => {
+    const { root, prepared } = await fixture();
+    const env = { HOME: root, ALP_REPO_ROOT: root };
+    const adapter = new ClaudeRuntimeAdapter({ platform: "linux", env });
+
+    // The bypass is per-launch, not a global switch: the settings file a delegated role gets
+    // still carries the deny list, whatever the interactive session was allowed to skip.
+    await adapter.prepare({ execution: prepared, model: "m", reasoningEffort: "high", interactive: true });
+    const delegated = await adapter.prepare({
+      execution: prepared, model: "m", reasoningEffort: "high", interactive: false,
+    });
+    const settings = JSON.parse(await readFile(delegated.temporaryFiles[2], "utf8"));
+
+    expect(settings.permissions.deny).toContain(
+      absoluteRule("Read", join(root, "memory", "private", "main")),
+    );
   });
 
   it("keeps a read-only role read-only on Windows by withdrawing the shell", async () => {

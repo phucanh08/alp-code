@@ -275,7 +275,17 @@ Cả hai adapter ghi vào `~/.alp/executions/<id>/runtime/` (atomic, `0600`):
 | Hook | `hooks.SessionStart` / `hooks.Stop` | tương tự, qua `-c hooks.*` + `--enable hooks` |
 | ACL | `permissions.{additionalDirectories,deny}` | `[sandbox_workspace_write]` + `[[rules]]` |
 | Read-only | `sandbox.filesystem.denyWrite` + `--permission-mode plan` | `-s read-only` |
+| Interactive | `--dangerously-skip-permissions` | `--dangerously-bypass-approvals-and-sandbox` |
 | Headless | — (main luôn interactive) | `exec --skip-git-repo-check` |
+
+**Phiên interactive chạy không guardrail, và đó là quyết định có ý thức.** `alp` (`run-main`) là
+phiên duy nhất đặt `interactive: true`; `alp delegate` luôn `false`. Principal ngồi ngay đó và tự
+duyệt được từng bước, nên prompt quyền chỉ là ma sát. Cái đánh đổi phải nói thẳng: cờ bypass vô hiệu
+hoá `permissions.deny` (Claude) và sandbox (Codex) **cho riêng phiên đó** — gồm cả cách ly private
+memory giữa các role. Nó không phải công tắc toàn cục: settings/config sinh cho mỗi delegated
+execution vẫn mang đủ deny list và sandbox như cũ. Ở Codex, `-s` bị bỏ hẳn khi bypass thay vì để
+lẫn — Codex nhận cả hai mà không báo lỗi (chỉ `--approve-for-me` khai `conflicts_with`), cờ bypass
+thắng, nên giữ `-s` chỉ để lại một tham số nói sai về chế độ đang chạy.
 
 Env chung: `ALP_ROLE`, `ALP_DELEGATED_ROLE`, `ALP_DELEGATION_EXECUTION_ID`,
 `ALP_DELEGATION_WORKSPACE`, `ALP_EXECUTION_ROOT`, `ALP_MEMORY_ROOT`, `ALP_IDENTITY_CAPSULE`,

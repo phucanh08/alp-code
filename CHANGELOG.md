@@ -8,6 +8,18 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thay đổi
+
+- **Phiên `alp` interactive chạy không guardrail.** Claude nhận `--dangerously-skip-permissions`,
+  Codex nhận `--dangerously-bypass-approvals-and-sandbox`. Principal ngồi ngay đó và tự duyệt được
+  từng bước, nên prompt quyền chỉ là ma sát. Đánh đổi ghi rõ trong `docs/architecture.md`: cờ này vô
+  hiệu hoá `permissions.deny` (Claude) và sandbox (Codex) **cho riêng phiên đó**, gồm cả cách ly
+  private memory giữa các role. Nó không phải công tắc toàn cục — chỉ `run-main` đặt
+  `interactive: true`, còn `alp delegate` luôn `false`, nên mọi delegated execution giữ nguyên deny
+  list, sandbox và bất biến read-only. Ở Codex, `-s` bị bỏ hẳn khi bypass thay vì để lẫn: Codex
+  nhận cả hai mà không báo lỗi và cờ bypass thắng, nên giữ `-s` chỉ để lại một tham số nói sai về
+  chế độ đang chạy.
+
 ### Thêm
 
 - `CODE_CRAFT_RULES` trong `src/agents/shared/house-rules.ts` — bốn quy tắc tay nghề phỏng theo

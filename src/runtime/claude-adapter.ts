@@ -100,7 +100,14 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
       args: Object.freeze([
         "--settings", settingsFile,
         "--model", input.model,
-        ...(policy.workspaceMode === "read-only" ? ["--permission-mode", "plan"] : []),
+        // Principal ngồi trước phiên interactive và tự duyệt được từng bước, nên prompt quyền chỉ
+        // là ma sát. Đánh đổi phải nói rõ: cờ này vô hiệu hoá `permissions.deny` ở settings trên —
+        // gồm cả cách ly private memory giữa các role, thứ chỉ Claude cưỡng chế được (§ACL trong
+        // permission-rules.ts). Chỉ `alp` (run-main) đặt interactive=true; `alp delegate` luôn
+        // false, nên specialist giữ nguyên sandbox và deny list.
+        ...(input.interactive
+          ? ["--dangerously-skip-permissions"]
+          : policy.workspaceMode === "read-only" ? ["--permission-mode", "plan"] : []),
         `ALP execution input is in ${promptFile}; read it before continuing.`,
       ]),
       cwd: capsule.activeWorkspace,
