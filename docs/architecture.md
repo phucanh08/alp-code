@@ -267,7 +267,13 @@ regression trải nghiệm. `defineOutputContract` vẫn còn cho trường hợ
 `RuntimeLaunchSpec { command, args, cwd, env, temporaryFiles }`.
 
 Cả hai adapter ghi vào `~/.alp/executions/<id>/runtime/` (atomic, `0600`):
-`identity-capsule.json`, `prompt.md`, `skill-roots.json`, và file config riêng của runtime.
+`identity-capsule.json`, `session-context.md`, `skill-roots.json`, file config riêng của runtime,
+và `task.md` **chỉ khi headless**.
+
+**Hai kênh, không phải một blob.** `session-context.md` (`renderSessionContext`) mô tả agent cho cả
+phiên — identity, authority, invariants, policy, reporting contract — và **không bao giờ tạo turn**.
+`task.md` (`renderTaskInput`) mang memory đã chọn cùng task, và **chính là** turn đầu tiên. Vì vậy
+phiên interactive không sinh `task.md`: không có gì để adapter lỡ tay đưa thành positional prompt.
 
 | | Claude | Codex |
 |---|---|---|
@@ -275,8 +281,8 @@ Cả hai adapter ghi vào `~/.alp/executions/<id>/runtime/` (atomic, `0600`):
 | Hook | `hooks.SessionStart` / `hooks.Stop` | tương tự, qua `-c hooks.*` + `--enable hooks` |
 | ACL | `permissions.{additionalDirectories,deny}` | `[sandbox_workspace_write]` + `[[rules]]` |
 | Read-only | `sandbox.filesystem.denyWrite` + `--permission-mode plan` | `-s read-only` |
-| Interactive | `--dangerously-skip-permissions` | `--dangerously-bypass-approvals-and-sandbox` |
-| Headless | — (main luôn interactive) | `exec --skip-git-repo-check` |
+| Interactive | `--dangerously-skip-permissions` · **không positional prompt** | `--dangerously-bypass-approvals-and-sandbox` · **không positional prompt** |
+| Headless | positional trỏ tới `task.md` | `exec --skip-git-repo-check` + positional trỏ tới `task.md` |
 
 **Phiên interactive chạy không guardrail, và đó là quyết định có ý thức.** `alp` (`run-main`) là
 phiên duy nhất đặt `interactive: true`; `alp delegate` luôn `false`. Principal ngồi ngay đó và tự
@@ -289,9 +295,9 @@ thắng, nên giữ `-s` chỉ để lại một tham số nói sai về chế �
 
 Env chung: `ALP_ROLE`, `ALP_DELEGATED_ROLE`, `ALP_DELEGATION_EXECUTION_ID`,
 `ALP_DELEGATION_WORKSPACE`, `ALP_EXECUTION_ROOT`, `ALP_MEMORY_ROOT`, `ALP_IDENTITY_CAPSULE`,
-`ALP_RUNTIME_CONFIG`, `ALP_SKILL_ROOTS`, và `ALP_READONLY_DIRS` khi read-only.
+`ALP_SESSION_CONTEXT`, `ALP_RUNTIME_CONFIG`, `ALP_SKILL_ROOTS`, và `ALP_READONLY_DIRS` khi read-only.
 
-Prompt không nhúng capsule inline — nó trỏ agent tới `prompt.md` để tránh argv quá dài và để
+Positional prompt không nhúng task inline — nó trỏ agent tới `task.md` để tránh argv quá dài và để
 hook có thể verify nội dung độc lập.
 
 `RuntimeSelector` giải quyết runtime theo thứ tự: `explicit (--runtime)` → `interactive` (menu
@@ -326,12 +332,21 @@ Store có hai bản: `InMemoryDelegationExecutionStore` (test) và `FileDelegati
 Chỉ còn hai hook, và **không hook nào chặn tool call**. ACL đã chuyển sang khai báo trong
 config của chính runtime (`src/runtime/permission-rules.ts`) — xem bảng ở §4.6.
 
-**`session-boot.cjs`** (SessionStart) — nạp identity vào context trước turn đầu tiên. Nó đọc
-đúng một file `.alp/agents/<role>.md` rồi ghi
-`hookSpecificOutput.additionalContext`. Cố tình **không** `require()` gì từ `dist/`: đó là
-lý do nó tồn tại. Trước đây identity đi qua `prompt.md` và agent phải tự Read file — tốn một
-lượt gọi tool trước khi làm bất cứ việc gì. Hook này **fail-open**: lỗi thì session vẫn mở,
-`additionalContext` rỗng và cảnh báo hiện ở `systemMessage`.
+**`session-boot.cjs`** (SessionStart) — kênh **duy nhất** đưa session context vào view của model,
+cho cả hai runtime. Đọc theo thứ tự ưu tiên:
+
+1. `ALP_SESSION_CONTEXT` — `session-context.md` của chính execution này, do adapter ghi. Mọi phiên
+   khởi chạy qua `alp` đều có, và chỉ nó mang invariants, policy context và workspace grant.
+2. `.alp/agents/<role>.md` — tài liệu role tĩnh, cho đường native khi principal gõ thẳng
+   `claude`/`codex` và không adapter nào tham gia.
+
+Rồi ghi `hookSpecificOutput.additionalContext`. Cố tình **không** `require()` gì từ `dist/`: đó là
+lý do nó tồn tại. Đường thay thế (trỏ agent tới file và bảo nó tự Read) tốn một lượt gọi tool trước
+khi làm bất cứ việc gì.
+
+Hook **fail-open**: lỗi thì session vẫn mở, `additionalContext` rỗng và cảnh báo hiện ở
+`systemMessage`. Managed launch fail-closed ở tầng khác và sớm hơn — adapter ghi file *trước* khi
+spawn, nên file không ghi được là `prepare()` throw và không tiến trình nào khởi động.
 
 Tài liệu `.md` do `alp identity sync` sinh từ registry (`renderIdentityDocument`); registry
 vẫn là nguồn sự thật duy nhất, file chỉ là cache phẳng cho tốc độ boot.
@@ -361,11 +376,14 @@ Hệ quả phụ: `.alp/agents/<role>.md` liệt kê grant trong registry, khôn
 chỉnh theo nền tảng — trên Windows một role đọc thấy mình có `Bash` rồi bị deny khi dùng.
 `deny` thắng nên an toàn, chỉ là agent phải chịu một lần từ chối để biết.
 
-**Codex không nhận identity qua hook.** Cùng một `session-boot.cjs` chạy tốt trên Claude Code
-lại bị Codex báo `SessionStart Failed`, và phiên không hề biết role của mình. Vì vậy prompt
-của Codex mang thêm mục `## Identity` (`renderCapsulePrompt(capsule, { identityFromHook: false })`);
-Claude Code vẫn đi đường hook, không trả tiền hai lần. Chưa rõ nguyên nhân phía Codex — gộp
-lại một đường khi nào quan sát thấy Codex chấp nhận hook.
+**Codex nhận identity qua hook, giống Claude.** Đo trên `codex-cli 0.149.0`: hook `SessionStart`
+chạy đúng một lần và `additionalContext` vào transcript thành message `role: developer`, **trước**
+user turn. Ghi nhận cũ "Codex báo `SessionStart Failed`" đã lỗi thời; hai runtime nay dùng chung
+một đường, và identity không được đi hai kênh cùng lúc — nếu không sẽ vào context hai lần.
+
+Cách đo lại khi Codex đổi hành vi: `codex debug prompt-input` in đúng danh sách message model nhìn
+thấy mà không tốn model call, và một positional PROMPT hiện ra thành message `role: user` — đó là
+turn giả mà phiên interactive phải không có.
 
 ### 4.9 `src/cli/` — composition root
 
@@ -406,7 +424,8 @@ không có logic policy riêng.
   executions/<exec_id>/
     policy.json              ExecutionPolicy snapshot              (0600)
     state.json               StoredExecutionState                  (0600)
-    runtime/                 capsule, prompt.md, config, skill-roots
+    runtime/                 capsule, session-context.md, config, skill-roots
+                             + task.md chỉ khi headless
   delegation/<repo-key>/
     code-native-executions.json
     paseo.json               state riêng của backend adapter
