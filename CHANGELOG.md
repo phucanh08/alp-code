@@ -8,6 +8,8 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+## [0.6.0] - 2026-09-03
+
 ### Đã gỡ
 
 - **Backend Paseo, và cùng với nó là cả khái niệm "chọn backend".** ALP giờ chỉ chạy trên
@@ -414,7 +416,8 @@ Bản release đánh số đầu tiên. Trước mốc này alp-code chưa có v
 - `alp init`/`alp deinit`, `alp delegate`, `alp doctor`, `alp uninstall`, installer một dòng
   cho macOS/Linux/WSL và Windows.
 
-[Chưa phát hành]: https://github.com/phucanh08/alp-code/compare/v0.5.1...HEAD
+[Chưa phát hành]: https://github.com/phucanh08/alp-code/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/phucanh08/alp-code/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/phucanh08/alp-code/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/phucanh08/alp-code/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/phucanh08/alp-code/compare/v0.3.2...v0.4.0
