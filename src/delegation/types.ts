@@ -80,6 +80,8 @@ export interface DelegationResult {
   readonly output?: string;
   readonly exitCode?: number | null;
   readonly signal?: NodeJS.Signals | null;
+  /** Why a `failed` execution failed, carried through from the backend. */
+  readonly error?: Readonly<{ code: string; message: string }>;
   readonly metadata: Readonly<{ backend: string; runtime: RuntimeId } & Record<string, unknown>>;
 }
 

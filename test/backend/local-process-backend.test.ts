@@ -46,6 +46,7 @@ describe("LocalProcessBackend", () => {
       cwd: root,
       env: { ALP_DELEGATION_EXECUTION_ID: "exec-local" },
       temporaryFiles: [temporary],
+      intent: { prompt: "task", model: "m", mode: "bypass" },
     };
 
     expect(await backend.spawn({ executionId: "exec-local", launchSpec: spec })).toMatchObject({ status: "running" });
@@ -68,7 +69,7 @@ describe("LocalProcessBackend", () => {
     const backend = new LocalProcessBackend({ spawnProcess: () => child });
     await backend.spawn({
       executionId: "exec-signal",
-      launchSpec: { command: "fake", args: [], cwd: process.cwd(), env: {}, temporaryFiles: [] },
+      launchSpec: { command: "fake", args: [], cwd: process.cwd(), env: {}, temporaryFiles: [], intent: { prompt: "task", model: "m", mode: "bypass" } },
     });
 
     await backend.cancel("exec-signal", "SIGTERM");

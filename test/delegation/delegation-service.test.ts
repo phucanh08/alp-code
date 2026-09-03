@@ -73,6 +73,7 @@ class FakeRuntime implements RuntimeAdapter {
       cwd: input.execution.capsule.activeWorkspace,
       env: { ALP_DELEGATION_EXECUTION_ID: input.execution.capsule.executionId },
       temporaryFiles: [],
+      intent: { prompt: input.execution.capsule.task, model: input.model, mode: "auto" },
     };
   }
 }
@@ -88,7 +89,13 @@ class FakeBackend implements ExecutionBackend {
     if (this.spawnError) throw this.spawnError;
     return { executionId: input.executionId, status: "running" as const };
   }
-  async status(executionId: string) { this.calls.push("status"); return { executionId, status: "running" as const }; }
+  statusError: { code: string; message: string } | null = null;
+  async status(executionId: string) {
+    this.calls.push("status");
+    return this.statusError
+      ? { executionId, status: "failed" as const, error: this.statusError }
+      : { executionId, status: "running" as const };
+  }
   async wait(executionId: string) { this.calls.push("wait"); return { executionId, status: "completed" as const, output: `${this.name} output` }; }
   async cancel(executionId: string) { this.calls.push("cancel"); return { executionId, status: "cancelled" as const }; }
   async cleanup(_executionId: string) { this.calls.push("cleanup"); }
@@ -177,6 +184,22 @@ describe("DelegationService", () => {
     await fixture.service.cancel("exec-0");
     await fixture.service.cleanup("exec-0");
     expect(fixture.primary.calls).toEqual(["spawn", "status", "wait", "cancel", "cleanup"]);
+  });
+
+  /**
+   * A `failed` execution that will not say why is barely more useful than a hung one. The
+   * reason was produced by the backend and dropped here, because the result type had no
+   * field for it — including the message that names the grant to fix.
+   */
+  it("carries the backend's failure reason through to the caller", async () => {
+    const fixture = serviceFixture();
+    await fixture.service.delegate(input);
+    fixture.primary.statusError = { code: "ExecutionFailed", message: "dừng ở permission prompt" };
+
+    await expect(fixture.service.status("exec-0")).resolves.toMatchObject({
+      status: "failed",
+      error: { code: "ExecutionFailed", message: "dừng ở permission prompt" },
+    });
   });
 
   it("routes validated structured output from execution state when backend capture is empty", async () => {

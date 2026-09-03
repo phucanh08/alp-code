@@ -118,17 +118,31 @@ class PaseoBackend {
     return result(executionId, status, { metadata: { mode: "background" } });
   }
 
+  /**
+   * `paseo run` is `run [options] <prompt>` and spawns the runtime itself — there is no exec
+   * passthrough. The old `"--", launchSpec.command, ...launchSpec.args` therefore handed the
+   * parser `claude` as the prompt and dropped everything after it: every delegated agent
+   * started with the literal word `claude` as its task, on Paseo's own model and permission
+   * mode. Identity still arrived, because `--env` survives and the SessionStart hook reads
+   * `ALP_SESSION_CONTEXT`, which is why the failure looked like a hang rather than a crash.
+   *
+   * `launchSpec.intent` is that launch expressed in the only vocabulary this CLI accepts.
+   */
   spawnPrepared({ executionId, request, launchSpec }) {
     const runtime = path.basename(launchSpec.command).toLowerCase().startsWith("claude") ? "claude" : "codex";
+    const intent = launchSpec.intent || {};
+    if (!intent.prompt) throw new SpawnFailed("launchSpec.intent.prompt trống; Paseo không có task để giao");
     const args = [
       "run", "--background", "--json",
       "--cwd", launchSpec.cwd,
       "--title", `alp:${launchSpec.env.ALP_ROLE || "agent"}:${executionId.slice(-8)}`,
       "--provider", runtime,
+      ...(intent.model ? ["--model", intent.model] : []),
+      ...(intent.mode ? ["--mode", intent.mode] : []),
       ...Object.entries(launchSpec.env).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
       "--label", `alp.execution-id=${executionId}`,
       "--label", `alp.request-id=${request.requestId}`,
-      "--", launchSpec.command, ...launchSpec.args,
+      intent.prompt,
     ];
     const call = this.call(args, { timeoutMs: request.executionOptions.timeoutMs || 30000 });
     if (!call.ok) throw runtimeFailure("Paseo spawn thất bại", call, SpawnFailed);
@@ -151,11 +165,27 @@ class PaseoBackend {
     const record = this.record(executionId);
     const call = this.call(["inspect", record.runtimeId, "--json"], { timeoutMs: 10000 });
     if (!call.ok) throw runtimeFailure("Paseo status thất bại", call, ExecutionFailed);
-    let status = mapStatus(call.data?.Status || call.data?.status);
+    const raw = call.data?.Status || call.data?.status;
+    // `inspect` reports a parked agent as `running` — only `wait` names the `permission`
+    // state, and `wait` blocks. Measured against a delegated `search` sitting on an
+    // `ExitPlanMode` request: `inspect` said `running`, `wait` said
+    // `permission` / "Agent is waiting for permission: plan". The queue the same response
+    // already carries is what lets a poll see the block without waiting for it.
+    const blocked = isPermissionBlocked(raw) || pendingPermissions(call.data).length > 0;
+    let status = blocked ? "failed" : mapStatus(raw);
     if (record.cancelled && ["completed", "cancelled"].includes(status)) status = "cancelled";
-    this.state.update(executionId, { status });
-    return result(executionId, status);
+    // Polling `status` is exactly when the caller wants to see progress, and `wait` blocks.
+    // Reading the transcript here is what makes the two agree: before this, `wait` fetched
+    // the logs and `status` returned nothing, so a caller who polled after waiting watched
+    // the output it had already been given disappear.
+    const output = this.transcript(record) || record.output || "";
+    this.state.update(executionId, { status, ...(output ? { output } : {}) });
+    return result(executionId, status, {
+      ...(output ? { output } : {}),
+      ...(blocked ? { error: permissionBlockedError(executionId) } : {}),
+    });
   }
+
 
   wait(executionId, options = {}) {
     const record = this.record(executionId);
@@ -167,15 +197,23 @@ class PaseoBackend {
     if (call.data?.status === "timeout")
       throw new DelegationTimeout(`Paseo execution \`${executionId}\` chưa xong trước timeout`);
 
-    let status = mapStatus(call.data?.status);
+    const raw = call.data?.status;
+    let status = mapStatus(raw);
     if (record.cancelled && status === "completed") status = "cancelled";
-    const logs = this.callText(["logs", record.runtimeId, "--tail", "200"], { timeoutMs: 15000 });
-    const output = logs.ok ? logs.output.trim() : call.data?.message || "";
+    const output = this.transcript(record) || call.data?.message || "";
     this.state.update(executionId, { status, output });
     return result(executionId, status, {
       ...(output ? { output } : {}),
-      ...(status === "failed" ? { error: { code: "ExecutionFailed", message: call.data?.message || "Paseo agent failed" } } : {}),
+      ...(isPermissionBlocked(raw)
+        ? { error: permissionBlockedError(executionId) }
+        : status === "failed" ? { error: { code: "ExecutionFailed", message: call.data?.message || "Paseo agent failed" } } : {}),
     });
+  }
+
+  /** Last 200 lines of the agent transcript, or "" when Paseo cannot produce them. */
+  transcript(record) {
+    const logs = this.callText(["logs", record.runtimeId, "--tail", "200"], { timeoutMs: 15000 });
+    return logs.ok ? logs.output.trim() : "";
   }
 
   cancel(executionId) {
@@ -207,8 +245,10 @@ class PaseoBackend {
   call(args, options = {}) {
     const text = this.callText(args, options);
     if (!text.ok) return text;
-    try { return { ok: true, data: JSON.parse(text.output || "{}") }; }
-    catch { return { ok: false, message: `Paseo trả JSON không hợp lệ: ${(text.output || "").slice(0, 200)}` }; }
+    const payload = jsonPayload(text.output || "{}");
+    if (payload === null)
+      return { ok: false, message: `Paseo trả JSON không hợp lệ: ${(text.output || "").slice(0, 200)}` };
+    return { ok: true, data: payload };
   }
 
   callText(args, options = {}) {
@@ -272,6 +312,26 @@ class PaseoBackend {
   }
 }
 
+/**
+ * The JSON document in Paseo's stdout, or null when there is none.
+ *
+ * `--json` is not a promise that stdout holds only JSON. Creating a workspace prints two
+ * human lines first — `Created workspace wks_… - name` and a `Tip:` about `--workspace` —
+ * and parsing the whole stream then threw `Paseo trả JSON không hợp lệ`. Since Paseo names
+ * a workspace after the directory the first time it sees one, that made the *first*
+ * delegation into any new project fail while every later one succeeded.
+ *
+ * Scanning from the first `{` or `[` keeps the preamble out without assuming how many lines
+ * it takes, and a document that is merely malformed still returns null and surfaces as the
+ * same error it always did.
+ */
+function jsonPayload(output) {
+  const start = output.search(/[{[]/);
+  if (start === -1) return null;
+  try { return JSON.parse(output.slice(start)); }
+  catch { return null; }
+}
+
 function cleanupTemporaryFiles(files = []) {
   for (const file of files) fs.rmSync(file, { force: true });
 }
@@ -280,13 +340,57 @@ function inferRuntime(target) {
   return String(target.model || "").startsWith("claude-") ? "claude" : "codex";
 }
 
+/**
+ * Paseo reports `permission` when the runtime has stopped to ask a human.
+ *
+ * A delegated execution is spawned `--background` and non-interactive, so there is no one to
+ * answer and the agent parks until something kills it — one sat twelve minutes on nine
+ * seconds of CPU before being cancelled by hand. Reporting that as `running` made it
+ * indistinguishable from work in progress, and `wait` would have blocked on it for its full
+ * 24-hour ceiling.
+ *
+ * It is `failed` rather than a status of its own because the five-value contract in
+ * `execution-backend.ts` is what every caller switches on, and because the condition is
+ * genuinely terminal: `PolicyEngine` already decided what this role may do, so a prompt
+ * means the runtime and the policy disagree. That is a bug to fix in the grant, not a state
+ * to sit in.
+ */
+function isPermissionBlocked(status) {
+  return String(status || "").toLowerCase() === "permission";
+}
+
+/**
+ * Pending permission requests carried by an `inspect --json` response.
+ *
+ * `paseo inspect` answers `Status: running` for a parked agent but still lists the queue in
+ * `PendingPermissions`, so the block is visible in a call the backend already makes — no
+ * second round-trip to `permit ls`, which reports the same queue with its `id` truncated to
+ * eight characters (`"permissi"` for every entry, whatever the agent or tool). The ids here
+ * are whole (`permission-<uuid>`) and are what `permit allow|deny` accepts.
+ *
+ * Each entry is `{id, tool}` and carries no arguments, so a decision can be made on the tool
+ * name and nothing finer; the tool's own parameters appear only in the transcript.
+ */
+function pendingPermissions(data) {
+  const pending = data?.PendingPermissions ?? data?.pendingPermissions;
+  return Array.isArray(pending) ? pending : [];
+}
+
+function permissionBlockedError(executionId) {
+  return {
+    code: "ExecutionFailed",
+    message: `Paseo execution \`${executionId}\` dừng ở permission prompt; delegated run chạy background nên không ai trả lời được. `
+      + "Kiểm tra tool grant của role trong src/agents/ và deny list trong src/runtime/permission-rules.ts.",
+  };
+}
+
 function mapStatus(status) {
   const value = String(status || "").toLowerCase();
   if (["initializing", "created", "queued", "starting"].includes(value)) return "queued";
-  if (["running", "permission"].includes(value)) return "running";
+  if (value === "running") return "running";
   if (["idle", "completed", "archived"].includes(value)) return "completed";
   if (["cancelled", "canceled", "stopped", "closed"].includes(value)) return "cancelled";
-  if (["error", "failed", "timeout"].includes(value)) return "failed";
+  if (["error", "failed", "timeout"].includes(value) || isPermissionBlocked(value)) return "failed";
   return "running";
 }
 
@@ -299,4 +403,4 @@ function runtimeFailure(prefix, call, Fallback) {
   return new Fallback(message);
 }
 
-module.exports = { PaseoBackend, inferRuntime, mapStatus, runtimeFailure };
+module.exports = { PaseoBackend, inferRuntime, isPermissionBlocked, mapStatus, runtimeFailure };

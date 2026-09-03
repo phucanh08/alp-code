@@ -124,7 +124,7 @@ describe("runMainSession", () => {
   it("uses remembered selection, code-native main definition, adapter launch spec, and local lifecycle", async () => {
     const events: string[] = [];
     const prepared = { capsule: { executionId: "exec-main" } } as never;
-    const launchSpec = { command: "fake", args: [], cwd: "/project", env: {}, temporaryFiles: [] };
+    const launchSpec = { command: "fake", args: [], cwd: "/project", env: {}, temporaryFiles: [], intent: { prompt: null, model: "m", mode: "bypass" } };
     const result = await runMainSession({ cwd: "/project" }, {
       registry: {
         get(id: string) {
@@ -176,7 +176,7 @@ describe("runMainSession", () => {
       registry: { get: () => definition },
       selector: { async select() { return { ok: true, runtime: "claude", source: "default" }; } },
       executionService: { async prepare(input) { workspaceMode = input.workspaceMode; return { capsule: { executionId: "exec" } } as never; } },
-      adapters: new Map([["claude", { name: "claude", async probe() { return { ok: true, runtime: "claude", message: "ok" }; }, async prepare() { return { command: "fake", args: [], cwd: "/unknown", env: {}, temporaryFiles: [] }; } }]]),
+      adapters: new Map([["claude", { name: "claude", async probe() { return { ok: true, runtime: "claude", message: "ok" }; }, async prepare() { return { command: "fake", args: [], cwd: "/unknown", env: {}, temporaryFiles: [], intent: { prompt: null, model: "m", mode: "plan" } }; } }]]),
       backend: {
         name: "local",
         async healthCheck() { return { ok: true, message: "ok" }; },

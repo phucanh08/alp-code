@@ -361,6 +361,7 @@ export class DelegationService {
       ...(output === undefined ? {} : { output }),
       ...(value.exitCode === undefined ? {} : { exitCode: value.exitCode }),
       ...(value.signal === undefined ? {} : { signal: value.signal }),
+      ...(value.error === undefined ? {} : { error: value.error }),
       metadata: Object.freeze({ ...(value.metadata ?? {}), backend: record.backend, runtime: record.runtime }),
     });
   }
