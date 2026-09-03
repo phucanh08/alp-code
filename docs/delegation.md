@@ -82,8 +82,9 @@ Ví dụ loadout thật: `main → search` và `main → review` được phép;
 `UnauthorizedDelegation` ngay trong core. Khi deny, backend không được health-check hay spawn.
 
 Role thường không được gọi raw `herdr`, `paseo`, `create_agent` hoặc `spawn_agent`.
-`acl-guard.cjs` kiểm exact target ở facade; generated Claude settings deny hai runtime binary
-cho cả `main`. Đường chuẩn duy nhất là API bên dưới.
+`src/policy/invariants.ts` kiểm exact target ở facade; generated Claude settings deny hai runtime
+binary cho cả `main` (`Bash(herdr:*)`, `Bash(paseo:*)`), Codex deny bằng `[[rules]] allow = false`.
+Đường chuẩn duy nhất là API bên dưới.
 
 Principal có thể giao việc hoặc tương tác trực tiếp với role. `reports_to` chỉ định tuyến
 lifecycle/kết quả khi execution được tạo qua delegation; nó không phải lệnh cấm direct chat.

@@ -19,8 +19,9 @@
 | Kết quả | `DelegationResult` | `DelegationResult` |
 | Chạy dài | backend execution | backend execution |
 
-Backend được chọn bằng config và adapter có thể dùng Herdr hoặc Paseo. Business code không
-gọi runtime trực tiếp; ALP policy/context luôn chạy trước backend.
+Backend được chọn bằng config: `paseo` là mặc định, `local` (`LocalProcessBackend`) luôn được
+register nên chạy được trên máy chưa cài gì. Business code không gọi runtime trực tiếp; ALP
+policy/context luôn chạy trước backend.
 
 **Agent đã có definition thì KHÔNG truyền model/effort bằng tay.** ALP chọn model, effort,
 sandbox và hooks từ compiled definition cùng immutable execution policy. Flag `-m`/`-c`

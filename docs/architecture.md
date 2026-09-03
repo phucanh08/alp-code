@@ -2,6 +2,9 @@
 
 > Tài liệu kiến trúc hệ thống. Mô tả layer, contract giữa các layer, luồng dữ liệu và các
 > ranh giới tin cậy. Cập nhật từ source tại `main` (2026-08-27).
+>
+> Doc này mô tả hệ thống **đang là**. Hướng đi và các nguyên tắc quyết định nằm ở
+> [Triết lý thiết kế & Tầm nhìn](./alp-design-philosophy-and-vision.md).
 
 ## 1. Hệ thống này là gì
 
@@ -158,9 +161,10 @@ Loadout hiện tại:
 
 Chỉ `main` có `delegatesTo` khác rỗng. Cây delegation phẳng: `principal → main → {7 specialist}`.
 
-`shared/` chứa phần dùng chung: `house-rules.ts` (4 quy tắc code-native),
-`voice.ts` (`renderInstructions` — khuôn prompt thống nhất), `principal.ts` (ngôn ngữ/timezone
-của principal).
+`shared/` chứa phần dùng chung: `house-rules.ts` (`CODE_NATIVE_HOUSE_RULES` — 4 quy tắc
+code-native cho mọi vai; `CODE_CRAFT_RULES` — 4 quy tắc tay nghề chỉ spread vào `main`,
+`review`, `oracle` là các vai viết hoặc phán xét code), `voice.ts` (`renderInstructions` —
+khuôn prompt thống nhất), `principal.ts` (ngôn ngữ/timezone của principal).
 
 ### 4.2 `src/policy/` — authorization fail-closed
 

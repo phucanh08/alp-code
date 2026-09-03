@@ -8,7 +8,33 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
-## [0.2.0] - 2026-09-02
+### Thêm
+
+- `CODE_CRAFT_RULES` trong `src/agents/shared/house-rules.ts` — bốn quy tắc tay nghề phỏng theo
+  [ghi chép của Andrej Karpathy](https://x.com/karpathy/status/2015883857489522876) về các lỗi
+  code thường gặp của LLM: nêu giả định thay vì hành động theo nó, chọn lời giải nhỏ nhất, sửa
+  đúng phạm vi được yêu cầu, biến task thành một check chạy được. Chỉ spread vào `main`,
+  `review`, `oracle` là các vai viết hoặc phán xét code; `search`, `librarian`, `read-thread`,
+  `compaction`, `titling` không nhận vì không hành động theo được.
+- `docs/orchestrator-vision.md` — đề xuất role built-in thứ 9 `orchestrator`, điều phối nhiều
+  execution dài chạy song song trên workspace tách biệt (mô hình orchestration của Paseo). Ghi rõ ba
+  ràng buộc: nó phải là built-in vì `delegatesTo` khác rỗng mà §5.5 chốt custom agent là lá; nó
+  **không** được miễn trừ khỏi invariant cấm `create_agent`/`paseo` — cái phải lớn lên là
+  `DelegationService`, không phải danh sách ngoại lệ; và §4.10 (budget, cancellation, trace) phải
+  xong trước, vì orchestrator thiếu hai thứ đó là fork bomb kèm file policy. Doc triết lý giữ §5.9
+  làm đoạn trỏ sang, cùng một dòng điều kiện mở khoá trong bảng hoãn §8.
+
+### Sửa
+
+- `docs/alp-design-philosophy-and-vision.md` viết trước v0.2.0 nên còn mô tả thế giới cũ: backend
+  Herdr, `hooks/acl-guard.cjs`, `instructions: (context) =>`, và output `kind: json`. Nay bám đúng
+  code hiện tại. Hai chỗ đáng chú ý hơn sửa chữ: §5.4 đổi tiền đề — output JSON đã bị gỡ khỏi cả 8
+  role nên `kind: text` là lựa chọn duy nhất cho custom agent v1; và §5.7 phải sống chung với việc
+  v0.2.0 đã chiếm trước `.alp/agents/` bằng file phẳng `<role>.md`, nên custom agent trùng tên
+  built-in role phải bị từ chối lúc load.
+- `docs/delegation.md` còn nói `acl-guard.cjs` kiểm raw-runtime target — hook đó đã bị gỡ; việc kiểm
+  nằm ở `src/policy/invariants.ts` cộng deny rule khai báo của từng runtime.
+- `docs/model-routing.md` còn nói adapter "có thể dùng Herdr hoặc Paseo".
 
 ### Thay đổi
 

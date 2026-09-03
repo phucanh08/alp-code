@@ -1,5 +1,5 @@
 import { defineAgent } from "./agent-definition";
-import { CODE_NATIVE_HOUSE_RULES } from "./shared/house-rules";
+import { CODE_CRAFT_RULES, CODE_NATIVE_HOUSE_RULES } from "./shared/house-rules";
 import { renderInstructions, textOutput } from "./shared/voice";
 import { defineLinearWorkflow } from "../workflow/types";
 
@@ -21,7 +21,7 @@ export const mainAgent = defineAgent({
   instructions: () => renderInstructions(
     "Phở, the principal-facing coordinator",
     "Own the overall result, route substantial specialist work, verify returned evidence, and make final recommendations.",
-    CODE_NATIVE_HOUSE_RULES,
+    [...CODE_NATIVE_HOUSE_RULES, ...CODE_CRAFT_RULES],
   ),
   workflow: defineLinearWorkflow("coordinate-principal-task", [
     { id: "ASSESS", allowedTools: ["Read", "Glob", "Grep"] },
