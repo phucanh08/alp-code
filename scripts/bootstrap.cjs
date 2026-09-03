@@ -9,7 +9,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const { spawnSyncCommand } = require("./lib/delegation/backends/command-runner.cjs");
+const { spawnSyncCommand } = require("./lib/delegation/command-runner.cjs");
 const CLI = require("./lib/cli-link.cjs");
 const D = require("./lib/delegation/config.cjs");
 
@@ -57,7 +57,7 @@ console.log("");
 console.log("  cd <project-bất-kỳ> && alp init");
 console.log("  alp                              # launch main agent");
 console.log("");
-console.log("Cập nhật về sau: chạy lại installer — rebuild code, giữ memory/runtime/backend preferences.");
+console.log("Cập nhật về sau: chạy lại installer — rebuild code, giữ memory và runtime preference.");
 
 /**
  * Dựng `memory/` từ `scaffold/memory/` — chỉ những gì còn THIẾU.

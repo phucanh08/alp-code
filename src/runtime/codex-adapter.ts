@@ -82,6 +82,10 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
           policy,
           memoryRoot: this.memoryRoot(),
           allRoles: agentRegistry.list().map((definition) => definition.id),
+          // Unused here: Codex's sandbox restricts writes only, so reading the task file is
+          // never in question. Supplied because the grant is part of the shared contract,
+          // and making it optional is what let Claude ship without it.
+          runtimeDirectory: artifacts.runtimeDirectory,
         }),
         "[alp]",
         `execution_id = ${tomlString(capsule.executionId)}`,
@@ -131,15 +135,6 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
       ]),
       cwd: capsule.activeWorkspace,
       env: Object.freeze(env),
-      // Paseo exposes no Codex `read-only` creation mode, and `auto-review` is
-      // workspace-write too, so `auto` is the only honest choice; the delegated workspace
-      // and `ALP_READONLY_DIRS` are what hold the line there. Rechecked on 0.7.2, which
-      // still offers Codex only `Default Permissions, Auto-review, Full Access`.
-      intent: Object.freeze({
-        prompt: contextFiles.taskFile === null ? null : taskArguments(contextFiles)[0] ?? null,
-        model: input.model,
-        mode: "auto",
-      }),
       temporaryFiles: Object.freeze([
         capsuleFile,
         contextFiles.sessionContextFile,

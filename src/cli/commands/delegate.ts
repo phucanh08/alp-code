@@ -3,9 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { agentRegistry } from "../../agents/registry";
 import type { RuntimeId } from "../../agents/types";
-import type { BackendExecutionResult, ExecutionBackend, SpawnExecutionInput } from "../../backend/execution-backend";
 import { LocalProcessBackend } from "../../backend/local-process-backend";
-import { BackendRegistry } from "../../delegation/backend-registry";
 import { DelegationService, FileDelegationExecutionStore } from "../../delegation/delegation-service";
 import type { DelegationResult } from "../../delegation/types";
 import { ExecutionService } from "../../execution/execution-service";
@@ -18,7 +16,6 @@ import { CodexRuntimeAdapter } from "../../runtime/codex-adapter";
 import type { RuntimeAdapter } from "../../runtime/runtime-adapter";
 import { FileRuntimePreferenceStore } from "../../runtime/runtime-preference-store";
 import { WorkflowRunner } from "../../workflow/workflow-runner";
-import { ProjectRegistryStore } from "./init";
 
 export interface RunDelegateDependencies {
   readonly cwd: string;
@@ -38,7 +35,6 @@ export async function runDelegateCommand(
 ): Promise<DelegationResult> {
   const targetRole = argv[0];
   if (!targetRole) throw new Error("delegate requires a target role");
-  let backend: string | undefined;
   let runtime: RuntimeId | undefined;
   let background = false;
   let timeoutMs: number | null = null;
@@ -46,8 +42,7 @@ export async function runDelegateCommand(
   const task: string[] = [];
   for (let index = 1; index < argv.length; index += 1) {
     const value = argv[index];
-    if (value === "--backend") backend = required(argv, ++index, "--backend requires a name");
-    else if (value === "--runtime") {
+    if (value === "--runtime") {
       const selected = required(argv, ++index, "--runtime requires claude or codex");
       if (selected !== "claude" && selected !== "codex") throw new Error(`invalid runtime \`${selected}\``);
       runtime = selected;
@@ -59,6 +54,12 @@ export async function runDelegateCommand(
       workspace = required(argv, ++index, `${value} requires a path`);
     } else if (value === "--parent-role" || value === "--role" || value === "--kind") {
       throw new Error(`unsupported identity-aware raw-runtime shortcut \`${value}\``);
+    } else if (value === "--backend") {
+      // Rejected rather than ignored. Unknown words fall through to the task below, so a
+      // stale `--backend paseo` left in a script would otherwise be handed to the agent as
+      // part of what it was asked to do, and the run would look fine while doing the wrong
+      // thing. There is one backend now; saying so is the only honest answer.
+      throw new Error("`--backend` was removed: delegation always runs on the local backend");
     } else if (value !== "--") task.push(value);
   }
   if (!task.join(" ").trim()) throw new Error("delegate requires a task");
@@ -72,7 +73,7 @@ export async function runDelegateCommand(
     workspaceMode: parentRole === "principal" && targetRole === "main"
       ? "workspace-write"
       : "read-only",
-    metadata: backend ? { backend } : {},
+    metadata: {},
     executionOptions: { background, interactive: false, timeoutMs, ...(runtime ? { runtime } : {}) },
   });
   return !background && spawned.status === "running"
@@ -93,92 +94,26 @@ export async function runDelegationLifecycleCommand(
   throw new Error(`unknown delegation lifecycle command \`${command ?? ""}\``);
 }
 
-interface CjsBackend {
-  readonly name: string;
-  healthCheck(): { readonly ok: boolean; readonly message: string };
-  spawn(input: Record<string, unknown>): BackendExecutionResult;
-  status(executionId: string): BackendExecutionResult;
-  wait(executionId: string, options?: { readonly timeoutMs?: number | null }): BackendExecutionResult;
-  cancel(executionId: string): void | BackendExecutionResult;
-  cleanup(executionId: string): void;
-}
-
-class CjsExecutionBackendAdapter implements ExecutionBackend {
-  readonly name: string;
-  constructor(private readonly backend: CjsBackend) { this.name = backend.name; }
-  async healthCheck() { return this.backend.healthCheck(); }
-  async spawn(input: SpawnExecutionInput): Promise<BackendExecutionResult> {
-    const lifecycle = input.lifecycle ?? {
-      requestId: input.executionId,
-      parentExecutionId: null,
-      background: true,
-      interactive: false,
-      timeoutMs: null,
-    };
-    return this.backend.spawn({
-      ...input,
-      request: {
-        requestId: lifecycle.requestId,
-        parentExecutionId: lifecycle.parentExecutionId,
-        executionOptions: {
-          background: lifecycle.background,
-          interactive: lifecycle.interactive,
-          timeoutMs: lifecycle.timeoutMs,
-        },
-      },
-    });
-  }
-  async status(executionId: string) { return this.backend.status(executionId); }
-  async wait(executionId: string, options?: { readonly timeoutMs?: number | null }) { return this.backend.wait(executionId, options); }
-  async cancel(executionId: string) {
-    const value = this.backend.cancel(executionId);
-    return value ?? { executionId, status: "cancelled" };
-  }
-  async cleanup(executionId: string) { this.backend.cleanup(executionId); }
-}
-
 export interface DefaultDelegationComposition {
   readonly service: DelegationService;
-  readonly backendRegistry: BackendRegistry;
-  readonly config: { backend: string; fallbackBackend: string | null; stateDir: string };
+  readonly config: { stateDir: string };
 }
 
 export async function createDefaultDelegationComposition(
   repoRoot: string,
-  cwd: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<DefaultDelegationComposition> {
   const localRequire = createRequire(__filename);
   const configModule = localRequire(join(repoRoot, "scripts", "lib", "delegation", "config.cjs")) as {
-    loadDelegationConfig(root: string, environment: NodeJS.ProcessEnv): {
-      backend: string;
-      fallbackBackend: string | null;
-      stateDir: string;
-      backends: Record<string, Record<string, unknown> & { enabled: boolean }>;
-    };
+    loadDelegationConfig(root: string, environment: NodeJS.ProcessEnv): { stateDir: string };
   };
   const config = configModule.loadDelegationConfig(repoRoot, env);
-  const backendRegistry = new BackendRegistry();
-  const cjsStateStore = localRequire(join(repoRoot, "scripts", "lib", "delegation", "core", "execution-store.cjs")) as {
-    FileExecutionStore: new (file: string) => unknown;
-  };
-  // `local` is always registered: it needs no daemon, so it is the backend that keeps
-  // delegation working on a machine where nothing else is installed. Every other backend
-  // is opt-in through `alp.config.yaml`.
-  backendRegistry.register(new LocalProcessBackend({ env }));
-  if (config.backends.paseo?.enabled) {
-    const { PaseoBackend } = localRequire(join(repoRoot, "scripts", "lib", "delegation", "backends", "paseo", "backend.cjs")) as {
-      PaseoBackend: new (options: Record<string, unknown>) => CjsBackend;
-    };
-    backendRegistry.register(new CjsExecutionBackendAdapter(new PaseoBackend({
-      config: config.backends.paseo,
-      stateDir: config.stateDir,
-      state: new cjsStateStore.FileExecutionStore(join(config.stateDir, "paseo.json")),
-    })));
-  }
-  const projectBackend = await new ProjectRegistryStore({
-    file: join(env.HOME || homedir(), ".alp", "projects.json"),
-  }).backendFor(cwd).catch(() => null);
+  // The one backend. It spawns the runtime as a child process, so it needs no daemon and
+  // works on a machine where nothing else is installed — and it hands the runtime its own
+  // settings file, which is what makes a role's `permissions.deny` real rather than
+  // advisory. Its state lives in `local.json` under the delegation state directory, so a
+  // later CLI process can run lifecycle commands against an execution this one started.
+  const backend = new LocalProcessBackend({ env, stateDir: config.stateDir });
   const preference = await new FileRuntimePreferenceStore({
     file: join(env.HOME || homedir(), ".alp", "runtime.json"),
   }).read();
@@ -204,13 +139,9 @@ export async function createDefaultDelegationComposition(
       ["claude", new ClaudeRuntimeAdapter({ env })],
       ["codex", new CodexRuntimeAdapter({ env })],
     ]),
-    backendRegistry,
+    backend,
     executionStore: new FileDelegationExecutionStore({ file: join(config.stateDir, "code-native-executions.json") }),
-    config: {
-      backend: projectBackend ?? config.backend,
-      fallbackBackend: config.fallbackBackend,
-      defaultRuntime: preference.runtime ?? "claude",
-    },
+    config: { defaultRuntime: preference.runtime ?? "claude" },
   });
-  return { service, backendRegistry, config: { backend: projectBackend ?? config.backend, fallbackBackend: config.fallbackBackend, stateDir: config.stateDir } };
+  return { service, config: { stateDir: config.stateDir } };
 }

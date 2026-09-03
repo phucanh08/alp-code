@@ -9,31 +9,23 @@ export interface RuntimeHealth {
 }
 
 /**
- * The same launch expressed declaratively, for a backend that cannot run `command`/`args`.
+ * A launch ALP can exec directly. The runtime's own CLI is the whole interface: the task,
+ * the model pin and the permission mode all travel inside `args`, so nothing about the
+ * execution depends on a backend re-deriving them.
  *
- * `paseo run` takes a prompt and spawns the runtime process itself — its CLI is
- * `run [options] <prompt>` with no exec passthrough. Handing it `-- claude --settings …`
- * made its parser read `claude` as the prompt and discard the rest, so the task, the model
- * pin and the permission mode never arrived and every delegated agent woke up with no work
- * and the backend's own defaults. These three fields are what such a backend has to
- * reproduce; a backend that can exec `command` directly ignores them.
+ * This carried a second, declarative `intent` form until 2026-09-03, for a backend that
+ * spawned the runtime itself and could not exec `command`. Both adapters had to keep the
+ * two spellings of one launch in agreement, and only the exec form was ever enforced —
+ * a permission mode set in `args` was real, the same mode in `intent` was a request. That
+ * backend is gone; one spelling means the mode a role runs under cannot drift from the
+ * mode its policy asked for.
  */
-export interface RuntimeLaunchIntent {
-  /** First turn for the agent, or null for an interactive launch, which must not spend one. */
-  readonly prompt: string | null;
-  /** Model to pin, so a backend cannot quietly substitute its own default. */
-  readonly model: string;
-  /** Permission mode in the runtime's own vocabulary — `plan`/`bypass` on Claude, `auto` on Codex. */
-  readonly mode: string;
-}
-
 export interface RuntimeLaunchSpec {
   readonly command: string;
   readonly args: readonly string[];
   readonly cwd: string;
   readonly env: Readonly<Record<string, string>>;
   readonly temporaryFiles: readonly string[];
-  readonly intent: RuntimeLaunchIntent;
 }
 
 export interface PrepareRuntimeInput {

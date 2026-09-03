@@ -14,7 +14,7 @@ alp delegation status <execution-id>
 alp delegation wait <execution-id>
 alp delegation cancel <execution-id>
 alp delegation cleanup <execution-id>
-alp delegation switch [local|paseo|default]
+alp delegation list
 ```
 
 `scripts/run-role.*` remains a compatibility facade and calls the same service.
@@ -30,10 +30,9 @@ ALP policy determines:
 - what project/shared/private memory is visible;
 - which workspace and write policy apply.
 
-The configured backend only runs the prepared execution. It may be local, Paseo, or a
-future backend. Changing it must not change role, ACL, memory, or task ownership.
-Run `alp delegation switch` to inspect or persistently change the backend. Keep
-`--backend` for a one-request override.
+The backend only runs the prepared execution: it spawns the runtime as a child process and
+owns nothing about role, ACL, memory, or task ownership. There is one backend and no way to
+select another — `--backend` and `alp delegation switch` were removed on 2026-09-03.
 
 If `--project` is omitted, the execution workspace is the caller's current directory. ALP
 pins that canonical path into context and blocks access to other registered source workspaces

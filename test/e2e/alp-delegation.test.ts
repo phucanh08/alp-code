@@ -2,7 +2,6 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { agentRegistry } from "../../src/agents/registry";
-import { BackendRegistry } from "../../src/delegation/backend-registry";
 import { DelegationService, InMemoryDelegationExecutionStore } from "../../src/delegation/delegation-service";
 import { cleanupEnvironments, createE2eEnvironment, type E2eEnvironment } from "./harness";
 
@@ -17,9 +16,9 @@ function delegationService(environment: E2eEnvironment, ids: () => string) {
     memory: environment.memory,
     executionService: environment.executionService,
     runtimeAdapters: environment.adapters,
-    backendRegistry: new BackendRegistry().register(environment.backend),
+    backend: environment.backend,
     executionStore: new InMemoryDelegationExecutionStore(),
-    config: { backend: environment.backend.name, fallbackBackend: null, defaultRuntime: "codex" },
+    config: { defaultRuntime: "codex" },
     ids: { request: () => `req_${ids()}`, execution: ids },
   });
 }

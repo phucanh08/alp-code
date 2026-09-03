@@ -9,7 +9,6 @@ import type { PreparedExecution } from "../execution/types";
 import type { MemoryService } from "../memory/memory-service";
 import type { PolicyEngine } from "../policy/policy-engine";
 import type { RuntimeAdapter, RuntimeLaunchSpec } from "../runtime/runtime-adapter";
-import type { BackendRegistry } from "./backend-registry";
 import {
   DelegationError,
   type DelegationExecutionRecord,
@@ -21,8 +20,6 @@ import {
 } from "./types";
 
 export interface DelegationServiceConfig {
-  backend: string;
-  fallbackBackend: string | null;
   defaultRuntime: RuntimeId;
 }
 
@@ -36,7 +33,7 @@ export interface DelegationServiceOptions {
   readonly memory: Pick<MemoryService, "buildContext">;
   readonly executionService: DelegationExecutionPreparer;
   readonly runtimeAdapters: ReadonlyMap<RuntimeId, RuntimeAdapter>;
-  readonly backendRegistry: BackendRegistry;
+  readonly backend: ExecutionBackend;
   readonly executionStore: DelegationExecutionStore;
   readonly config: DelegationServiceConfig;
   readonly ids?: DelegationIds;
@@ -180,7 +177,7 @@ export class DelegationService {
   private readonly memory: Pick<MemoryService, "buildContext">;
   private readonly executionService: DelegationExecutionPreparer;
   private readonly runtimeAdapters: ReadonlyMap<RuntimeId, RuntimeAdapter>;
-  private readonly backendRegistry: BackendRegistry;
+  private readonly backend: ExecutionBackend;
   private readonly executionStore: DelegationExecutionStore;
   private readonly ids: DelegationIds;
   private readonly now: () => Date;
@@ -191,7 +188,7 @@ export class DelegationService {
     this.memory = options.memory;
     this.executionService = options.executionService;
     this.runtimeAdapters = options.runtimeAdapters;
-    this.backendRegistry = options.backendRegistry;
+    this.backend = options.backend;
     this.executionStore = options.executionStore;
     this.config = options.config;
     this.ids = options.ids ?? defaultIds();
@@ -231,19 +228,22 @@ export class DelegationService {
       reasoningEffort: definition.reasoningEffort[runtime],
       interactive: request.executionOptions.interactive,
     });
-    let backend: ExecutionBackend;
-    try {
-      backend = await this.resolveBackend(request.metadata.backend);
-    } catch (error) {
-      await removeTemporaryFiles(launchSpec);
-      throw error;
-    }
-    return Object.freeze({ request, executionId, execution, runtime, launchSpec, backend });
+    return Object.freeze({ request, executionId, execution, runtime, launchSpec, backend: this.backend });
   }
 
   async delegate(input: DelegationRequestInput): Promise<DelegationResult> {
     const prepared = await this.prepare(input);
     const { request, executionId, execution, runtime, launchSpec, backend } = prepared;
+    // Preconditions, after authorization and before the execution record exists. The backend
+    // registry used to health-check as part of picking a backend; with one backend there is
+    // nothing to pick, but the question it answered still needs asking — otherwise a machine
+    // with no runtime installed fails inside `spawn` as a bare ENOENT, and the execution is
+    // recorded as `failed` for a reason that names a path instead of the missing CLI.
+    const health = await backend.healthCheck();
+    if (!health.ok) {
+      await removeTemporaryFiles(launchSpec).catch(() => undefined);
+      throw new DelegationError("BACKEND_UNAVAILABLE", health.message);
+    }
     this.executionStore.put({
       executionId,
       requestId: request.requestId,
@@ -283,7 +283,7 @@ export class DelegationService {
 
   async status(executionId: string): Promise<DelegationResult> {
     const record = this.record(executionId);
-    const value = await this.backendRegistry.resolve(record.backend).status(executionId);
+    const value = await this.backend.status(executionId);
     const result = this.result(record, value);
     this.executionStore.update(executionId, { status: result.status });
     return result;
@@ -291,7 +291,7 @@ export class DelegationService {
 
   async wait(executionId: string, options: { readonly timeoutMs?: number | null } = {}): Promise<DelegationResult> {
     const record = this.record(executionId);
-    const value = await this.backendRegistry.resolve(record.backend).wait(executionId, options);
+    const value = await this.backend.wait(executionId, options);
     const result = this.result(record, value);
     this.executionStore.update(executionId, { status: result.status });
     return result;
@@ -299,37 +299,19 @@ export class DelegationService {
 
   async cancel(executionId: string): Promise<DelegationResult> {
     const record = this.record(executionId);
-    const value = await this.backendRegistry.resolve(record.backend).cancel(executionId);
+    const value = await this.backend.cancel(executionId);
     this.executionStore.update(executionId, { status: value.status });
     return this.result(this.record(executionId), value);
   }
 
   async cleanup(executionId: string): Promise<DelegationResult> {
     const record = this.record(executionId);
-    await this.backendRegistry.resolve(record.backend).cleanup(executionId);
+    await this.backend.cleanup(executionId);
     return this.result(record, { executionId, status: record.status });
   }
 
   listExecutions(): readonly DelegationExecutionRecord[] {
     return this.executionStore.list();
-  }
-
-  private async resolveBackend(override?: string): Promise<ExecutionBackend> {
-    const selected = override ?? this.config.backend;
-    const primary = this.backendRegistry.resolve(selected);
-    const fallbackName = this.config.fallbackBackend;
-    if (!fallbackName || fallbackName === selected) return primary;
-    const health = await primary.healthCheck();
-    if (health.ok) return primary;
-    const fallback = this.backendRegistry.resolve(fallbackName);
-    const fallbackHealth = await fallback.healthCheck();
-    if (!fallbackHealth.ok) {
-      throw new DelegationError(
-        "BACKEND_UNAVAILABLE",
-        `backend \`${selected}\` unavailable (${health.message}); fallback \`${fallbackName}\` unavailable (${fallbackHealth.message})`,
-      );
-    }
-    return fallback;
   }
 
   private record(executionId: string): DelegationExecutionRecord {

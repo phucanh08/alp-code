@@ -72,6 +72,7 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
         permissions: claudePermissions({
           policy,
           memoryRoot: this.memoryRoot(),
+          runtimeDirectory: artifacts.runtimeDirectory,
           allRoles: agentRegistry.list().map((definition) => definition.id),
           sandboxed: this.sandboxAvailable(),
         }),
@@ -119,19 +120,6 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
       ]),
       cwd: capsule.activeWorkspace,
       env: Object.freeze(env),
-      // A backend that spawns Claude itself gets no settings file, so `permissions.deny` —
-      // and with it the file-level isolation of other roles' private memory — does not
-      // reach it. `bypass` is chosen in full knowledge of that: the deny list was already
-      // absent there, and a mode that prompts leaves a background agent parked on a
-      // question nobody can answer. What still holds is `MemoryService` and `PolicyEngine`,
-      // which gate memory operations above the runtime and are unaffected by this mode.
-      // Read-only roles keep `plan` because it is what makes read-only true for them, and
-      // a role that never writes has nothing to be prompted about.
-      intent: Object.freeze({
-        prompt: contextFiles.taskFile === null ? null : taskArguments(contextFiles)[0] ?? null,
-        model: input.model,
-        mode: policy.workspaceMode === "read-only" ? "plan" : "bypass",
-      }),
       temporaryFiles: Object.freeze([
         capsuleFile,
         contextFiles.sessionContextFile,

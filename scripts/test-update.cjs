@@ -40,7 +40,7 @@ const fakeResolve = async () => ({ ok: true, tag: "v1.0.0", source: "test" });
     const maintenance = path.join(root, "maintenance");
     fs.mkdirSync(path.join(maintenance, "memory"), { recursive: true });
     fs.writeFileSync(path.join(maintenance, "memory", "keep.md"), "memory\n");
-    for (const [relative, body] of [["runtime.json", "codex\n"], ["projects.json", '{"version":1,"projects":[]}\n'], [path.join("delegation", "x", "backend"), "paseo\n"]]) {
+    for (const [relative, body] of [["runtime.json", "codex\n"], ["projects.json", '{"version":1,"projects":[]}\n'], [path.join("delegation", "x", "local.json"), '{"executions":{}}\n']]) {
       const file = path.join(home, ".alp", relative); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, body);
     }
     const protectedPaths = preserveMaintenanceState(maintenance, { env: { HOME: home } }).map((entry) => entry.file);
@@ -70,7 +70,7 @@ function testAlpCjsAwaitsUpdate(root) {
     const repo = path.join(root, `alp-cjs-${wantStatus}`);
     // `alp.cjs` loads the command runner at require time, so the fixture has to carry it
     // even though this test never spawns anything through it.
-    const commandRunner = path.join("scripts", "lib", "delegation", "backends", "command-runner.cjs");
+    const commandRunner = path.join("scripts", "lib", "delegation", "command-runner.cjs");
     fs.mkdirSync(path.join(repo, path.dirname(commandRunner)), { recursive: true });
     fs.copyFileSync(path.join(sourceRoot, "scripts", "alp.cjs"), path.join(repo, "scripts", "alp.cjs"));
     fs.copyFileSync(path.join(sourceRoot, commandRunner), path.join(repo, commandRunner));

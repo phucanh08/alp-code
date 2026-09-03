@@ -1,6 +1,6 @@
 import { mkdtemp, mkdir, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, delimiter, join } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ClaudeRuntimeAdapter } from "../../src/runtime/claude-adapter";
 import { CodexRuntimeAdapter } from "../../src/runtime/codex-adapter";
@@ -140,6 +140,11 @@ describe("runtime adapters", () => {
     expect(settings.hooks).not.toHaveProperty("PreToolUse");
     expect(settings.hooks.SessionStart[0].hooks[0].command).toContain(process.execPath);
     expect(settings.permissions.additionalDirectories).toContain(project);
+    // The agent is told "ALP task is in <file>; execute it", and that file lives in the
+    // execution's runtime directory. Without this grant a `workspace-write` role — which
+    // gets no `--permission-mode plan` to wave reads through — was refused on its very
+    // first `Read` and finished having done nothing.
+    expect(settings.permissions.additionalDirectories).toContain(dirname(settings.alp.taskFile));
     expect(settings.permissions.deny).toContain(
       absoluteRule("Read", join(root, "memory", "private", "main")),
     );
@@ -324,19 +329,19 @@ describe.each([
   });
 
   /**
-   * A backend that spawns the runtime itself reads `intent` instead of `command`/`args`.
-   * The task has to be in it, or the agent wakes with nothing to do — and it must stay
-   * absent when interactive, for the same reason no task file is written then.
+   * `args` is now the only spelling of a launch. It used to be one of two — a declarative
+   * `intent` carried the same prompt, model and mode for a backend that spawned the runtime
+   * itself — and the pair could disagree without anything noticing. These assertions moved
+   * off `intent` when it was deleted with Paseo, so the surviving spelling is the enforced
+   * one: the task the agent actually receives and the model it is actually pinned to.
    */
-  it("carries the task in the launch intent, and only when headless", async () => {
+  it("carries the task and the model pin in the arguments, and only when headless", async () => {
     const headless = await launch(false);
     const interactive = await launch(true);
 
-    expect(headless.spec.intent.prompt).toContain("task.md");
-    expect(headless.spec.intent.model).toBe("m");
-    // The suite's fixture role is read-only, which keeps `plan` rather than `bypass`.
-    expect(["plan", "auto"]).toContain(headless.spec.intent.mode);
-    expect(interactive.spec.intent.prompt).toBeNull();
+    expect(headless.spec.args.some((value) => value.includes("task.md"))).toBe(true);
+    expect(headless.spec.args).toContain("m");
+    expect(interactive.spec.args.some((value) => value.includes("task.md"))).toBe(false);
   });
 
   it("submits no task and writes no task file when interactive", async () => {

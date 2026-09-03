@@ -16,7 +16,6 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 export interface RegisteredProject {
   readonly path: string;
-  readonly backend: string | null;
 }
 
 interface ProjectRegistryDocument {
@@ -71,12 +70,6 @@ export class ProjectRegistryStore {
     await this.write({ version: 1, projects: current.projects.filter((entry) => entry.path !== projectPath) });
   }
 
-  async backendFor(projectPath: string): Promise<string | null> {
-    const canonical = await realpath(projectPath);
-    const current = await this.read();
-    return current.projects.find((entry) => entry.path === canonical)?.backend ?? null;
-  }
-
   async isRegistered(projectPath: string): Promise<boolean> {
     const canonical = await realpath(projectPath);
     const current = await this.read();
@@ -100,7 +93,6 @@ export class ProjectRegistryStore {
 
 export interface InitializeProjectInput {
   readonly project: string;
-  readonly backend?: string | null;
   /**
    * alp-code checkout. When given, `alp init` writes a project-level SessionStart hook so
    * a hand-opened `claude` in that project loads its ALP identity at turn 1. Without it
@@ -157,12 +149,8 @@ export async function initializeProject(
   const project = await realpath(input.project);
   const metadata = await lstat(project);
   if (!metadata.isDirectory()) throw new Error(`project is not a directory: ${project}`);
-  if (input.backend !== undefined && input.backend !== null && !/^[a-z][a-z0-9-]*$/.test(input.backend)) {
-    throw new Error(`invalid backend \`${input.backend}\``);
-  }
   const store = dependencies.store ?? new ProjectRegistryStore();
-  const previous = (await store.read()).projects.find((entry) => entry.path === project);
-  const registered = Object.freeze({ path: project, backend: input.backend ?? previous?.backend ?? null });
+  const registered = Object.freeze({ path: project });
   await store.register(registered);
   if (input.repoRoot) await writeProjectSettings(project, input.repoRoot);
   return registered;

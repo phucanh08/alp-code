@@ -5,7 +5,13 @@ export type DelegationErrorCode =
   | "INVALID_REQUEST"
   | "BACKEND_UNAVAILABLE"
   | "RUNTIME_UNAVAILABLE"
-  | "EXECUTION_NOT_FOUND";
+  | "EXECUTION_NOT_FOUND"
+  /**
+   * A wait gave up before the execution finished. A background execution is deliberately
+   * left running; a caller who wants it stopped has `cancel`. Distinct from `failed` because
+   * nothing is known to have gone wrong yet.
+   */
+  | "EXECUTION_TIMEOUT";
 
 export class DelegationError extends Error {
   readonly code: DelegationErrorCode;

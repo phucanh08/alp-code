@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { agentRegistry } from "../../src/agents/registry";
-import { BackendRegistry } from "../../src/delegation/backend-registry";
 import { DelegationService, FileDelegationExecutionStore, InMemoryDelegationExecutionStore } from "../../src/delegation/delegation-service";
 import { DelegationError } from "../../src/delegation/types";
 import type { ExecutionBackend } from "../../src/backend/execution-backend";
@@ -73,7 +72,6 @@ class FakeRuntime implements RuntimeAdapter {
       cwd: input.execution.capsule.activeWorkspace,
       env: { ALP_DELEGATION_EXECUTION_ID: input.execution.capsule.executionId },
       temporaryFiles: [],
-      intent: { prompt: input.execution.capsule.task, model: input.model, mode: "auto" },
     };
   }
 }
@@ -104,13 +102,9 @@ class FakeBackend implements ExecutionBackend {
 function serviceFixture(options: {
   prepare?: (input: PrepareExecutionInput) => Promise<PreparedExecution>;
   primary?: FakeBackend;
-  fallback?: FakeBackend;
-  fallbackName?: string | null;
 } = {}) {
   const runtime = new FakeRuntime();
   const primary = options.primary ?? new FakeBackend("primary");
-  const backends = new BackendRegistry().register(primary);
-  if (options.fallback) backends.register(options.fallback);
   const store = new InMemoryDelegationExecutionStore();
   let sequence = 0;
   const executionService = {
@@ -122,9 +116,9 @@ function serviceFixture(options: {
     memory: { buildContext: async () => { throw new Error("owned by ExecutionService"); } },
     executionService,
     runtimeAdapters: new Map([["codex", runtime]]),
-    backendRegistry: backends,
+    backend: primary,
     executionStore: store,
-    config: { backend: "primary", fallbackBackend: options.fallbackName ?? null, defaultRuntime: "codex" },
+    config: { defaultRuntime: "codex" },
     ids: {
       request: () => `req-${++sequence}`,
       execution: () => `exec-${sequence}`,
@@ -143,7 +137,7 @@ const input = {
 };
 
 describe("DelegationService", () => {
-  it("denies before runtime preparation, backend health, spawn, or execution tracking", async () => {
+  it("denies before runtime preparation, spawn, or execution tracking", async () => {
     const denied = new Error("delegation authorization failed: denied");
     const fixture = serviceFixture({ prepare: async () => { throw denied; } });
 
@@ -178,12 +172,11 @@ describe("DelegationService", () => {
       },
     });
 
-    fixture.service.config.backend = "missing-later";
     await expect(fixture.service.status("exec-0")).resolves.toMatchObject({ metadata: { backend: "primary" } });
     await expect(fixture.service.wait("exec-0")).resolves.toMatchObject({ status: "completed", output: "primary output" });
     await fixture.service.cancel("exec-0");
     await fixture.service.cleanup("exec-0");
-    expect(fixture.primary.calls).toEqual(["spawn", "status", "wait", "cancel", "cleanup"]);
+    expect(fixture.primary.calls).toEqual(["health", "spawn", "status", "wait", "cancel", "cleanup"]);
   });
 
   /**
@@ -224,28 +217,17 @@ describe("DelegationService", () => {
     }
   });
 
-  it("falls back only when the selected backend is unhealthy before spawn", async () => {
-    const primary = new FakeBackend("primary", false);
-    const fallback = new FakeBackend("fallback", true);
-    const fixture = serviceFixture({ primary, fallback, fallbackName: "fallback" });
-
-    const spawned = await fixture.service.delegate(input);
-
-    expect(spawned.metadata).toMatchObject({ backend: "fallback" });
-    expect(primary.calls).toEqual(["health"]);
-    expect(fallback.calls).toEqual(["health", "spawn"]);
-    await fixture.service.status(spawned.executionId);
-    expect(fallback.calls.at(-1)).toBe("status");
-  });
-
-  it("does not retry a failed spawn on the configured fallback", async () => {
+  /**
+   * A spawn that fails partway must stay failed. There is nothing to retry onto — the
+   * fallback that used to exist was removed with Paseo — but the record still has to say
+   * `failed` rather than be left at `queued`, which reads as an execution still coming.
+   */
+  it("records a failed spawn instead of leaving the execution queued", async () => {
     const primary = new FakeBackend("primary", true, new Error("partial spawn failure"));
-    const fallback = new FakeBackend("fallback", true);
-    const fixture = serviceFixture({ primary, fallback, fallbackName: "fallback" });
+    const fixture = serviceFixture({ primary });
 
     await expect(fixture.service.delegate(input)).rejects.toThrowError("partial spawn failure");
     expect(primary.calls).toEqual(["health", "spawn"]);
-    expect(fallback.calls).toEqual([]);
     expect(fixture.store.list()[0]).toMatchObject({ status: "failed", backend: "primary" });
   });
 
@@ -273,12 +255,12 @@ describe("FileDelegationExecutionStore", () => {
         targetRole: "search",
         workspace: "/project",
         runtime: "codex",
-        backend: "paseo",
+        backend: "local",
         createdAt: "2026-08-26T00:00:00.000Z",
         status: "running",
       });
       const second = new FileDelegationExecutionStore({ file });
-      expect(second.get("exec-persisted")).toMatchObject({ backend: "paseo", status: "running" });
+      expect(second.get("exec-persisted")).toMatchObject({ backend: "local", status: "running" });
       second.update("exec-persisted", { status: "completed" });
       expect(new FileDelegationExecutionStore({ file }).get("exec-persisted")).toMatchObject({ status: "completed" });
     } finally {

@@ -20,18 +20,17 @@ DelegationService
    ├── AgentRegistry     compiled TypeScript definitions
    ├── DelegationPolicy exact delegates_to + reports_to
    ├── ContextBuilder    immutable capsule + scoped memory + task + workspace policy
-   └── BackendRegistry
-          ├── LocalProcessBackend ── child process
-          └── PaseoBackend ── Paseo public CLI/daemon
+   └── LocalProcessBackend ── child process + detached supervisor
 ```
 
 `createDefaultDelegationComposition` (`src/cli/commands/delegate.ts`) là composition root
-duy nhất register implementation. Thêm backend mới bằng cách implement `ExecutionBackend`
-rồi register ở đó; không sửa policy, role, memory hay context core.
+duy nhất dựng service. `ExecutionBackend` vẫn là interface — đó là seam để test thay bằng
+fake — nhưng chỉ có một implementation, và `DelegationService` nhận thẳng nó chứ không qua
+registry hay tên. Không có `--backend`, không có fallback, không có lựa chọn lưu trong
+config: thứ đang chạy luôn là thứ duy nhất có thể chạy.
 
-`scripts/lib/delegation/` chỉ còn phần CJS mà composition root thật sự load: `config.cjs`,
-`core/{errors,types,execution-store}.cjs` và `backends/{command-runner,paseo}`. Mọi thứ
-khác đã chuyển sang TypeScript trong `src/`.
+`scripts/lib/delegation/` chỉ còn phần CJS mà composition root thật sự load: `config.cjs`
+và `command-runner.cjs`. Mọi thứ khác đã chuyển sang TypeScript trong `src/`.
 
 ALP sở hữu:
 
@@ -41,7 +40,7 @@ ALP sở hữu:
 - task ownership và ALP `requestId`/`executionId`/`parentExecutionId`.
 
 Backend chỉ sở hữu process/session/workspace execution, runtime status, output, cancel và
-cleanup. Paseo agent ID chỉ tồn tại trong state/log nội bộ adapter.
+cleanup. PID và log file chỉ tồn tại trong state nội bộ của backend.
 
 ## Contract trung lập runtime
 
@@ -73,7 +72,6 @@ delegate(request)
   → assert target ∈ parent.delegates_to
   → assert target.reports_to = parent
   → build target identity + allowed memory/context
-  → resolve configured backend
   → backend.spawn(prepared execution)
   → track ALP executionId
 ```
@@ -102,7 +100,6 @@ alp delegation wait    exec_...
 alp delegation cancel  exec_...
 alp delegation cleanup exec_...
 alp delegation list
-alp delegation health
 ```
 
 Nếu bỏ `--project`, CLI dùng cwd nơi principal/agent gọi `alp`. `alp.cjs` phải preserve cwd
@@ -130,126 +127,63 @@ là foreground/headless. Output mới dùng `EXECUTION`, `STATUS`, `BACKEND`; co
 biết runtime ID. `--release <id>` được giữ làm alias cũ cho cleanup; nên chuyển sang
 `alp delegation cleanup <execution-id>`.
 
-## Cấu hình backend
+## Cấu hình
 
-`alp init` ghi backend đã chọn vào `~/.alp/projects.json`. Nó **không** cài runtime — cài
-là việc của principal:
+`alp init` canonicalize và đăng ký project vào `~/.alp/projects.json`. Nó **không** cài
+runtime — cài Claude Code hoặc Codex là việc của principal.
 
-```bash
-alp init /path/to/project --backend local   # child process, không cần cài gì
-alp init /path/to/project --backend paseo   # cần `npm install -g @getpaseo/cli` sẵn
-```
-
-Bỏ `--backend` thì lựa chọn đã đăng ký trước đó được giữ nguyên; project chưa từng chọn
-thì rơi về thứ tự ưu tiên bên dưới. Kiểm tra runtime đã sẵn sàng chưa bằng
-`alp delegation health <backend>`.
-
-`alp.config.yaml`:
+`alp.config.yaml` chỉ còn đúng một thứ để khai:
 
 ```yaml
 delegation:
-  backend: paseo
-  fallback_backend: ""
   state_dir: ""
-
-  backends:
-    paseo:
-      enabled: true
-      cli: paseo
-      host: ""
-      runtime_tools_disabled: true
 ```
 
-Không có config thì default là `paseo`. `local` luôn được đăng ký và không cần khai trong
-`backends:`. Đổi backend không làm thay đổi identity, memory, role hay policy.
-
-`fallback_backend` để rỗng là chủ ý: fallback chuyển execution sang backend khác một cách
-im lặng, khó chẩn đoán hơn là fail rõ ràng.
-
-Chuyển tương tác, dùng chung giữa Claude Code và Codex:
-
-```bash
-alp delegation switch                 # xem effective backend + nguồn lựa chọn
-alp delegation switch paseo           # các request tiếp theo dùng Paseo
-alp delegation switch local            # các request tiếp theo dùng local
-alp delegation switch default          # bỏ lựa chọn, quay về env/config
-```
-
-Selection từ `alp init` hoặc switch lưu trong generic ALP state, không sửa source config.
-Thứ tự ưu tiên là request `--backend` → persisted init/switch selection → environment →
-config → Paseo.
-Execution đã spawn luôn giữ backend trong execution record và không bị chuyển giữa chừng.
+Để rỗng thì mặc định là `~/.alp/delegation/<hash repo root>`.
 
 Environment override:
 
 | Biến | Ý nghĩa |
 |---|---|
-| `ALP_DELEGATION_BACKEND` | backend mặc định |
-| `ALP_DELEGATION_FALLBACK` | fallback trước spawn khi backend chính unhealthy |
 | `ALP_DELEGATION_STATE_DIR` | state/lock lifecycle; mặc định `~/.alp/delegation/<repo-key>` |
-| `PASEO_CLI` | binary Paseo |
-| `PASEO_HOST` | daemon URL; không hard-code trong source |
-| `PASEO_HOME` | config home cho local safety check |
-| `ALP_PASEO_RUNTIME_TOOLS_DISABLED` | attestation cho remote daemon |
+| `ALP_CONFIG` | đường dẫn `alp.config.yaml` khác |
+| `ALP_REPO_ROOT` | repo root; quyết định state dir mặc định, hooks và skills |
 
-`--backend local|paseo` chỉ là override cho đúng một request. Registry vẫn chịu
-trách nhiệm resolve tên; core không có chuỗi `if paseo / else local`.
-
-Main chạy trong sandbox cần ghi generic execution state và kết nối backend daemon local.
-Execution policy snapshot vì vậy chỉ mở state/workspace đã đăng ký cho agent có
-`delegatesTo`; runtime adapter truyền đúng execution ID để Paseo localhost hoạt động.
-Specialist không nhận các quyền runtime này; deny rule sinh cho Claude/Codex vẫn chặn raw
-`herdr`/`paseo`, nên đường được phép vẫn chỉ là Delegation API sau policy.
+Main chạy trong sandbox cần ghi generic execution state. Execution policy snapshot vì vậy
+chỉ mở state/workspace đã đăng ký cho agent có `delegatesTo`. Specialist không nhận các
+quyền này; deny rule sinh cho Claude/Codex vẫn chặn raw `herdr`/`paseo`, nên đường được
+phép vẫn chỉ là Delegation API sau policy.
 
 ## LocalProcessBackend
 
-Backend mặc định khi không có daemon nào: spawn runtime CLI làm child process của chính
-tiến trình `alp`.
+Backend duy nhất: spawn runtime CLI làm child process, không daemon nào ở giữa.
 
 | ALP | Local nội bộ |
 |---|---|
 | execution | child process |
-| background spawn | không hỗ trợ — execution gắn với vòng đời tiến trình cha |
-| status/wait/output | exit code + signal của child |
+| background spawn | detached supervisor (`src/backend/local-supervisor.ts`) sống lâu hơn `alp` |
+| state | `<state_dir>/local.json`, có lock, đọc được từ CLI process khác |
+| status/wait/output | result file của supervisor, hoặc exit code + signal của child |
+| transcript | `<state_dir>/logs/<execution-id>.log`, cắt 200 dòng cuối vào result |
 | cancel | `kill(SIGTERM)` |
-| cleanup | xoá `launchSpec.temporaryFiles` |
+| cleanup | xoá `launchSpec.temporaryFiles`, log và result |
 
-Không cài gì, không health check nào có thể fail. Đánh đổi: không có execution nào sống sót
-qua khi `alp` thoát, nên nó không thay được Paseo cho việc chạy nền.
+Đây là backend duy nhất trao cho runtime settings file của chính vai đó, nên
+`permissions.deny` và `sandbox.filesystem.denyWrite` thật sự tới được agent — đo ngày
+2026-09-03: một `search` delegated đọc private memory của vai khác bị từ chối, và mọi
+đường ghi bị chặn ở ba lớp độc lập. Đó là lý do backend thứ hai bị gỡ thay vì giữ song song:
+một backend tự spawn runtime qua daemon riêng không tái hiện được điều này, vì permission
+request của nó không mang path.
 
-## PaseoBackend
-
-Adapter dùng public Paseo CLI và daemon API mà CLI cung cấp; không fork hay sửa source Paseo:
-
-| ALP | Paseo nội bộ |
-|---|---|
-| execution | agent |
-| parent execution | parent agent qua backend-only `PASEO_AGENT_ID` mapping |
-| workspace path | `run --cwd` |
-| spawn | `run --background --json` |
-| status | `inspect --json` |
-| wait/result | `wait --json` + bounded `logs` |
-| cancel | `stop --json` |
-| cleanup | `agent archive --force --json` |
-
-Adapter inject capsule ALP đã chuẩn bị và `ALP_DELEGATION_EXECUTION_ID`; Paseo không tự đọc
-memory hay agent definitions để quyết quyền. Paseo agent ID được lưu trong backend state và chỉ xuất hiện
-trong observability field `backend_execution_id`, không nằm trong `DelegationResult`.
-
-Paseo 0.5.x không expose Codex `read-only` như creation mode (`auto`, `auto-review`,
-`full-access` là các mode public; `auto-review` vẫn workspace-write). Adapter dùng `auto`
-để tương thích và inject `ALP_READONLY_DIRS` + `ALP_DELEGATION_WORKSPACE`; ALP project hook
-giữ role phụ read-only và khóa đúng workspace. Claude read-only tiếp tục map sang `plan`.
-
-Paseo có thể inject raw MCP delegation tools vào agent. Local adapter fail trước spawn nếu
-`~/.paseo/config.json` có `daemon.mcp.injectIntoAgents=true`; hãy đặt false và reload Paseo.
-Với daemon remote, `runtime_tools_disabled: true` là attestation bắt buộc của operator.
+Execution nền không chết theo `alp`: một `wait` quá hạn chỉ là caller bỏ cuộc, supervisor
+vẫn giữ agent và vẫn ghi lại nó kết thúc thế nào. Foreground thì ngược lại — timeout dừng
+child, vì không còn ai ghi hộ.
 
 ## Context, identity và sandbox
 
 `ContextBuilder` gọi cùng boot-context builder của ALP cho target role. Context truyền sang
 backend gồm target identity, task và phần memory mà loadout cho phép. Runtime chỉ nhận bundle
-đã chuẩn bị; Paseo agent không phải ALP identity và không là source of truth của
+đã chuẩn bị; session của runtime không phải ALP identity và không là source of truth của
 memory.
 
 Role phụ luôn `read-only` theo ALP guard/policy. `main` chỉ được `workspace-write` tại
@@ -262,36 +196,37 @@ Core chỉ trả các lỗi trung lập runtime:
 `UnauthorizedDelegation`, `UnknownRole`, `BackendUnavailable`, `SpawnFailed`,
 `ExecutionFailed`, `Timeout`, `CancelFailed`, `InvalidConfiguration`.
 
-Adapter wrap lỗi CLI/socket tương ứng. Không tự fallback sau khi spawn đã được thử vì có thể
-tạo execution trùng. `fallback_backend` chỉ được xét trước spawn, sau health check; mặc định
-rỗng để failure rõ ràng. Execution đã spawn luôn được route lại đúng backend bằng state của
-ALP, kể cả sau khi config mặc định đổi.
+Backend wrap lỗi spawn/process tương ứng. Không có fallback: một spawn hỏng nửa chừng được
+ghi là `failed` chứ không bị thử lại ở nơi khác, vì retry sau spawn có thể tạo execution
+trùng — và vì không còn nơi nào khác để retry sang.
 
 ## Doctor, logging và debugging
 
 ```bash
-alp delegation health
-alp delegation health paseo
 alp delegation list
 alp doctor
 ```
 
-Doctor dùng terminology generic: `DELEGATION-BACKEND`, `BACKEND-HEALTH`,
-`ACTIVE-EXECUTIONS`, `ORPHAN-EXECUTIONS`, `ORPHAN-EXECUTION`.
+Doctor báo `ORPHAN-EXECUTION` cho execution state còn sót lại, kèm lệnh dọn cụ thể.
+`LocalProcessBackend.orphanExecutions()` là thứ trả lời câu hỏi đó: execution còn ghi
+`running` nhưng process đã biến mất mà không để lại result file.
 
-Log lifecycle có `request_id`, `execution_id`, `parent_role`, `target_role`, `backend`; adapter
-log thêm `backend_execution_id` để debug. Backend ID không trở thành domain identifier.
+Log lifecycle có `request_id`, `execution_id`, `parent_role`, `target_role`, `backend`;
+transcript của từng execution nằm ở `<state_dir>/logs/`. PID không trở thành domain
+identifier.
 
-Debug Paseo: kiểm `paseo daemon status --json`, `PASEO_HOST` và raw-tool policy.
+## Bỏ Herdr và Paseo
 
-## Bỏ Herdr
+Cả hai backend ngoài đã bị gỡ khỏi repo — Herdr trước đó, Paseo ngày 2026-09-03. Nếu bạn
+còn checkout cũ:
 
-Herdr backend đã bị gỡ khỏi repo. Nếu bạn còn checkout cũ trỏ `backend: herdr`:
+1. Bỏ `delegation.backend`, `delegation.fallback_backend` và cả khối `backends:` trong
+   `alp.config.yaml`; chỉ `state_dir` còn được đọc.
+2. Bỏ `ALP_DELEGATION_BACKEND` / `ALP_DELEGATION_FALLBACK` khỏi shell profile, và bỏ
+   `--backend` khỏi mọi script gọi `alp delegate` — cờ đó bị từ chối chứ không bị lờ đi.
+3. Execution cũ do backend ngoài sở hữu không còn resolve được (`EXECUTION_NOT_FOUND`);
+   dọn bằng tay ở `state_dir`.
 
-1. Đổi `delegation.backend` sang `paseo` (hoặc `local`), hoặc chạy
-   `alp delegation switch paseo`.
-2. Chạy `alp delegation health paseo` để xác nhận daemon reachable.
-3. Execution cũ do Herdr sở hữu không còn resolve được; dọn bằng tay ở `state_dir`.
-
-Regex chặn raw `herdr` trong `src/policy/invariants.ts` và deny rule sinh cho Claude/Codex
-vẫn giữ nguyên làm defense-in-depth.
+Regex chặn raw `herdr`/`paseo` trong `src/policy/invariants.ts` và deny rule sinh cho
+Claude/Codex vẫn giữ nguyên làm defense-in-depth: gỡ backend không có nghĩa là cho phép
+agent tự gọi binary của nó.

@@ -10,7 +10,7 @@ describe("alp CLI parsing", () => {
     [["--runtime=codex"], { command: "run-main", runtime: "codex" }],
     [["runtime", "show"], { command: "runtime", action: "show" }],
     [["runtime", "set", "codex"], { command: "runtime", action: "set", runtime: "codex" }],
-    [["init", "/tmp/project", "--backend", "paseo"], { command: "init", project: "/tmp/project", backend: "paseo" }],
+    [["init", "/tmp/project"], { command: "init", project: "/tmp/project" }],
     [["deinit", "/tmp/project"], { command: "deinit", project: "/tmp/project" }],
     [["principal", "show"], { command: "principal", action: "show" }],
     [["principal", "set"], { command: "principal", action: "set" }],
@@ -124,7 +124,7 @@ describe("runMainSession", () => {
   it("uses remembered selection, code-native main definition, adapter launch spec, and local lifecycle", async () => {
     const events: string[] = [];
     const prepared = { capsule: { executionId: "exec-main" } } as never;
-    const launchSpec = { command: "fake", args: [], cwd: "/project", env: {}, temporaryFiles: [], intent: { prompt: null, model: "m", mode: "bypass" } };
+    const launchSpec = { command: "fake", args: [], cwd: "/project", env: {}, temporaryFiles: [] };
     const result = await runMainSession({ cwd: "/project" }, {
       registry: {
         get(id: string) {
@@ -176,7 +176,7 @@ describe("runMainSession", () => {
       registry: { get: () => definition },
       selector: { async select() { return { ok: true, runtime: "claude", source: "default" }; } },
       executionService: { async prepare(input) { workspaceMode = input.workspaceMode; return { capsule: { executionId: "exec" } } as never; } },
-      adapters: new Map([["claude", { name: "claude", async probe() { return { ok: true, runtime: "claude", message: "ok" }; }, async prepare() { return { command: "fake", args: [], cwd: "/unknown", env: {}, temporaryFiles: [], intent: { prompt: null, model: "m", mode: "plan" } }; } }]]),
+      adapters: new Map([["claude", { name: "claude", async probe() { return { ok: true, runtime: "claude", message: "ok" }; }, async prepare() { return { command: "fake", args: [], cwd: "/unknown", env: {}, temporaryFiles: [] }; } }]]),
       backend: {
         name: "local",
         async healthCheck() { return { ok: true, message: "ok" }; },
@@ -194,15 +194,15 @@ describe("runMainSession", () => {
 });
 
 describe("alp delegate", () => {
-  it("keeps caller identity/workspace and forwards runtime/backend without raw shortcuts", async () => {
+  it("keeps caller identity/workspace and forwards the runtime without raw shortcuts", async () => {
     const calls: unknown[] = [];
     const result = await runDelegateCommand([
-      "search", "--backend", "paseo", "--runtime", "codex", "--background", "--", "find", "launcher",
+      "search", "--runtime", "codex", "--background", "--", "find", "launcher",
     ], {
       cwd: "/caller/project",
       env: { ALP_ROLE: "main", ALP_DELEGATION_EXECUTION_ID: "exec-parent" },
       service: {
-        async delegate(input) { calls.push(input); return { executionId: "exec-child", requestId: "req", status: "running", metadata: { backend: "paseo", runtime: "codex" } }; },
+        async delegate(input) { calls.push(input); return { executionId: "exec-child", requestId: "req", status: "running", metadata: { backend: "local", runtime: "codex" } }; },
         async wait() { throw new Error("background must not wait"); },
         async status() { throw new Error("unused"); },
         async cancel() { throw new Error("unused"); },
@@ -218,7 +218,6 @@ describe("alp delegate", () => {
       targetRole: "search",
       task: "find launcher",
       workspace: "/caller/project",
-      metadata: { backend: "paseo" },
       executionOptions: { runtime: "codex", background: true },
     });
   });
