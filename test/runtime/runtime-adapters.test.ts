@@ -1,14 +1,28 @@
 import { mkdtemp, mkdir, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { basename, delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ClaudeRuntimeAdapter } from "../../src/runtime/claude-adapter";
 import { CodexRuntimeAdapter } from "../../src/runtime/codex-adapter";
 import { absoluteRule } from "../../src/runtime/permission-rules";
 import type { PreparedExecution } from "../../src/execution/types";
+import type { RuntimeLaunchSpec } from "../../src/runtime/runtime-adapter";
 import { removeTemporary } from "../support/temporary-root";
 
 const roots: string[] = [];
+
+/**
+ * Looks a runtime artifact up by name rather than by position. The set is not fixed — an
+ * interactive launch writes no `task.md` — so an index would quietly point at a different
+ * file depending on the mode under test.
+ */
+function runtimeFile(launch: RuntimeLaunchSpec, name: string): string {
+  const file = launch.temporaryFiles.find((path) => basename(path) === name);
+  if (file === undefined) {
+    throw new Error(`no runtime file named ${name} in ${launch.temporaryFiles.join(", ")}`);
+  }
+  return file;
+}
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => removeTemporary(root)));
@@ -92,7 +106,7 @@ describe("runtime adapters", () => {
     expect(launch.args).toContain("--permission-mode");
     expect(launch.args).toContain("plan");
     expect(launch.args).toContain("claude-test");
-    expect(launch.args.at(-1)).toMatch(/^ALP execution input is in .+prompt\.md; read it before continuing\.$/);
+    expect(launch.args.at(-1)).toMatch(/^ALP task is in .+task\.md; execute it\.$/);
     expect(launch.args.at(-1)).not.toContain("\n");
     expect(launch.env).toMatchObject({
       ALP_ROLE: "search",
@@ -100,6 +114,7 @@ describe("runtime adapters", () => {
       ALP_DELEGATION_WORKSPACE: project,
       ALP_EXECUTION_ROOT: join(root, "executions"),
       ALP_READONLY_DIRS: project,
+      ALP_SESSION_CONTEXT: runtimeFile(launch, "session-context.md"),
     });
     expect(launch.env.ALP_SKILL_ROOTS?.split(delimiter)).toEqual(expect.arrayContaining([
       join(root, "skills"),
@@ -107,14 +122,14 @@ describe("runtime adapters", () => {
       join(root, ".codex", "skills"),
       join(root, ".claude", "skills"),
     ]));
-    expect(launch.temporaryFiles).toHaveLength(4);
+    expect(launch.temporaryFiles).toHaveLength(5);
     expect(await readdir(project)).toEqual([]);
-    expect(JSON.parse(await readFile(launch.temporaryFiles[0], "utf8"))).toMatchObject({
+    expect(JSON.parse(await readFile(runtimeFile(launch, "identity-capsule.json"), "utf8"))).toMatchObject({
       executionId: "exec-runtime",
       role: "search",
     });
-    const settings = JSON.parse(await readFile(launch.temporaryFiles[2], "utf8"));
-    expect(JSON.parse(await readFile(launch.temporaryFiles[3], "utf8"))).toContain(join(root, ".agents", "skills"));
+    const settings = JSON.parse(await readFile(runtimeFile(launch, "claude-settings.json"), "utf8"));
+    expect(JSON.parse(await readFile(runtimeFile(launch, "skill-roots.json"), "utf8"))).toContain(join(root, ".agents", "skills"));
     expect(settings.hooks).toMatchObject({
       // `[\\/]` because the command carries native separators — a `/`-only pattern
       // silently never matches on Windows.
@@ -178,7 +193,7 @@ describe("runtime adapters", () => {
     const delegated = await adapter.prepare({
       execution: prepared, model: "m", reasoningEffort: "high", interactive: false,
     });
-    const settings = JSON.parse(await readFile(delegated.temporaryFiles[2], "utf8"));
+    const settings = JSON.parse(await readFile(runtimeFile(delegated, "claude-settings.json"), "utf8"));
 
     expect(settings.permissions.deny).toContain(
       absoluteRule("Read", join(root, "memory", "private", "main")),
@@ -201,7 +216,7 @@ describe("runtime adapters", () => {
       reasoningEffort: "high",
       interactive: true,
     });
-    const settings = JSON.parse(await readFile(launch.temporaryFiles[2], "utf8"));
+    const settings = JSON.parse(await readFile(runtimeFile(launch, "claude-settings.json"), "utf8"));
 
     // Claude Code does not activate its sandbox on Windows, and asking for one with
     // `failIfUnavailable` makes it refuse to start at all.
@@ -237,11 +252,74 @@ describe("runtime adapters", () => {
     expect(launch.args).toContain("read-only");
     expect(launch.args).toContain("gpt-test");
     expect(launch.args).toContain('model_reasoning_effort="xhigh"');
-    expect(launch.args.at(-1)).toMatch(/^ALP execution input is in .+prompt\.md; read it before continuing\.$/);
-    expect(launch.env.ALP_IDENTITY_CAPSULE).toBe(launch.temporaryFiles[0]);
+    expect(launch.args.at(-1)).toMatch(/^ALP task is in .+task\.md; execute it\.$/);
+    expect(launch.env.ALP_IDENTITY_CAPSULE).toBe(runtimeFile(launch, "identity-capsule.json"));
     expect(launch.env.ALP_EXECUTION_ROOT).toBe(join(root, "executions"));
     expect(launch.env.ALP_SKILL_ROOTS?.split(delimiter)).toContain(join(root, "skills"));
-    expect(JSON.parse(await readFile(launch.temporaryFiles[3], "utf8"))).toContain(join(root, ".codex", "skills"));
+    expect(JSON.parse(await readFile(runtimeFile(launch, "skill-roots.json"), "utf8"))).toContain(join(root, ".codex", "skills"));
     expect(await readdir(project)).toEqual([]);
+  });
+});
+
+/**
+ * One contract, both runtimes, and every runtime added later. The rule it pins is the
+ * reason this suite exists: launching a harness must not spend a turn. Identity arrives on
+ * the session channel; only a headless run has a task to submit, and it submits it once.
+ */
+describe.each([
+  ["claude", (env: NodeJS.ProcessEnv) => new ClaudeRuntimeAdapter({ platform: "linux", env })],
+  ["codex", (env: NodeJS.ProcessEnv) => new CodexRuntimeAdapter({ platform: "linux", env })],
+] as const)("%s adapter conformance", (_name, build) => {
+  async function launch(interactive: boolean): Promise<{ spec: RuntimeLaunchSpec; capsuleTask: string }> {
+    const { root, prepared } = await fixture();
+    const spec = await build({ HOME: root, ALP_REPO_ROOT: root }).prepare({
+      execution: prepared,
+      model: "m",
+      reasoningEffort: "high",
+      interactive,
+    });
+    return { spec, capsuleTask: prepared.capsule.task };
+  }
+
+  it("injects session context on both execution modes", async () => {
+    for (const interactive of [true, false]) {
+      const { spec } = await launch(interactive);
+      const file = runtimeFile(spec, "session-context.md");
+      expect(spec.env.ALP_SESSION_CONTEXT).toBe(file);
+      const context = await readFile(file, "utf8");
+      expect(context).toContain("Search only the active workspace.");
+      expect(context).toContain("invariants");
+      expect(context).toContain("policy");
+    }
+  });
+
+  it("submits no task and writes no task file when interactive", async () => {
+    const { spec, capsuleTask } = await launch(true);
+
+    expect(spec.temporaryFiles.map((file) => basename(file))).not.toContain("task.md");
+    // Not just "no positional prompt": no argument anywhere carries the task, by value or
+    // by reference. That is the invariant — zero model turns before the principal speaks.
+    for (const argument of spec.args) {
+      expect(argument).not.toContain(capsuleTask);
+      expect(argument).not.toContain("task.md");
+    }
+  });
+
+  it("submits the task exactly once when headless", async () => {
+    const { spec } = await launch(false);
+    const taskFile = runtimeFile(spec, "task.md");
+
+    expect(await readFile(taskFile, "utf8")).toContain("find the launcher");
+    expect(spec.args.filter((argument) => argument.includes(taskFile))).toHaveLength(1);
+    expect(spec.args.at(-1)).toContain(taskFile);
+  });
+
+  it("keeps the task out of the session context and the identity out of the task", async () => {
+    const { spec, capsuleTask } = await launch(false);
+    const context = await readFile(runtimeFile(spec, "session-context.md"), "utf8");
+    const task = await readFile(runtimeFile(spec, "task.md"), "utf8");
+
+    expect(context).not.toContain(capsuleTask);
+    expect(task).not.toContain("Search only the active workspace.");
   });
 });

@@ -1,6 +1,6 @@
 import { delimiter, dirname, join } from "node:path";
 import { agentRegistry } from "../agents/registry";
-import { atomicRuntimeFile, baseRuntimeEnvironment, hookCommand, renderCapsulePrompt, resolveRuntimeCommand, runtimeSkillRoots } from "./adapter-files";
+import { atomicRuntimeFile, baseRuntimeEnvironment, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
 import { claudePermissions } from "./permission-rules";
 import type { PrepareRuntimeInput, RuntimeAdapter, RuntimeHealth, RuntimeLaunchSpec } from "./runtime-adapter";
 
@@ -52,14 +52,19 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
       join(artifacts.runtimeDirectory, "identity-capsule.json"),
       `${JSON.stringify(capsule, null, 2)}\n`,
     );
-    const prompt = renderCapsulePrompt(capsule);
-    const promptFile = await atomicRuntimeFile(join(artifacts.runtimeDirectory, "prompt.md"), `${prompt}\n`);
+    const contextFiles = await writeRuntimeContextFiles(input.execution, input.interactive);
     const skillRoots = runtimeSkillRoots(this.env);
     const settingsFile = await atomicRuntimeFile(
       join(artifacts.runtimeDirectory, "claude-settings.json"),
       `${JSON.stringify({
         $schema: "https://json.schemastore.org/claude-code-settings.json",
-        alp: { executionId: capsule.executionId, policyHash: capsule.policyHash, capsuleFile, promptFile },
+        alp: {
+          executionId: capsule.executionId,
+          policyHash: capsule.policyHash,
+          capsuleFile,
+          sessionContextFile: contextFiles.sessionContextFile,
+          ...(contextFiles.taskFile === null ? {} : { taskFile: contextFiles.taskFile }),
+        },
         hooks: {
           SessionStart: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-boot.cjs")) }] }],
           Stop: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-end.cjs")) }] }],
@@ -85,7 +90,7 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
       `${JSON.stringify(skillRoots.split(delimiter).filter(Boolean), null, 2)}\n`,
     );
     const env = {
-      ...baseRuntimeEnvironment(capsule),
+      ...baseRuntimeEnvironment(capsule, contextFiles),
       ALP_EXECUTION_ROOT: dirname(artifacts.directory),
       ALP_MEMORY_ROOT: this.memoryRoot(),
       ALP_IDENTITY_CAPSULE: capsuleFile,
@@ -108,11 +113,19 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
         ...(input.interactive
           ? ["--dangerously-skip-permissions"]
           : policy.workspaceMode === "read-only" ? ["--permission-mode", "plan"] : []),
-        `ALP execution input is in ${promptFile}; read it before continuing.`,
+        // Empty when interactive: the principal's own first message is turn 1. Identity,
+        // invariants and policy have already arrived via the SessionStart hook.
+        ...taskArguments(contextFiles),
       ]),
       cwd: capsule.activeWorkspace,
       env: Object.freeze(env),
-      temporaryFiles: Object.freeze([capsuleFile, promptFile, settingsFile, skillRootsFile]),
+      temporaryFiles: Object.freeze([
+        capsuleFile,
+        contextFiles.sessionContextFile,
+        ...(contextFiles.taskFile === null ? [] : [contextFiles.taskFile]),
+        settingsFile,
+        skillRootsFile,
+      ]),
     });
   }
 }
