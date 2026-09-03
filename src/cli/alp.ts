@@ -27,7 +27,7 @@ import { checkForUpdate, FileUpdateCheckStore } from "./update-check";
 export type AlpCommand =
   | { readonly command: "run-main"; readonly runtime?: RuntimeId }
   | { readonly command: "runtime"; readonly action: "show" | "set"; readonly runtime?: RuntimeId }
-  | { readonly command: "init"; readonly project?: string; readonly backend?: string }
+  | { readonly command: "init"; readonly project?: string }
   | { readonly command: "deinit"; readonly project?: string }
   | { readonly command: "identity"; readonly action: "sync" }
   | { readonly command: "principal"; readonly action: "show" | "set" }
@@ -68,21 +68,13 @@ export function parseAlpArgs(argv: readonly string[]): AlpCommand {
   }
   if (argv[0] === "init") {
     let project: string | undefined;
-    let backend: string | undefined;
     for (let index = 1; index < argv.length; index += 1) {
       const value = argv[index];
-      if (value === "--backend") {
-        if (backend !== undefined) throw new Error("multiple backend selections are not allowed");
-        backend = argv[++index];
-        if (!backend) throw new Error("--backend requires a name");
-      } else if (value.startsWith("--backend=")) {
-        if (backend !== undefined) throw new Error("multiple backend selections are not allowed");
-        backend = value.slice("--backend=".length);
-      } else if (value.startsWith("-")) throw new Error(`unknown init option \`${value}\``);
-      else if (project === undefined) project = value;
-      else throw new Error("alp init accepts one project path");
+      if (value.startsWith("-")) throw new Error(`unknown init option \`${value}\``);
+      if (project !== undefined) throw new Error("alp init accepts one project path");
+      project = value;
     }
-    return { command: "init", ...(project ? { project } : {}), ...(backend ? { backend } : {}) };
+    return { command: "init", ...(project ? { project } : {}) };
   }
   if (argv[0] === "deinit") {
     if (argv.length > 2 || argv[1]?.startsWith("-")) throw new Error("usage: alp deinit [path]");
@@ -130,7 +122,7 @@ export interface AlpDependencies {
   readonly checkForUpdate: () => Promise<string | null>;
   readonly runMain: (input: RunMainInput) => Promise<number>;
   readonly runtimeCommand: (input: RuntimeCommandInput) => Promise<number>;
-  readonly initProject: (input: { readonly project: string; readonly backend?: string }) => Promise<void>;
+  readonly initProject: (input: { readonly project: string }) => Promise<void>;
   readonly deinitProject: (input: { readonly project: string }) => Promise<void>;
   readonly syncIdentity: () => Promise<void>;
   readonly principalCommand: (input: PrincipalCommandInput) => Promise<number>;
@@ -223,7 +215,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
       // Identity documents are what the SessionStart hook reads; a project registered
       // without them would boot with an empty identity and a warning.
       await syncIdentityDocuments({ repoRoot }, { registry: agentRegistry });
-      stdout.write(`READY    ${registered.path}${registered.backend ? ` (backend ${registered.backend})` : ""}\n`);
+      stdout.write(`READY    ${registered.path}\n`);
     },
     async deinitProject(input) {
       await deinitializeProject({ ...input, repoRoot }, { store: projectRegistry });
@@ -244,37 +236,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
     async delegateCommand(args) {
       const lifecycle = args[0] === "__lifecycle";
       const actual = lifecycle ? args.slice(1) : args;
-      const composition = await createDefaultDelegationComposition(repoRoot, cwd, process.env);
-      if (lifecycle && (actual[0] === "switch" || actual[0] === "backend")) {
-        const configTools = createRequire(__filename)(join(repoRoot, "scripts", "lib", "delegation", "config.cjs")) as {
-          writeBackendSelection(stateDir: string, backend: string): void;
-          clearBackendSelection(stateDir: string): void;
-          loadDelegationConfig(root: string, env: NodeJS.ProcessEnv): { backend: string; backendSource: string };
-        };
-        const requested = actual[1];
-        if (!requested) {
-          stdout.write(`backend    ${composition.config.backend}\nsource     configured\n`);
-          return 0;
-        }
-        if (actual.length > 2) throw new Error("switch accepts one backend");
-        if (requested === "default" || requested === "reset") {
-          configTools.clearBackendSelection(composition.config.stateDir);
-          const restored = configTools.loadDelegationConfig(repoRoot, process.env);
-          stdout.write(`backend    ${restored.backend}\nsource     ${restored.backendSource}\n`);
-          return 0;
-        }
-        const selected = composition.backendRegistry.resolve(requested);
-        const health = await selected.healthCheck();
-        if (!health.ok) throw new Error(`cannot switch to \`${requested}\`: ${health.message}`);
-        configTools.writeBackendSelection(composition.config.stateDir, requested);
-        stdout.write(`backend    ${requested}\nsource     switch\n`);
-        return 0;
-      }
-      if (lifecycle && actual[0] === "health") {
-        const selected = composition.backendRegistry.resolve(actual[1] || composition.config.backend);
-        stdout.write(`${JSON.stringify({ backend: selected.name, ...await selected.healthCheck() }, null, 2)}\n`);
-        return 0;
-      }
+      const composition = await createDefaultDelegationComposition(repoRoot, process.env);
       const value = lifecycle
         ? await runDelegationLifecycleCommand(actual, composition.service)
         : await runDelegateCommand(actual, { cwd, env: process.env, service: composition.service });
@@ -324,7 +286,7 @@ function helpText(): string {
     "",
     "  alp [--runtime claude|codex]",
     "  alp runtime show|set <runtime>",
-    "  alp init [path] [--backend name]",
+    "  alp init [path]",
     "  alp deinit [path]",
     "  alp identity sync",
     "  alp principal show|set",
@@ -349,7 +311,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2), inje
   if (command.command === "version") { stdout.write(`alp ${dependencies.version}\n`); return 0; }
   if (command.command === "run-main") return dependencies.runMain({ cwd, ...(command.runtime ? { requestedRuntime: command.runtime } : {}) });
   if (command.command === "runtime") return dependencies.runtimeCommand(command);
-  if (command.command === "init") { await dependencies.initProject({ project: resolve(cwd, command.project ?? "."), ...(command.backend ? { backend: command.backend } : {}) }); return 0; }
+  if (command.command === "init") { await dependencies.initProject({ project: resolve(cwd, command.project ?? ".") }); return 0; }
   if (command.command === "deinit") { await dependencies.deinitProject({ project: resolve(cwd, command.project ?? ".") }); return 0; }
   if (command.command === "identity") { await dependencies.syncIdentity(); return 0; }
   if (command.command === "principal") return dependencies.principalCommand({ action: command.action });

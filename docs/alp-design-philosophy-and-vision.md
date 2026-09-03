@@ -16,7 +16,7 @@ Bản nháp trước dùng một từ "Harness" cho hai thứ nằm ở hai phí
 | **Principal** | Con người ra quyết định cuối cùng | Người dùng |
 | **Surface** | Nơi principal tương tác, gọi *vào* ALP. Nằm **trên** ALP | `alp` CLI; một phiên Claude Code gọi `alp delegate` |
 | **Runtime** | Tiến trình chạy vòng lặp model, do ALP **khởi chạy**. Nằm **dưới** ALP | Claude Code (`claude`), Codex CLI (`codex`) |
-| **Backend** | Nơi tiến trình runtime thực sự chạy | Local process (luôn có), Paseo (mặc định) |
+| **Backend** | Nơi tiến trình runtime thực sự chạy | `LocalProcessBackend`: child process + supervisor detached cho background |
 | **Agent** | Đơn vị identity: ai chịu trách nhiệm, được làm gì | 8 agent trong `src/agents/` |
 
 Điểm dễ nhầm nhất: **Claude Code vừa có thể là surface vừa có thể là runtime.** Khi principal gõ

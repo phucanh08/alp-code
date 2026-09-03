@@ -61,8 +61,8 @@ mọi role khác. Cái phải lớn lên là *service* — thêm bề mặt work
 chứ không phải danh sách ngoại lệ. Một invariant có ngoại lệ cho đúng cái role hay dùng nó nhất thì
 không còn là invariant.
 
-`paseo` vẫn ở đúng vị trí cũ: một **backend** (§0, nơi tiến trình runtime chạy), không phải một tool
-mà agent gọi được.
+`paseo` không còn là backend của ALP (gỡ 2026-09-03), nhưng vị trí của nó trong invariant thì
+không đổi: nó là một binary ở tầng dưới, không phải một tool mà agent gọi được.
 
 ### 4.2. §4.10 phải xong trước, không phải song song
 

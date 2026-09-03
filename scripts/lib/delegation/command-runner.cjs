@@ -83,7 +83,7 @@ function resolveWindowsCommand(binary, env = process.env) {
     : pathValue.split(";").map((value) => value.trim().replace(/^"|"$/g, "")).filter(Boolean);
   // npm's per-user global bin is not guaranteed to be on PATH in existing terminals.
   // Its Windows default is `%APPDATA%\npm`; checking it keeps ALP self-contained without
-  // mutating the user's persistent PATH merely because Paseo was selected.
+  // mutating the user's persistent PATH just to find a tool ALP needs to spawn.
   if (!/[\\/]/.test(command) && env.APPDATA) {
     const npmGlobalBin = path.join(env.APPDATA, "npm");
     if (!directories.some((value) => value.toLowerCase() === npmGlobalBin.toLowerCase()))

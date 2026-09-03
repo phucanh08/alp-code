@@ -19,7 +19,7 @@ Ai đảm nhận vai nào: `src/agents/registry.ts` và `delegates_to` trong loa
 Lệnh: `alp delegate <vai> "<task>"`; `scripts/run-role.sh <vai>` là facade compatibility.
 
 Ba việc đầu **độc lập với nhau** → giao background và theo dõi bằng
-`alp delegation status|wait`; runtime phía dưới có thể là local, Paseo hoặc backend khác.
+`alp delegation status|wait`; execution nền do supervisor giữ nên nó sống lâu hơn lệnh `alp`.
 
 ## Viết brief cho vai được giao
 

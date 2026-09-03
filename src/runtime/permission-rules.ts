@@ -21,6 +21,17 @@ import type { ExecutionPolicy } from "../execution/types";
 export interface RuntimePermissionInput {
   readonly policy: ExecutionPolicy;
   readonly memoryRoot: string;
+  /**
+   * Where ALP wrote this execution's own files — `task.md`, `session-context.md`, the
+   * identity capsule. The agent is told to read its task from there, so without this grant
+   * it is being asked to open a path it has no permission for.
+   *
+   * A read-only role survived the omission by accident: `--permission-mode plan` lets read
+   * tools through without prompting. A `workspace-write` role gets no such mode, so its very
+   * first `Read` was refused and the run ended having done nothing — measured 2026-09-03 on
+   * a delegated `main`.
+   */
+  readonly runtimeDirectory: string;
   /** Every role in the registry — needed to enumerate siblings for the deny list. */
   readonly allRoles: readonly AgentId[];
   /**
@@ -58,6 +69,7 @@ export function claudePermissions(input: RuntimePermissionInput): ClaudePermissi
   const ownPrivate = join(input.memoryRoot, "private", policy.role);
   const additionalDirectories = [
     policy.workspace,
+    input.runtimeDirectory,
     join(input.memoryRoot, "shared"),
     join(input.memoryRoot, "projects"),
     ownPrivate,

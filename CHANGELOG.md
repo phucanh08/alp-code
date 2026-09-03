@@ -8,6 +8,53 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Đã gỡ
+
+- **Backend Paseo, và cùng với nó là cả khái niệm "chọn backend".** ALP giờ chỉ chạy trên
+  `LocalProcessBackend`. Lý do là ACL: chỉ backend local trao cho runtime settings file của
+  chính vai đó, nên `permissions.deny` và `sandbox.filesystem.denyWrite` mới thật sự tới được
+  agent — đo ngày 2026-09-03, một `search` delegated đọc private memory của vai khác bị chặn ở
+  ba lớp độc lập. Backend spawn runtime qua daemon riêng không tái hiện được điều đó vì
+  permission request của nó không mang path. Giữ hai backend nghĩa là giữ một cấu hình cho
+  phép chọn bản yếu hơn.
+
+  Gỡ theo: `scripts/lib/delegation/backends/paseo/`, `CjsExecutionBackendAdapter`,
+  `BackendRegistry`, `resolveBackend` + fallback, cờ `--backend` (giờ bị **từ chối** chứ không
+  bị lờ đi, để một script cũ không âm thầm biến `--backend paseo` thành lời văn của task),
+  `alp init --backend`, `alp delegation switch`, `alp delegation health`, các khoá
+  `backends:`/`backend:`/`fallback_backend:` trong `alp.config.yaml`, biến môi trường
+  `ALP_DELEGATION_BACKEND`/`ALP_DELEGATION_FALLBACK`, và `scripts/lib/delegation/core/` —
+  cây type/store/error CJS không còn ai require sau khi backend đi.
+
+  `ExecutionBackend` vẫn là interface, vì test cần thay nó bằng fake; nó thôi là điểm mở
+  rộng. `DelegationService` nhận thẳng một backend thay vì một registry và một cái tên.
+
+  **Cần làm khi nâng cấp:** bỏ `--backend` khỏi mọi script gọi `alp delegate`/`alp init`, bỏ
+  hai biến môi trường trên khỏi shell profile, và xoá `backend:`/`fallback_backend:`/`backends:`
+  khỏi `alp.config.yaml` (chỉ `state_dir` còn được đọc). Execution cũ do Paseo sở hữu trong
+  `code-native-executions.json` không còn resolve được — lệnh lifecycle trên chúng trả
+  `EXECUTION_NOT_FOUND`; dọn bằng tay trong `state_dir`.
+
+- **`RuntimeLaunchSpec.intent`.** Launch spec từng mang hai cách viết cùng một lần chạy: form
+  exec (`command`/`args`) và một form khai báo (`prompt`/`model`/`mode`) chỉ tồn tại vì backend
+  cũ tự spawn runtime và không exec được `command`. Hai adapter phải giữ chúng khớp nhau, mà
+  chỉ form exec là được thi hành — một permission mode đặt trong `args` là thật, cùng mode đó
+  đặt trong `intent` chỉ là lời đề nghị. Một cách viết thì mode một vai chạy dưới không thể
+  lệch khỏi mode policy của vai đó yêu cầu.
+
+- Guardrail chặn agent tự gọi `paseo`/`herdr` **giữ nguyên**: regex trong
+  `src/policy/invariants.ts`, `Bash(paseo:*)` trong deny rule Claude và `[[rules]] allow = false`
+  bên Codex. Gỡ backend không có nghĩa là mở đường cho agent gọi thẳng binary.
+
+### Thay đổi
+
+- `scripts/test-delegation-backends.cjs` → `scripts/test-delegation.cjs`. Contract sáu method
+  từng chạy hai lần, mỗi backend một lần, để chứng minh chúng thay thế được cho nhau; giờ chạy
+  một lần trên backend thật. Test workspace của caller được viết lại: thay vì một CLI Paseo giả,
+  nó che `codex` trên `PATH` bằng một runtime giả rồi đọc lại đúng thứ runtime nhận được.
+- `scripts/lib/delegation/backends/command-runner.cjs` → `scripts/lib/delegation/command-runner.cjs`.
+  Thư mục `backends/` không còn backend nào.
+
 ## [0.5.1] - 2026-09-03
 
 ### Thay đổi

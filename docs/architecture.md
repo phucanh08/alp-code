@@ -20,8 +20,8 @@ Ba invariant định hình toàn bộ thiết kế:
 | **ALP quyết ai giao việc cho ai; backend chỉ quyết execution chạy thế nào** | Policy chạy trước mọi runtime probe / backend health / spawn |
 | **Fail-closed** | Unknown tool/path/role/request → deny. Không có nhánh "mặc định cho phép" |
 
-Runtime (Claude/Codex) và backend (local/Paseo) đều là **plugin thay được**, không phải
-nguồn sự thật của identity hay quyền.
+Runtime (Claude/Codex) là **plugin thay được**, không phải nguồn sự thật của identity hay
+quyền. Backend thì chỉ còn một: `LocalProcessBackend`.
 
 ## 2. Sơ đồ layer
 
@@ -55,7 +55,7 @@ nguồn sự thật của identity hay quyền.
                                 │
 ┌───────────────────────────────▼──────────────────────────────────────┐
 │  backend/        ExecutionBackend contract                           │
-│                  LocalProcessBackend (TS) · Paseo (CJS adapter)      │
+│                  LocalProcessBackend + detached supervisor (TS)      │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │
 ┌───────────────────────────────▼──────────────────────────────────────┐
@@ -315,19 +315,21 @@ Preference hỏng → warning + fallback claude, không throw.
 
 `ExecutionBackend` là contract 6 method: `healthCheck · spawn · status · wait · cancel · cleanup`.
 `BackendExecutionStatus` chỉ có 5 giá trị: `queued | running | completed | failed | cancelled` —
-mọi state riêng của Paseo phải được adapter map về đây.
+mọi state của process phải map về đây.
 
-`LocalProcessBackend` là implementation thuần TS: spawn child process, theo dõi `close`/`error`,
-xoá temporary file khi settle.
+`LocalProcessBackend` là implementation duy nhất, thuần TS: spawn child process, theo dõi
+`close`/`error`, xoá temporary file khi settle. Background thì giao cho
+`local-supervisor.ts` chạy detached, nên execution sống lâu hơn tiến trình `alp` và state
+trong `<state_dir>/local.json` đọc được từ một CLI process khác.
 
-`BackendRegistry` validate backend có đủ 6 method trước khi register — không có `if paseo /
-else paseo` trong core.
+Interface vẫn còn vì test cần thay bằng fake. Nó không còn là điểm mở rộng: không có
+registry, không có `--backend`, không có fallback (2026-09-03).
 
 `DelegationService` sở hữu:
-- **Backend pinning**: backend được ghi vào execution record lúc spawn. `status/wait/cancel/
-  cleanup` luôn resolve lại đúng backend đó, kể cả sau khi config mặc định đổi.
-- **Fallback chỉ trước spawn**: nếu primary unhealthy và có `fallbackBackend`, thử fallback.
-  Sau khi spawn đã được gọi thì không bao giờ fallback (tránh execution trùng).
+- **Execution tracking**: mỗi execution được ghi vào `code-native-executions.json` lúc spawn,
+  để `status/wait/cancel/cleanup` từ một CLI process sau vẫn tìm lại được.
+- **Không retry sau spawn**: spawn hỏng nửa chừng được ghi `failed`, không thử lại (tránh
+  execution trùng).
 - **Result reconciliation**: khi backend báo terminal, service đọc `state.json` — output đã
   validate của ALP thắng, backend result chỉ là fallback khi state không đọc được.
 
@@ -411,13 +413,14 @@ Repo có hai thế giới, cố ý:
 
 | | `src/**.ts` → `dist/` | `scripts/**.cjs` |
 |---|---|---|
-| Chứa | policy, identity, memory, execution, runtime, delegation core | installer, doctor, update/uninstall, Paseo backend adapter, config loader |
+| Chứa | policy, identity, memory, execution, runtime, delegation core, backend | installer, doctor, update/uninstall, config loader, command runner |
 | Vì sao | type safety, test được, là nguồn sự thật | phải chạy được *trước khi* build tồn tại, và trên máy chỉ có Node |
 
 Cầu nối duy nhất là `createRequire` trong `cli/commands/delegate.ts`: TS load
-`scripts/lib/delegation/{config,backends/*}.cjs`, bọc CJS backend bằng
-`CjsExecutionBackendAdapter` để chúng thoả `ExecutionBackend`. Chiều ngược lại,
-`hooks/*.cjs` require `dist/src/hooks/execution-bridge.js`.
+`scripts/lib/delegation/config.cjs` để lấy state dir. Chiều ngược lại, `hooks/*.cjs` require
+`dist/src/hooks/execution-bridge.js`. `CjsExecutionBackendAdapter` — lớp bọc backend CJS
+thành `ExecutionBackend` — đã bị gỡ cùng Paseo ngày 2026-09-03; không còn backend nào sống
+bên phía CJS.
 
 `scripts/run-role.cjs` và `scripts/delegate.cjs` là compatibility wrapper vào cùng service —
 không có logic policy riêng.
@@ -435,8 +438,9 @@ không có logic policy riêng.
     runtime/                 capsule, session-context.md, config, skill-roots
                              + task.md chỉ khi headless
   delegation/<repo-key>/
-    code-native-executions.json
-    paseo.json               state riêng của backend adapter
+    code-native-executions.json  execution record của DelegationService
+    local.json                   state riêng của backend (pid, log, result)
+    logs/ · results/ · specs/    transcript, exit status và spec cho supervisor
     execution-snapshots/
 
 <repo>/memory/               không theo Git; scaffold từ scaffold/memory/

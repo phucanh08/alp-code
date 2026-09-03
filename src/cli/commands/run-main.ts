@@ -61,7 +61,20 @@ export async function runMainSession(
     reasoningEffort: definition.reasoningEffort[selection.runtime],
     interactive: true,
   });
-  const spawned = await dependencies.backend.spawn({ executionId, launchSpec });
+  // The principal is sitting in front of this one, so it must own the terminal: a backend
+  // that tees stdout instead of inheriting it would leave the session with no tty and no
+  // way to type. `interactive` is the only thing that keeps `stdio: "inherit"` here.
+  const spawned = await dependencies.backend.spawn({
+    executionId,
+    launchSpec,
+    lifecycle: {
+      requestId: executionId,
+      parentExecutionId: null,
+      background: false,
+      interactive: true,
+      timeoutMs: null,
+    },
+  });
   const backendResult = spawned.status === "running" ? await dependencies.backend.wait(executionId) : spawned;
   const stateFile = execution.artifacts?.stateFile;
   if (!stateFile || !["completed", "failed", "cancelled"].includes(backendResult.status)) return backendResult;

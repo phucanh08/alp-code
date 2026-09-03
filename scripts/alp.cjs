@@ -5,7 +5,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const { spawnSyncCommand } = require("./lib/delegation/backends/command-runner.cjs");
+const { spawnSyncCommand } = require("./lib/delegation/command-runner.cjs");
 
 const repoRoot = path.resolve(__dirname, "..");
 const maintenance = process.argv[2];

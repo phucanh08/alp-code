@@ -1,18 +1,5 @@
 # ALP machine/runtime configuration. Agent identity and policy live in compiled TypeScript.
 delegation:
-  backend: paseo
-  # Left empty on purpose. A fallback silently moves an execution to a different backend
-  # when the chosen one looks unhealthy, which is harder to diagnose than a clear failure.
-  # Select `local` explicitly (`alp delegation switch local`) when there is no daemon.
-  fallback_backend: ""
+  # Nơi giữ state của delegation: bản ghi execution, log, và snapshot policy.
+  # Để trống thì mặc định là `~/.alp/delegation/<hash repo root>`.
   state_dir: ""
-
-  backends:
-    paseo:
-      enabled: true
-      cli: paseo
-      host: ""
-      # Paseo tools must not be injected into delegated roles. This matches Paseo's
-      # default (`daemon.mcp.injectIntoAgents: false`). Doctor rejects a known unsafe
-      # local Paseo config before any agent is created.
-      runtime_tools_disabled: true

@@ -26,19 +26,19 @@ async function gitProject(): Promise<{ root: string; project: string; home: stri
 }
 
 describe("alp init", () => {
-  it("registers workspace/backend outside the project and leaves git/runtime config clean", async () => {
+  it("registers the workspace outside the project and leaves git/runtime config clean", async () => {
     const { project, home } = await gitProject();
     const store = new ProjectRegistryStore({ file: join(home, ".alp", "projects.json") });
     const before = execFileSync("git", ["status", "--porcelain"], { cwd: project, encoding: "utf8" });
 
-    await initializeProject({ project, backend: "paseo" }, { store });
-    await initializeProject({ project, backend: "paseo" }, { store });
+    await initializeProject({ project }, { store });
+    await initializeProject({ project }, { store });
 
     expect(execFileSync("git", ["status", "--porcelain"], { cwd: project, encoding: "utf8" })).toBe(before);
     await expect(readdir(project)).resolves.toEqual([".git", "README.md"]);
     expect(JSON.parse(await readFile(join(home, ".alp", "projects.json"), "utf8"))).toEqual({
       version: 1,
-      projects: [{ path: await realpath(project), backend: "paseo" }],
+      projects: [{ path: await realpath(project) }],
     });
   });
 
@@ -48,8 +48,8 @@ describe("alp init", () => {
     const store = new ProjectRegistryStore({ file: join(home, ".alp", "projects.json") });
     const before = execFileSync("git", ["status", "--porcelain"], { cwd: project, encoding: "utf8" });
 
-    await initializeProject({ project, backend: "paseo", repoRoot }, { store });
-    await initializeProject({ project, backend: "paseo", repoRoot }, { store });
+    await initializeProject({ project, repoRoot }, { store });
+    await initializeProject({ project, repoRoot }, { store });
 
     const settings = JSON.parse(await readFile(join(project, ".claude", "settings.local.json"), "utf8"));
     expect(settings.$generatedBy).toBe("alp init");
@@ -81,7 +81,7 @@ describe("alp init", () => {
     await symlink(skill, join(project, ".claude", "skills", "owned"));
     await symlink(skill, join(project, ".agents", "skills", "owned"));
     const store = new ProjectRegistryStore({ file: join(home, ".alp", "projects.json") });
-    await initializeProject({ project, backend: "paseo" }, { store });
+    await initializeProject({ project }, { store });
 
     await deinitializeProject({ project, repoRoot }, { store });
     await deinitializeProject({ project, repoRoot }, { store });
