@@ -26,6 +26,27 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
     return this.env.ALP_MEMORY_ROOT ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "memory");
   }
 
+  /**
+   * A hook command Codex can actually run, which on Windows is not the same string Claude
+   * Code needs.
+   *
+   * Codex runs hooks through a bare `cmd.exe /C`. That shell has a documented rule: when the
+   * command line starts with a quote and carries more than two of them, it strips the first
+   * and the last quote and runs whatever remains. `"<node>" "<script>"` therefore arrives as
+   * `C:\Program Files\…\node.exe" "…\session-boot.cjs`, which cmd splits at the first space —
+   * measured on Windows as `'C:\Program' is not recognized`, exit 1, no output. Both hooks
+   * failed that way, so a Codex session ran with no identity at all.
+   *
+   * One more quote pair around the whole thing is the documented answer: cmd strips the pair
+   * it was going to strip anyway and the inner command survives intact. Claude Code must NOT
+   * get this treatment — it spawns via `cmd /d /s /c "<command>"`, where `/s` already consumes
+   * one outer pair, so the extra pair would break the string that works there today.
+   */
+  private hookCommand(script: string): string {
+    const command = hookCommand(join(this.hooksDirectory, script));
+    return this.platform === "win32" ? `"${command}"` : command;
+  }
+
   async probe(): Promise<RuntimeHealth> {
     const resolved = await resolveRuntimeCommand("codex", this.platform, this.env);
     const command = resolved ?? (this.platform === "win32" ? "codex.cmd" : "codex");
@@ -42,8 +63,8 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
     );
     const contextFiles = await writeRuntimeContextFiles(input.execution, input.interactive);
     const skillRoots = runtimeSkillRoots(this.env);
-    const bootCommand = hookCommand(join(this.hooksDirectory, "session-boot.cjs"));
-    const stopCommand = hookCommand(join(this.hooksDirectory, "session-end.cjs"));
+    const bootCommand = this.hookCommand("session-boot.cjs");
+    const stopCommand = this.hookCommand("session-end.cjs");
     const bootHooks = `[{ hooks = [{ type = "command", command = ${tomlString(bootCommand)}, timeout = 30 }] }]`;
     const stopHooks = `[{ hooks = [{ type = "command", command = ${tomlString(stopCommand)}, timeout = 30 }] }]`;
     const configFile = await atomicRuntimeFile(

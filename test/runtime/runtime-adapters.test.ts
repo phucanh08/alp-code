@@ -227,6 +227,34 @@ describe("runtime adapters", () => {
     expect(settings.permissions.additionalDirectories).toContain(project);
   });
 
+  it("quotes Codex hook commands for cmd.exe without disturbing Claude's", async () => {
+    const { root, prepared } = await fixture();
+    const env = { HOME: root, ALP_REPO_ROOT: root };
+    const options = { execution: prepared, model: "m", reasoningEffort: "high", interactive: false } as const;
+
+    const codexWindows = await new CodexRuntimeAdapter({ platform: "win32", env }).prepare(options);
+    const codexPosix = await new CodexRuntimeAdapter({ platform: "linux", env }).prepare(options);
+    const claudeWindows = await new ClaudeRuntimeAdapter({ platform: "win32", env }).prepare(options);
+
+    const codexHook = (spec: RuntimeLaunchSpec, event: string): string =>
+      spec.args.find((argument) => argument.startsWith(`hooks.${event}=`)) ?? "";
+
+    // Codex runs hooks through a bare `cmd /C`, which strips the outer quote pair off a
+    // command line carrying more than two quotes. Measured on Windows: without the extra
+    // pair the shell tries to run `C:\Program` and exits 1, so the session gets no identity.
+    for (const event of ["SessionStart", "Stop"]) {
+      expect(codexHook(codexWindows, event)).toContain('command = "\\"\\"');
+      expect(codexHook(codexPosix, event)).not.toContain('command = "\\"\\"');
+    }
+
+    // Claude Code spawns via `cmd /d /s /c "<command>"`, where `/s` already consumes one
+    // outer pair. Adding a second here would break the form that works there today.
+    const settings = JSON.parse(await readFile(runtimeFile(claudeWindows, "claude-settings.json"), "utf8"));
+    for (const event of ["SessionStart", "Stop"]) {
+      expect(settings.hooks[event][0].hooks[0].command).not.toMatch(/^""/);
+    }
+  });
+
   it("prepares a Codex launch spec from the same capsule and pins sandbox/cwd", async () => {
     const { root, project, prepared } = await fixture();
     const adapter = new CodexRuntimeAdapter({ platform: "win32", env: { HOME: root, ALP_REPO_ROOT: root } });
