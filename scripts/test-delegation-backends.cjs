@@ -163,11 +163,17 @@ function testAlpFacadePreservesCallerWorkspace() {
   // workspace being preserved, the only thing under test here.
   const samePath = (value) => (process.platform === "win32" ? value.toLowerCase() : value);
   assert.strictEqual(samePath(args[args.indexOf("--cwd") + 1]), samePath(fs.realpathSync(project)));
-  const promptPointer = args.at(-1).match(/^ALP execution input is in (.+); read it before continuing\.$/);
-  assert(promptPointer, "Paseo phải nhận con trỏ prompt runtime ổn định");
+  const taskPointer = args.at(-1).match(/^ALP task is in (.+); execute it\.$/);
+  assert(taskPointer, "Paseo phải nhận con trỏ task runtime ổn định");
+  // Workspace được pin trong session context, không phải trong task: task chỉ mang việc
+  // cần làm, còn agent là ai và được đụng vào đâu thuộc về cả phiên. Paseo nhận đường dẫn
+  // đó qua `--env`, nên kiểm luôn được là kênh session context tới được backend này.
+  const sessionContextEnv = args.find((value) => value.startsWith("ALP_SESSION_CONTEXT="));
+  assert(sessionContextEnv, "Paseo phải nhận ALP_SESSION_CONTEXT");
   assert(
-    samePath(fs.readFileSync(promptPointer[1], "utf8")).includes(samePath(fs.realpathSync(project))),
-    "prepared prompt artifact phải pin caller workspace",
+    samePath(fs.readFileSync(sessionContextEnv.slice("ALP_SESSION_CONTEXT=".length), "utf8"))
+      .includes(samePath(fs.realpathSync(project))),
+    "prepared session context phải pin caller workspace",
   );
 }
 
