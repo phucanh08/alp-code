@@ -8,6 +8,28 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Sửa
+
+- **Hook của Codex không chạy trên Windows, nên phiên Codex không có identity.** Cả hai hook
+  báo `hook exited with code 1` và không in gì; agent tự xưng là "Codex" thay vì role của nó.
+  Nguyên nhân nằm ở shell: Codex chạy hook qua `cmd.exe /C` trần, mà shell này có luật — dòng
+  lệnh bắt đầu bằng dấu nháy và mang hơn hai dấu nháy thì nó **xoá dấu nháy đầu và cuối** rồi
+  chạy phần còn lại. Chuỗi `"<node>" "<script>"` vì thế tới nơi thành
+  `C:\Program Files\…\node.exe" "…\session-boot.cjs`, bị cắt ở dấu cách đầu tiên, và cmd báo
+  `'C:\Program' is not recognized`. Chỉ xảy ra khi đường dẫn node có dấu cách — cài mặc định
+  vào `C:\Program Files\nodejs` là dính. Bọc thêm một cặp nháy quanh cả chuỗi là cách xử lý
+  có tài liệu: cmd bóc đúng cặp nó định bóc, lệnh bên trong còn nguyên. Claude Code **không**
+  nhận thay đổi này: nó spawn qua `cmd /d /s /c "<lệnh>"`, mà `/s` đã ăn sẵn một cặp nháy
+  ngoài, nên thêm cặp nữa sẽ làm hỏng đúng cái đang chạy tốt.
+
+### Thay đổi
+
+- **`alp update` in gọn lại.** Trước đây nó xả toàn bộ output của `git fetch`, `git checkout`
+  và `npm ci` + build. Nay còn ba dòng: bản cũ → bản mới, một dòng báo đang build, một dòng
+  kết quả. Output của lệnh con được capture chứ không bỏ đi, nên khi hỏng thì thông báo lỗi
+  còn rõ hơn trước — `commandFailure` đọc đúng stream đó. `alp update --verbose` trả lại toàn
+  bộ output, cần khi build hỏng và phải nhìn lỗi thật.
+
 ## [0.3.0] - 2026-09-03
 
 ### Thay đổi
