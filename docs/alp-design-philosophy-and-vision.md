@@ -16,7 +16,7 @@ Bản nháp trước dùng một từ "Harness" cho hai thứ nằm ở hai phí
 | **Principal** | Con người ra quyết định cuối cùng | Người dùng |
 | **Surface** | Nơi principal tương tác, gọi *vào* ALP. Nằm **trên** ALP | `alp` CLI; một phiên Claude Code gọi `alp delegate` |
 | **Runtime** | Tiến trình chạy vòng lặp model, do ALP **khởi chạy**. Nằm **dưới** ALP | Claude Code (`claude`), Codex CLI (`codex`) |
-| **Backend** | Nơi tiến trình runtime thực sự chạy | Local process, Herdr, Paseo |
+| **Backend** | Nơi tiến trình runtime thực sự chạy | Local process (luôn có), Paseo (mặc định) |
 | **Agent** | Đơn vị identity: ai chịu trách nhiệm, được làm gì | 8 agent trong `src/agents/` |
 
 Điểm dễ nhầm nhất: **Claude Code vừa có thể là surface vừa có thể là runtime.** Khi principal gõ
@@ -56,13 +56,13 @@ Doc này chỉ có giá trị nếu nó thành thật về khoảng cách. Tại
 
 | Vùng | Hiện trạng | Mục tiêu | Khoảng cách |
 |---|---|---|---|
-| Agent identity | 8 agent TS, freeze + hash | + custom agent declarative có trần capability | **Chưa có** — §5 |
+| Agent identity | 8 agent TS, freeze + hash | + custom agent declarative có trần capability; + built-in `orchestrator` | **Chưa có** — §5, §5.9 |
 | Policy | `PolicyEngine` fail-closed, nhị phân allow/deny | + `require_approval` là quyết định của core | **Chưa có** — §6 |
 | Delegation | `DelegationService` → policy → backend, deny-first | Giữ nguyên | ✅ Đạt |
 | Tool | `TOOL_CATALOG` hardcode từ vựng Claude Code | Capability là kiểu chính; tên tool sống trong adapter | **Ngược hướng** — §4.5 |
 | Runtime | `ClaudeRuntimeAdapter`, `CodexRuntimeAdapter` | Giữ hai runtime này | ✅ Đạt |
 | Skill | 17 skill trong `skills/`, được **runtime** nạp; skill root là danh sách chung lấy từ env | ALP sở hữu selection + budget; skill root theo từng agent, pin trong policy | **Chưa có engine** — §4.4, §5.7 |
-| Không gian project | `alp init` chỉ ghi `~/.alp/projects.json`, không chạm working tree | `alp init` tạo `.alp/` cho agent + skill của project | **Chưa có** — §5.7 |
+| Không gian project | `alp init` ghi `~/.alp/projects.json` **và** render `.alp/agents/<role>.md` + cài `SessionStart` hook, loại trừ qua `.git/info/exclude` | `alp init` tạo `.alp/` cho agent + skill của project | **Một phần** — §5.7 |
 | Memory | `MemoryService` + adapter (markdown / remote API) | Giữ nguyên | ✅ Đạt |
 | Context | Grant lọc trong `IdentityCapsule` | `ContextEngine` có budget rõ ràng | Một phần |
 | Observability | executionId, parent role qua env | trace parent→child→tool ghép được | Một phần |
@@ -177,8 +177,8 @@ interface Capability {
 Policy quyết định trên thuộc tính, không trên tên. Đây là điều kiện để §4.7 giữ được ý nghĩa.
 
 Migration này không rẻ: nó chạm `TOOL_CATALOG`, `ExecutionPolicy.allowedTools`,
-`WorkflowState.allowedTools`, `definitionHash` và `hooks/acl-guard.cjs`. Nó nên được làm **một lần,
-có kế hoạch riêng**, không làm dần trong các PR tính năng.
+`WorkflowState.allowedTools`, `definitionHash` và `src/runtime/permission-rules.ts` — nơi ACL khai
+báo ra config từng runtime kể từ v0.2.0. Nên làm **một lần, có kế hoạch riêng**, không làm dần.
 
 ### 4.6. Subagent là tool, nhưng delegation đi qua service
 
@@ -305,17 +305,20 @@ private scope ownership.
 
 ### 5.3. Vì sao `instructions` (một hàm) vẫn declarative được
 
-Đây là câu hỏi khó nhất trong bản nháp, và nó có lời giải sạch, vì `instructions` **hiện đã là dữ
-liệu cộng một template cố định**. Xem `src/agents/review.ts:23-28`:
+Câu hỏi khó nhất trong bản nháp, và có lời giải sạch, vì `instructions` **hiện đã là dữ liệu cộng
+một template cố định**. Xem `src/agents/review.ts:21-25`:
 
 ```ts
-instructions: (context) => renderInstructions(
+instructions: () => renderInstructions(
   "Review, the code review specialist",   // role
   "Review one named concern per execution…", // purpose
   [...CODE_NATIVE_HOUSE_RULES, ...CODE_CRAFT_RULES, "Do not edit…"], // rules
-  context,
 )
 ```
+
+v0.2.0 bỏ tham số `context` khỏi `instructions`, và điều đó **củng cố** lập luận ở đây: identity
+giống hệt nhau giữa mọi execution nên render được một lần ra file cho `SessionStart` hook đọc, còn
+workspace và task chuyển sang prompt của từng execution — đúng ranh giới mục này vẫn muốn.
 
 Không có logic. Chỉ có `role`, `purpose`, `rules[]` được đưa vào một template chung. Vậy custom
 agent khai báo đúng ba thứ đó:
@@ -353,16 +356,10 @@ workflow:
   - { id: REPORT,  allowedTools: [] }
 
 output:
-  kind: json
-  schema:
-    type: object
-    required: [status, summary]
-    properties:
-      status:  { type: string, enum: [migrated, blocked] }
-      summary: { type: string, minLength: 1 }
+  kind: text
 ```
 
-Loader gọi `renderInstructions(role, purpose, [...HOUSE_RULES[houseRules], ...rules], context)`.
+Loader gọi `renderInstructions(role, purpose, [...HOUSE_RULES[houseRules], ...rules])`.
 
 Ràng buộc bắt buộc:
 
@@ -379,14 +376,15 @@ Ràng buộc bắt buộc:
 
 ### 5.4. Output contract không cho phép code
 
-Custom agent chọn một trong hai:
-
-- `kind: text` → dùng `textOutput` sẵn có.
-- `kind: json` → schema là **tập con JSON Schema** ALP compile sang validator: `object`, `string`,
-  `number`, `boolean`, `enum`, `array`, `required`, `minLength`, `additionalProperties: false`.
-
-Cố ý **không** hỗ trợ `pattern` (regex do người dùng cung cấp = rủi ro ReDoS trong tiến trình ALP),
-không `$ref`, không custom validator. Nếu một contract cần hơn thế, nó xứng đáng là built-in agent.
+v0.2.0 bỏ output JSON khỏi cả 8 built-in role; validator còn lại là "chuỗi không rỗng". Lý do không
+phải JSON khó, mà là **không ai đọc nó**: schema sinh từ Zod bị nhét vào prompt, Stop hook chặn khi
+output không parse được, nhưng không consumer nào bóc field ra dùng — contract không người đọc chỉ
+là thuế đặt lên prompt. Nên với custom agent v1, `kind: text` là lựa chọn **duy nhất**. Chỉ mở lại
+`kind: json` khi có consumer thật đọc field cụ thể — lúc đó schema là **tập con JSON Schema** ALP
+compile sang validator: `object`, `string`, `number`, `boolean`, `enum`, `array`, `required`,
+`minLength`, `additionalProperties: false`. Kể cả khi đó, cố ý **không** hỗ trợ `pattern` (regex
+người dùng cung cấp = rủi ro ReDoS trong tiến trình ALP), không `$ref`, không custom validator.
+Contract cần hơn thế thì xứng đáng là built-in agent.
 
 ### 5.5. Trần capability
 
@@ -422,9 +420,15 @@ Agent file nằm trong repo. Repo có thể được clone về từ nơi khác.
 
 `alp init` tạo `.alp/` trong project. Đây là nơi principal thêm agent và skill riêng cho project đó.
 
+**v0.2.0 đã chiếm trước một phần không gian này:** `alp identity sync` render 8 built-in role thành
+file phẳng `.alp/agents/<role>.md` (0600), còn layout dưới đây đặt custom agent vào thư mục
+`.alp/agents/<id>/` cùng cấp. Loader phải phân biệt **file `.md` = identity, thư mục = định nghĩa**;
+luật "`id` không đụng id built-in" ở §5.5 vì thế là điều kiện đúng đắn, không phải phép lịch sự.
+
 ```text
 <project>/.alp/
 ├── README.md                   # init sinh ra: giải thích layout
+├── agents/main.md              # v0.2.0: identity render sẵn cho SessionStart hook (0600)
 ├── skills/                     # skill dùng chung cho mọi agent của project
 │   └── house-conventions/
 │       └── SKILL.md
@@ -505,8 +509,9 @@ khi trust (§5.6).
 
 Hai hệ quả vận hành phải ghi nhận:
 
-- `alp init` từ nay **có** chạm working tree. README hiện nói "không tạo gì trong project nên
-  `git status --porcelain` không đổi" — câu đó phải được sửa cùng lúc với thay đổi này.
+- `alp init` **đã** chạm working tree từ v0.2.0, giữ `git status --porcelain` sạch bằng
+  `.git/info/exclude` chứ không phải bằng cách né. Cơ chế đó dùng lại được cho `.alp/` custom agent,
+  khác một điểm: `.alp/agents/<id>/` là thứ principal **muốn** commit nên phải ngoài exclude list.
 - `alp deinit` chỉ unregister và dọn artifact do ALP tạo. Nó **không được xoá `.alp/`** — đó là nội
   dung do principal viết.
 
@@ -539,6 +544,14 @@ thứ đối đầu với §4.9 và §5.3: một prompt không giới hạn, kh�
 thẳng vào context. Dữ liệu thuần buộc mọi thứ vào các trường có ngân sách và có thể diff.
 
 Đây là khuyến nghị, không phải kết luận — xem §11.
+
+### 5.9. `orchestrator` — role built-in thứ 9
+
+Trần `delegatesTo: []` ở §5.5 loại trừ đúng một loại việc đáng làm: **điều phối nhiều execution dài,
+chạy song song, trên workspace tách biệt** (mô hình orchestration của Paseo). Cần `delegatesTo` khác
+rỗng nên nó phải là built-in. Ba ràng buộc — không miễn trừ invariant cấm `create_agent`/`paseo`,
+§4.10 xong trước, và nó là phép thử của câu "không phải swarm tự do" (§8) — ở
+[`orchestrator-vision.md`](./orchestrator-vision.md).
 
 ---
 
@@ -607,8 +620,10 @@ Specialist cần quyền thì trả về structured result nói rõ cần gì; `
 ### 6.5. Ba use case mở khoá ngay
 
 1. Custom agent xin `workspace.writeRoots` (§5.5).
-2. `Bash` với lệnh mutation — `hooks/acl-guard.cjs` đã phát hiện được mutation, nhưng hiện chỉ có
-   deny.
+2. `Bash` với lệnh mutation — hiện chỉ có deny, và từ v0.2.0 thì cả khả năng *phát hiện* cũng mất:
+   `hooks/acl-guard.cjs` bị gỡ cùng guardrail `hasIndirectCommand`, vì ACL khai báo không diễn đạt
+   được "chặn `$(...)`, `eval`, `bash -c`, `xargs`". Use case này giờ cần approval runtime dựng lại
+   chỗ kiểm tra đó, không chỉ nâng deny thành hỏi.
 3. Memory write ngoài `private:` scope.
 
 ---
@@ -660,7 +675,8 @@ tới khi có nhu cầu thật, vì mỗi thứ đều tự biện minh được
 |---|---|
 | Plugin system / registry | Có ≥ 3 extension bên thứ ba thật, **và** có mô hình signing + sandbox |
 | Workflow DSL / engine tổng quát | Có ≥ 2 workflow không diễn đạt được bằng linear workflow |
-| Custom agent được delegate | Có use case thật cần cây sâu 2 tầng |
+| Custom agent được delegate | Có use case thật cần cây sâu 2 tầng (built-in `orchestrator` ở §5.9 là đường khác, không phải cái này) |
+| `orchestrator` (§5.9) | §4.10 xong: budget, cancellation, trace parent→child |
 | Runtime thứ ba | Có người dùng thật cần |
 | Cloud execution / ALP Cloud | Sau khi trace và budget đã đầy đủ |
 | Tách repo thành `core/ runtime/ extensions/` | Xem §9 |
@@ -698,7 +714,7 @@ alp-code/
 │   ├── backend/
 │   ├── hooks/
 │   └── cli/
-├── hooks/                     # acl-guard.cjs, session-end.cjs (CJS boundary)
+├── hooks/                     # session-boot.cjs, session-end.cjs (CJS boundary)
 ├── skills/                    # nội dung skill built-in
 └── alp.config.yaml
 ```
