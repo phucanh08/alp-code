@@ -30,21 +30,26 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
    * A hook command Codex can actually run, which on Windows is not the same string Claude
    * Code needs.
    *
-   * Codex runs hooks through a bare `cmd.exe /C`. That shell has a documented rule: when the
-   * command line starts with a quote and carries more than two of them, it strips the first
-   * and the last quote and runs whatever remains. `"<node>" "<script>"` therefore arrives as
-   * `C:\Program Files\…\node.exe" "…\session-boot.cjs`, which cmd splits at the first space —
-   * measured on Windows as `'C:\Program' is not recognized`, exit 1, no output. Both hooks
-   * failed that way, so a Codex session ran with no identity at all.
+   * Codex splits the hook command into argv itself, and the first token may not be quoted:
+   * a command line that *starts with* `"` never resolves an executable. Measured on
+   * `codex-cli 0.153.0` (native `codex.exe`), both `"<node>" "<script>"` and the extra
+   * quote-pair form `""<node>" "<script>""` that v0.3.1 shipped report
+   * `hook: SessionStart Failed`, print nothing and leave the session with no identity —
+   * the pair theory was a `cmd /C` rule Codex turns out not to go through. Quoting the
+   * *later* arguments is fine: `<node> "<script>"` and `node "<script>"` both run, and the
+   * script path stays quoted because it can hold spaces.
    *
-   * One more quote pair around the whole thing is the documented answer: cmd strips the pair
-   * it was going to strip anyway and the inner command survives intact. Claude Code must NOT
-   * get this treatment — it spawns via `cmd /d /s /c "<command>"`, where `/s` already consumes
-   * one outer pair, so the extra pair would break the string that works there today.
+   * The interpreter therefore goes in bare. `process.execPath` is exact and used as-is when
+   * it has no space; when it does — `C:\Program Files\nodejs\node.exe`, the default install —
+   * the only bare spelling left is `node` off PATH, which the installed `alp.cmd` shim
+   * already depends on. Claude Code must NOT get this treatment: it spawns via
+   * `cmd /d /s /c "<command>"`, where the quoted form is what works today.
    */
   private hookCommand(script: string): string {
-    const command = hookCommand(join(this.hooksDirectory, script));
-    return this.platform === "win32" ? `"${command}"` : command;
+    const path = join(this.hooksDirectory, script);
+    if (this.platform !== "win32") return hookCommand(path);
+    const node = process.execPath.includes(" ") ? "node" : process.execPath;
+    return `${node} "${path}"`;
   }
 
   async probe(): Promise<RuntimeHealth> {

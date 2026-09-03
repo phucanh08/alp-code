@@ -227,7 +227,7 @@ describe("runtime adapters", () => {
     expect(settings.permissions.additionalDirectories).toContain(project);
   });
 
-  it("quotes Codex hook commands for cmd.exe without disturbing Claude's", async () => {
+  it("leaves the Codex hook interpreter unquoted without disturbing Claude's", async () => {
     const { root, prepared } = await fixture();
     const env = { HOME: root, ALP_REPO_ROOT: root };
     const options = { execution: prepared, model: "m", reasoningEffort: "high", interactive: false } as const;
@@ -239,12 +239,14 @@ describe("runtime adapters", () => {
     const codexHook = (spec: RuntimeLaunchSpec, event: string): string =>
       spec.args.find((argument) => argument.startsWith(`hooks.${event}=`)) ?? "";
 
-    // Codex runs hooks through a bare `cmd /C`, which strips the outer quote pair off a
-    // command line carrying more than two quotes. Measured on Windows: without the extra
-    // pair the shell tries to run `C:\Program` and exits 1, so the session gets no identity.
+    // Codex splits the hook command into argv itself and cannot resolve an executable when
+    // the line starts with a quote — measured on codex-cli 0.153.0 as `SessionStart Failed`
+    // with no output, so the session got no identity. The interpreter goes in bare; the
+    // script path stays quoted because it can hold spaces.
     for (const event of ["SessionStart", "Stop"]) {
-      expect(codexHook(codexWindows, event)).toContain('command = "\\"\\"');
-      expect(codexHook(codexPosix, event)).not.toContain('command = "\\"\\"');
+      expect(codexHook(codexWindows, event)).not.toContain('command = "\\"');
+      expect(codexHook(codexWindows, event)).toMatch(/session-(?:boot|end)\.cjs\\"/);
+      expect(codexHook(codexPosix, event)).toContain('command = "\\"');
     }
 
     // Claude Code spawns via `cmd /d /s /c "<command>"`, where `/s` already consumes one

@@ -8,6 +8,25 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Sửa
+
+- **Hook của Codex vẫn hỏng trên Windows sau v0.3.1 — chẩn đoán trước đó sai nguyên nhân.**
+  Đo lại trên `codex-cli 0.153.0` (bản native `codex.exe`, cài qua winget) bằng cách nhét
+  nhiều cách viết lệnh vào cùng một mảng `hooks.SessionStart` rồi xem cách nào thật sự chạy:
+  Codex **tự tách argv**, nó không đưa chuỗi qua `cmd /C`. Luật thật là *token đầu tiên không
+  được bọc nháy* — mọi lệnh bắt đầu bằng `"` đều báo `hook: SessionStart Failed`, không in gì.
+  Nên cả `"<node>" "<script>"` lẫn dạng thêm một cặp nháy `""<node>" "<script>""` mà v0.3.1
+  phát hành đều hỏng như nhau; đường dẫn có dấu cách chỉ là điều kiện đủ, không phải nguyên
+  nhân. Đã đo: `<node> "<script>"`, `node "<script>"`, `C:\PROGRA~1\…\node.exe "<script>"` và
+  `cmd /c "<node>" "<script>"` chạy được; `"C:\PROGRA~1\…\node.exe" "<script>"` (không dấu
+  cách, chỉ có nháy đầu) thì hỏng. Nay interpreter đi vào trần: dùng thẳng `process.execPath`
+  khi nó không có dấu cách, còn khi có — `C:\Program Files\nodejs\node.exe`, tức bản cài mặc
+  định — thì dùng `node` trên PATH, đúng thứ mà shim `alp.cmd` lúc cài vốn đã phụ thuộc. Đường
+  dẫn script vẫn được bọc nháy vì nó có thể chứa dấu cách. Kiểm chứng end-to-end: session
+  context tới được model (agent trả đúng role id đặt trong file context) thay vì tự xưng là
+  "Codex". Claude Code vẫn giữ dạng cũ — nó spawn qua `cmd /d /s /c "<lệnh>"` và dạng bọc nháy
+  là dạng đang chạy đúng ở đó.
+
 ## [0.3.1] - 2026-09-03
 
 ### Sửa
