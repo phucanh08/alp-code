@@ -10,6 +10,21 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ### Thay đổi
 
+- **Mở phiên interactive không còn tốn một lượt trả lời.** Gõ `alp` trước đây là agent đáp ngay
+  trước khi principal kịp gõ gì — và thứ nó đáp lại là một task không có thật, vì phiên interactive
+  chưa có task nào cho tới khi principal gửi. Nguyên nhân không nằm ở chữ trong prompt: session
+  context và task input có vòng đời khác nhau nhưng đi chung một kênh. Nay tách hai:
+  `session-context.md` mô tả agent cho cả phiên (identity, quyền hạn thực tế, invariants, policy,
+  reporting contract) và không bao giờ tạo lượt; `task.md` mang memory đã chọn cùng task, và **chính
+  là** lượt đầu tiên. Phiên interactive không sinh `task.md`, nên không còn gì để adapter lỡ tay đưa
+  thành positional prompt. Delegated execution không đổi: vẫn submit task đúng một lần.
+- **Codex nhận identity qua `SessionStart` hook, giống Claude.** Đo trên `codex-cli 0.149.0`: hook
+  chạy đúng một lần và `additionalContext` vào transcript thành message `role: developer`, **trước**
+  lượt của người dùng. Ghi nhận cũ "Codex báo `SessionStart Failed`" đã lỗi thời, nên mục
+  `## Identity` thừa trong prompt Codex bị gỡ — một kênh cho mỗi runtime, nếu không identity vào
+  context hai lần. Hệ quả thấy được: cả hai runtime nay nhận file session context byte-identical, và
+  phiên interactive biết rõ workspace, invariants, policy trước câu hỏi đầu tiên — trước đây những
+  thứ này chỉ đến qua prompt, tức là qua lượt giả.
 - **Phiên `alp` interactive chạy không guardrail.** Claude nhận `--dangerously-skip-permissions`,
   Codex nhận `--dangerously-bypass-approvals-and-sandbox`. Principal ngồi ngay đó và tự duyệt được
   từng bước, nên prompt quyền chỉ là ma sát. Đánh đổi ghi rõ trong `docs/architecture.md`: cờ này vô
@@ -47,6 +62,8 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 - `docs/delegation.md` còn nói `acl-guard.cjs` kiểm raw-runtime target — hook đó đã bị gỡ; việc kiểm
   nằm ở `src/policy/invariants.ts` cộng deny rule khai báo của từng runtime.
 - `docs/model-routing.md` còn nói adapter "có thể dùng Herdr hoặc Paseo".
+
+## [0.2.0] - 2026-09-02
 
 ### Thay đổi
 
