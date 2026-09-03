@@ -306,7 +306,7 @@ function helpText(): string {
     "  alp identity sync",
     "  alp delegate <role> [options] -- <task>",
     "  alp doctor",
-    "  alp update",
+    "  alp update [--verbose]",
     "  alp uninstall [--purge-memory] [--force]",
     "  alp --version",
     "",

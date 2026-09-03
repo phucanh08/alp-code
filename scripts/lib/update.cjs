@@ -56,9 +56,28 @@ async function resolveLatestReleaseTag(repoRoot, options = {}) {
   return { ok: true, tag: tags[tags.length - 1], source: "git-ls-remote" };
 }
 
+/**
+ * Git and npm are chatty, and `alp update` is a one-line errand: say which version you moved
+ * to, not every object counted and every package linked. Output is captured by default so a
+ * successful run stays quiet — `commandFailure` reads the same captured streams, so a failure
+ * still reports exactly what the tool said. `verbose: true` puts the firehose back, which is
+ * what the installers want and what a broken build needs.
+ */
+function quietStdio(options) {
+  return options.stdio || (options.verbose ? "inherit" : ["ignore", "pipe", "pipe"]);
+}
+
+function packageVersion(repoRoot) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")).version || null;
+  } catch {
+    return null;
+  }
+}
+
 async function checkoutLatestRelease(repoRoot, options = {}) {
   const env = options.env || process.env;
-  const stdio = options.stdio || "inherit";
+  const stdio = quietStdio(options);
   const log = options.log || (() => {});
 
   const clean = assertCleanWorkingTree(repoRoot, env);
@@ -112,24 +131,29 @@ function discardMaintenanceState(snapshot) {
 }
 
 async function updateInstallation(repoRoot, options = {}) {
+  const from = packageVersion(repoRoot);
   const snapshot = preserveMaintenanceState(repoRoot, options);
   const checkedOut = await checkoutLatestRelease(repoRoot, options);
   if (!checkedOut.ok) {
     discardMaintenanceState(snapshot);
     return checkedOut;
   }
+  const notify = options.onCheckout || (() => {});
+  notify({ from, tag: checkedOut.tag });
   const spawnProcess = options.spawnProcess || spawnSync;
   let built;
   try {
     built = spawnProcess(process.execPath, [path.join(repoRoot, "scripts", "bootstrap.cjs"), "--no-path"], {
       cwd: repoRoot,
       env: options.env || process.env,
-      stdio: options.stdio || "inherit",
+      stdio: quietStdio(options),
     });
   } finally {
     restoreMaintenanceState(snapshot);
   }
-  return succeeded(built) ? checkedOut : failure(commandFailure("bootstrap.cjs", built));
+  return succeeded(built)
+    ? { ...checkedOut, from, to: packageVersion(repoRoot) }
+    : failure(commandFailure("bootstrap.cjs", built));
 }
 
 function onlyWorkspaceChanged(base, current) {
@@ -202,6 +226,7 @@ function normalizeNewlines(text) {
 
 module.exports = {
   onlyWorkspaceChanged,
+  packageVersion,
   assertCleanWorkingTree,
   resolveLatestReleaseTag,
   checkoutLatestRelease,

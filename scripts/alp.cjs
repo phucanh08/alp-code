@@ -22,17 +22,39 @@ if (maintenance === "doctor") {
 
 if (maintenance === "update") {
   const { updateInstallation } = require("./lib/update.cjs");
+  const options = process.argv.slice(3);
+  const unknown = options.find((value) => value !== "--verbose");
+  if (unknown) {
+    console.error(`ERROR     unknown update option \`${unknown}\``);
+    process.exit(2);
+  }
+  // Mặc định im lặng: `alp update` là một việc vặt, người dùng cần biết đi từ bản nào sang bản
+  // nào chứ không cần đọc git fetch với npm ci. `--verbose` trả lại toàn bộ output, cần khi
+  // build hỏng và phải nhìn lỗi thật.
+  const verbose = options.includes("--verbose");
   // updateInstallation là async (resolve tag release cần gọi mạng). Gọi đồng bộ rồi đọc
   // `result.ok` trên một Promise sẽ luôn ra undefined — v0.1.0/v0.1.1 in "ERROR undefined"
   // và không update gì cả.
-  updateInstallation(repoRoot).then(
+  updateInstallation(repoRoot, {
+    verbose,
+    // Bước build là bước lâu nhất, nên nó phải có một dòng báo — im lặng vài chục giây
+    // trông như treo. Không dùng `\r` để vẽ lại dòng: `alp update` hay bị chạy qua log,
+    // qua CI hay qua pane không phải TTY, chỗ đó `\r` chỉ thành rác.
+    onCheckout({ from, tag }) {
+      console.log(`${from ? `v${from} → ` : ""}${tag}`);
+      console.log("Đang build…");
+    },
+  }).then(
     (result) => {
-      if (!result.ok) console.error(`ERROR     ${result.message}`);
-      else console.log(`READY     alp-code updated to ${result.tag}; memory/runtime/backend preferences preserved`);
-      process.exit(result.ok ? 0 : 1);
+      if (!result.ok) {
+        console.error(`✗ ${result.message}`);
+        process.exit(1);
+      }
+      console.log(`✓ alp-code ${result.tag} — memory, runtime và backend preferences giữ nguyên`);
+      process.exit(0);
     },
     (error) => {
-      console.error(`ERROR     ${error && error.message ? error.message : String(error)}`);
+      console.error(`✗ ${error && error.message ? error.message : String(error)}`);
       process.exit(1);
     },
   );
