@@ -8,6 +8,19 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thay đổi
+
+- **Đã kiểm chứng ALP chạy đúng trên Paseo 0.7.2.** Không có thay đổi hành vi nào — bản này chỉ
+  ghi lại kết quả đo. Trên daemon 0.7.2: `alp delegation health` báo đúng phiên bản, delegation
+  end-to-end trả kết quả khớp, execution kẹt ở permission prompt vẫn được báo `failed` kèm lý do,
+  và toàn bộ test xanh. Hai shape mà backend Paseo đọc không đổi so với 0.5.1 —
+  `inspect --json` vẫn trả `Status: running` cho agent đã dừng chờ duyệt trong khi vẫn mang
+  `PendingPermissions`, còn `permit ls --json` vẫn cắt `id` còn tám ký tự. Chạy được trên cả
+  0.5.x lẫn 0.7.x, không cần nâng cấp.
+- Bỏ ghim `0.5.x` trong hai comment giải thích vì sao vai Codex dùng mode `auto`: đã kiểm lại trên
+  0.7.2, Paseo vẫn chỉ cho Codex `Default Permissions, Auto-review, Full Access`, không có
+  `read-only`. Lập luận giữ nguyên, chỉ ghi rõ đã kiểm tới bản nào.
+
 ## [0.5.0] - 2026-09-03
 
 ### Thêm
