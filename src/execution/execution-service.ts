@@ -1,5 +1,8 @@
 import { realpath } from "node:fs/promises";
 import type { AgentId, AgentRegistry } from "../agents/types";
+import { seedCheckpoint, writeCheckpoint } from "../context/checkpoint";
+import { renderContinuity } from "../context/continuity";
+import { atomicRuntimeFile } from "../runtime/adapter-files";
 import type { MemoryService } from "../memory/memory-service";
 import type { BuildMemoryContextInput, BuiltMemoryContext } from "../memory/types";
 import type { Authorization, AuthorizationRequest } from "../policy/types";
@@ -133,6 +136,16 @@ export class ExecutionService {
       createdAt,
     });
     const artifacts = await this.store.create({ policy, state });
+
+    // §8.1: seed the checkpoint here, not lazily on first pin, so a fresh execution's
+    // continuity is never empty by omission — the objective alone is worth reinjecting.
+    const checkpoint = await writeCheckpoint(artifacts.checkpointFile, seedCheckpoint({
+      executionId: input.executionId,
+      policyHash: policy.policyHash,
+      objective: capsule.task,
+      now: () => createdAt,
+    }));
+    await atomicRuntimeFile(artifacts.continuityFile, renderContinuity(checkpoint));
 
     return deepFreezeExecutionValue({ capsule, policy, state, artifacts });
   }

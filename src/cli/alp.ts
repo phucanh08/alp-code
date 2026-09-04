@@ -16,6 +16,7 @@ import { ClaudeRuntimeAdapter } from "../runtime/claude-adapter";
 import { CodexRuntimeAdapter } from "../runtime/codex-adapter";
 import { RuntimeSelector } from "../runtime/runtime-selector";
 import { WorkflowRunner } from "../workflow/workflow-runner";
+import { runContextCommand } from "./commands/context";
 import { createDefaultDelegationComposition, runDelegateCommand, runDelegationLifecycleCommand } from "./commands/delegate";
 import { syncIdentityDocuments } from "./commands/identity-sync";
 import { deinitializeProject, initializeProject, ProjectRegistryStore } from "./commands/init";
@@ -33,6 +34,7 @@ export type AlpCommand =
   | { readonly command: "principal"; readonly action: "show" | "set" }
   | { readonly command: "delegate"; readonly args: readonly string[] }
   | { readonly command: "delegation"; readonly args: readonly string[] }
+  | { readonly command: "context"; readonly args: readonly string[] }
   | { readonly command: "maintenance"; readonly action: "doctor" | "update" | "uninstall"; readonly args: readonly string[] }
   | { readonly command: "version" }
   | { readonly command: "help" };
@@ -92,6 +94,7 @@ export function parseAlpArgs(argv: readonly string[]): AlpCommand {
   }
   if (argv[0] === "delegate") return { command: "delegate", args: Object.freeze(argv.slice(1)) };
   if (argv[0] === "delegation") return { command: "delegation", args: Object.freeze(argv.slice(1)) };
+  if (argv[0] === "context") return { command: "context", args: Object.freeze(argv.slice(1)) };
   if (argv[0] === "doctor") {
     if (argv.slice(1).some((value) => value !== "--quiet")) throw new Error("usage: alp doctor [--quiet]");
     return { command: "maintenance", action: "doctor", args: Object.freeze(argv.slice(1)) };
@@ -127,6 +130,7 @@ export interface AlpDependencies {
   readonly syncIdentity: () => Promise<void>;
   readonly principalCommand: (input: PrincipalCommandInput) => Promise<number>;
   readonly delegateCommand: (args: readonly string[]) => Promise<number>;
+  readonly contextCommand: (args: readonly string[]) => Promise<number>;
   readonly maintenanceCommand: (input: { readonly action: "doctor" | "update" | "uninstall"; readonly args: readonly string[] }) => Promise<number>;
 }
 
@@ -167,7 +171,11 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
   });
   const adapters = new Map<RuntimeId, ClaudeRuntimeAdapter | CodexRuntimeAdapter>([
     ["claude", new ClaudeRuntimeAdapter({ hooksDirectory: join(repoRoot, "hooks") })],
-    ["codex", new CodexRuntimeAdapter()],
+    // Previously left to default to `ALP_REPO_ROOT` (set by `scripts/alp.cjs`) the way
+    // Claude's constructor already falls back too. That implicit path was fine carrying two
+    // hooks; wiring two more onto it (PreCompact/PostCompact) turns a coincidence into a
+    // real dependency, so it is passed explicitly here like Claude's.
+    ["codex", new CodexRuntimeAdapter({ hooksDirectory: join(repoRoot, "hooks") })],
   ]);
   const backend = new LocalProcessBackend();
   const selector = new RuntimeSelector({ output: stdout });
@@ -243,6 +251,13 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
       stdout.write(`${JSON.stringify(value, null, 2)}\n`);
       return typeof value === "object" && value !== null && "status" in value && value.status === "failed" ? 1 : 0;
     },
+    async contextCommand(args) {
+      return runContextCommand(args, {
+        executionsRoot: join(process.env.HOME || homedir(), ".alp", "executions"),
+        env: process.env,
+        write: (text) => stdout.write(text),
+      });
+    },
     async maintenanceCommand(input) {
       if (input.action === "doctor") {
         const checked = spawnSync(process.execPath, [join(repoRoot, "scripts", "doctor.cjs"), ...input.args], {
@@ -291,6 +306,9 @@ function helpText(): string {
     "  alp identity sync",
     "  alp principal show|set",
     "  alp delegate <role> [options] -- <task>",
+    "  alp context status|validate [execution-id]",
+    "  alp context pin <decision|constraint|open-item|next-action> -- <text>",
+    "  alp context unpin <pin-id>",
     "  alp doctor",
     "  alp update [--verbose]",
     "  alp uninstall [--purge-memory] [--force]",
@@ -317,6 +335,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2), inje
   if (command.command === "principal") return dependencies.principalCommand({ action: command.action });
   if (command.command === "delegate") return dependencies.delegateCommand(command.args);
   if (command.command === "delegation") return dependencies.delegateCommand(Object.freeze(["__lifecycle", ...command.args]));
+  if (command.command === "context") return dependencies.contextCommand(command.args);
   if (command.command === "maintenance") return dependencies.maintenanceCommand({ action: command.action, args: command.args });
   stdout.write(helpText());
   return 0;

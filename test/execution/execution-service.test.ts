@@ -155,7 +155,7 @@ describe("ExecutionService", () => {
     });
 
     const prepared = await service.prepare({
-      executionId: "exec-immutable",
+      executionId: "exec_immutable",
       parent: "main",
       target: "search",
       task: "find the entrypoint",
@@ -178,7 +178,7 @@ describe("ExecutionService", () => {
       "capsule",
     ]);
     expect(prepared.policy).toMatchObject({
-      executionId: "exec-immutable",
+      executionId: "exec_immutable",
       role: "search",
       workspace,
       workspaceMode: "read-only",
@@ -188,24 +188,81 @@ describe("ExecutionService", () => {
 
     registry.replace(role("search", events, ["Read", "Grep"]));
     expect(prepared.policy.allowedTools).toEqual(["Read"]);
-    const policyPath = join(root, "executions", "exec-immutable", "policy.json");
-    const statePath = join(root, "executions", "exec-immutable", "state.json");
+    const policyPath = join(root, "executions", "exec_immutable", "policy.json");
+    const statePath = join(root, "executions", "exec_immutable", "state.json");
     const persistedPolicy = JSON.parse(await readFile(policyPath, "utf8"));
     expect(persistedPolicy.allowedTools).toEqual(["Read"]);
     expect(persistedPolicy.policyHash).toBe(prepared.policy.policyHash);
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      executionId: "exec-immutable",
+      executionId: "exec_immutable",
       status: "prepared",
       policyHash: prepared.policy.policyHash,
     });
-    await expectPosixMode(join(root, "executions", "exec-immutable"), 0o700);
+    await expectPosixMode(join(root, "executions", "exec_immutable"), 0o700);
     await expectPosixMode(policyPath, 0o600);
     await expectPosixMode(statePath, 0o600);
-    await expect((await import("node:fs/promises")).readdir(join(root, "executions", "exec-immutable"))).resolves.toEqual([
+    await expect((await import("node:fs/promises")).readdir(join(root, "executions", "exec_immutable"))).resolves.toEqual([
+      "context",
       "policy.json",
       "runtime",
       "state.json",
     ]);
+
+    const contextDirectory = join(root, "executions", "exec_immutable", "context");
+    await expectPosixMode(contextDirectory, 0o700);
+    const checkpointPath = join(contextDirectory, "checkpoint.json");
+    const continuityPath = join(contextDirectory, "continuity.md");
+    await expectPosixMode(checkpointPath, 0o600);
+    await expectPosixMode(continuityPath, 0o600);
+    expect(prepared.artifacts).toMatchObject({
+      contextDirectory,
+      checkpointFile: checkpointPath,
+      continuityFile: continuityPath,
+      compactEventsFile: join(contextDirectory, "compact-events.jsonl"),
+    });
+    expect(JSON.parse(await readFile(checkpointPath, "utf8"))).toMatchObject({
+      version: 1,
+      executionId: "exec_immutable",
+      policyHash: prepared.policy.policyHash,
+      objective: "find the entrypoint",
+      decisions: [], constraints: [], openItems: [], nextActions: [],
+    });
+    expect(await readFile(continuityPath, "utf8")).toContain("find the entrypoint");
+  });
+
+  it("does not create a context/ directory for a denied execution", async () => {
+    const root = await mkdtemp(join(tmpdir(), "alp-execution-context-denied-"));
+    temporaryRoots.push(root);
+    const events: string[] = [];
+    const registry = new MutableRegistry([
+      role("main", events, ["Read"]),
+      role("search", events, ["Read"]),
+    ], events);
+    const service = new ExecutionService({
+      registry,
+      policy: {
+        authorize(request: AuthorizationRequest): Authorization {
+          return { allowed: false, code: "DELEGATION_NOT_ALLOWED", reason: "denied" };
+        },
+      },
+      memory: { async buildContext(): Promise<BuiltMemoryContext> { return context; } },
+      workflowRunner: new RecordingRunner(events),
+      store: new FileExecutionStore({ root: join(root, "executions") }),
+    });
+
+    await expect(service.prepare({
+      executionId: "exec-context-denied",
+      parent: "main",
+      target: "search",
+      task: "denied",
+      workspace: join(root, "workspace"),
+      workspaceMode: "read-only",
+      memoryQueries: [],
+      characterBudget: 0,
+      invariantContext: "",
+      policyContext: "",
+    })).rejects.toThrow();
+    await expect((await import("node:fs/promises")).access(join(root, "executions", "exec-context-denied"))).rejects.toThrow();
   });
 
   it("stops before workspace, memory, workflow, and storage when authorization fails", async () => {

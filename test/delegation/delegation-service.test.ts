@@ -56,12 +56,17 @@ function prepared(executionId: string, target = "search"): PreparedExecution {
       stateFile: "/tmp/execution/state.json",
       policyFile: "/tmp/execution/policy.json",
       runtimeDirectory: "/tmp/execution/runtime",
+      contextDirectory: "/tmp/execution/context",
+      checkpointFile: "/tmp/execution/context/checkpoint.json",
+      continuityFile: "/tmp/execution/context/continuity.md",
+      compactEventsFile: "/tmp/execution/context/compact-events.jsonl",
     },
   };
 }
 
 class FakeRuntime implements RuntimeAdapter {
   readonly name = "codex" as const;
+  readonly compact = { preCompact: true, postCompact: true, sessionStartAfterCompact: true };
   calls: unknown[] = [];
   async probe() { return { ok: true, runtime: this.name, message: "ok" } as const; }
   async prepare(input: Parameters<RuntimeAdapter["prepare"]>[0]): Promise<RuntimeLaunchSpec> {

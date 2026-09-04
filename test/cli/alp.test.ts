@@ -15,6 +15,8 @@ describe("alp CLI parsing", () => {
     [["principal", "show"], { command: "principal", action: "show" }],
     [["principal", "set"], { command: "principal", action: "set" }],
     [["delegate", "search", "find", "launcher"], { command: "delegate", args: ["search", "find", "launcher"] }],
+    [["context", "status", "exec_abc"], { command: "context", args: ["status", "exec_abc"] }],
+    [["context", "pin", "decision", "--", "chose", "X"], { command: "context", args: ["pin", "decision", "--", "chose", "X"] }],
     [["doctor", "--quiet"], { command: "maintenance", action: "doctor", args: ["--quiet"] }],
     [["update"], { command: "maintenance", action: "update", args: [] }],
     [["uninstall", "--purge-memory", "--force"], { command: "maintenance", action: "uninstall", args: ["--purge-memory", "--force"] }],
@@ -54,6 +56,7 @@ describe("alp CLI parsing", () => {
       syncIdentity: async () => undefined,
       principalCommand: async () => 0,
       delegateCommand: async () => 0,
+      contextCommand: async () => 0,
       maintenanceCommand: async () => 0,
     })).resolves.toBe(0);
     expect(runMain).toHaveBeenCalledWith({ cwd: "/caller/project", requestedRuntime: "codex" });
@@ -74,6 +77,7 @@ describe("alp CLI parsing", () => {
       syncIdentity: async () => undefined,
       principalCommand: async () => 0,
       delegateCommand: async () => 0,
+      contextCommand: async () => 0,
       maintenanceCommand,
     })).resolves.toBe(7);
     expect(maintenanceCommand).toHaveBeenCalledWith({ action: "uninstall", args: ["--purge-memory", "--force"] });
@@ -94,9 +98,31 @@ describe("alp CLI parsing", () => {
       syncIdentity: async () => undefined,
       principalCommand: async () => 0,
       delegateCommand: async () => 0,
+      contextCommand: async () => 0,
       maintenanceCommand: async () => 0,
     })).resolves.toBe(0);
     expect(writes).toEqual(["alp 1.2.3\n"]);
+  });
+
+  it("dispatches context commands with their raw sub-args", async () => {
+    const contextCommand = vi.fn(async () => 0);
+    await expect(main(["context", "status", "exec_abc"], {
+      cwd: "/caller/project",
+      stdout: { write: () => true },
+      stderr: { write: () => true },
+      version: "0.0.0",
+      checkForUpdate: async () => null,
+      runMain: async () => 0,
+      runtimeCommand: async () => 0,
+      initProject: async () => undefined,
+      deinitProject: async () => undefined,
+      syncIdentity: async () => undefined,
+      principalCommand: async () => 0,
+      delegateCommand: async () => 0,
+      contextCommand,
+      maintenanceCommand: async () => 0,
+    })).resolves.toBe(0);
+    expect(contextCommand).toHaveBeenCalledWith(["status", "exec_abc"]);
   });
 
   it("prints an update notice before dispatching when one is available", async () => {
@@ -114,6 +140,7 @@ describe("alp CLI parsing", () => {
       syncIdentity: async () => undefined,
       principalCommand: async () => 0,
       delegateCommand: async () => 0,
+      contextCommand: async () => 0,
       maintenanceCommand: async () => 0,
     });
     expect(writes).toEqual(["UPDATE    new version available\n"]);
@@ -140,6 +167,7 @@ describe("runMainSession", () => {
       },
       adapters: new Map([["codex", {
         name: "codex",
+        compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
         async probe() { events.push("probe:codex"); return { ok: true, runtime: "codex", message: "ok" }; },
         async prepare(input) { events.push(`adapter:${input.model}:${input.reasoningEffort}`); return launchSpec; },
       }]]),
@@ -176,7 +204,7 @@ describe("runMainSession", () => {
       registry: { get: () => definition },
       selector: { async select() { return { ok: true, runtime: "claude", source: "default" }; } },
       executionService: { async prepare(input) { workspaceMode = input.workspaceMode; return { capsule: { executionId: "exec" } } as never; } },
-      adapters: new Map([["claude", { name: "claude", async probe() { return { ok: true, runtime: "claude", message: "ok" }; }, async prepare() { return { command: "fake", args: [], cwd: "/unknown", env: {}, temporaryFiles: [] }; } }]]),
+      adapters: new Map([["claude", { name: "claude", compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true }, async probe() { return { ok: true, runtime: "claude", message: "ok" }; }, async prepare() { return { command: "fake", args: [], cwd: "/unknown", env: {}, temporaryFiles: [] }; } }]]),
       backend: {
         name: "local",
         async healthCheck() { return { ok: true, message: "ok" }; },

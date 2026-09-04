@@ -1,6 +1,6 @@
 import { delimiter, dirname, join } from "node:path";
 import { agentRegistry } from "../agents/registry";
-import { atomicRuntimeFile, baseRuntimeEnvironment, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
+import { atomicRuntimeFile, baseRuntimeEnvironment, compactBridgeEnabled, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
 import { claudePermissions } from "./permission-rules";
 import type { PrepareRuntimeInput, RuntimeAdapter, RuntimeHealth, RuntimeLaunchSpec } from "./runtime-adapter";
 
@@ -12,6 +12,22 @@ export interface ClaudeRuntimeAdapterOptions {
 
 export class ClaudeRuntimeAdapter implements RuntimeAdapter {
   readonly name = "claude" as const;
+
+  /**
+   * Measured on Claude Code 2.1.259 (schema, 2026-09-03) and 2.1.240 (live, 2026-09-04):
+   * headless on darwin, and inherited TTY on win32 with `trigger=manual`. Both runs put
+   * reinjection inside the compaction:
+   *
+   *   PreCompact -> SessionStart(source="compact") -> PostCompact
+   *
+   * so `PostCompact` is not a safe place to learn that a compaction finished, and a
+   * `PreCompact` with no `PostCompact` after it is ordinary — one was measured.
+   */
+  readonly compact = Object.freeze({
+    preCompact: true,
+    postCompact: true,
+    sessionStartAfterCompact: true,
+  });
   private readonly platform: NodeJS.Platform;
   private readonly env: NodeJS.ProcessEnv;
   private readonly hooksDirectory: string;
@@ -68,6 +84,16 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
         hooks: {
           SessionStart: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-boot.cjs")) }] }],
           Stop: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-end.cjs")) }] }],
+          // Gated on the flag (§10) and on the pinned capability — the latter only ever
+          // withholds a registration this build cannot back up with a measured event. No
+          // matcher: the measured `trigger` values are `manual`/`auto` and the bridge wants
+          // both.
+          ...(compactBridgeEnabled(this.env) && this.compact.preCompact ? {
+            PreCompact: [{ hooks: [{ type: "command", command: `${hookCommand(join(this.hooksDirectory, "compact-record.cjs"))} pre claude` }] }],
+          } : {}),
+          ...(compactBridgeEnabled(this.env) && this.compact.postCompact ? {
+            PostCompact: [{ hooks: [{ type: "command", command: `${hookCommand(join(this.hooksDirectory, "compact-record.cjs"))} post claude` }] }],
+          } : {}),
         },
         permissions: claudePermissions({
           policy,
@@ -91,7 +117,7 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
       `${JSON.stringify(skillRoots.split(delimiter).filter(Boolean), null, 2)}\n`,
     );
     const env = {
-      ...baseRuntimeEnvironment(capsule, contextFiles),
+      ...baseRuntimeEnvironment(capsule, contextFiles, artifacts),
       ALP_EXECUTION_ROOT: dirname(artifacts.directory),
       ALP_MEMORY_ROOT: this.memoryRoot(),
       ALP_IDENTITY_CAPSULE: capsuleFile,

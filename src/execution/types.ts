@@ -72,6 +72,11 @@ export interface ExecutionArtifactPaths {
   readonly stateFile: string;
   readonly policyFile: string;
   readonly runtimeDirectory: string;
+  /** `context/`, `0700`, survives `runtime/` cleanup — see plan §7. */
+  readonly contextDirectory: string;
+  readonly checkpointFile: string;
+  readonly continuityFile: string;
+  readonly compactEventsFile: string;
 }
 
 export interface PreparedExecution {

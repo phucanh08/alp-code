@@ -43,6 +43,25 @@ const record = {
   task: taskMatch ? readFileSync(taskMatch[1], "utf8") : null,
   runtimeConfig: process.env.ALP_RUNTIME_CONFIG ? readFileSync(process.env.ALP_RUNTIME_CONFIG, "utf8") : null,
 };
+// Compact-bridge mode: stand in for what the real runtime binary does around compaction —
+// dispatch the pre/post fixtures straight to the real hook script, then fire SessionStart a
+// second time to capture the reinjected continuity, exactly the way both runtimes were
+// measured to sequence it (plan §Gate CB-0: PreCompact/PostCompact around one SessionStart).
+if (process.env.ALP_E2E_COMPACT_FIXTURES) {
+  const { spawnSync } = require("node:child_process");
+  const hooksDir = process.env.ALP_E2E_HOOKS_DIR;
+  const fixtures = JSON.parse(readFileSync(process.env.ALP_E2E_COMPACT_FIXTURES, "utf8"));
+  for (const fixture of fixtures) {
+    spawnSync(process.execPath, [join(hooksDir, "compact-record.cjs"), fixture.phase, fixture.runtime], {
+      input: JSON.stringify(fixture.payload),
+      env: process.env,
+    });
+  }
+  const reinject = spawnSync(process.execPath, [join(hooksDir, "session-boot.cjs")], { env: process.env });
+  const parsed = JSON.parse(reinject.stdout.toString("utf8"));
+  record.reinjected = parsed.hookSpecificOutput.additionalContext;
+}
+
 writeFileSync(join(process.env.ALP_E2E_CAPTURE, ${JSON.stringify(runtime)} + ".json"), JSON.stringify(record, null, 2));
 
 if (process.env.ALP_E2E_OUTPUT) {
@@ -89,6 +108,16 @@ export interface RuntimeCapture {
   /** Null for an interactive launch — there is no task until the principal sends one. */
   readonly task: string | null;
   readonly runtimeConfig: string;
+  /** Set only in compact-bridge mode: the `additionalContext` from a second, simulated
+   * `SessionStart(source="compact")` fired after the fixture pre/post events. */
+  readonly reinjected?: string;
+}
+
+/** One fixture pre/post payload the fake runtime feeds straight into `compact-record.cjs`. */
+export interface CompactFixture {
+  readonly phase: "pre" | "post";
+  readonly runtime: RuntimeId;
+  readonly payload: Readonly<Record<string, unknown>>;
 }
 
 const roots: string[] = [];
@@ -105,6 +134,10 @@ export async function createE2eEnvironment(options: {
   /** Prose the fake runtime writes back as the execution's answer. */
   readonly output?: string;
   readonly exitCode?: number;
+  /** Sets `ALP_COMPACT_BRIDGE=1` on both adapters. */
+  readonly compactBridge?: boolean;
+  /** Fed straight into `compact-record.cjs` by the fake runtime, in order. */
+  readonly compactFixtures?: readonly CompactFixture[];
 } = {}): Promise<E2eEnvironment> {
   // Canonical from the start: the execution service realpaths every workspace it prepares.
   const root = await realpath(await mkdtemp(join(tmpdir(), "alp-e2e-")));
@@ -157,19 +190,32 @@ export async function createE2eEnvironment(options: {
     store: new FileExecutionStore({ root: executionsRoot }),
   });
   // Adapters probe PATH, so the fake bin directory is the only runtime they can find.
-  const adapterEnv = { HOME: root, PATH: binDirectory, ALP_REPO_ROOT: root, ALP_MEMORY_ROOT: memoryRoot };
+  const adapterEnv = {
+    HOME: root,
+    PATH: binDirectory,
+    ALP_REPO_ROOT: root,
+    ALP_MEMORY_ROOT: memoryRoot,
+    ...(options.compactBridge ? { ALP_COMPACT_BRIDGE: "1" } : {}),
+  };
   const adapters = new Map<RuntimeId, RuntimeAdapter>([
     // No pinned platform: these adapters really spawn, so they must resolve the command
     // the way the host does. Pinning "linux" on Windows yields a name nothing can launch.
     ["claude", new ClaudeRuntimeAdapter({ env: adapterEnv, hooksDirectory })],
     ["codex", new CodexRuntimeAdapter({ env: adapterEnv, hooksDirectory })],
   ]);
+  let compactFixturesFile: string | undefined;
+  if (options.compactFixtures) {
+    compactFixturesFile = join(root, "compact-fixtures.json");
+    await writeFile(compactFixturesFile, JSON.stringify(options.compactFixtures));
+  }
   const runtimeEnv: NodeJS.ProcessEnv = {
     PATH: binDirectory,
     HOME: root,
     ALP_E2E_CAPTURE: captureDirectory,
+    ALP_E2E_HOOKS_DIR: hooksDirectory,
     ...(options.output === undefined ? {} : { ALP_E2E_OUTPUT: options.output }),
     ...(options.exitCode === undefined ? {} : { ALP_E2E_EXIT: String(options.exitCode) }),
+    ...(compactFixturesFile === undefined ? {} : { ALP_E2E_COMPACT_FIXTURES: compactFixturesFile }),
   };
 
   return {

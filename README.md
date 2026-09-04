@@ -162,6 +162,25 @@ agent logic. Policy authorize trước mọi store call; optimistic versioning v
 `memory/` không đi theo Git. Bootstrap chỉ chép scaffold còn thiếu. `alp uninstall` mặc
 định chuyển toàn bộ memory sang backup cạnh installation; chỉ `--purge-memory` mới xoá nó.
 
+## Continuity qua compaction
+
+Claude Code và Codex CLI tự nén (compact) transcript của chính chúng khi hết context. ALP giữ
+một checkpoint nhỏ ở ngoài — objective và các quyết định/ràng buộc đã pin — và trả nó lại ngay
+sau lần compact kế tiếp, không copy native summary, không synthetic turn:
+
+```bash
+alp context status                  # objective, số pin, generation, restore mode
+alp context pin decision -- "chose X over Y because Z"
+alp context pin constraint -- "do not touch Z"
+alp context validate                # kiểm checkpoint + journal
+```
+
+`alp context pin`/`unpin` chạy được cả từ CLI của principal lẫn từ trong một phiên agent (nó
+đọc `ALP_DELEGATION_EXECUTION_ID` từ môi trường). Tắt hoàn toàn bridge bằng cách không đặt
+`ALP_COMPACT_BRIDGE=1` — checkpoint và continuity vẫn được seed/reinject bình thường, chỉ riêng
+việc ghi journal lúc `PreCompact`/`PostCompact` là opt-in. Đừng pin secret hay nội dung file:
+pin đọc lại được bằng `cat` và reinject thẳng vào context window của model.
+
 ## Bảo trì
 
 | Lệnh | Việc |
@@ -197,6 +216,7 @@ src/
   memory/       storage-neutral service + Markdown/remote adapters
   execution/    identity capsules, policy snapshots, execution state
   workflow/     state machine và output validation/repair
+  context/      cross-runtime compact bridge (checkpoint, journal, continuity render)
   runtime/      Claude/Codex launch-spec adapters
   backend/      runtime-neutral execution lifecycle (child process + supervisor)
   delegation/   request normalization, execution tracking, result routing
@@ -217,9 +237,10 @@ npm test
 for f in scripts/test-*.cjs; do node "$f" || break; done
 ```
 
-`npm test` chạy unit, contract, integration và E2E. Bốn suite E2E (`test/e2e/`) dựng fake
-runtime binaries cho `claude`/`codex` để kiểm launch contract, delegation, memory isolation
-và runtime selection mà không gọi model trả phí. Chín script `scripts/test-*.cjs` giữ phần
+`npm test` chạy unit, contract, integration và E2E. Năm suite E2E (`test/e2e/`) dựng fake
+runtime binaries cho `claude`/`codex` để kiểm launch contract, delegation, memory isolation,
+runtime selection và compact bridge (pin → fixture compaction → reinject) mà không gọi model
+trả phí. Chín script `scripts/test-*.cjs` giữ phần
 cross-platform: CLI link, Codex role, delegation, execution hooks, runtime/Windows
 installer, update và uninstall — trong đó uninstall có process-level fixture để chứng minh
 CLI vẫn hoàn tất sau khi xoá installation đang chứa code của chính nó.

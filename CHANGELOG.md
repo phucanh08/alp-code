@@ -8,6 +8,55 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thêm
+
+- **Continuity qua compaction.** Claude Code và Codex CLI tự nén transcript khi hết context, và
+  cái bị nén đi trước tiên là những gì đã chốt từ sớm: objective, ràng buộc, quyết định đã cân
+  nhắc xong. ALP giờ giữ một checkpoint nhỏ **ngoài** transcript và trả nó lại ở `SessionStart`
+  ngay sau lần compact kế tiếp. Không copy native summary, không chèn synthetic turn — chỉ
+  đúng phần ALP tự biết là quan trọng vì chính agent hoặc principal đã pin nó.
+
+  ```bash
+  alp context status                  # objective, số pin, generation, restore mode
+  alp context pin decision -- "chose X over Y because Z"
+  alp context pin constraint -- "do not touch Z"
+  alp context unpin <pin-id>
+  alp context validate                # kiểm checkpoint + journal
+  ```
+
+  `pin`/`unpin` chạy được cả từ CLI của principal lẫn từ trong một phiên agent — không có
+  execution ID trên dòng lệnh thì nó đọc `ALP_DELEGATION_EXECUTION_ID`. Bốn loại pin
+  (`decision`, `constraint`, `open-item`, `next-action`) tương ứng bốn mục trong bản chiếu
+  Markdown mà model đọc lại.
+
+  Checkpoint và `continuity.md` được seed ngay trong `ExecutionService.prepare()`, nên một
+  execution mới không bao giờ có continuity rỗng vì bị bỏ quên: riêng objective đã đáng
+  reinject. Cả hai nằm dưới `context/` trong execution root, ghi atomic như mọi artifact khác.
+
+- **`ALP_COMPACT_BRIDGE=1`** bật phần ghi journal lúc `PreCompact`/`PostCompact`. Đây là phần
+  duy nhất opt-in; seed và reinject checkpoint chạy mặc định. Hook `hooks/compact-record.cjs`
+  không có dependency, chỉ append envelope đã lọc vào `context/compact-events.jsonl` — journal
+  append-only, replay ra được generation hiện tại và compaction nào đang dang dở.
+
+  Cái đi vào journal là **whitelist**, không phải blacklist. Payload đo thật ngày 2026-09-04
+  mang những trường không schema nào của binary khai báo (`context_tokens`,
+  `estimated_cache_write_usd`, `prompt_cache_likely_expired`, `seconds_since_last_response`),
+  và mang khác nhau tuỳ `source`; blacklist sẽ ghi hết chúng vào file ALP giữ lại.
+  `compact_summary` bị loại theo tên lẫn theo luật — đo được 22–32 KB, so với giới hạn 16 KiB
+  một dòng journal.
+
+- Hai adapter khai báo `CompactCapabilities` đã ghim theo phiên bản CLI, và bridge chỉ bật
+  những event mà capability đó xác nhận. Thứ tự event **khác nhau giữa hai runtime** và ALP
+  không giả vờ là chúng giống nhau: Claude phát
+  `PreCompact → SessionStart(source="compact") → PostCompact` (reinjection nằm *trong* lúc
+  compact, nên `PostCompact` không phải chỗ an toàn để biết compaction đã xong), còn Codex
+  phát `PreCompact → PostCompact → SessionStart`.
+
+### Thay đổi
+
+- Codex adapter nhận `hooksDirectory` tường minh trong `defaultDependencies` thay vì suy ra
+  ngầm từ `ALP_REPO_ROOT` — nó wire bốn hook thay vì hai kể từ bản này.
+
 ## [0.6.0] - 2026-09-03
 
 ### Đã gỡ
