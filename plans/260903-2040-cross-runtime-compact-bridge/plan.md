@@ -666,8 +666,15 @@ Thêm sau khi chạy thật (2026-09-03):
 - `EXPECTED.claude.SessionStart.optional` nới ra cho các field telemetry chỉ thấy khi chạy thật.
 
 Đã chạy thật trên darwin: Claude headless đủ vòng đời compact, 3 lần liên tiếp giống hệt nhau;
-Codex tới `SessionStart` thì hết usage limit. **Inherited-TTY và Windows chưa test** — hai ô cuối
-của gate.
+Codex tới `SessionStart` thì hết usage limit. Windows đã đo ngày 2026-09-04 (Codex, headless), và
+inherited-TTY cũng đã đo cùng ngày trên cả hai runtime — xem §Gate CB-0. **Gate đã qua.**
+
+Thêm sau lần đo Windows (2026-09-04):
+
+- **Resolve binary thay vì đoán đuôi.** `launchSpec()` từng hard-code `${runtime}.cmd` trên win32;
+  bản cài winget không có `.cmd` nào và probe chết ở `EINVAL`. Giờ đi PATH + PATHEXT như
+  `resolveRuntimeCommand()`, và gỡ shim npm như `windows-shim.ts`. Probe phải launch runtime
+  giống production, không chỉ quote hook giống production.
 
 ### Task 0.2: Freeze contract
 
@@ -708,7 +715,8 @@ Ghi chú:
 | Schema khớp bản pin | ✅ | ✅ |
 
 Chế độ chạy là **headless** (`claude -p`, `codex exec`), không phải inherited-TTY. Report của probe
-in rõ chế độ để không nhận vơ. Inherited-TTY vẫn phải xác nhận bằng tay.
+in rõ chế độ để không nhận vơ. Inherited-TTY được đo riêng bằng tay, cùng ngày, và cho cùng kết
+quả — xem cuối §Gate CB-0.
 
 Cách ép auto-compaction trên Codex (không có `/compact` trong `exec`): bóp context window bằng
 hai key top-level của `ConfigToml`, rồi giao một task nhiều turn:
@@ -781,13 +789,224 @@ timeout to 3s`) — không ảnh hưởng compact hook, nhưng đừng trông v�
    đọc được từ transcript rollout (`event_msg` kiểu `token_count`), nhưng **không** từ hook
    payload; nếu sau này cần token thật thì đó là đường duy nhất, và nó tốn một lần đọc file.
 
-**Còn lại chặn CB-3:**
+**Probe chạy thật, win32, 2026-09-04** (Codex 0.153.0 headless, `codex.exe` từ winget):
 
-| Câu hỏi | Runtime | Cách đo |
+Ô Windows của gate đã đóng. 72 hook invocation, **23 lần auto-compact** trong một phiên `exec`,
+không drift schema. Chuỗi event giống hệt darwin:
+
+```
+Codex/win32:  PreCompact → PostCompact → SessionStart(source="compact")
+```
+
+Ba phát hiện darwin được xác nhận lại trên Windows, không cái nào là hành vi riêng của macOS:
+`turn_id` giữ nguyên một digest (`8f8ac1f2`) qua cả 23 compaction — nên nó vẫn không dùng làm
+correlator được (phát hiện 2); `PostCompact` đúng 7 field, 420 byte, **không** `compact_summary`
+(phát hiện 6); và auto-compaction vẫn dồn dập, ở đây còn dày hơn darwin.
+
+Về chính câu hỏi quoting: dạng lệnh hook mà `hookCommand()` sinh trên Windows —
+`node "<script>" …`, interpreter trần vì `process.execPath` là
+`C:\Program Files\nodejs\node.exe` và có space — **chạy được**, cả 72 lần. Ghi chú trong
+`codex-adapter.ts` đúng như đã viết.
+
+7. **Cái hỏng trên Windows không phải quoting, mà là cách probe launch runtime.** `launchSpec()`
+   hard-code `${runtime}.cmd` trên win32. Đó chỉ đúng với bản cài npm; bản winget đặt
+   `codex.exe`/`claude.exe` trần trên PATH và **không có `.cmd` nào cả**, nên probe chết ở
+   `spawnSync codex.cmd EINVAL` trước khi một hook nào kịp fire — và triệu chứng "không hook nào
+   fire trên Windows" trông y hệt lỗi quoting mà probe sinh ra để phát hiện. Đã sửa: resolve
+   binary theo PATH + PATHEXT như `resolveRuntimeCommand()` production, rồi gỡ shim `.cmd`/`.bat`
+   theo đúng cách `windows-shim.ts` làm (Node từ chối spawn `.cmd`, và `shell: true` sẽ cho
+   cmd.exe parse lần hai cái command string đầy quote và backslash).
+
+**Lần đo inherited-TTY thứ nhất, win32, 2026-09-04 — một nửa dùng được:**
+
+`run.json` ghi `"mode": "inherited-TTY"` trên cả hai runtime, và đây là phần **kết luận được**:
+
+| | Claude 2.1.240 | Codex 0.153.0 |
 |---|---|---|
-| Hook có dispatch trong **inherited-TTY** không | cả hai | chạy probe không có `-p`/`exec`, gọi `/compact` bằng tay |
-| Compaction `manual` trên Codex (`/compact` trong TTY) có khác `auto` không | Codex | như trên |
-| Quoting hook command trên Windows | Codex | chạy probe trên Windows, so với ghi chú `hookCommand()` trong `codex-adapter.ts` |
+| `SessionStart` dispatch trong TTY | ✅ | ✅ |
+| `additionalContext` tới được model | ✅ `ALP-PROBE-ADA5B5DB` | ✅ `ALP-PROBE-746A2E7F` |
+| `Stop` dispatch trong TTY | ✅ | ✅ |
+
+Tức là **đường reinject mà cả thiết kế này dựa vào — `SessionStart` + `additionalContext` — chạy
+trong inherited-TTY trên cả hai runtime.** Đó là rủi ro lớn nhất của CB-3 và nó đã hạ.
+
+**Cả hai runtime fire compact hook trong inherited-TTY.** Đo trên win32, 2026-09-04, mỗi runtime
+hai phiên độc lập, phiên cuối đóng sạch (`SessionEnd` có mặt, `report.md` tự ghi):
+
+```
+Claude/win32/TTY:  PreCompact(manual) → SessionStart(source="compact") → PostCompact(manual)
+Codex /win32/TTY:  PreCompact(manual) → PostCompact(manual) → SessionStart(source="compact")
+```
+
+**Cả hai thứ tự khớp đúng bản đo darwin headless.** Điểm 1 của §"Bốn phát hiện" — hai runtime
+ngược nhau, và điểm hợp nhất duy nhất là `SessionStart(source="compact")` — đứng vững ở cả hai
+chế độ chạy và cả hai OS. Đó không phải hành vi riêng của macOS, của headless, hay của `auto`.
+
+**`PreCompact` có thể fire mà không có `PostCompact` đi kèm.** Phiên Claude `d4b3edc6`:
+
+```
+01:30:33  PreCompact(manual)     ← không có PostCompact nào theo sau
+01:31:00  Stop
+01:31:03  PreCompact(manual)     ← lần này mới đi hết vòng
+01:31:36  SessionStart(compact)
+01:31:37  PostCompact(manual)
+```
+
+Một compaction được khởi động rồi bỏ dở. Reducer của journal vì thế phải chịu được `started` mồ
+côi **không phải như trường hợp hiếm**, mà như chuyện thường ngày — và `alp context status` không
+được coi `started` không cặp là dữ liệu hỏng. Đây cũng là lý do thứ hai để không dùng
+`PostCompact` làm điểm reinject.
+
+Và so với `auto` đã đo headless, **payload giống hệt nhau về cấu trúc**:
+
+| | PreCompact | PostCompact |
+|---|---|---|
+| field, cả `manual` lẫn `auto` | `session_id, turn_id, transcript_path, cwd, hook_event_name, model, trigger` | như trên |
+| khác biệt | chỉ giá trị `trigger` | chỉ giá trị `trigger` |
+
+Chênh lệch byte (346/347 `manual` so với 419/420 `auto`) chỉ là độ dài `cwd` của hai lần chạy,
+không phải field thừa. Ô "manual có khác auto không" vì thế đóng: **không khác**, một normalizer
+là đủ cho cả hai.
+
+**Codex phát `SessionStart(source="compact")` ở đầu lượt kế tiếp, không phải lúc compaction xong.**
+Hai phiên đầu (`4176f076`, `6b63a715`) đều thoát ngay sau khi compact nên không thấy nó, và suýt
+nữa đã được ghi thành "Codex không bao giờ phát". Phiên `08864a48` làm đủ bước 4 và cho câu trả
+lời:
+
+```
+01:40:55.888  PreCompact(manual)      turn=ce65e50a
+01:41:00.261  PostCompact(manual)     turn=ce65e50a
+01:41:07.361  SessionStart(compact)   marker ALP-PROBE-7920E75E   ← +7.1s, là lúc người gõ prompt
+01:41:09.748  Stop                    turn=aa89b528
+```
+
+Khoảng 7.1 giây giữa `PostCompact` và `SessionStart` là thời gian gõ phím của người dùng, không
+phải độ trễ của Codex — nếu nó phát ngay sau compaction thì khoảng đó dưới một giây. Đối chiếu
+Claude cùng ngày: `PreCompact` 01:31:03 → `SessionStart(compact)` 01:31:36 → `PostCompact`
+01:31:37, tức trên Claude việc reinject nằm **bên trong** chính quá trình compaction.
+
+**Và context có tới được model thật.** Bước 4 hỏi lại marker, model trả `ALP-PROBE-7920E75E` —
+đúng marker của `SessionStart(source="compact")`, khác marker `ALP-PROBE-A35ABFD3` lúc mở phiên.
+Đây là bằng chứng đầu-cuối cho đường reinject trên Codex trong inherited-TTY, không chỉ là chuyện
+hook có chạy.
+
+Hệ quả cho `alp context status`: trên Codex có một khoảng giữa "compaction xong" và "lượt sau bắt
+đầu" mà journal đã `completed` nhưng chưa reinject lần nào. Không mất gì — khoảng đó không có
+lượt model nào — nhưng nó là **ảnh gương** của trường hợp `pending` trên Claude đã ghi ở phát hiện
+1, và reader của `continuity.md` vẫn không được giả định gì về trạng thái journal.
+
+**`turn_id` của Codex hành xử khác nhau giữa TTY và headless.** Trong TTY, mỗi compaction có
+`turn_id` riêng, khác `turn_id` của các `Stop` xung quanh, và `PreCompact`/`PostCompact` của cùng
+một compaction dùng chung nó (`39ae8923`, rồi `eb5456d4`). Trong `exec`, cả 23 compaction dùng
+chung một `turn_id` gốc. Quyết định ở phát hiện 2 — Codex phải dùng sequence do ALP tự cấp — vì
+thế **giữ nguyên**: `turn_id` đúng trong TTY nhưng gộp nhầm trong `exec`, và bridge phải chạy
+được ở cả hai.
+
+**Claude: `/compact` chạy được ngay khi gõ đúng.** Phiên `d4b3edc6` cho đủ vòng đời. Hai lần đầu
+(`fbf7677d`, và lần 01:22) không phải lỗi runtime: user message được ghi đúng là `" /compact"`,
+**có space ở đầu**, nên Claude Code không nhận ra slash command và gửi thẳng cho model; model tóm
+tắt hộ và terminal trông y hệt lúc thành công. Transcript `9315fac7-….jsonl` có 0
+`compact_boundary`, trong khi transcript khác cùng máy cùng version thì có — format không phải
+vấn đề, lệnh mới là.
+
+**Hai bài học về cách đọc số đo, không phải về runtime:**
+
+1. *Model sẽ đóng vai.* Hỏi `/compact` như một prompt thì cả hai model đều đáp lại như thể đã
+   compact — Claude "I'll summarize the conversation so far.", Codex thậm chí đáp đúng chuỗi
+   "Context compacted." mà Codex dùng làm UI string. Không đọc transcript của runtime thì không
+   phân biệt được. Report cũ in `PreCompact fired: NO` cho cả "hook không dispatch" lẫn "không có
+   compaction nào", nên nó đọc như bằng chứng CB-3 chết. Đã đổi thành `not observed` kèm cách tự
+   kiểm chứng.
+2. *`events.jsonl` là file đang sống.* Bản đọc đầu tiên bắt được 3 event và kết luận "hook không
+   fire trong TTY"; compaction thật xảy ra 7 phút sau đó và ghi tiếp vào cùng file. Chỉ đọc khi
+   phiên đã đóng, hoặc đọc lại trước khi kết luận. `report.md` vắng mặt lẽ ra đã là dấu hiệu —
+   driver bị Ctrl+C giết nên chưa ai chốt sổ; `--report-only` dựng lại được, nhưng nó dựng lại
+   *trạng thái tại thời điểm gọi*, không phải trạng thái cuối.
+
+**Trạng thái gate:**
+
+**Không còn ô nào. Gate CB-0 đã qua.**
+
+| Câu hỏi | Runtime | Kết quả |
+|---|---|---|
+| ~~`PreCompact`/`PostCompact` dispatch trong inherited-TTY~~ | ~~cả hai~~ | ✅ 2026-09-04, `trigger=manual` |
+| ~~`SessionStart(source="compact")` trong inherited-TTY~~ | ~~cả hai~~ | ✅ 2026-09-04 — Claude trong lúc compact, Codex ở đầu lượt sau |
+| ~~`additionalContext` tới được model sau compaction~~ | ~~cả hai~~ | ✅ 2026-09-04, model đọc lại đúng marker mới |
+| ~~Compaction `manual` có khác `auto` không~~ | ~~Codex~~ | ✅ 2026-09-04 — không khác, chỉ giá trị `trigger` |
+| ~~Quoting hook command trên Windows~~ | ~~Codex~~ | ✅ 2026-09-04, 72 lần, không drift |
+
+Tổng cộng bốn tổ hợp đã đo thật, không tổ hợp nào mâu thuẫn tổ hợp nào: darwin/headless/`auto`,
+win32/headless/`auto`, win32/TTY/`manual` cho Claude, win32/TTY/`manual` cho Codex. Thiết kế ở §7
+— checkpoint do ALP sở hữu, reinject tại `SessionStart(source="compact")`, không bao giờ đọc
+`compact_summary` — không phải sửa gì sau gate.
+
+Docs của cả hai hãng đều nói `PreCompact`/`PostCompact` fire với `trigger` ∈ {`manual`, `auto`}
+và **không** có ngoại lệ nào cho TTY ([Claude Code hooks](https://code.claude.com/docs/en/hooks),
+[Codex hooks](https://learn.chatgpt.com/docs/hooks)). Số đo Codex khớp docs. Ô Claude còn trống là
+vì lệnh chưa chạy, không vì hành vi khác docs.
+
+Nhân tiện từ docs Codex: hook entry có field **`command_windows` / `commandWindows`** — override
+riêng cho Windows. Đó là cơ chế chính thức cho đúng vấn đề mà `hookCommand()` trong
+`codex-adapter.ts` đang tự né bằng cách bỏ quote quanh interpreter. Cách hiện tại **đã đo là chạy**
+(72 lần, xem trên) nên không phải bug; nhưng nếu sau này chạm vào chỗ đó thì `command_windows` là
+đường sạch hơn, và nó cho phép quote interpreter tử tế thay vì phụ thuộc `node` trên PATH.
+
+Hai ô còn lại đều cần **người ngồi trước TTY thật** — không chạy được qua tool harness, vì
+`stdio: "inherit"` ở đó vẫn không phải TTY (`run.json` sẽ ghi `headless (no TTY)`) và không ai gõ
+được `/compact`.
+
+**Runbook chạy lại gate.** Gate đã qua ngày 2026-09-04; giữ runbook này để chạy lại khi CLI lên
+version mới, vì phần inherited-TTY không tự động hoá được. Mở terminal thật (không phải qua
+agent), rồi mỗi runtime một lần:
+
+```bash
+node scripts/probe-compact-hooks.cjs --runtime claude --output ~/alp-probe/claude-tty
+node scripts/probe-compact-hooks.cjs --runtime codex  --output ~/alp-probe/codex-tty
+```
+
+Không truyền `-p`/`exec`, và không bóp context window — lần này đo `manual`, để auto khỏi chen
+vào. Trong phiên, đúng thứ tự script tự in ra: gửi một prompt → hỏi "what is the ALP probe
+marker?" → `/compact` → hỏi marker lại → thoát.
+
+**Ba cái bẫy đã làm hỏng các lần đo ngày 2026-09-04**, mỗi cái tốn một phiên:
+
+- **`/compact` phải là slash command thật.** Gõ tay, đừng paste, không space nào trước dấu `/`.
+  Claude Code nhận `" /compact"` là văn bản thường; model tóm tắt hộ và trông y như compact thành
+  công. Trên Codex, gõ `/` cho popup hiện rồi chọn `compact`. Dấu hiệu đúng: Claude hiện UI
+  compaction, Codex in xác nhận của chính nó chứ không phải một lượt assistant.
+- **Bước 4 không được bỏ.** Sau `/compact` phải gửi thêm một prompt rồi mới thoát. Codex phát
+  `SessionStart(source="compact")` ở **đầu lượt sau**, nên phiên thoát ngay sau compaction sẽ
+  không thấy nó — hai phiên đầu đã thoát sớm và suýt nữa kết luận thành "Codex không bao giờ phát".
+- **Thoát bằng lệnh thoát của CLI** (`/exit`, `Ctrl+D`), đừng Ctrl+C — Ctrl+C giết cả driver và
+  mất `report.md`. Lỡ rồi thì `--report-only` dựng lại được, nhưng chỉ dựng lại *trạng thái tại
+  thời điểm gọi*: `events.jsonl` là file đang sống, đọc lúc phiên còn mở thì thấy thiếu event.
+
+Đọc kết quả:
+
+1. `run.json` phải ghi `"mode": "inherited-TTY"`. Nếu vẫn `headless` thì terminal đó không phải
+   TTY và số đo không tính.
+2. **Xác minh compaction có thật**, trước khi tin bất kỳ ô nào trong §Gate: Claude
+   `~/.claude/projects/<cwd-slug>/<session>.jsonl` phải có compact boundary; Codex
+   `~/.codex/sessions/<ngày>/rollout-*.jsonl` phải cho thấy context co lại, không phải thêm một
+   cặp `task_started`/`task_complete` với token tăng.
+3. `report.md` §Gate, cả ba dòng phải `YES`: `PreCompact` / `PostCompact` /
+   `SessionStart source=compact`. Cột `trigger/source` phải là `manual`.
+4. Bộ field của `PreCompact`/`PostCompact` phải khớp bản `auto` đã pin — trên Codex là
+   `session_id, turn_id, transcript_path, cwd, hook_event_name, model, trigger`. Chênh byte giữa
+   hai lần chạy là độ dài `cwd`, không phải field thừa.
+5. Marker sau `/compact` phải là marker **mới**, khác marker lúc mở phiên — đó là bằng chứng
+   `additionalContext` thật sự tới được model, không chỉ là hook có chạy. Script không đọc hộ
+   được, chép tay từ transcript.
+
+Muốn đo `auto` trong TTY (gate không đòi, nhưng nếu cần tách trigger khỏi chế độ chạy): bóp
+context window bằng đúng hai key đã dùng ở lần đo headless
+(`model_context_window=12000`, `model_auto_compact_token_limit=2000`), truyền sau `--`, và nhớ mọi
+`-c` phải nằm cùng một cấp.
+
+Lưu ý version: bảng gate pin Claude 2.1.259, máy đo win32 có 2.1.240. Phần inherited-TTY vì thế
+đo trên 2.1.240 và report **không báo drift** — payload của hai bản này giống nhau ở những field
+gate quan tâm. Nhưng nếu lần chạy lại nào báo drift thì phải phân biệt: lệch version hay lệch hành
+vi. Cách rẻ nhất là chạy lại trên đúng version đã pin trước khi sửa `EXPECTED`.
 
 **Commit:** `test(context): pin native compact hook contracts`
 
