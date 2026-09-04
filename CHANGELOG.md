@@ -49,6 +49,33 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   execution thật, đọc argv, settings file, `mcp-config.json` và bảng Authority mà không chạy
   runtime. Bộ test mới đi kèm phủ cả ba grant trên cả hai adapter.
 
+- **`autoCompactTokens` — ngưỡng compact khai theo vai.** Trước bản này, một execution ALP
+  spawn ra nén transcript theo cửa sổ mặc định của runtime, tức theo cấu hình của **máy** đang
+  chạy chứ không theo vai đang chạy. Nhưng "còn nhớ được bao nhiêu" là thuộc tính của vai:
+  `main` giữ cả bức tranh nên phải giữ được tối đa model cho phép, còn một `search` phình tới
+  150k token là đã hỏng — nén sớm là cách hỏng rẻ hơn. Field mới nằm trên `AgentDefinition`,
+  vào `definitionHash` và `policyHash`, và dịch khác nhau ở hai runtime: Claude nhận
+  `autoCompactWindow` trong settings file của execution, Codex nhận
+  `-c model_auto_compact_token_limit=` **trên argv** — cùng lý do với hook và MCP, vì
+  `codex-config.toml` là file ALP ghi chứ không phải file Codex đọc.
+
+  Ngân sách của tám vai built-in:
+
+  | Vai | Token | Vì sao |
+  |---|---:|---|
+  | `main` | 500 000 | Ghế giữ toàn cảnh; giữ tối đa những gì model chứa được |
+  | `oracle` | 400 000 | Suy luận trên cả tập bằng chứng một lượt |
+  | `librarian` · `review` | 300 000 | Doc trích nguyên văn; diff cộng code quanh nó |
+  | `read-thread` | 200 000 | Một thread là hữu hạn — đây là trần, không phải kỳ vọng |
+  | `search` · `compaction` | 150 000 | Không được phép phình; viết handoff chứ không gom corpus |
+  | `titling` | 100 000 | Sàn; một cái tiêu đề gần như không cần gì |
+
+  Trần thi hành lúc registry load: số nguyên trong khoảng 100 000–1 000 000, ngoài khoảng thì
+  `INVALID_AUTO_COMPACT_LIMIT`. Biên là biên Claude công bố; Codex không công bố biên nào, và
+  dùng chung một khoảng là thứ giữ cho một con số khai ra có nghĩa trên cả hai runtime. Bỏ
+  trống vẫn hợp lệ và có nghĩa là "để runtime tự chọn" — snapshot ghi `null` chứ không bỏ khoá,
+  vì policy phải nói điều đó ra thành lời.
+
 ### Thay đổi
 
 - **Mọi delegated execution giờ chạy với `--mcp-config` tường minh cộng `--strict-mcp-config`.**

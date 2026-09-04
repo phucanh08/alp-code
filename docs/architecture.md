@@ -125,7 +125,8 @@ sự tồn tại của backend cho một request đã bị policy từ chối.
 
 ```ts
 { id, displayName, model: {claude, codex}, reasoningEffort: {claude, codex},
-  reportsTo, delegatesTo, capabilities: {tools, memory, workspace},
+  reportsTo, delegatesTo, autoCompactTokens?,
+  capabilities: {tools, skills, subagents, mcpServers, memory, workspace},
   instructions(), workflow, output }
 ```
 
@@ -138,6 +139,7 @@ load, kể cả bởi code trong cùng process.
 |---|---|
 | id trùng | `DUPLICATE_AGENT` |
 | id/displayName/model/workflow rỗng, effort không hợp lệ | `INVALID_AGENT` |
+| `autoCompactTokens` không nguyên hoặc ngoài 100k–1M | `INVALID_AUTO_COMPACT_LIMIT` |
 | tool ngoài `TOOL_CATALOG` | `UNKNOWN_TOOL` |
 | workspace write root không nằm trong read root | `INVALID_WORKSPACE_GRANT` |
 | memory write grant không được read grant bao phủ | `INVALID_MEMORY_GRANT` |
