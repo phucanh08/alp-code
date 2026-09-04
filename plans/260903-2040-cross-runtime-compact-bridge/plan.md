@@ -1,13 +1,13 @@
 ---
 title: "ALP Cross-runtime Compact Bridge"
 description: "Giữ objective, decisions và constraints sống qua native compaction của Claude Code và Codex CLI, bằng một journal append-only và một checkpoint file — không SDK, không model API, không lock."
-status: pending
+status: done
 priority: P1
 effort: 4.75-5.75d
 branch: feat/compact-bridge
 tags: [feature, context, runtime, hooks]
 created: 2026-09-03
-revised: 2026-09-03
+revised: 2026-09-04
 ---
 
 # ALP Cross-runtime Compact Bridge — Master Plan
@@ -1155,6 +1155,9 @@ decisions`, cắt hết một mục mới sang mục kế; objective bị bỏ n
 3. Test section nêu đúng cả 4 kind pin và không dạy identity flag nào.
 4. Test snapshot session context cũ chỉ thêm đúng khối này.
 
+**Xong 2026-09-04.** 3 test mới. Gated đúng theo session-wide `Bash` grant, cùng vị trí
+(ngay sau `## Delegation`) và cùng giọng với `delegationSection()`.
+
 ### Task 2.3: Hook entrypoint
 
 **Files:** create `hooks/compact-record.cjs`, `test/hooks/compact-record.test.ts`.
@@ -1169,6 +1172,10 @@ decisions`, cắt hết một mục mới sang mục kế; objective bị bỏ n
 
 **Test:** `npm test -- test/hooks/compact-record.test.ts test/context`
 
+**Xong 2026-09-04.** 10 test. Một cạm bẫy môi trường, không phải bug của hook: `execFile`'s
+`input` convenience treo child khi child đọc `readFileSync(0)` đồng bộ trên máy này — test
+chuyển sang `spawn` + write/end thủ công lên stdin, khớp đúng cách runtime thật nạp payload.
+
 ### Task 2.4: SessionStart reinjection
 
 **Files:** modify `hooks/session-boot.cjs`, `src/runtime/adapter-files.ts`, `test/hooks/session-boot.test.ts`.
@@ -1181,6 +1188,11 @@ decisions`, cắt hết một mục mới sang mục kế; objective bị bỏ n
 4. Giữ fallback `.alp/agents/<role>.md` cho native direct launch.
 5. Xác nhận không sinh positional task.
 6. Giữ hook không load `dist/`.
+
+**Xong 2026-09-04.** 6 test mới trong `session-boot.test.ts`. Missing/empty continuity là
+trạng thái bình thường (im lặng, không warning) — một execution chưa có pin nào hoặc chạy
+với flag off là chuyện thường ngày, không phải lỗi; chỉ oversize hoặc read error thật (EISDIR
+dùng để giả lập cross-platform, thay vì chmod không đáng tin trên Windows) mới warn.
 
 **Commit:** `feat(context): seed, record and reinject continuity`
 
@@ -1203,6 +1215,10 @@ decisions`, cắt hết một mục mới sang mục kế; objective bị bỏ n
 5. Continuity file vào `env`, **không** vào `temporaryFiles` (nếu vào sẽ bị cleanup xoá).
 6. Chứng minh interactive launch vẫn không có task file/argument.
 
+**Xong 2026-09-04.** Không matcher (đúng như quyết định — bao cả `manual` và `auto`). Gated
+kép: flag **và** `this.compact.preCompact`/`postCompact` — flag mở khả năng, capability xác
+nhận runtime này thật sự làm được, một adapter mới không lặng lẽ đăng ký thứ chưa đo.
+
 ### Task 3.2: Codex
 
 **Files:** modify `src/runtime/codex-adapter.ts`, `src/cli/alp.ts`, `test/runtime/runtime-adapters.test.ts`.
@@ -1213,6 +1229,10 @@ decisions`, cắt hết một mục mới sang mục kế; objective bị bỏ n
 2. Giữ nguyên interpreter không quote trên Windows của Codex.
 3. Truyền `hooksDirectory` cho `CodexRuntimeAdapter` trong `defaultDependencies` (hiện chỉ Claude được truyền; Codex đang dựa vào `ALP_REPO_ROOT` do `scripts/alp.cjs` set — thêm hai hook nữa thì phụ thuộc ngầm này thành rủi ro thật).
 4. Parity assertion cho hook command và env giữa hai runtime.
+
+**Xong 2026-09-04.** `defaultDependencies()` trong `cli/alp.ts` nay truyền `hooksDirectory`
+tường minh cho cả hai adapter — dependency ngầm vào `ALP_REPO_ROOT` không còn phải gánh thêm
+hai hook nữa.
 
 ### Task 3.3: Conformance matrix
 
@@ -1227,6 +1247,10 @@ continuity   empty | populated | corrupt
 **Test:** `npm test -- test/runtime/runtime-adapters.test.ts test/hooks/session-boot.test.ts`
 
 Kỳ vọng: cú pháp khác nhau theo runtime; checkpoint logic và invariant zero-turn giống nhau.
+
+**Xong 2026-09-04.** 3 test mới (`describe("compact bridge flag")`) xác nhận: đúng hai event
+được thêm/bớt theo flag trên mỗi runtime, không đổi gì khác trong launch spec; và
+`ALP_CONTINUITY_CONTEXT`/`ALP_COMPACT_EVENTS`/`ALP_POLICY_HASH` có mặt bất kể flag.
 
 **Commit:** `feat(runtime): wire compact bridge into claude and codex`
 
@@ -1248,6 +1272,11 @@ Kỳ vọng: cú pháp khác nhau theo runtime; checkpoint logic và invariant z
 4. `validate` kiểm checkpoint schema + digest + policy binding, mọi dòng journal, và replay ổn định; báo số dòng hỏng.
 5. `status`/`validate` rotate journal khi vượt 1 MiB.
 
+**Xong 2026-09-04.** `status` báo `restore` theo capability của runtime quan sát được gần nhất
+trong journal (`pending ?? lastCompleted`), tái dùng đúng `.compact` đã pin trên adapter thay
+vì giữ bản sao thứ hai. `validate` reduce journal hai lần làm regression guard rẻ nhất cho
+invariant 14 (idempotent lifecycle) — hàm thuần nên lệch nghĩa là có bug thật.
+
 ### Task 4.2: Pin mutations
 
 **Files:** modify `src/cli/commands/context.ts`, `test/cli/alp-context.test.ts`.
@@ -1259,6 +1288,11 @@ Kỳ vọng: cú pháp khác nhau theo runtime; checkpoint logic và invariant z
 3. Cập nhật checkpoint và rerender continuity atomic trong cùng một lệnh.
 4. `unpin` chỉ xoá đúng ID; ID không tồn tại → exit non-zero, checkpoint không đổi.
 5. Test pin không đụng journal và không đụng transcript.
+
+**Xong 2026-09-04.** 17 test trong `alp-context.test.ts`. `pin`/`unpin` chỉ resolve execution
+ID từ env (không có positional slot trong cú pháp của chúng) — khác `status`/`validate`, vốn
+nhận positional trước. `unpin` kiểm tồn tại **trước** khi ghi, nên một ID sai để checkpoint
+nguyên vẹn byte-for-byte.
 
 **Test:** `npm test -- test/cli/alp-context.test.ts test/cli/alp.test.ts`
 
@@ -1288,6 +1322,13 @@ Fake runtime học thêm một chế độ: đọc fixture payload từ env và 
 8. `policyHash` không đổi.
 9. Chạy cùng fixture logic cho cả Claude và Codex.
 
+**Xong 2026-09-04.** Fake runtime học chế độ mới: khi thấy `ALP_E2E_COMPACT_FIXTURES`, nó gọi
+thẳng `compact-record.cjs` thật (không mock) cho từng fixture rồi tự phát một `SessionStart`
+thứ hai qua `session-boot.cjs` thật để bắt lại đúng những gì reinjection thật sự đưa vào —
+đây là bằng chứng đầu-cuối cho cả pipeline: hook thật, journal thật, checkpoint thật, adapter
+thật, chỉ mỗi model là giả. Cả 9 điểm của scenario đều có assertion, chạy `describe.each` cho
+cả hai runtime.
+
 ### Task 5.2: Failure E2E
 
 - Checkpoint hỏng → không inject, session vẫn chạy.
@@ -1300,6 +1341,17 @@ Fake runtime học thêm một chế độ: đọc fixture payload từ env và 
 - Compact rồi Stop bình thường → `session-end.cjs` finalize như cũ.
 - Flag off → không hook nào được đăng ký, mọi thứ khác không đổi.
 
+**Thu hẹp có chủ ý.** Phần lớn danh sách trên đã có test trực tiếp, chi tiết hơn cả một e2e
+có thể verify, ở đúng layer sinh ra hành vi đó: checkpoint hỏng, dòng rác, hook bị kill, start
+mồ côi, restore không hỗ trợ, flag off — tất cả đã nằm trong `checkpoint.test.ts`,
+`compact-journal.test.ts`, `compact-record.test.ts`, `session-boot.test.ts`, và bộ ba test flag
+ở CB-3. Compact-rồi-Stop-bình-thường không cần ca riêng: `session-end.cjs` không đọc gì từ
+`context/`, nên không có đường nào để compact ảnh hưởng nó. Hai e2e test còn thêm
+(`describe("e2e: compact continuity failure modes")`) là hai điều **chỉ** pipeline thật mới
+lộ ra: hai lần compact liên tiếp qua hook thật vẫn ra generation 2 đúng thứ tự, và một
+completion runtime báo hai lần (đo thật trên Claude, xem §Gate CB-0) không bị đếm đôi qua
+đúng cùng file journal mà hook thật ghi.
+
 ### Task 5.3: Docs
 
 **Files:** modify `docs/architecture.md`, `README.md`.
@@ -1307,6 +1359,10 @@ Fake runtime học thêm một chế độ: đọc fixture payload từ env và 
 Ghi: ranh giới ownership; storage layout; lệnh `alp context`; cảnh báo privacy (đừng pin secret); bảng capability theo runtime; giới hạn restore; cách chạy live probe.
 
 `docs/architecture.md` giữ dưới 800 dòng theo house rule — cắt gọn nếu cần.
+
+**Xong 2026-09-04.** `docs/architecture.md` thêm §4.10 (614 dòng, còn dư margin), README thêm
+mục "Continuity qua compaction". Cả hai điểm bắt buộc: storage layout, bảng capability đo
+được, cú pháp `alp context`, cảnh báo đừng pin secret, và lệnh chạy live probe.
 
 ### Final verification
 
@@ -1316,6 +1372,10 @@ npm test
 npm run build
 git diff --check
 ```
+
+**Xong 2026-09-04.** Cả bốn lệnh sạch: `tsc --noEmit` không lỗi, `npm run build` không lỗi,
+`git diff --check` không whitespace issue, và toàn bộ 336 test xanh (34 file — bắt đầu từ 260
+lúc gate CB-0 đóng).
 
 **Commit:** `docs(context): document cross-runtime compact bridge`
 
