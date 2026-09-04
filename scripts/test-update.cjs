@@ -40,7 +40,7 @@ const fakeResolve = async () => ({ ok: true, tag: "v1.0.0", source: "test" });
     const maintenance = path.join(root, "maintenance");
     fs.mkdirSync(path.join(maintenance, "memory"), { recursive: true });
     fs.writeFileSync(path.join(maintenance, "memory", "keep.md"), "memory\n");
-    for (const [relative, body] of [["runtime.json", "codex\n"], ["projects.json", '{"version":1,"projects":[]}\n'], [path.join("delegation", "x", "local.json"), '{"executions":{}}\n']]) {
+    for (const [relative, body] of [["mode.json", '{"mode":"medium"}\n'], ["projects.json", '{"version":1,"projects":[]}\n'], [path.join("delegation", "x", "local.json"), '{"executions":{}}\n']]) {
       const file = path.join(home, ".alp", relative); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, body);
     }
     const protectedPaths = preserveMaintenanceState(maintenance, { env: { HOME: home } }).map((entry) => entry.file);

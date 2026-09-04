@@ -177,15 +177,20 @@ Việc dài hoặc chạy song song dùng `--background`, rồi theo dõi bằng
 ALP không dùng Codex role profile. Runtime adapter luôn truyền model, effort và sandbox từ
 execution snapshot; `alp doctor` kiểm compiled registry và build-source drift.
 
-**`main` chạy được trên cả hai runtime** (`alp --runtime codex`) — đường phụ khi muốn tiết
-kiệm quota Claude. Hai điểm khác specialist nằm trong `src/agents/main.ts`:
+**`main` chạy được trên cả hai runtime, nhưng không ai chọn runtime nữa** (2026-09-04): nấc
+ghim đúng một model cho `main`, và model quyết định CLI. `--mode medium|high|puck` cho `main`
+`gpt-5.6-sol` → Codex; `--mode ultra` cho `claude-fable-5-1` và `--mode low` cho
+`claude-haiku-4-5` → Claude Code. Muốn tiết kiệm quota Claude thì hạ/đổi nấc, không có cờ
+runtime để bật.
 
-- Model Codex là `model.codex` (`gpt-5.6-sol`); Claude là `model.claude`.
+Hai điểm khác specialist nằm trong `src/agents/main.ts`:
+
 - Sandbox là `workspace-write`, nhưng **chỉ** ở workspace đã đăng ký machine-local.
   Ở cwd lạ main vẫn `read-only` như mọi vai khác.
+- Delegation: chỉ `main` có `delegatesTo` khác rỗng.
 
 Đổi lại, Codex không nạp được skill `alp:plan`/`alp:cook` (marketplace của Claude Code) —
-việc cần hai skill đó thì phải chạy main trên Claude.
+việc cần hai skill đó thì phải chạy main ở nấc Claude (`ultra`, hoặc `low`).
 
 Trong phiên tương tác: `/model` để đổi model và effort.
 

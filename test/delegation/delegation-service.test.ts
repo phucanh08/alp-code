@@ -2,6 +2,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { modelForMode, reasoningEffortForMode } from "../../src/agents/modes";
 import { agentRegistry } from "../../src/agents/registry";
 import { DelegationService, FileDelegationExecutionStore, InMemoryDelegationExecutionStore } from "../../src/delegation/delegation-service";
 import { DelegationError } from "../../src/delegation/types";
@@ -129,7 +130,7 @@ function serviceFixture(options: {
     runtimeAdapters: new Map([["codex", runtime]]),
     backend: primary,
     executionStore: store,
-    config: { defaultRuntime: "codex" },
+    config: { mode: "medium" },
     ids: {
       request: () => `req-${++sequence}`,
       execution: () => `exec-${sequence}`,
@@ -144,7 +145,7 @@ const input = {
   targetRole: "search",
   task: "find launcher",
   workspace: process.cwd(),
-  executionOptions: { runtime: "codex" as const, background: true },
+  executionOptions: { background: true },
 };
 
 describe("DelegationService", () => {
@@ -169,8 +170,8 @@ describe("DelegationService", () => {
       metadata: { backend: "primary", runtime: "codex" },
     });
     expect(fixture.runtime.calls[0]).toMatchObject({
-      model: agentRegistry.get("search").model.codex,
-      reasoningEffort: agentRegistry.get("search").reasoningEffort.codex,
+      model: modelForMode(agentRegistry.get("search"), "medium"),
+      reasoningEffort: reasoningEffortForMode(agentRegistry.get("search"), "medium"),
     });
     expect(fixture.store.get("exec-0")).toMatchObject({ backend: "primary", requestId: "request-explicit" });
     expect(fixture.primary.spawnInputs[0]).toMatchObject({
@@ -242,11 +243,16 @@ describe("DelegationService", () => {
     expect(fixture.store.list()[0]).toMatchObject({ status: "failed", backend: "primary" });
   });
 
-  it("returns typed errors for unsupported runtime choices", async () => {
+  /**
+   * Runtime không còn được truyền vào — nó là hệ quả của model mà nấc ghim cho vai. `review`
+   * ở `medium` chạy `claude-opus-5`, nên fixture chỉ đăng ký Codex sẽ trượt ở đây, và phải
+   * trượt bằng lỗi có tên chứ không phải phóng nhầm CLI.
+   */
+  it("returns a typed error when the dialled model's runtime is not registered", async () => {
     const fixture = serviceFixture();
     await expect(fixture.service.delegate({
       ...input,
-      executionOptions: { ...input.executionOptions, runtime: "claude" },
+      targetRole: "review",
     })).rejects.toMatchObject({ code: "RUNTIME_UNAVAILABLE" } satisfies Partial<DelegationError>);
     expect(fixture.primary.calls).toEqual([]);
   });

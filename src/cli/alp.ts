@@ -15,7 +15,7 @@ import { MemoryService } from "../memory/memory-service";
 import { PolicyEngine } from "../policy/policy-engine";
 import { ClaudeRuntimeAdapter } from "../runtime/claude-adapter";
 import { CodexRuntimeAdapter } from "../runtime/codex-adapter";
-import { RuntimeSelector } from "../runtime/runtime-selector";
+import { ModeSelector } from "./mode-selector";
 import { WorkflowRunner } from "../workflow/workflow-runner";
 import { runContextCommand } from "./commands/context";
 import { createDefaultDelegationComposition, runDelegateCommand, runDelegationLifecycleCommand } from "./commands/delegate";
@@ -23,12 +23,12 @@ import { syncIdentityDocuments } from "./commands/identity-sync";
 import { deinitializeProject, initializeProject, ProjectRegistryStore } from "./commands/init";
 import { ensurePrincipalProfile, runPrincipalCommand, type PrincipalCommandInput } from "./commands/principal";
 import { runMainSession, type RunMainInput } from "./commands/run-main";
-import { runRuntimeCommand, type RuntimeCommandInput } from "./commands/runtime";
+import { runModeCommand, type ModeCommandInput } from "./commands/mode";
 import { checkForUpdate, FileUpdateCheckStore } from "./update-check";
 
 export type AlpCommand =
-  | { readonly command: "run-main"; readonly runtime?: RuntimeId; readonly mode?: ModeId }
-  | { readonly command: "runtime"; readonly action: "show" | "set"; readonly runtime?: RuntimeId }
+  | { readonly command: "run-main"; readonly mode?: ModeId }
+  | { readonly command: "mode"; readonly action: "show" | "set"; readonly mode?: ModeId }
   | { readonly command: "init"; readonly project?: string }
   | { readonly command: "deinit"; readonly project?: string }
   | { readonly command: "identity"; readonly action: "sync" }
@@ -40,59 +40,46 @@ export type AlpCommand =
   | { readonly command: "version" }
   | { readonly command: "help" };
 
-function runtimeId(value: string | undefined): RuntimeId {
-  if (value !== "claude" && value !== "codex") throw new Error(`runtime must be claude or codex, got \`${value ?? ""}\``);
-  return value;
-}
+/** Lời nhắn cho mọi chỗ còn gọi runtime — cờ, subcommand, hay tên CLI trần. */
+const RUNTIME_IS_GONE =
+  "runtime không còn là lựa chọn: nấc quyết định model, model quyết định CLI — dùng `alp --mode <nấc>` hoặc `alp mode set <nấc>`";
 
 /**
- * `alp [--runtime <name>] [--mode <nấc>]` — hai cờ độc lập, thứ tự nào cũng được: runtime là
- * *chạy bằng CLI nào*, mode là *khó cỡ nào*. Gõ sai một trong hai thì dừng ngay chứ không rơi
- * về mặc định, vì một phiên chạy nấc khác nấc người dùng tưởng là im lặng tốn tiền hoặc im
- * lặng yếu đi.
+ * `alp [--mode <nấc>]` — một cờ duy nhất. Gõ sai thì dừng ngay chứ không rơi về mặc định, vì
+ * một phiên chạy nấc khác nấc người dùng tưởng là im lặng tốn tiền hoặc im lặng yếu đi.
  */
 function parseRunMainFlags(argv: readonly string[]): AlpCommand {
-  let runtime: RuntimeId | undefined;
   let mode: ModeId | undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
-    const flag = value === "--runtime" || value.startsWith("--runtime=")
-      ? "--runtime"
-      : value === "--mode" || value.startsWith("--mode=")
-        ? "--mode"
-        : undefined;
-    if (flag === undefined) {
-      throw new Error(`unknown option \`${value}\`; usage: alp [--runtime claude|codex] [--mode ${MODE_IDS.join("|")}]`);
+    if (value === "--runtime" || value.startsWith("--runtime=")) throw new Error(RUNTIME_IS_GONE);
+    if (value !== "--mode" && !value.startsWith("--mode=")) {
+      throw new Error(`unknown option \`${value}\`; usage: alp [--mode ${MODE_IDS.join("|")}]`);
     }
     let raw: string | undefined;
-    if (value === flag) { raw = argv[index + 1]; index += 1; } else { raw = value.slice(flag.length + 1); }
-    if (flag === "--runtime") {
-      if (runtime !== undefined) throw new Error("multiple runtime selections are not allowed");
-      if (raw === undefined || raw === "") throw new Error("alp --runtime accepts exactly one runtime");
-      runtime = runtimeId(raw);
-    } else {
-      if (mode !== undefined) throw new Error("multiple mode selections are not allowed");
-      if (raw === undefined || raw === "") throw new Error("alp --mode accepts exactly one mode");
-      mode = parseMode(raw);
-    }
+    if (value === "--mode") { raw = argv[index + 1]; index += 1; } else { raw = value.slice("--mode=".length); }
+    if (mode !== undefined) throw new Error("multiple mode selections are not allowed");
+    if (raw === undefined || raw === "") throw new Error("alp --mode accepts exactly one mode");
+    mode = parseMode(raw);
   }
-  return { command: "run-main", ...(runtime ? { runtime } : {}), ...(mode ? { mode } : {}) };
+  return { command: "run-main", ...(mode ? { mode } : {}) };
 }
 
 export function parseAlpArgs(argv: readonly string[]): AlpCommand {
   if (argv.length === 0) return { command: "run-main" };
-  if (argv[0].startsWith("--runtime") || argv[0].startsWith("--mode")) return parseRunMainFlags(argv);
+  if (argv[0].startsWith("--mode") || argv[0].startsWith("--runtime")) return parseRunMainFlags(argv);
   if (argv[0] === "--version" || argv[0] === "-v") {
     if (argv.length !== 1) throw new Error("alp --version does not accept arguments");
     return { command: "version" };
   }
   if (["claude", "codex", "run-role"].includes(argv[0]) || argv[0] === "--role") {
-    throw new Error("direct raw runtime launch is unsupported; use `alp` or `alp --runtime <name>`");
+    throw new Error("direct raw runtime launch is unsupported; use `alp` or `alp --mode <nấc>`");
   }
-  if (argv[0] === "runtime") {
-    if (argv[1] === "show" && argv.length === 2) return { command: "runtime", action: "show" };
-    if (argv[1] === "set" && argv.length === 3) return { command: "runtime", action: "set", runtime: runtimeId(argv[2]) };
-    throw new Error("usage: alp runtime show | alp runtime set <claude|codex>");
+  if (argv[0] === "runtime") throw new Error(RUNTIME_IS_GONE);
+  if (argv[0] === "mode") {
+    if (argv[1] === "show" && argv.length === 2) return { command: "mode", action: "show" };
+    if (argv[1] === "set" && argv.length === 3) return { command: "mode", action: "set", mode: parseMode(argv[2]) };
+    throw new Error(`usage: alp mode show | alp mode set <${MODE_IDS.join("|")}>`);
   }
   if (argv[0] === "init") {
     let project: string | undefined;
@@ -150,7 +137,7 @@ export interface AlpDependencies {
   readonly version: string;
   readonly checkForUpdate: () => Promise<string | null>;
   readonly runMain: (input: RunMainInput) => Promise<number>;
-  readonly runtimeCommand: (input: RuntimeCommandInput) => Promise<number>;
+  readonly modeCommand: (input: ModeCommandInput) => Promise<number>;
   readonly initProject: (input: { readonly project: string }) => Promise<void>;
   readonly deinitProject: (input: { readonly project: string }) => Promise<void>;
   readonly syncIdentity: () => Promise<void>;
@@ -204,7 +191,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
     ["codex", new CodexRuntimeAdapter({ hooksDirectory: join(repoRoot, "hooks") })],
   ]);
   const backend = new LocalProcessBackend();
-  const selector = new RuntimeSelector({ output: stdout });
+  const selector = new ModeSelector({ output: stdout });
   const projectRegistry = new ProjectRegistryStore();
   return {
     cwd,
@@ -234,8 +221,8 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
       });
       return result.status === "completed" ? 0 : result.status === "cancelled" ? 130 : 1;
     },
-    async runtimeCommand(input) {
-      await runRuntimeCommand(input, { write: (text) => stdout.write(text) });
+    async modeCommand(input) {
+      await runModeCommand(input, { write: (text: string) => stdout.write(text) });
       return 0;
     },
     async initProject(input) {
@@ -325,8 +312,8 @@ function helpText(): string {
   return [
     "alp — code-native agent launcher",
     "",
-    `  alp [--runtime claude|codex] [--mode ${MODE_IDS.join("|")}]`,
-    "  alp runtime show|set <runtime>",
+    `  alp [--mode ${MODE_IDS.join("|")}]`,
+    "  alp mode show|set <mode>",
     "  alp init [path]",
     "  alp deinit [path]",
     "  alp identity sync",
@@ -340,7 +327,9 @@ function helpText(): string {
     "  alp uninstall [--purge-memory] [--force]",
     "  alp --version",
     "",
-    "Modes (mặc định `medium`, hoặc đặt `ALP_MODE`):",
+    "Mode quyết định model của từng vai, và model quyết định CLI nào chạy vai đó.",
+    "Thứ tự: --mode → ALP_MODE → `alp mode set` → hỏi trên TTY → `medium`.",
+    "",
     ...MODE_IDS.map((mode) => `  ${mode.padEnd(7)} ${MODE_PROFILES[mode].summary}`),
     "",
     "Direct `claude`, `codex`, and identity-aware raw-runtime shortcuts are unsupported.",
@@ -360,13 +349,9 @@ export async function main(argv: readonly string[] = process.argv.slice(2), inje
     // Cờ thắng biến môi trường; `ALP_MODE` tồn tại để một phiên delegated kế thừa nấc của cha.
     const inheritedMode = process.env.ALP_MODE ? parseMode(process.env.ALP_MODE) : undefined;
     const mode = command.mode ?? inheritedMode;
-    return dependencies.runMain({
-      cwd,
-      ...(command.runtime ? { requestedRuntime: command.runtime } : {}),
-      ...(mode ? { mode } : {}),
-    });
+    return dependencies.runMain({ cwd, ...(mode ? { mode } : {}) });
   }
-  if (command.command === "runtime") return dependencies.runtimeCommand(command);
+  if (command.command === "mode") return dependencies.modeCommand(command);
   if (command.command === "init") { await dependencies.initProject({ project: resolve(cwd, command.project ?? ".") }); return 0; }
   if (command.command === "deinit") { await dependencies.deinitProject({ project: resolve(cwd, command.project ?? ".") }); return 0; }
   if (command.command === "identity") { await dependencies.syncIdentity(); return 0; }

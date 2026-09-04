@@ -1,22 +1,21 @@
 import type { AgentDefinition, AgentRegistry, RuntimeId } from "../../agents/types";
-import { DEFAULT_MODE, modelForMode, reasoningEffortForMode, type ModeId } from "../../agents/modes";
+import { modelForMode, reasoningEffortForMode, runtimeForMode, type ModeId } from "../../agents/modes";
 import { readFile } from "node:fs/promises";
 import type { BackendExecutionResult, ExecutionBackend } from "../../backend/execution-backend";
 import { INTERACTIVE_TASK_SENTINEL } from "../../context/continuity";
 import type { ExecutionService } from "../../execution/execution-service";
 import type { RuntimeAdapter } from "../../runtime/runtime-adapter";
-import type { RuntimeSelector } from "../../runtime/runtime-selector";
+import type { ModeSelector } from "../mode-selector";
 
 export interface RunMainInput {
   readonly cwd: string;
-  readonly requestedRuntime?: RuntimeId;
-  /** Nấc công suất cho phiên này; bỏ trống thì `DEFAULT_MODE`. */
+  /** Nấc công suất cho phiên này. Bỏ trống thì selector hỏi (TTY) hoặc lấy nấc đã lưu. */
   readonly mode?: ModeId;
 }
 
 export interface RunMainDependencies {
   readonly registry: Pick<AgentRegistry, "get">;
-  readonly selector: Pick<RuntimeSelector, "select">;
+  readonly selector: Pick<ModeSelector, "select">;
   readonly executionService: Pick<ExecutionService, "prepare">;
   readonly adapters: ReadonlyMap<RuntimeId, RuntimeAdapter>;
   readonly backend: ExecutionBackend;
@@ -30,13 +29,16 @@ export async function runMainSession(
   dependencies: RunMainDependencies,
 ): Promise<BackendExecutionResult> {
   const definition = dependencies.registry.get("main") as AgentDefinition<unknown>;
-  const mode = input.mode ?? DEFAULT_MODE;
   if (definition.reportsTo !== "principal") throw new Error("main must report to principal");
   const selection = await dependencies.selector.select({
-    requestedRuntime: input.requestedRuntime,
-    interactive: dependencies.interactive && input.requestedRuntime === undefined,
+    ...(input.mode === undefined ? {} : { requestedMode: input.mode }),
+    interactive: dependencies.interactive && input.mode === undefined,
   });
   if (!selection.ok) return { executionId: "cancelled", status: "cancelled" };
+  const mode = selection.mode;
+  // Runtime là **hệ quả** của model, không phải một lựa chọn riêng: nấc ghim một model cho
+  // `main`, và model đó chỉ chạy được trên đúng một CLI.
+  const runtime = runtimeForMode(definition, mode);
   const executionId = dependencies.executionId();
   const workspaceMode = dependencies.workspaceModeFor
     ? await dependencies.workspaceModeFor(input.cwd)
@@ -57,16 +59,16 @@ export async function runMainSession(
     invariantContext: "ALP execution policy is authoritative and fails closed.",
     policyContext: "Direct raw runtime launch is unsupported; use ALP workflows.",
   });
-  const adapter = dependencies.adapters.get(selection.runtime);
-  if (!adapter) throw new Error(`runtime \`${selection.runtime}\` is not registered`);
+  const adapter = dependencies.adapters.get(runtime);
+  if (!adapter) throw new Error(`runtime \`${runtime}\` is not registered`);
   const health = await adapter.probe();
   if (!health.ok) throw new Error(`${health.message}${health.remediation ? `; ${health.remediation}` : ""}`);
   const launchSpec = await adapter.prepare({
     execution,
     // Nấc thắng khai báo của vai — cùng một `main` chạy bốn model khác nhau. Lấy từ cùng
     // giá trị đã đi vào policy, để `policy.json` và tiến trình thật sự chạy không lệch nhau.
-    model: modelForMode(definition, selection.runtime, mode),
-    reasoningEffort: reasoningEffortForMode(definition, selection.runtime, mode),
+    model: modelForMode(definition, mode),
+    reasoningEffort: reasoningEffortForMode(definition, mode),
     interactive: true,
   });
   // The principal is sitting in front of this one, so it must own the terminal: a backend

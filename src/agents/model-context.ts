@@ -1,3 +1,5 @@
+import type { RuntimeId } from "./types";
+
 /**
  * Cửa sổ context của từng model, tính bằng token — mẫu số cho vai không khai
  * `autoCompactTokens`.
@@ -12,6 +14,28 @@
  * không có mặc định — để runtime dùng cửa sổ của nó còn hơn dựng một ngân sách từ phỏng
  * đoán.
  */
+
+/**
+ * Model chạy trên runtime nào. Từ khi dial ghim **một** model cho mỗi vai ở mỗi nấc, model
+ * là thứ quyết định CLI nào được phóng — không còn ai chọn runtime rồi mới tra model. Bảng
+ * viết tay thay vì đoán theo tiền tố `claude-`/`gpt-`: một model đặt tên lệch quy ước sẽ
+ * phóng nhầm CLI trong im lặng, còn thiếu một dòng ở đây thì `runtimeForModel` ném ngay.
+ */
+export const MODEL_RUNTIMES: Readonly<Record<string, RuntimeId>> = Object.freeze({
+  "claude-fable-5-1": "claude",
+  "claude-opus-5": "claude",
+  "claude-sonnet-5": "claude",
+  "claude-haiku-4-5": "claude",
+  "gpt-5.6-sol": "codex",
+  "gpt-5.6-terra": "codex",
+  "gpt-5.6-luna": "codex",
+});
+
+export function runtimeForModel(model: string): RuntimeId {
+  const runtime = MODEL_RUNTIMES[model];
+  if (runtime === undefined) throw new Error(`model \`${model}\` chưa được gán runtime trong MODEL_RUNTIMES`);
+  return runtime;
+}
 
 /** Phần trăm cửa sổ được giữ trước khi runtime được phép nén — chính con số Codex đang dùng. */
 export const AUTO_COMPACT_DEFAULT_PERCENT = 90;

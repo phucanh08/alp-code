@@ -10,40 +10,56 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ### Thêm
 
-- **Dial công suất bốn nấc: `alp --mode low|medium|high|ultra`.** Trước đây `main` chạy đúng
-  một model, khai cứng trong definition, nên câu hỏi "đổi sang con rẻ hơn cho việc vặt" chỉ
-  trả lời được bằng cách sửa file rồi commit. Dial đổi câu hỏi thành thứ người dùng thật sự
-  biết: **việc này khó cỡ nào**. Mượn khuôn của Amp — bốn nấc, `medium` mặc định — nhưng chỉ
-  dùng model Codex và Claude.
+- **Dial công suất năm nấc: `alp --mode low|medium|high|ultra|puck`.** Trước đây mỗi vai chạy
+  đúng một model **cho mỗi runtime**, khai cứng trong definition, nên hai câu hỏi lúc mở phiên
+  là "chạy Claude hay Codex" và "sửa file nào để đổi model". Dial gộp cả hai thành thứ người
+  dùng thật sự biết: **việc này khó cỡ nào**. Mượn khuôn của Amp — `medium` mặc định — nhưng
+  chỉ dùng model Codex và Claude.
 
-  | Nấc | `main` claude / codex | effort | `oracle` claude / codex |
-  |---|---|---|---|
-  | `low` | haiku-4-5 / luna | low / low | opus-5 / sol |
-  | `medium` (mặc định) | sonnet-5 / sol | medium / medium | opus-5 / sol |
-  | `high` | opus-5 / sol | high / xhigh | fable-5-1 / sol |
-  | `ultra` | fable-5-1 / sol | high / xhigh | opus-5 / sol |
+  Mỗi nấc là một **loadout hoàn chỉnh**: mỗi vai đúng **một** model và một mức suy nghĩ.
 
-  Nấc chỉ xoay hai ghế mà độ khó chạm tới: `main` (người làm) và `oracle` (người được hỏi khi
-  bí). Sáu vai còn lại giữ nguyên khai báo, vì model của chúng là một phần công việc chứ không
-  phải một mức cố gắng — `search` cần retrieval nhanh dù câu hỏi to hay nhỏ, `titling` viết
-  một dòng. `high` và `ultra` **đảo chỗ** hai model mạnh nhất giữa hai ghế thay vì cộng thêm:
-  ở mức đó thứ quyết định kết quả là con nào cầm bút, con nào soi lại.
+  | Nấc | `main` | effort | `oracle` | effort |
+  |---|---|---|---|---|
+  | `low` | claude-haiku-4-5 | low | gpt-5.6-sol | high |
+  | `medium` (mặc định) | gpt-5.6-sol | medium | gpt-5.6-sol | high |
+  | `high` | gpt-5.6-sol | xhigh | claude-fable-5-1 | high |
+  | `ultra` | claude-fable-5-1 | high | gpt-5.6-sol | xhigh |
+  | `puck` | gpt-5.6-sol | xhigh | gpt-5.6-sol | xhigh |
 
-  Chọn nấc theo thứ tự `--mode` → `ALP_MODE` → `medium`. Nấc gõ sai (`--mode smart`) dừng ngay
-  chứ không rơi về mặc định, vì một phiên chạy nấc khác nấc người dùng tưởng là im lặng tốn
-  tiền hoặc im lặng yếu đi. Nấc đi vào `ExecutionPolicy.mode`, nên `policy.json` ghi lại nấc
-  đã chạy và `policyHash` đổi theo nấc — hai lần chạy khác model không thể trùng hash.
-  `definitionHash` **không** đổi: nấc là lựa chọn lúc phóng, không phải một vai khác. Adapter
-  export `ALP_MODE` nên execution delegated kế thừa nấc của phiên cha, thay vì subagent lặng
-  lẽ tụt về `medium` giữa một phiên `ultra`.
+  Bốn nấc dial chỉ xoay hai ghế mà độ khó chạm tới: `main` (người làm) và `oracle` (người được
+  hỏi khi bí). Sáu vai còn lại giống nhau qua cả bốn nấc — `search` gpt-5.6-terra, `librarian`
+  gpt-5.6-sol, `read-thread` và `titling` claude-haiku-4-5, `review` và `compaction`
+  claude-opus-5 — đúng chỗ Amp ghim cứng subagent: model của chúng là một phần công việc chứ
+  không phải một mức cố gắng. `high` và `ultra` **đảo chỗ** hai model mạnh nhất giữa hai ghế
+  thay vì cộng thêm: ở mức đó thứ quyết định kết quả là con nào cầm bút, con nào soi lại.
 
-  **Đổi hành vi mặc định:** `main` trước đây là opus-5 / gpt-5.6-sol @ high/xhigh — nay là nấc
-  `high`. Mặc định mới `medium` hạ `main` xuống sonnet-5. Muốn giữ nguyên như trước: `alp
-  --mode high`, hoặc `export ALP_MODE=high`.
+  **`puck` nằm ngoài trục độ khó**: toàn Codex ở cả tám vai (`read-thread`/`titling` sang
+  gpt-5.6-luna, `review` sang gpt-5.6-terra). Dành cho máy chỉ cài `codex`, cho lúc hạn mức
+  Claude đã hết, hoặc cho người muốn đúng loadout Amp mặc định.
+
+  Chọn nấc theo thứ tự `--mode` → `ALP_MODE` → `alp mode set` (`~/.alp/mode.json`) → menu ↑/↓
+  trên TTY → `medium`. Nấc gõ sai (`--mode smart`) dừng ngay chứ không rơi về mặc định, vì một
+  phiên chạy nấc khác nấc người dùng tưởng là im lặng tốn tiền hoặc im lặng yếu đi. Nấc đi vào
+  `ExecutionPolicy.mode`, nên `policy.json` ghi lại nấc đã chạy và `policyHash` đổi theo nấc —
+  hai lần chạy khác model không thể trùng hash. `definitionHash` **không** đổi: nấc là lựa chọn
+  lúc phóng, không phải một vai khác. Adapter export `ALP_MODE` nên execution delegated kế thừa
+  nấc của phiên cha, thay vì subagent lặng lẽ tụt về `medium` giữa một phiên `ultra`.
+
+  **Đổi hành vi mặc định:** `main` trước đây là opus-5 (Claude) hoặc gpt-5.6-sol (Codex) @
+  high/xhigh. Mặc định mới `medium` cho `main` `gpt-5.6-sol` @ medium — tức phiên mặc định giờ
+  chạy trên Codex CLI, không phải Claude Code. Muốn một phiên main do Claude cầm bút: `alp
+  --mode ultra` (Fable) hoặc `--mode low` (Haiku), hoặc `export ALP_MODE=ultra`.
 
   `claude-fable-5-1` (cửa sổ 1M) được thêm vào `MODEL_CONTEXT_WINDOWS`; một test giữ điều kiện
-  mọi model của dial đều có cửa sổ trong bảng, nếu không ngưỡng auto-compact mặc định (90% cửa
-  sổ) sẽ lặng lẽ biến mất đúng ở nấc đó.
+  mọi model của mọi nấc đều có mặt trong cả `MODEL_RUNTIMES` lẫn `MODEL_CONTEXT_WINDOWS` —
+  thiếu bảng đầu thì không biết phóng CLI nào, thiếu bảng sau thì ngưỡng auto-compact mặc định
+  (90% cửa sổ) lặng lẽ biến mất đúng ở nấc đó.
+
+- **`alp mode show|set <nấc>`** — nấc ghi nhớ machine-local ở `~/.alp/mode.json` (0600, atomic
+  write), thay chỗ `alp runtime show|set` và `~/.alp/runtime.json`. Menu lúc mở phiên giờ hỏi
+  nấc chứ không hỏi runtime, mỗi dòng kèm một câu nói nấc đó dành cho việc gì. Preference hỏng
+  → warning + fallback `medium`, không throw. `alp update` bảo toàn `mode.json` qua các lần
+  cập nhật.
 
 ### Thêm
 
@@ -136,6 +152,22 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   Model không có trong bảng thì không có mặc định — runtime giữ cửa sổ của nó, vì để runtime
   tự lo còn hơn dựng ngân sách từ phỏng đoán. Test giữ bảng phủ hết model mà tám vai built-in
   route tới, và pin 90% của mọi cửa sổ trong bảng vẫn nằm trong khoảng Claude chấp nhận.
+
+### Đã bỏ
+
+- **`--runtime`, `alp runtime show|set`, và `alp delegate --runtime`.** Từ khi mỗi vai ở mỗi
+  nấc chỉ có một model, **model quyết định runtime**: `claude-*` phóng Claude Code, `gpt-*`
+  phóng Codex CLI, tra qua bảng `MODEL_RUNTIMES` viết tay trong `model-context.ts` (không đoán
+  theo prefix — một tên lệch quy ước mà đoán sai thì phóng nhầm CLI trong im lặng). Giữ thêm
+  một lựa chọn runtime song song chỉ tạo ra tổ hợp vô nghĩa: `--runtime claude` cộng nấc
+  `medium` là yêu cầu Claude Code chạy `gpt-5.6-sol`.
+
+  Cả ba đường cũ **dừng với lỗi chỉ sang nấc**, không bị bỏ qua trong im lặng — một script cũ
+  còn `--runtime codex` sẽ nói ra rằng nó không còn ép được gì, thay vì chạy đúng nấc mặc định
+  mà người viết tưởng đang ép Codex. `DelegationExecutionOptions.runtime` cũng biến mất khỏi
+  request; `DelegationExecutionRecord.runtime` giữ nguyên, vì nó ghi lại CLI **đã thật sự
+  chạy**. Một nấc có thể trộn hai CLI trong cùng một phiên — `high` chạy `main` trên Codex và
+  `oracle` trên Claude — nên "runtime của phiên" không còn là một khái niệm có thật.
 
 ### Thay đổi
 

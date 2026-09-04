@@ -103,7 +103,7 @@ function preserveMaintenanceState(repoRoot, options = {}) {
   const env = options.env || process.env;
   const home = env.HOME || env.USERPROFILE;
   const paths = [path.join(repoRoot, "memory")];
-  if (home) paths.push(path.join(home, ".alp", "runtime.json"), path.join(home, ".alp", "projects.json"), path.join(home, ".alp", "delegation"));
+  if (home) paths.push(path.join(home, ".alp", "mode.json"), path.join(home, ".alp", "projects.json"), path.join(home, ".alp", "delegation"));
   const backupRoot = fs.mkdtempSync(path.join(options.tempRoot || os.tmpdir(), "alp-update-state-"));
   const entries = paths.filter((file) => fs.existsSync(file)).map((file, index) => {
     const backup = path.join(backupRoot, String(index));

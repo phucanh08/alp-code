@@ -78,7 +78,7 @@ function cleanupRuntimeState(root, say) {
     return;
   }
   fs.rmSync(root, { recursive: true, force: true });
-  say("REMOVED", `${root} — runtime preferences, backend preferences và execution state`);
+  say("REMOVED", `${root} — mode preference, backend preferences và execution state`);
 }
 
 function assertInstallRoot(repoRoot) {

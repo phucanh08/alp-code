@@ -18,7 +18,7 @@ function delegationService(environment: E2eEnvironment, ids: () => string) {
     runtimeAdapters: environment.adapters,
     backend: environment.backend,
     executionStore: new InMemoryDelegationExecutionStore(),
-    config: { defaultRuntime: "codex" },
+    config: { mode: "medium" },
     ids: { request: () => `req_${ids()}`, execution: ids },
   });
 }
@@ -33,7 +33,6 @@ describe("e2e: specialist delegation", () => {
       targetRole: "search",
       task: "Find the entrypoint",
       workspace: environment.project,
-      executionOptions: { runtime: "codex" },
     });
     const result = await service.wait(spawned.executionId);
 
@@ -59,7 +58,6 @@ describe("e2e: specialist delegation", () => {
       targetRole: "review",
       task: "Review the entrypoint",
       workspace: environment.project,
-      executionOptions: { runtime: "codex" },
     })).rejects.toThrowError(/delegation authorization failed/);
 
     // Nothing reached a runtime: no capture file and no execution artifacts exist.
@@ -81,7 +79,6 @@ describe("e2e: specialist delegation", () => {
       targetRole: "search",
       task: "Find the entrypoint",
       workspace: environment.project,
-      executionOptions: { runtime: "codex" },
     });
     await service.wait(spawned.executionId);
 

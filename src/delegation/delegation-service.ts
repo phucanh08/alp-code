@@ -1,4 +1,4 @@
-import { DEFAULT_MODE, modelForMode, reasoningEffortForMode, type ModeId } from "../agents/modes";
+import { DEFAULT_MODE, modelForMode, reasoningEffortForMode, runtimeForMode, type ModeId } from "../agents/modes";
 import { randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -21,7 +21,6 @@ import {
 } from "./types";
 
 export interface DelegationServiceConfig {
-  defaultRuntime: RuntimeId;
   /** Nấc công suất kế thừa từ phiên cha (`ALP_MODE`); bỏ trống thì `DEFAULT_MODE`. */
   mode?: ModeId;
 }
@@ -87,7 +86,6 @@ function normalizeRequest(input: DelegationRequestInput, ids: DelegationIds): De
       background: Boolean(input.executionOptions?.background),
       interactive: Boolean(input.executionOptions?.interactive),
       timeoutMs,
-      ...(input.executionOptions?.runtime === undefined ? {} : { runtime: input.executionOptions.runtime }),
     }),
   });
 }
@@ -220,17 +218,19 @@ export class DelegationService {
     void this.policy;
     void this.memory;
 
-    const runtime = request.executionOptions.runtime ?? this.config.defaultRuntime;
+    const definition = this.registry.get(request.targetRole);
+    const mode = this.config.mode ?? DEFAULT_MODE;
+    // Nấc ghim một model cho vai đích, và model quyết định CLI — không còn ai chọn runtime
+    // rồi mới tra model, nên một nấc có thể phóng hai CLI khác nhau cho hai vai khác nhau.
+    const runtime = runtimeForMode(definition, mode);
     const adapter = this.runtimeAdapters.get(runtime);
     if (!adapter) {
       throw new DelegationError("RUNTIME_UNAVAILABLE", `runtime \`${runtime}\` is not registered`);
     }
-    const definition = this.registry.get(request.targetRole);
-    const mode = this.config.mode ?? DEFAULT_MODE;
     const launchSpec = await adapter.prepare({
       execution,
-      model: modelForMode(definition, runtime, mode),
-      reasoningEffort: reasoningEffortForMode(definition, runtime, mode),
+      model: modelForMode(definition, mode),
+      reasoningEffort: reasoningEffortForMode(definition, mode),
       interactive: request.executionOptions.interactive,
     });
     return Object.freeze({ request, executionId, execution, runtime, launchSpec, backend: this.backend });

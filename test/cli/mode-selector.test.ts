@@ -3,13 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
+import type { ModeId } from "../../src/agents/modes";
 import {
-  FileRuntimePreferenceStore,
-  type RuntimePreferenceRead,
-  type RuntimePreferenceStore,
-} from "../../src/runtime/runtime-preference-store";
-import { RuntimeSelector } from "../../src/runtime/runtime-selector";
-import type { RuntimeId } from "../../src/runtime/types";
+  FileModePreferenceStore,
+  type ModePreferenceRead,
+  type ModePreferenceStore,
+} from "../../src/cli/mode-preference-store";
+import { ModeSelector } from "../../src/cli/mode-selector";
 import { removeTemporary } from "../support/temporary-root";
 
 const temporaryRoots: string[] = [];
@@ -21,19 +21,19 @@ afterEach(async () => {
   }
 });
 
-class FakePreferenceStore implements RuntimePreferenceStore {
+class FakePreferenceStore implements ModePreferenceStore {
   reads = 0;
-  readonly writes: RuntimeId[] = [];
+  readonly writes: ModeId[] = [];
 
-  constructor(private readonly value: RuntimePreferenceRead) {}
+  constructor(private readonly value: ModePreferenceRead) {}
 
-  async read(): Promise<RuntimePreferenceRead> {
+  async read(): Promise<ModePreferenceRead> {
     this.reads += 1;
     return this.value;
   }
 
-  async write(runtime: RuntimeId): Promise<void> {
-    this.writes.push(runtime);
+  async write(mode: ModeId): Promise<void> {
+    this.writes.push(mode);
   }
 }
 
@@ -56,11 +56,11 @@ function keyReader(...keys: readonly ("up" | "down" | "enter" | "cancel" | "othe
   return async () => queue.shift() ?? "other";
 }
 
-describe("RuntimeSelector", () => {
-  it("lets --runtime win without reading preference or prompting", async () => {
-    const store = new FakePreferenceStore({ runtime: "claude" });
+describe("ModeSelector", () => {
+  it("lets --mode win without reading preference or prompting", async () => {
+    const store = new FakePreferenceStore({ mode: "medium" });
     const output = outputBuffer();
-    const selector = new RuntimeSelector({
+    const selector = new ModeSelector({
       preferenceStore: store,
       output: output.stream,
       readKey: () => {
@@ -68,9 +68,9 @@ describe("RuntimeSelector", () => {
       },
     });
 
-    await expect(selector.select({ requestedRuntime: "codex", interactive: true })).resolves.toEqual({
+    await expect(selector.select({ requestedMode: "ultra", interactive: true })).resolves.toEqual({
       ok: true,
-      runtime: "codex",
+      mode: "ultra",
       source: "explicit",
     });
     expect(store.reads).toBe(0);
@@ -79,8 +79,8 @@ describe("RuntimeSelector", () => {
   });
 
   it("lets an interactive choice override and persist the stored preference", async () => {
-    const store = new FakePreferenceStore({ runtime: "claude" });
-    const selector = new RuntimeSelector({
+    const store = new FakePreferenceStore({ mode: "medium" });
+    const selector = new ModeSelector({
       preferenceStore: store,
       output: outputBuffer().stream,
       readKey: keyReader("down", "enter"),
@@ -88,15 +88,15 @@ describe("RuntimeSelector", () => {
 
     await expect(selector.select({ interactive: true })).resolves.toEqual({
       ok: true,
-      runtime: "codex",
+      mode: "high",
       source: "interactive",
     });
-    expect(store.writes).toEqual(["codex"]);
+    expect(store.writes).toEqual(["high"]);
   });
 
   it("accepts the highlighted stored preference on Enter", async () => {
-    const store = new FakePreferenceStore({ runtime: "codex" });
-    const selector = new RuntimeSelector({
+    const store = new FakePreferenceStore({ mode: "puck" });
+    const selector = new ModeSelector({
       preferenceStore: store,
       output: outputBuffer().stream,
       readKey: keyReader("enter"),
@@ -104,52 +104,52 @@ describe("RuntimeSelector", () => {
 
     await expect(selector.select({ interactive: true })).resolves.toMatchObject({
       ok: true,
-      runtime: "codex",
+      mode: "puck",
       source: "interactive",
     });
-    expect(store.writes).toEqual(["codex"]);
+    expect(store.writes).toEqual(["puck"]);
   });
 
-  it("uses Claude by default when no preference exists", async () => {
-    const store = new FakePreferenceStore({ runtime: null });
-    const selector = new RuntimeSelector({
+  it("uses medium by default when no preference exists", async () => {
+    const store = new FakePreferenceStore({ mode: null });
+    const selector = new ModeSelector({
       preferenceStore: store,
       output: outputBuffer().stream,
     });
 
     await expect(selector.select({ interactive: false })).resolves.toEqual({
       ok: true,
-      runtime: "claude",
+      mode: "medium",
       source: "default",
     });
     expect(store.writes).toEqual([]);
   });
 
-  it("fails closed to Claude with a warning for corrupt preference state", async () => {
-    const root = await mkdtemp(join(tmpdir(), "alp-runtime-corrupt-"));
+  it("fails closed to medium with a warning for corrupt preference state", async () => {
+    const root = await mkdtemp(join(tmpdir(), "alp-mode-corrupt-"));
     temporaryRoots.push(root);
-    const file = join(root, "runtime.json");
-    await writeFile(file, '{"runtime":"paseo"}\n', "utf8");
+    const file = join(root, "mode.json");
+    await writeFile(file, '{"mode":"paseo"}\n', "utf8");
     const output = outputBuffer();
-    const selector = new RuntimeSelector({
-      preferenceStore: new FileRuntimePreferenceStore({ file }),
+    const selector = new ModeSelector({
+      preferenceStore: new FileModePreferenceStore({ file }),
       output: output.stream,
     });
 
     await expect(selector.select({ interactive: false })).resolves.toEqual({
       ok: true,
-      runtime: "claude",
+      mode: "medium",
       source: "default",
     });
-    expect(output.read()).toMatch(/warning.*invalid runtime preference.*Claude/i);
+    expect(output.read()).toMatch(/warning.*invalid mode preference.*medium/i);
   });
 
   it("persists an interactive selection atomically", async () => {
-    const root = await mkdtemp(join(tmpdir(), "alp-runtime-persist-"));
+    const root = await mkdtemp(join(tmpdir(), "alp-mode-persist-"));
     temporaryRoots.push(root);
-    const file = join(root, "state", "runtime.json");
-    const store = new FileRuntimePreferenceStore({ file });
-    const selector = new RuntimeSelector({
+    const file = join(root, "state", "mode.json");
+    const store = new FileModePreferenceStore({ file });
+    const selector = new ModeSelector({
       preferenceStore: store,
       output: outputBuffer().stream,
       readKey: keyReader("down", "enter"),
@@ -157,16 +157,16 @@ describe("RuntimeSelector", () => {
 
     await expect(selector.select({ interactive: true })).resolves.toMatchObject({
       ok: true,
-      runtime: "codex",
+      mode: "high",
     });
-    expect(JSON.parse(await readFile(file, "utf8"))).toEqual({ runtime: "codex" });
-    expect(await readdir(join(root, "state"))).toEqual(["runtime.json"]);
-    await expect(store.read()).resolves.toEqual({ runtime: "codex" });
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual({ mode: "high" });
+    expect(await readdir(join(root, "state"))).toEqual(["mode.json"]);
+    await expect(store.read()).resolves.toEqual({ mode: "high" });
   });
 
   it("returns exit 130 without persisting when the prompt is cancelled", async () => {
-    const store = new FakePreferenceStore({ runtime: "claude" });
-    const selector = new RuntimeSelector({
+    const store = new FakePreferenceStore({ mode: "medium" });
+    const selector = new ModeSelector({
       preferenceStore: store,
       output: outputBuffer().stream,
       readKey: keyReader("cancel"),
@@ -198,9 +198,9 @@ describe("RuntimeSelector", () => {
       pauses += 1;
       return originalPause();
     }) as typeof input.pause;
-    const store = new FakePreferenceStore({ runtime: "claude" });
+    const store = new FakePreferenceStore({ mode: "medium" });
     const output = outputBuffer();
-    const selector = new RuntimeSelector({
+    const selector = new ModeSelector({
       preferenceStore: store,
       input,
       output: output.stream,
@@ -209,7 +209,7 @@ describe("RuntimeSelector", () => {
     queueMicrotask(() => input.write("\u001b[B\r"));
     await expect(selector.select({ interactive: true })).resolves.toMatchObject({
       ok: true,
-      runtime: "codex",
+      mode: "high",
     });
     expect(rawModes).toEqual([true, false]);
     expect(pauses).toBeGreaterThan(0);
