@@ -8,6 +8,8 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+## [0.7.0] - 2026-09-04
+
 ### Thêm
 
 - **Continuity qua compaction.** Claude Code và Codex CLI tự nén transcript khi hết context, và
@@ -465,7 +467,8 @@ Bản release đánh số đầu tiên. Trước mốc này alp-code chưa có v
 - `alp init`/`alp deinit`, `alp delegate`, `alp doctor`, `alp uninstall`, installer một dòng
   cho macOS/Linux/WSL và Windows.
 
-[Chưa phát hành]: https://github.com/phucanh08/alp-code/compare/v0.6.0...HEAD
+[Chưa phát hành]: https://github.com/phucanh08/alp-code/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/phucanh08/alp-code/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/phucanh08/alp-code/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/phucanh08/alp-code/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/phucanh08/alp-code/compare/v0.4.0...v0.5.0
