@@ -10,6 +10,8 @@ export const oracleAgent = defineAgent({
   reasoningEffort: { claude: "high", codex: "xhigh" },
   reportsTo: "main",
   delegatesTo: [],
+  // Reasons over a large evidence set at once; compacting it early throws away the evidence.
+  autoCompactTokens: 400_000,
   capabilities: {
     tools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Skill"],
     skills: ["alp-debug", "alp-predict", "alp-scenario", "problem-solving"],

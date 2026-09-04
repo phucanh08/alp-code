@@ -81,6 +81,9 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
           sessionContextFile: contextFiles.sessionContextFile,
           ...(contextFiles.taskFile === null ? {} : { taskFile: contextFiles.taskFile }),
         },
+        // Absent when the role declares none, so the runtime keeps the window it tunes per
+        // model. Claude caps whatever lands here at the active model's context window.
+        ...(policy.autoCompactTokens === null ? {} : { autoCompactWindow: policy.autoCompactTokens }),
         hooks: {
           SessionStart: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-boot.cjs")) }] }],
           Stop: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-end.cjs")) }] }],

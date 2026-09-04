@@ -69,6 +69,18 @@ export interface AgentDefinition<TOutput> {
   readonly reportsTo: AgentId | "principal";
   readonly delegatesTo: readonly AgentId[];
   readonly capabilities: AgentCapabilities;
+  /**
+   * Token count at which the runtime may compact its own transcript, or `undefined` to
+   * leave that to the window the runtime tunes per model.
+   *
+   * Declared on the role because it is the role that knows how much of its own history is
+   * load-bearing: the seat holding the whole picture keeps everything the model can hold,
+   * while a one-shot specialist that grows this far has gone wrong and is better off
+   * compacted than ballooning. Range is Claude's documented 100k–1M (`autoCompactWindow`);
+   * Codex publishes no bounds for `model_auto_compact_token_limit`, and sharing the range
+   * is what keeps one declared number meaningful on both runtimes.
+   */
+  readonly autoCompactTokens?: number;
   /** Static identity text — no per-execution context. See `renderInstructions`. */
   readonly instructions: () => string;
   readonly workflow: WorkflowDefinition;

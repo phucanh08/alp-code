@@ -48,6 +48,12 @@ export interface ExecutionPolicy {
   readonly skills: readonly string[];
   readonly subagents: readonly SubagentAuthorization[];
   readonly mcpServers: readonly McpServerAuthorization[];
+  /**
+   * Token count at which the runtime compacts, or `null` for the runtime's own window.
+   * `null` rather than an absent key: the snapshot has to say "runtime default" out loud,
+   * the same way it says which tools were withheld.
+   */
+  readonly autoCompactTokens: number | null;
   readonly memory: MemoryGrants;
   readonly delegatesTo: readonly AgentId[];
   readonly createdAt: string;

@@ -1,18 +1,17 @@
-import { mkdtemp, mkdir, readFile, readdir } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { defineAgent } from "../../src/agents/agent-definition";
 import { SKILL_CATALOG, type CapabilityCatalog } from "../../src/agents/capability-catalog";
 import { createAgentRegistry } from "../../src/agents/registry";
-import type { AgentDefinition, AgentId } from "../../src/agents/types";
+import type { AgentDefinition } from "../../src/agents/types";
 import { createExecutionPolicy } from "../../src/execution/execution-policy";
-import type { ExecutionPolicy, PreparedExecution } from "../../src/execution/types";
+import type { ExecutionPolicy } from "../../src/execution/types";
 import { PolicyEngine } from "../../src/policy/policy-engine";
 import { ClaudeRuntimeAdapter } from "../../src/runtime/claude-adapter";
 import { CodexRuntimeAdapter } from "../../src/runtime/codex-adapter";
 import { claudePermissions } from "../../src/runtime/permission-rules";
-import { removeTemporary } from "../support/temporary-root";
+import { cleanupExecutionFixtures, policyFixture, probeDefinition, runtimeFixture } from "../support/execution-fixture";
 
 /**
  * `capabilities.skills` / `.subagents` / `.mcpServers` — the three grants §5.3 declares by
@@ -21,11 +20,7 @@ import { removeTemporary } from "../support/temporary-root";
  * snapshot -> the runtime flag that makes it true.
  */
 
-const roots: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => removeTemporary(root)));
-});
+afterEach(cleanupExecutionFixtures);
 
 /** A catalog of things this test trusts, standing in for what the principal has declared. */
 const catalog: CapabilityCatalog = Object.freeze({
@@ -47,39 +42,12 @@ const catalog: CapabilityCatalog = Object.freeze({
   }),
 });
 
-function probe(overrides: Partial<AgentDefinition<unknown>> = {}): AgentDefinition<unknown> {
-  const id = (overrides.id ?? "probe") as AgentId;
-  return {
-    id,
-    displayName: "Probe",
-    model: { claude: "claude-probe", codex: "codex-probe" },
-    reasoningEffort: { claude: "low", codex: "low" },
-    reportsTo: "principal",
-    delegatesTo: [],
-    capabilities: {
-      tools: ["Read"],
-      skills: [],
-      subagents: [],
-      mcpServers: [],
-      memory: { read: ["shared"], write: [] },
-      workspace: { readRoots: ["/workspace"], writeRoots: [] },
-    },
-    instructions: () => "Probe instructions",
-    workflow: {
-      id: "probe-workflow",
-      initial: "REPORT",
-      states: { REPORT: { allowedTools: [], transitions: [], terminal: true } },
-    },
-    output: { name: "probe-output", schema: {}, validate: () => ({ ok: true }) },
-    ...overrides,
-  };
-}
 
 function withCapabilities(
   capabilities: Partial<AgentDefinition<unknown>["capabilities"]>,
 ): AgentDefinition<unknown> {
-  const base = probe();
-  return defineAgent(probe({ capabilities: { ...base.capabilities, ...capabilities } }));
+  const base = probeDefinition();
+  return defineAgent(probeDefinition({ capabilities: { ...base.capabilities, ...capabilities } }));
 }
 
 describe("capability grants — registry ceiling", () => {
@@ -184,7 +152,7 @@ describe("capability grants — policy snapshot", () => {
 describe("capability grants — policy engine", () => {
   const registry = createAgentRegistry([
     withCapabilities({ tools: ["Read", "Grep", "Skill"], skills: ["git"], subagents: ["prober"], mcpServers: ["docs"] }),
-    defineAgent(probe({ id: "bare" })),
+    defineAgent(probeDefinition({ id: "bare" })),
   ], { catalog });
   const engine = new PolicyEngine({ registry });
 
@@ -215,25 +183,6 @@ describe("capability grants — policy engine", () => {
   });
 });
 
-function policyFixture(overrides: Partial<ExecutionPolicy> = {}): ExecutionPolicy {
-  return {
-    executionId: "exec-capability",
-    role: "probe",
-    workspace: "/workspace",
-    workspaceMode: "read-only",
-    workspaceAccess: "granted",
-    allowedTools: ["Read", "Skill"],
-    skills: ["git"],
-    subagents: [],
-    mcpServers: [],
-    memory: { read: ["shared"], write: [] },
-    delegatesTo: [],
-    createdAt: "2026-09-04T00:00:00.000Z",
-    definitionHash: "definition-hash",
-    policyHash: "policy-hash",
-    ...overrides,
-  };
-}
 
 describe("capability grants — Claude ACL", () => {
   const permissions = (policy: ExecutionPolicy) => claudePermissions({
@@ -275,60 +224,6 @@ describe("capability grants — Claude ACL", () => {
   });
 });
 
-async function runtimeFixture(policy: ExecutionPolicy): Promise<{ root: string; prepared: PreparedExecution }> {
-  const root = await mkdtemp(join(tmpdir(), "alp-capability-"));
-  roots.push(root);
-  const project = join(root, "project");
-  const directory = join(root, "executions", "exec-capability");
-  const runtimeDirectory = join(directory, "runtime");
-  const contextDirectory = join(directory, "context");
-  await mkdir(project, { recursive: true });
-  await mkdir(runtimeDirectory, { recursive: true });
-  await mkdir(contextDirectory, { recursive: true });
-  const resolved = { ...policy, workspace: project };
-  return {
-    root,
-    prepared: {
-      capsule: {
-        executionId: "exec-capability",
-        definitionHash: resolved.definitionHash,
-        policyHash: resolved.policyHash,
-        role: resolved.role,
-        displayName: "Probe",
-        instructions: "Probe instructions",
-        task: "probe the grant",
-        activeWorkspace: project,
-        memoryContext: {
-          invariantContext: "invariants",
-          policyContext: "policy",
-          entries: [],
-          diagnostics: { characterBudget: 0, charactersUsed: 0, truncated: false, omittedEntryIds: [] },
-        },
-        workflowState: { workflowId: "probe-workflow", currentState: "REPORT", status: "running", repairAttempts: 0 },
-        allowedTools: resolved.allowedTools,
-        outputContract: { name: "probe-output", schema: {} },
-      },
-      policy: resolved,
-      state: {
-        executionId: "exec-capability",
-        status: "prepared",
-        workflow: { workflowId: "probe-workflow", currentState: "REPORT", status: "running", repairAttempts: 0 },
-        policyHash: resolved.policyHash,
-        createdAt: resolved.createdAt,
-      },
-      artifacts: {
-        directory,
-        stateFile: join(directory, "state.json"),
-        policyFile: join(directory, "policy.json"),
-        runtimeDirectory,
-        contextDirectory,
-        checkpointFile: join(contextDirectory, "checkpoint.json"),
-        continuityFile: join(contextDirectory, "continuity.md"),
-        compactEventsFile: join(contextDirectory, "compact-events.jsonl"),
-      },
-    },
-  };
-}
 
 describe("capability grants — runtime translation", () => {
   const mcpGrant = { name: "docs", description: "d", egress: "network" as const, command: "npx", args: ["-y", "docs-mcp"] };

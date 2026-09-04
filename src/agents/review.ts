@@ -10,6 +10,8 @@ export const reviewAgent = defineAgent({
   reasoningEffort: { claude: "high", codex: "medium" },
   reportsTo: "main",
   delegatesTo: [],
+  // A diff plus the code around it, and the concern has to survive to the verdict.
+  autoCompactTokens: 300_000,
   capabilities: {
     tools: ["Read", "Glob", "Grep", "Bash", "Skill"],
     skills: ["code-review", "alp-scenario", "security-scan"],

@@ -148,6 +148,11 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
         "-c", `hooks.Stop=${stopHooks}`,
         ...(bridgeEnabled && this.compact.preCompact ? ["-c", `hooks.PreCompact=${preCompactHooks}`] : []),
         ...(bridgeEnabled && this.compact.postCompact ? ["-c", `hooks.PostCompact=${postCompactHooks}`] : []),
+        // Same reason the hooks ride here: `codex-config.toml` is ALP's file, not the one
+        // Codex loads. Codex's own default is 90% of the model's context window.
+        ...(policy.autoCompactTokens === null
+          ? []
+          : ["-c", `model_auto_compact_token_limit=${policy.autoCompactTokens}`]),
         // Granted MCP servers. Codex has no in-process subagent, so a `subagents` grant is
         // simply not translated here — §4.6: subagent là tối ưu hoá, không phải điều kiện.
         ...codexMcpOverrides(policy),

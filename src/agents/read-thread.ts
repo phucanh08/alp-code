@@ -10,6 +10,8 @@ export const readThreadAgent = defineAgent({
   reasoningEffort: { claude: "low", codex: "low" },
   reportsTo: "main",
   delegatesTo: [],
+  // A thread is bounded — this is the ceiling, not the expectation.
+  autoCompactTokens: 200_000,
   capabilities: {
     tools: ["Read", "Glob", "Grep", "Skill"],
     skills: ["agent-memory"],

@@ -10,6 +10,8 @@ export const mainAgent = defineAgent({
   reasoningEffort: { claude: "high", codex: "xhigh" },
   reportsTo: "principal",
   delegatesTo: ["search", "librarian", "read-thread", "review", "oracle", "compaction", "titling"],
+  // The seat that holds the whole picture: keep everything the model can hold.
+  autoCompactTokens: 500_000,
   capabilities: {
     tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Skill"],
     skills: ["alp-plan", "problem-solving", "delegation", "git", "agent-memory"],

@@ -10,6 +10,8 @@ export const compactionAgent = defineAgent({
   reasoningEffort: { claude: "medium", codex: "medium" },
   reportsTo: "main",
   delegatesTo: [],
+  // Writes a handoff, not a corpus.
+  autoCompactTokens: 150_000,
   capabilities: {
     tools: ["Read", "Glob", "Grep"],
     skills: [],

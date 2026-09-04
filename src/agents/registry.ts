@@ -12,6 +12,9 @@ import type {
 import { TOOL_CATALOG } from "./types";
 
 const KNOWN_TOOLS = new Set<string>(TOOL_CATALOG);
+/** Claude's documented `autoCompactWindow` bounds; Codex publishes none, so it shares them. */
+const AUTO_COMPACT_MIN_TOKENS = 100_000;
+const AUTO_COMPACT_MAX_TOKENS = 1_000_000;
 const REASONING_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max", "ultra"]);
 
 function assertNonEmpty(value: string, label: string, agentId: AgentId): void {
@@ -176,6 +179,17 @@ function assertDefinitionInvariants(
         `agent \`${definition.id}\` has invalid ${runtime} reasoning effort`,
       );
     }
+  }
+  const autoCompact = definition.autoCompactTokens;
+  if (
+    autoCompact !== undefined
+    && (!Number.isInteger(autoCompact) || autoCompact < AUTO_COMPACT_MIN_TOKENS || autoCompact > AUTO_COMPACT_MAX_TOKENS)
+  ) {
+    throw new AgentRegistryError(
+      "INVALID_AUTO_COMPACT_LIMIT",
+      `agent \`${definition.id}\` has auto-compact threshold \`${autoCompact}\`, outside `
+      + `${AUTO_COMPACT_MIN_TOKENS}–${AUTO_COMPACT_MAX_TOKENS} whole tokens`,
+    );
   }
   assertNonEmpty(definition.workflow.id, "workflow id", definition.id);
   assertNonEmpty(definition.output.name, "output contract name", definition.id);

@@ -10,6 +10,8 @@ export const librarianAgent = defineAgent({
   reasoningEffort: { claude: "high", codex: "high" },
   reportsTo: "main",
   delegatesTo: [],
+  // Pulls long documentation verbatim; the citations are the output.
+  autoCompactTokens: 300_000,
   capabilities: {
     tools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Skill"],
     skills: ["docs-seeker", "research", "repomix"],

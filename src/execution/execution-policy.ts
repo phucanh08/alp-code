@@ -48,6 +48,7 @@ export function hashAgentDefinition(
     reportsTo: definition.reportsTo,
     delegatesTo: definition.delegatesTo,
     capabilities: definition.capabilities,
+    autoCompactTokens: definition.autoCompactTokens ?? null,
     instructions: definition.instructions,
     workflow: definition.workflow,
     output: {
@@ -89,6 +90,7 @@ export function createExecutionPolicy(
     skills: [...capabilities.skills],
     subagents: resolve("subagent", capabilities.subagents, catalog.subagents),
     mcpServers: resolve("mcp server", capabilities.mcpServers, catalog.mcpServers),
+    autoCompactTokens: input.definition.autoCompactTokens ?? null,
     memory: {
       read: [...input.definition.capabilities.memory.read],
       write: [...input.definition.capabilities.memory.write],

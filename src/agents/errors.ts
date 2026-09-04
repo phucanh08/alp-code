@@ -11,7 +11,8 @@ export type AgentRegistryErrorCode =
   | "UNKNOWN_SUBAGENT"
   | "UNKNOWN_MCP_SERVER"
   | "INVALID_SKILL_GRANT"
-  | "DUPLICATE_GRANT";
+  | "DUPLICATE_GRANT"
+  | "INVALID_AUTO_COMPACT_LIMIT";
 
 export class AgentRegistryError extends Error {
   readonly code: AgentRegistryErrorCode;
