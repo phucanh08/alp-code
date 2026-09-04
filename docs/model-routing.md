@@ -108,7 +108,7 @@ vẫn ở Claude Code; một câu hỏi dễ nhưng cần đào sâu vẫn sang 
 | Context summarization cho thread dài | Compaction · `gpt-5.6-sol` · `medium` |
 | Fast title generation cho thread | Titling · `gpt-5.6-luna` · `low` |
 | Tìm code local | Search · `gpt-5.6-terra` · `low` |
-| Code review theo một concern | Review · `gpt-5.5` · `medium` |
+| Code review theo một concern | Review · `gpt-5.6-terra` · `medium` |
 | Khảo sát rộng nhưng nông, chỉ cần kết luận | `codex exec -m gpt-5.6-terra` |
 | — *ranh giới* — | |
 | Điều phối, giữ bức tranh tổng thể | **Phở (Opus 5)** — tự làm |

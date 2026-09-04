@@ -155,7 +155,7 @@ Loadout hiện tại:
 | `search` | sonnet-5 / terra | low / low | Read Glob Grep Bash Skill | private:search | read |
 | `librarian` | opus-5 / sol | high / high | + WebSearch WebFetch | shared:reference:\*, project:\*:refs:\*, private | read |
 | `read-thread` | haiku-4-5 / luna | low / low | Read Glob Grep Skill | private:read-thread | — |
-| `review` | opus-5 / gpt-5.5 | high / medium | Read Glob Grep Bash Skill | private:review | read |
+| `review` | opus-5 / gpt-5.6-terra | high / medium | Read Glob Grep Bash Skill | private:review | read |
 | `oracle` | opus-5 / sol | high / xhigh | + WebSearch WebFetch | private:oracle | read |
 | `compaction` | opus-5 / sol | medium / medium | Read Glob Grep | private:compaction | — |
 | `titling` | haiku-4-5 / luna | low / low | — | private:titling | — |
@@ -287,7 +287,8 @@ phiên interactive không sinh `task.md`: không có gì để adapter lỡ tay 
 |---|---|---|
 | Config | `claude-settings.json` (`--settings`) | `codex-config.toml` + loạt `-c` |
 | Hook | `hooks.SessionStart` / `hooks.Stop` | tương tự, qua `-c hooks.*` + `--enable hooks` |
-| ACL | `permissions.{additionalDirectories,deny}` | `[sandbox_workspace_write]` + `[[rules]]` |
+| ACL | `permissions.{additionalDirectories,allow,deny}` | `[sandbox_workspace_write]` + `[[rules]]` |
+| Skill/subagent/MCP grant | `allow: Skill(<tên>)`, `Agent(<tên>)`, `mcp__<server>`; `--mcp-config` + `--strict-mcp-config`; `--agents <json>` | `-c mcp_servers.<tên>={…}`; không có subagent in-process |
 | Read-only | `sandbox.filesystem.denyWrite` + `--permission-mode plan` | `-s read-only` |
 | Interactive | `--dangerously-skip-permissions` · **không positional prompt** | `--dangerously-bypass-approvals-and-sandbox` · **không positional prompt** |
 | Headless | positional trỏ tới `task.md` | `exec --skip-git-repo-check` + positional trỏ tới `task.md` |
