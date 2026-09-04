@@ -125,7 +125,7 @@ sự tồn tại của backend cho một request đã bị policy từ chối.
 
 ```ts
 { id, displayName, model: {claude, codex}, reasoningEffort: {claude, codex},
-  reportsTo, delegatesTo, autoCompactTokens?,
+  reportsTo, delegatesTo, autoCompactTokens?: {claude?, codex?},
   capabilities: {tools, skills, subagents, mcpServers, memory, workspace},
   instructions(), workflow, output }
 ```
@@ -139,7 +139,7 @@ load, kể cả bởi code trong cùng process.
 |---|---|
 | id trùng | `DUPLICATE_AGENT` |
 | id/displayName/model/workflow rỗng, effort không hợp lệ | `INVALID_AGENT` |
-| `autoCompactTokens` không nguyên hoặc ngoài 100k–1M | `INVALID_AUTO_COMPACT_LIMIT` |
+| `autoCompactTokens[runtime]` không nguyên, ngoài 100k–1M, hoặc vượt cửa sổ của model runtime đó | `INVALID_AUTO_COMPACT_LIMIT` |
 | tool ngoài `TOOL_CATALOG` | `UNKNOWN_TOOL` |
 | workspace write root không nằm trong read root | `INVALID_WORKSPACE_GRANT` |
 | memory write grant không được read grant bao phủ | `INVALID_MEMORY_GRANT` |
@@ -164,11 +164,23 @@ Loadout hiện tại:
 
 Chỉ `main` có `delegatesTo` khác rỗng. Cây delegation phẳng: `principal → main → {7 specialist}`.
 
-`model-context.ts` giữ `MODEL_CONTEXT_WINDOWS` — cửa sổ context của từng model, là mẫu số cho
-vai không khai `autoCompactTokens`: adapter lấy `policy.autoCompactTokens ??
-defaultAutoCompactTokens(model)`, tức 90% cửa sổ, giống nhau trên cả hai runtime. Model không
+`model-context.ts` giữ `MODEL_CONTEXT_WINDOWS` — cửa sổ context của từng model. Ngưỡng compact
+khai **theo runtime** vì nó là ngân sách của model chứ không của vai một mình: cùng một
+500 000 là "nén sớm" trên cửa sổ 1M và là một dòng không bao giờ chạm tới trên cửa sổ 272k.
+Adapter lấy `policy.autoCompactTokens[runtime] ?? defaultAutoCompactTokens(model)`, tức 90%
+cửa sổ khi vai bỏ trống phía đó. Registry chặn ngưỡng vượt cửa sổ ngay lúc load. Model không
 có trong bảng thì không có mặc định và adapter bỏ hẳn khoá đó, để runtime giữ cửa sổ của nó.
 Test giữ bảng phủ hết model tám vai built-in route tới.
+
+Ngân sách tám vai (— là bỏ trống, tức 90% cửa sổ):
+
+| Vai | claude | codex | Thực nén ở (claude / codex) |
+|---|---:|---:|---|
+| `main` · `oracle` | — | — | 900 000 / 244 800 |
+| `librarian` · `review` | 300 000 | — | 300 000 / 244 800 |
+| `read-thread` | — | 200 000 | 180 000 / 200 000 |
+| `search` · `compaction` | 150 000 | 150 000 | 150 000 / 150 000 |
+| `titling` | 100 000 | 100 000 | 100 000 / 100 000 |
 
 `shared/` chứa phần dùng chung: `house-rules.ts` (`CODE_NATIVE_HOUSE_RULES` — 4 quy tắc
 code-native cho mọi vai; `CODE_CRAFT_RULES` — 4 quy tắc tay nghề chỉ spread vào `main`,

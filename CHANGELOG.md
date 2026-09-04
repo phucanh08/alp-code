@@ -49,32 +49,41 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   execution thật, đọc argv, settings file, `mcp-config.json` và bảng Authority mà không chạy
   runtime. Bộ test mới đi kèm phủ cả ba grant trên cả hai adapter.
 
-- **`autoCompactTokens` — ngưỡng compact khai theo vai.** Trước bản này, một execution ALP
-  spawn ra nén transcript theo cửa sổ mặc định của runtime, tức theo cấu hình của **máy** đang
-  chạy chứ không theo vai đang chạy. Nhưng "còn nhớ được bao nhiêu" là thuộc tính của vai:
-  `main` giữ cả bức tranh nên phải giữ được tối đa model cho phép, còn một `search` phình tới
-  150k token là đã hỏng — nén sớm là cách hỏng rẻ hơn. Field mới nằm trên `AgentDefinition`,
-  vào `definitionHash` và `policyHash`, và dịch khác nhau ở hai runtime: Claude nhận
-  `autoCompactWindow` trong settings file của execution, Codex nhận
-  `-c model_auto_compact_token_limit=` **trên argv** — cùng lý do với hook và MCP, vì
-  `codex-config.toml` là file ALP ghi chứ không phải file Codex đọc.
+- **`autoCompactTokens` — ngưỡng compact khai theo vai, theo từng model.** Trước bản này,
+  một execution ALP spawn ra nén transcript theo cửa sổ mặc định của runtime, tức theo cấu
+  hình của **máy** đang chạy chứ không theo vai đang chạy. Nhưng "còn nhớ được bao nhiêu" là
+  thuộc tính của vai: `main` giữ cả bức tranh nên phải giữ được tối đa model cho phép, còn một
+  `search` phình tới 150k token là đã hỏng — nén sớm là cách hỏng rẻ hơn.
 
-  Ngân sách của tám vai built-in:
+  Field mới nằm trên `AgentDefinition` như một **map theo runtime** — `{ claude?, codex? }`,
+  cùng khuôn với `model` và `reasoningEffort` — vì ngân sách này đi theo model chứ không theo
+  vai một mình: cùng một con số 500 000 là "nén sớm" trên cửa sổ 1M của opus-5, nhưng trên cửa
+  sổ 272k của gpt-5.6 thì transcript không bao giờ chạm tới, và runtime lặng lẽ rơi về chốt
+  cứng của nó (95% cửa sổ) — muộn hơn cả mặc định, trong khi argv vẫn in ra con số nói ngược
+  lại. Cả map vào `definitionHash` và `policyHash`; snapshot ghi đủ một khoá mỗi runtime, vì
+  policy viết ra trước lúc dispatch và chưa biết runtime nào sẽ chạy.
 
-  | Vai | Token | Vì sao |
-  |---|---:|---|
-  | `main` | 500 000 | Ghế giữ toàn cảnh; giữ tối đa những gì model chứa được |
-  | `oracle` | 400 000 | Suy luận trên cả tập bằng chứng một lượt |
-  | `librarian` · `review` | 300 000 | Doc trích nguyên văn; diff cộng code quanh nó |
-  | `read-thread` | 200 000 | Một thread là hữu hạn — đây là trần, không phải kỳ vọng |
-  | `search` · `compaction` | 150 000 | Không được phép phình; viết handoff chứ không gom corpus |
-  | `titling` | 100 000 | Sàn; một cái tiêu đề gần như không cần gì |
+  Dịch khác nhau ở hai runtime: Claude nhận `autoCompactWindow` trong settings file của
+  execution, Codex nhận `-c model_auto_compact_token_limit=` **trên argv** — cùng lý do với
+  hook và MCP, vì `codex-config.toml` là file ALP ghi chứ không phải file Codex đọc.
 
-  Trần thi hành lúc registry load: số nguyên trong khoảng 100 000–1 000 000, ngoài khoảng thì
-  `INVALID_AUTO_COMPACT_LIMIT`. Biên là biên Claude công bố; Codex không công bố biên nào, và
-  dùng chung một khoảng là thứ giữ cho một con số khai ra có nghĩa trên cả hai runtime.
+  Ngân sách tám vai built-in (— là bỏ trống, nhận mặc định 90%):
 
-- **Vai không khai ngưỡng thì mặc định là 90% cửa sổ context của model.** Bỏ trống trước đây
+  | Vai | claude | codex | Thực nén ở (claude / codex) | Vì sao |
+  |---|---:|---:|---|---|
+  | `main` · `oracle` | — | — | 900 000 / 244 800 | Giữ tối đa model cho phép; suy luận trên cả tập bằng chứng |
+  | `librarian` · `review` | 300 000 | — | 300 000 / 244 800 | Doc nguyên văn, diff cộng code quanh nó; quá 300k trên cửa sổ 1M là đã đi lạc |
+  | `read-thread` | — | 200 000 | 180 000 / 200 000 | Thread hữu hạn; cửa sổ haiku-4-5 đúng bằng 200k nên phía Claude phải là mặc định |
+  | `search` · `compaction` | 150 000 | 150 000 | 150 000 / 150 000 | Không được phép phình; viết handoff chứ không gom corpus |
+  | `titling` | 100 000 | 100 000 | 100 000 / 100 000 | Sàn; một cái tiêu đề gần như không cần gì |
+
+  Trần thi hành lúc registry load, cho **từng phía**: số nguyên trong khoảng 100 000–1 000 000
+  **và** không vượt cửa sổ context của chính model phía đó, ngoài khoảng thì
+  `INVALID_AUTO_COMPACT_LIMIT`. Vế thứ hai là vế bắt được lỗi im lặng: khai vượt cửa sổ không
+  hỏng gì trông thấy, chỉ khiến vai nén **muộn hơn** mức nó tưởng. Chặn ở chỗ con số được viết
+  ra, chứ không clamp ở chỗ nó được đọc.
+
+- **Vai không khai ngưỡng thì mặc định là 90% cửa sổ context của model đó.** Bỏ trống trước đây
   nghĩa là "để runtime tự chọn", mà hai runtime chọn khác nhau: Codex nén ở 90% cửa sổ model,
   Claude nén ở cửa sổ nó tự tune theo model và theo settings của **máy** đang chạy. Cùng một vai
   lại nhớ được nhiều ít khác nhau tuỳ chỗ chạy — đúng cái phụ thuộc-vào-máy mà việc khai ngưỡng
@@ -90,8 +99,6 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   Model không có trong bảng thì không có mặc định — runtime giữ cửa sổ của nó, vì để runtime
   tự lo còn hơn dựng ngân sách từ phỏng đoán. Test giữ bảng phủ hết model mà tám vai built-in
   route tới, và pin 90% của mọi cửa sổ trong bảng vẫn nằm trong khoảng Claude chấp nhận.
-  Snapshot `policy.json` vẫn ghi `null` cho vai không khai: con số cuối cùng phụ thuộc runtime
-  được dispatch tới, còn snapshot thì runtime-agnostic.
 
 ### Thay đổi
 
