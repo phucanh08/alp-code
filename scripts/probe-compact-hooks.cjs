@@ -210,14 +210,66 @@ function codexHookArgs(outputDir, revealAll) {
   return args;
 }
 
+/**
+ * The installed CLI, resolved the way production resolves it. Mirrors
+ * `resolveRuntimeCommand()` in src/runtime/adapter-files.ts: walk PATH, and on Windows try
+ * every PATHEXT extension rather than assuming one.
+ *
+ * The first cut of this probe assumed `${runtime}.cmd` on Windows and nothing else. That is
+ * only true for an npm install; a winget install puts a native `codex.exe`/`claude.exe` on
+ * PATH and no `.cmd` at all, so the probe died at `spawnSync EINVAL` before a single hook
+ * could fire — a probe bug that looks exactly like the hook-quoting failure it exists to
+ * detect. Returns an absolute path so the spawn does not re-resolve.
+ */
+function resolveRuntimeBinary(runtime) {
+  const directories = (process.env.PATH ?? process.env.Path ?? "").split(path.delimiter).filter(Boolean);
+  const extensions = process.platform === "win32"
+    ? (process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD").split(";").map((value) => value.trim()).filter(Boolean)
+    : [""];
+  for (const directory of directories) {
+    for (const extension of extensions) {
+      const candidate = path.join(directory, runtime + extension);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+/**
+ * Node refuses to spawn a Windows `.cmd`/`.bat` directly (EINVAL), and `shell: true` would
+ * hand cmd.exe a second parse of hook command strings that are full of quotes and
+ * backslashes. Production solves this in src/runtime/windows-shim.ts by reading the npm
+ * wrapper and running the script it points at; do the same here, for the same reason.
+ */
+const SHIM_LAUNCH_LINE = /"(?:%_prog%|[^"\r\n]*?node(?:\.exe)?)"[ \t]+([^\r\n]+?)[ \t]+%\*[ \t]*$/im;
+
+function unwrapWindowsShim(file) {
+  if (process.platform !== "win32" || !/\.(?:cmd|bat)$/i.test(file)) return null;
+  let text;
+  try { text = fs.readFileSync(file, "utf8"); } catch { return null; }
+  const launch = SHIM_LAUNCH_LINE.exec(text);
+  if (launch === null) return null;
+  const tokens = [];
+  const pattern = /"([^"]*)"|(\S+)/g;
+  for (let match = pattern.exec(launch[1]); match; match = pattern.exec(launch[1])) {
+    tokens.push((match[1] ?? match[2]).replace(/%~?dp0%?/gi, path.dirname(file)));
+  }
+  return tokens.length === 0 ? null : { command: process.execPath, args: tokens };
+}
+
 function launchSpec(runtime, outputDir, revealAll) {
-  const suffix = process.platform === "win32" ? ".cmd" : "";
-  return {
-    command: `${runtime}${suffix}`,
-    args: runtime === "claude"
-      ? ["--settings", writeClaudeSettings(outputDir, outputDir, revealAll)]
-      : ["--dangerously-bypass-hook-trust", "--enable", "hooks", ...codexHookArgs(outputDir, revealAll)],
-  };
+  const runtimeArgs = runtime === "claude"
+    ? ["--settings", writeClaudeSettings(outputDir, outputDir, revealAll)]
+    : ["--dangerously-bypass-hook-trust", "--enable", "hooks", ...codexHookArgs(outputDir, revealAll)];
+
+  const binary = resolveRuntimeBinary(runtime);
+  if (binary === null) {
+    fail(`${runtime} not found on PATH. Install the CLI, or put it on PATH, before probing.`);
+  }
+  const shim = unwrapWindowsShim(binary);
+  return shim === null
+    ? { command: binary, args: runtimeArgs }
+    : { command: shim.command, args: [...shim.args, ...runtimeArgs] };
 }
 
 /**
@@ -238,7 +290,7 @@ function dryRun(runtime, outputDir, revealAll) {
     "launch:",
     `  ${spec.command} ${spec.args.map((arg) => (arg.includes(" ") ? `'${arg}'` : arg)).join(" ")}`,
     "",
-    ...(runtime === "claude" ? ["settings written to:", `  ${spec.args[1]}`, ""] : [
+    ...(runtime === "claude" ? ["settings written to:", `  ${spec.args[spec.args.indexOf("--settings") + 1]}`, ""] : [
       "note: `-c` is a clap *global* arg. Anything you pass after `--` that repeats `-c` must stay",
       "      at the same level as the `-c hooks.*` above — putting it after the `exec` subcommand",
       "      makes clap replace the parent's values, dropping every hook with no error at all.",
@@ -260,7 +312,20 @@ function launch(runtime, outputDir, revealAll, extraArgs) {
     "  2. Ask: \"what is the ALP probe marker?\"       → proves SessionStart injected context",
     "  3. Run /compact                               → fires PreCompact then PostCompact",
     "  4. Ask for the ALP probe marker again         → proves SessionStart(source=compact) reinjects",
-    "  5. Exit the CLI",
+    "  5. Exit the CLI with its own command (/exit, Ctrl+D)",
+    "",
+    "Step 3 must be a real slash command: type it, do not paste, and leave no space before the",
+    "`/`. A literal `/compact` reaches the model as an ordinary prompt and it will answer with a",
+    "summary that looks exactly like success. Claude should show its compaction UI; Codex should",
+    "print its own confirmation rather than an assistant turn.",
+    "",
+    "Step 4 is not optional and is the easiest to skip. Codex was measured emitting no",
+    "SessionStart(source=compact) between PostCompact and SessionEnd, so a session that exits",
+    "straight after compacting cannot tell 'never fires' from 'fires on the next turn'. Take one",
+    "more turn before leaving.",
+    "",
+    "Step 5: Ctrl+C kills this driver too, and the report is written after the CLI exits. If that",
+    "happens, `--report-only` rebuilds it from events.jsonl once the session is closed.",
     "",
     `Recording to ${path.join(outputDir, "events.jsonl")}`,
     "",
@@ -335,15 +400,36 @@ function report(runtime, outputDir) {
   try { run = JSON.parse(fs.readFileSync(path.join(outputDir, "run.json"), "utf8")); } catch { /* --record-only run */ }
   const mode = run ? run.mode : "unknown (no run.json)";
 
+  // "No compact event recorded" has two causes that look identical from here: the hook did not
+  // dispatch, or no compaction ever ran. Printing `NO` for both is how the 2026-09-04 TTY runs
+  // came to read as "compact hooks are dead in inherited-TTY" when in fact `/compact` had been
+  // sent to the model as an ordinary prompt — Claude logged the user message as `" /compact"`,
+  // leading space and all, and Codex logged a plain turn whose reply was the words "Context
+  // compacted." Both models happily play along, so the terminal looks right and the report
+  // looks damning. Say `not observed` and make the operator prove a compaction happened.
+  const sawCompaction = seen("PreCompact").length || seen("PostCompact").length || compactStarts.length;
+  const verdict = (list) => (list.length ? `YES (${list.length})` : "not observed");
   line("## Gate");
   line("");
   line(`- launch mode: **${mode}**${run ? ` on ${run.platform}` : ""}`);
-  line(`- PreCompact fired: ${seen("PreCompact").length ? "YES" : "NO"}`);
-  line(`- PostCompact fired: ${seen("PostCompact").length ? "YES" : "NO"}`);
-  line(`- SessionStart re-fired with source=compact: ${compactStarts.length ? "YES" : "NO"}`);
+  line(`- PreCompact: ${verdict(seen("PreCompact"))}`);
+  line(`- PostCompact: ${verdict(seen("PostCompact"))}`);
+  line(`- SessionStart re-fired with source=compact: ${verdict(compactStarts)}`);
   line(`- event order: ${events.map((entry) => entry.parsedEvent ?? "?").join(" → ")}`);
   line(`- Markers injected: ${seen("SessionStart").map((entry) => entry.marker).filter(Boolean).join(", ") || "none"}`);
   line("");
+  if (!sawCompaction) {
+    line("**No compact event was recorded, and this report cannot tell you why.** Before reading");
+    line("that as \"the hook does not dispatch\", rule out the likelier cause: that no compaction");
+    line("ran at all. Both CLIs accept a literal `/compact` as a prompt when the slash command is");
+    line("not recognised — a leading space is enough — and the model answers with a summary, which");
+    line("reads exactly like success in the terminal. Confirm against the runtime's own transcript:");
+    line("Claude `~/.claude/projects/<cwd-slug>/<session>.jsonl` must carry a compact boundary, and");
+    line("Codex `~/.codex/sessions/<date>/rollout-*.jsonl` must show context shrinking rather than");
+    line("one more ordinary `task_started`/`task_complete` pair. Only then is `not observed` a");
+    line("statement about the hook.");
+    line("");
+  }
   line("Whether the model could still quote the marker after /compact is the one answer this");
   line("script cannot read for you — record it from the transcript by hand.");
   line("");
