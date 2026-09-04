@@ -62,7 +62,7 @@ export function policyFixture(overrides: Partial<ExecutionPolicy> = {}): Executi
     skills: ["git"],
     subagents: [],
     mcpServers: [],
-    autoCompactTokens: null,
+    autoCompactTokens: { claude: null, codex: null },
     memory: { read: ["shared"], write: [] },
     delegatesTo: [],
     createdAt: "2026-09-04T00:00:00.000Z",

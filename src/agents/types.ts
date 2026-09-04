@@ -11,8 +11,14 @@ export const TOOL_CATALOG = [
   "Skill",
 ] as const;
 export type ToolId = (typeof TOOL_CATALOG)[number];
-export type RuntimeId = "claude" | "codex";
+export const RUNTIME_IDS = ["claude", "codex"] as const;
+export type RuntimeId = (typeof RUNTIME_IDS)[number];
 export type RuntimeModelMap = Readonly<Record<RuntimeId, string>>;
+/**
+ * A token budget per runtime, keyed like `model` — because that is what it is a budget of.
+ * Partial: a side left out takes 90% of its own model's context window.
+ */
+export type RuntimeTokenBudgetMap = Readonly<Partial<Record<RuntimeId, number>>>;
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 export type RuntimeReasoningMap = Readonly<Record<RuntimeId, ReasoningEffort>>;
 
@@ -70,18 +76,23 @@ export interface AgentDefinition<TOutput> {
   readonly delegatesTo: readonly AgentId[];
   readonly capabilities: AgentCapabilities;
   /**
-   * Token count at which the runtime may compact its own transcript. Left out, the role
-   * takes 90% of its model's context window (`defaultAutoCompactTokens`) — a default rather
-   * than the runtime's own, so a role remembers the same amount wherever it runs.
+   * Token count at which each runtime may compact its own transcript. A side left out takes
+   * 90% of that model's context window (`defaultAutoCompactTokens`) — ALP's default rather
+   * than the runtime's own, so a role remembers the same share wherever it runs.
    *
    * Declared on the role because it is the role that knows how much of its own history is
    * load-bearing: the seat holding the whole picture keeps everything the model can hold,
    * while a one-shot specialist that grows this far has gone wrong and is better off
-   * compacted than ballooning. Range is Claude's documented 100k–1M (`autoCompactWindow`);
-   * Codex publishes no bounds for `model_auto_compact_token_limit`, and sharing the range
-   * is what keeps one declared number meaningful on both runtimes.
+   * compacted than ballooning.
+   *
+   * Declared **per runtime** because the budget belongs to the model, not to the role alone:
+   * the same 500 000 is an early compaction on a 1M window and a line that never fires on a
+   * 272k one, where the runtime silently falls back to its own hard limit instead. Each side
+   * is checked against its own model's window at registry load, so that fallback cannot
+   * happen quietly. Range is Claude's documented 100k–1M (`autoCompactWindow`); Codex
+   * publishes no bounds for `model_auto_compact_token_limit` and shares it.
    */
-  readonly autoCompactTokens?: number;
+  readonly autoCompactTokens?: RuntimeTokenBudgetMap;
   /** Static identity text — no per-execution context. See `renderInstructions`. */
   readonly instructions: () => string;
   readonly workflow: WorkflowDefinition;

@@ -68,7 +68,7 @@ async function fixture(): Promise<{ root: string; project: string; prepared: Pre
       skills: [],
       subagents: [],
       mcpServers: [],
-      autoCompactTokens: null,
+      autoCompactTokens: { claude: null, codex: null },
       memory: { read: ["shared"], write: [] },
       delegatesTo: [],
       createdAt: "2026-08-26T00:00:00.000Z",

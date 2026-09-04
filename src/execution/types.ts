@@ -5,6 +5,7 @@ import type {
 import type {
   AgentId,
   MemoryGrants,
+  RuntimeId,
   ToolId,
 } from "../agents/types";
 import type {
@@ -49,13 +50,13 @@ export interface ExecutionPolicy {
   readonly subagents: readonly SubagentAuthorization[];
   readonly mcpServers: readonly McpServerAuthorization[];
   /**
-   * Token count at which the runtime compacts, or `null` when the role declared none and
-   * the adapter resolves 90% of the model's window at launch. `null` rather than an absent
-   * key: the snapshot has to say "not declared" out loud, the same way it says which tools
-   * were withheld. The resolved number is not stored here because it depends on the runtime
-   * the execution is dispatched to, and this snapshot is runtime-agnostic.
+   * Token count at which each runtime compacts — `null` on a side the role declared none
+   * for, where the adapter resolves 90% of that model's window at launch. `null` rather
+   * than an absent key: the snapshot has to say "not declared" out loud, the same way it
+   * says which tools were withheld. Every runtime keeps its own entry because this snapshot
+   * is written before dispatch and does not know which one will run it.
    */
-  readonly autoCompactTokens: number | null;
+  readonly autoCompactTokens: Readonly<Record<RuntimeId, number | null>>;
   readonly memory: MemoryGrants;
   readonly delegatesTo: readonly AgentId[];
   readonly createdAt: string;

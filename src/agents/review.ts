@@ -10,8 +10,9 @@ export const reviewAgent = defineAgent({
   reasoningEffort: { claude: "high", codex: "medium" },
   reportsTo: "main",
   delegatesTo: [],
-  // A diff plus the code around it, and the concern has to survive to the verdict.
-  autoCompactTokens: 300_000,
+  // Một diff cộng code quanh nó, và mối nghi phải sống tới lúc ra phán quyết. Phía codex
+  // bỏ trống vì mặc định 90% của 272k đã thấp hơn trần này.
+  autoCompactTokens: { claude: 300_000 },
   capabilities: {
     tools: ["Read", "Glob", "Grep", "Bash", "Skill"],
     skills: ["code-review", "alp-scenario", "security-scan"],

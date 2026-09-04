@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { capabilityCatalog, type CapabilityCatalog } from "../agents/capability-catalog";
-import type { AgentDefinition } from "../agents/types";
+import type { AgentDefinition, RuntimeId } from "../agents/types";
+import { RUNTIME_IDS } from "../agents/types";
 import {
   deepFreezeExecutionValue,
   type ExecutionId,
@@ -37,6 +38,19 @@ function sha256(value: unknown): string {
     .digest("hex");
 }
 
+/**
+ * The declared budget with one entry per runtime, present or not. Normalised in one place so
+ * the hash cannot move just because a definition spelled the same budget with a key missing
+ * rather than set to nothing.
+ */
+function declaredAutoCompactTokens(
+  definition: AgentDefinition<unknown>,
+): Readonly<Record<RuntimeId, number | null>> {
+  return Object.fromEntries(
+    RUNTIME_IDS.map((runtime) => [runtime, definition.autoCompactTokens?.[runtime] ?? null]),
+  ) as Record<RuntimeId, number | null>;
+}
+
 export function hashAgentDefinition(
   definition: AgentDefinition<unknown>,
 ): string {
@@ -48,7 +62,7 @@ export function hashAgentDefinition(
     reportsTo: definition.reportsTo,
     delegatesTo: definition.delegatesTo,
     capabilities: definition.capabilities,
-    autoCompactTokens: definition.autoCompactTokens ?? null,
+    autoCompactTokens: declaredAutoCompactTokens(definition),
     instructions: definition.instructions,
     workflow: definition.workflow,
     output: {
@@ -90,7 +104,7 @@ export function createExecutionPolicy(
     skills: [...capabilities.skills],
     subagents: resolve("subagent", capabilities.subagents, catalog.subagents),
     mcpServers: resolve("mcp server", capabilities.mcpServers, catalog.mcpServers),
-    autoCompactTokens: input.definition.autoCompactTokens ?? null,
+    autoCompactTokens: declaredAutoCompactTokens(input.definition),
     memory: {
       read: [...input.definition.capabilities.memory.read],
       write: [...input.definition.capabilities.memory.write],

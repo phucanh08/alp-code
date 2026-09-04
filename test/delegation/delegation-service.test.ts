@@ -42,7 +42,7 @@ function prepared(executionId: string, target = "search"): PreparedExecution {
       skills: [],
       subagents: [],
       mcpServers: [],
-      autoCompactTokens: null,
+      autoCompactTokens: { claude: null, codex: null },
       memory: { read: [], write: [] },
       delegatesTo: [],
       createdAt: "2026-08-26T00:00:00.000Z",

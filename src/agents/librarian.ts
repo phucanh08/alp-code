@@ -10,8 +10,10 @@ export const librarianAgent = defineAgent({
   reasoningEffort: { claude: "high", codex: "high" },
   reportsTo: "main",
   delegatesTo: [],
-  // Pulls long documentation verbatim; the citations are the output.
-  autoCompactTokens: 300_000,
+  // Doc trích nguyên văn; trích dẫn chính là output. 300k là trần an toàn trên cửa sổ 1M
+  // của opus-5 — quá đó là đã đi lạc chứ không phải đọc kỹ. Phía codex bỏ trống: 90% của
+  // 272k (244 800) đã chặt hơn 300k rồi, khai thêm chỉ là số thừa.
+  autoCompactTokens: { claude: 300_000 },
   capabilities: {
     tools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Skill"],
     skills: ["docs-seeker", "research", "repomix"],

@@ -9,8 +9,8 @@ export const titlingAgent = defineAgent({
   reasoningEffort: { claude: "low", codex: "low" },
   reportsTo: "main",
   delegatesTo: [],
-  // A title needs almost nothing; the floor is deliberate.
-  autoCompactTokens: 100_000,
+  // Một cái tiêu đề gần như không cần gì; sàn là có chủ ý.
+  autoCompactTokens: { claude: 100_000, codex: 100_000 },
   capabilities: {
     tools: [],
     skills: [],

@@ -125,7 +125,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
       join(artifacts.runtimeDirectory, "skill-roots.json"),
       `${JSON.stringify(skillRoots.split(delimiter).filter(Boolean), null, 2)}\n`,
     );
-    const autoCompactTokens = policy.autoCompactTokens ?? defaultAutoCompactTokens(input.model);
+    const autoCompactTokens = policy.autoCompactTokens[this.name] ?? defaultAutoCompactTokens(input.model);
     const env = {
       ...baseRuntimeEnvironment(capsule, contextFiles, artifacts),
       ALP_EXECUTION_ROOT: dirname(artifacts.directory),

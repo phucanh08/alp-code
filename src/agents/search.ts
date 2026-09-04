@@ -10,8 +10,9 @@ export const searchAgent = defineAgent({
   reasoningEffort: { claude: "low", codex: "low" },
   reportsTo: "main",
   delegatesTo: [],
-  // A search that grows this far has gone wrong; compacting is the cheaper failure.
-  autoCompactTokens: 150_000,
+  // Một cuộc tìm phình tới đây là đã hỏng; nén là cách hỏng rẻ hơn. Bằng nhau hai phía:
+  // trần này nói về việc tìm kiếm, không về model.
+  autoCompactTokens: { claude: 150_000, codex: 150_000 },
   capabilities: {
     tools: ["Read", "Glob", "Grep", "Bash", "Skill"],
     skills: ["gkg", "repomix"],

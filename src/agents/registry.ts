@@ -3,13 +3,14 @@ import { defineAgent } from "./agent-definition";
 import { capabilityCatalog, type CapabilityCatalog } from "./capability-catalog";
 import { AgentRegistryError } from "./errors";
 import { memoryGrantCovers } from "./memory-grant";
+import { MODEL_CONTEXT_WINDOWS } from "./model-context";
 import type {
   AgentDefinition,
   AgentId,
   AgentRegistry,
   MemoryScopeGrant,
 } from "./types";
-import { TOOL_CATALOG } from "./types";
+import { RUNTIME_IDS, TOOL_CATALOG } from "./types";
 
 const KNOWN_TOOLS = new Set<string>(TOOL_CATALOG);
 /** Claude's documented `autoCompactWindow` bounds; Codex publishes none, so it shares them. */
@@ -172,7 +173,7 @@ function assertDefinitionInvariants(
       `agent \`${definition.id}\` is missing Codex runtime model`,
     );
   }
-  for (const runtime of ["claude", "codex"] as const) {
+  for (const runtime of RUNTIME_IDS) {
     if (!REASONING_EFFORTS.has(definition.reasoningEffort[runtime])) {
       throw new AgentRegistryError(
         "INVALID_AGENT",
@@ -180,16 +181,31 @@ function assertDefinitionInvariants(
       );
     }
   }
-  const autoCompact = definition.autoCompactTokens;
-  if (
-    autoCompact !== undefined
-    && (!Number.isInteger(autoCompact) || autoCompact < AUTO_COMPACT_MIN_TOKENS || autoCompact > AUTO_COMPACT_MAX_TOKENS)
-  ) {
-    throw new AgentRegistryError(
-      "INVALID_AUTO_COMPACT_LIMIT",
-      `agent \`${definition.id}\` has auto-compact threshold \`${autoCompact}\`, outside `
-      + `${AUTO_COMPACT_MIN_TOKENS}–${AUTO_COMPACT_MAX_TOKENS} whole tokens`,
-    );
+  for (const runtime of RUNTIME_IDS) {
+    const autoCompact = definition.autoCompactTokens?.[runtime];
+    if (autoCompact === undefined) continue;
+    const prefix = `agent \`${definition.id}\` has ${runtime} auto-compact threshold \`${autoCompact}\``;
+    if (
+      !Number.isInteger(autoCompact)
+      || autoCompact < AUTO_COMPACT_MIN_TOKENS
+      || autoCompact > AUTO_COMPACT_MAX_TOKENS
+    ) {
+      throw new AgentRegistryError(
+        "INVALID_AUTO_COMPACT_LIMIT",
+        `${prefix}, outside ${AUTO_COMPACT_MIN_TOKENS}–${AUTO_COMPACT_MAX_TOKENS} whole tokens`,
+      );
+    }
+    // A threshold above the model's own window is a line the transcript can never cross:
+    // the runtime falls back to its hard limit and compacts later than the role asked,
+    // while argv still prints a number that says otherwise. Refused here rather than
+    // clamped at launch — the number is wrong where it is written, not where it is read.
+    const window = MODEL_CONTEXT_WINDOWS[definition.model[runtime]];
+    if (window !== undefined && autoCompact > window) {
+      throw new AgentRegistryError(
+        "INVALID_AUTO_COMPACT_LIMIT",
+        `${prefix} above the context window of \`${definition.model[runtime]}\` (${window} tokens)`,
+      );
+    }
   }
   assertNonEmpty(definition.workflow.id, "workflow id", definition.id);
   assertNonEmpty(definition.output.name, "output contract name", definition.id);
