@@ -5,6 +5,7 @@ import { agentRegistry, createAgentRegistry } from "../../src/agents/registry";
 import { createExecutionPolicy } from "../../src/execution/execution-policy";
 import { ClaudeRuntimeAdapter } from "../../src/runtime/claude-adapter";
 import { CodexRuntimeAdapter } from "../../src/runtime/codex-adapter";
+import { MODEL_CONTEXT_WINDOWS, defaultAutoCompactTokens } from "../../src/agents/model-context";
 import { cleanupExecutionFixtures, policyFixture, probeDefinition, runtimeFixture } from "../support/execution-fixture";
 
 /**
@@ -92,10 +93,11 @@ describe("auto-compact threshold — runtime translation", () => {
   });
 
   /**
-   * Absent, not zero and not the model's own number copied in: a role that declares nothing
-   * must leave the runtime free to pick the window it tunes per model.
+   * Absent, not zero: a role that declares nothing on a model ALP has no window for leaves
+   * the runtime free to pick the window it tunes itself. `claude-test` is that model — the
+   * declared-nothing case on a *known* model resolves to 90% below.
    */
-  it("leaves Claude's setting out when the role declares none", async () => {
+  it("leaves Claude's setting out when neither the role nor the table has a number", async () => {
     const { root, prepared } = await runtimeFixture(policyFixture());
     const adapter = new ClaudeRuntimeAdapter({ platform: "linux", env: { HOME: root, ALP_REPO_ROOT: root } });
     const launch = await adapter.prepare({ execution: prepared, model: "claude-test", reasoningEffort: "high", interactive: false });
@@ -116,7 +118,7 @@ describe("auto-compact threshold — runtime translation", () => {
     expect(launch.args).toContain("model_auto_compact_token_limit=300000");
   });
 
-  it("leaves Codex's override out when the role declares none", async () => {
+  it("leaves Codex's override out when neither the role nor the table has a number", async () => {
     const { root, prepared } = await runtimeFixture(policyFixture());
     const adapter = new CodexRuntimeAdapter({ platform: "linux", env: { HOME: root, ALP_REPO_ROOT: root } });
     const launch = await adapter.prepare({ execution: prepared, model: "codex-test", reasoningEffort: "high", interactive: false });
@@ -144,6 +146,87 @@ describe("auto-compact threshold — built-ins", () => {
     for (const definition of agentRegistry.list()) {
       if (definition.id === "main") continue;
       expect(definition.autoCompactTokens ?? 0, definition.id).toBeLessThan(main);
+    }
+  });
+});
+
+/**
+ * A role that declares no threshold still gets one: 90% of its model's context window.
+ *
+ * Silence used to mean "whatever the runtime does", and the two runtimes do different
+ * things — Codex compacts at 90% of the model window, Claude at a window it tunes per model
+ * and per the launching machine's settings. So the same role remembered a different amount
+ * depending on where it ran, which is the machine-dependence declaring the threshold on the
+ * role was meant to end. ALP resolves the default itself, from the model the role declares,
+ * and it lands identically on both runtimes.
+ */
+describe("auto-compact threshold — default of 90% of the model window", () => {
+  it("takes 90% of a known model's context window", () => {
+    expect(defaultAutoCompactTokens("claude-opus-5")).toBe(900_000);
+    expect(defaultAutoCompactTokens("claude-haiku-4-5")).toBe(180_000);
+    expect(defaultAutoCompactTokens("gpt-5.6-sol")).toBe(244_800);
+  });
+
+  /** Never a guessed window: a model ALP has no number for gets no default at all. */
+  it("returns null for a model outside the table", () => {
+    expect(defaultAutoCompactTokens("claude-test")).toBeNull();
+    expect(defaultAutoCompactTokens("")).toBeNull();
+  });
+
+  it("writes the resolved default into Claude's settings file", async () => {
+    const { root, prepared } = await runtimeFixture(policyFixture());
+    const adapter = new ClaudeRuntimeAdapter({ platform: "linux", env: { HOME: root, ALP_REPO_ROOT: root } });
+    const launch = await adapter.prepare({ execution: prepared, model: "claude-opus-5", reasoningEffort: "high", interactive: false });
+
+    const settings = JSON.parse(await readFile(launch.env.ALP_RUNTIME_CONFIG, "utf8")) as { autoCompactWindow?: number };
+    expect(settings.autoCompactWindow).toBe(900_000);
+  });
+
+  it("passes the resolved default to Codex on argv", async () => {
+    const { root, prepared } = await runtimeFixture(policyFixture());
+    const adapter = new CodexRuntimeAdapter({ platform: "linux", env: { HOME: root, ALP_REPO_ROOT: root } });
+    const launch = await adapter.prepare({ execution: prepared, model: "gpt-5.6-sol", reasoningEffort: "high", interactive: false });
+
+    expect(launch.args).toContain("model_auto_compact_token_limit=244800");
+  });
+
+  /** The default is a floor for silence, not a ceiling on the declaration. */
+  it("keeps a declared threshold ahead of the default on both runtimes", async () => {
+    const claudeFixture = await runtimeFixture(policyFixture({ autoCompactTokens: 300_000 }));
+    const claude = new ClaudeRuntimeAdapter({ platform: "linux", env: { HOME: claudeFixture.root, ALP_REPO_ROOT: claudeFixture.root } });
+    const claudeLaunch = await claude.prepare({ execution: claudeFixture.prepared, model: "claude-opus-5", reasoningEffort: "high", interactive: false });
+    const settings = JSON.parse(await readFile(claudeLaunch.env.ALP_RUNTIME_CONFIG, "utf8")) as { autoCompactWindow?: number };
+    expect(settings.autoCompactWindow).toBe(300_000);
+
+    const codexFixture = await runtimeFixture(policyFixture({ autoCompactTokens: 300_000 }));
+    const codex = new CodexRuntimeAdapter({ platform: "linux", env: { HOME: codexFixture.root, ALP_REPO_ROOT: codexFixture.root } });
+    const codexLaunch = await codex.prepare({ execution: codexFixture.prepared, model: "gpt-5.6-sol", reasoningEffort: "high", interactive: false });
+    expect(codexLaunch.args).toContain("model_auto_compact_token_limit=300000");
+  });
+
+  /**
+   * The table has to cover every model a shipped role can be launched on, or "declares
+   * nothing" quietly stops meaning 90% for that role — the failure a routing change would
+   * otherwise make silently.
+   */
+  it("has a window for every model the built-ins route to", () => {
+    for (const definition of agentRegistry.list()) {
+      expect(MODEL_CONTEXT_WINDOWS, `${definition.id}/claude`).toHaveProperty(definition.model.claude);
+      expect(MODEL_CONTEXT_WINDOWS, `${definition.id}/codex`).toHaveProperty(definition.model.codex);
+    }
+  });
+
+  /**
+   * Claude refuses an `autoCompactWindow` outside 100k–1M, so a window whose 90% falls
+   * outside that range would produce a settings file the runtime rejects. Pinned here
+   * rather than clamped at launch: the fix belongs in the table, where it is visible.
+   */
+  it("keeps every resolved default inside the range both runtimes accept", () => {
+    for (const [model, window] of Object.entries(MODEL_CONTEXT_WINDOWS)) {
+      const resolved = defaultAutoCompactTokens(model);
+      expect(resolved, model).toBe(Math.floor((window * 90) / 100));
+      expect(resolved, model).toBeGreaterThanOrEqual(100_000);
+      expect(resolved, model).toBeLessThanOrEqual(1_000_000);
     }
   });
 });

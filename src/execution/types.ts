@@ -49,9 +49,11 @@ export interface ExecutionPolicy {
   readonly subagents: readonly SubagentAuthorization[];
   readonly mcpServers: readonly McpServerAuthorization[];
   /**
-   * Token count at which the runtime compacts, or `null` for the runtime's own window.
-   * `null` rather than an absent key: the snapshot has to say "runtime default" out loud,
-   * the same way it says which tools were withheld.
+   * Token count at which the runtime compacts, or `null` when the role declared none and
+   * the adapter resolves 90% of the model's window at launch. `null` rather than an absent
+   * key: the snapshot has to say "not declared" out loud, the same way it says which tools
+   * were withheld. The resolved number is not stored here because it depends on the runtime
+   * the execution is dispatched to, and this snapshot is runtime-agnostic.
    */
   readonly autoCompactTokens: number | null;
   readonly memory: MemoryGrants;

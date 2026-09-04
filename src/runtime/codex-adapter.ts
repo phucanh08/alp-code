@@ -1,4 +1,5 @@
 import { delimiter, dirname, join } from "node:path";
+import { defaultAutoCompactTokens } from "../agents/model-context";
 import { agentRegistry } from "../agents/registry";
 import { atomicRuntimeFile, baseRuntimeEnvironment, compactBridgeEnabled, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
 import { codexMcpOverrides, codexSandboxLines, tomlString } from "./permission-rules";
@@ -124,6 +125,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
       join(artifacts.runtimeDirectory, "skill-roots.json"),
       `${JSON.stringify(skillRoots.split(delimiter).filter(Boolean), null, 2)}\n`,
     );
+    const autoCompactTokens = policy.autoCompactTokens ?? defaultAutoCompactTokens(input.model);
     const env = {
       ...baseRuntimeEnvironment(capsule, contextFiles, artifacts),
       ALP_EXECUTION_ROOT: dirname(artifacts.directory),
@@ -149,10 +151,11 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
         ...(bridgeEnabled && this.compact.preCompact ? ["-c", `hooks.PreCompact=${preCompactHooks}`] : []),
         ...(bridgeEnabled && this.compact.postCompact ? ["-c", `hooks.PostCompact=${postCompactHooks}`] : []),
         // Same reason the hooks ride here: `codex-config.toml` is ALP's file, not the one
-        // Codex loads. Codex's own default is 90% of the model's context window.
-        ...(policy.autoCompactTokens === null
+        // Codex loads. Vai không khai thì ALP tự tính 90% cửa sổ model — trùng đúng mặc định
+        // của Codex, nhưng tính ở đây thì Claude cũng nén ở cùng chỗ.
+        ...(autoCompactTokens === null
           ? []
-          : ["-c", `model_auto_compact_token_limit=${policy.autoCompactTokens}`]),
+          : ["-c", `model_auto_compact_token_limit=${autoCompactTokens}`]),
         // Granted MCP servers. Codex has no in-process subagent, so a `subagents` grant is
         // simply not translated here — §4.6: subagent là tối ưu hoá, không phải điều kiện.
         ...codexMcpOverrides(policy),

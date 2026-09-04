@@ -70,8 +70,9 @@ export interface AgentDefinition<TOutput> {
   readonly delegatesTo: readonly AgentId[];
   readonly capabilities: AgentCapabilities;
   /**
-   * Token count at which the runtime may compact its own transcript, or `undefined` to
-   * leave that to the window the runtime tunes per model.
+   * Token count at which the runtime may compact its own transcript. Left out, the role
+   * takes 90% of its model's context window (`defaultAutoCompactTokens`) — a default rather
+   * than the runtime's own, so a role remembers the same amount wherever it runs.
    *
    * Declared on the role because it is the role that knows how much of its own history is
    * load-bearing: the seat holding the whole picture keeps everything the model can hold,

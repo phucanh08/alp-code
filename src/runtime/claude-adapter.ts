@@ -1,4 +1,5 @@
 import { delimiter, dirname, join } from "node:path";
+import { defaultAutoCompactTokens } from "../agents/model-context";
 import { agentRegistry } from "../agents/registry";
 import { atomicRuntimeFile, baseRuntimeEnvironment, compactBridgeEnabled, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
 import { claudePermissions } from "./permission-rules";
@@ -70,6 +71,7 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
     );
     const contextFiles = await writeRuntimeContextFiles(input.execution, input.interactive);
     const skillRoots = runtimeSkillRoots(this.env);
+    const autoCompactTokens = policy.autoCompactTokens ?? defaultAutoCompactTokens(input.model);
     const settingsFile = await atomicRuntimeFile(
       join(artifacts.runtimeDirectory, "claude-settings.json"),
       `${JSON.stringify({
@@ -81,9 +83,10 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
           sessionContextFile: contextFiles.sessionContextFile,
           ...(contextFiles.taskFile === null ? {} : { taskFile: contextFiles.taskFile }),
         },
-        // Absent when the role declares none, so the runtime keeps the window it tunes per
-        // model. Claude caps whatever lands here at the active model's context window.
-        ...(policy.autoCompactTokens === null ? {} : { autoCompactWindow: policy.autoCompactTokens }),
+        // Ngưỡng vai khai, hoặc 90% cửa sổ của model khi vai không khai (§5.5). Chỉ vắng
+        // mặt khi ALP cũng không biết cửa sổ của model — lúc đó Claude giữ cửa sổ nó tự
+        // tune. Claude vẫn cap con số này theo cửa sổ context thật của phiên.
+        ...(autoCompactTokens === null ? {} : { autoCompactWindow: autoCompactTokens }),
         hooks: {
           SessionStart: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-boot.cjs")) }] }],
           Stop: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-end.cjs")) }] }],
