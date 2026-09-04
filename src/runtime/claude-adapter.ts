@@ -1,6 +1,6 @@
 import { delimiter, dirname, join } from "node:path";
 import { agentRegistry } from "../agents/registry";
-import { atomicRuntimeFile, baseRuntimeEnvironment, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
+import { atomicRuntimeFile, baseRuntimeEnvironment, compactBridgeEnabled, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
 import { claudePermissions } from "./permission-rules";
 import type { PrepareRuntimeInput, RuntimeAdapter, RuntimeHealth, RuntimeLaunchSpec } from "./runtime-adapter";
 
@@ -84,6 +84,16 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
         hooks: {
           SessionStart: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-boot.cjs")) }] }],
           Stop: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-end.cjs")) }] }],
+          // Gated on the flag (§10) and on the pinned capability — the latter only ever
+          // withholds a registration this build cannot back up with a measured event. No
+          // matcher: the measured `trigger` values are `manual`/`auto` and the bridge wants
+          // both.
+          ...(compactBridgeEnabled(this.env) && this.compact.preCompact ? {
+            PreCompact: [{ hooks: [{ type: "command", command: `${hookCommand(join(this.hooksDirectory, "compact-record.cjs"))} pre claude` }] }],
+          } : {}),
+          ...(compactBridgeEnabled(this.env) && this.compact.postCompact ? {
+            PostCompact: [{ hooks: [{ type: "command", command: `${hookCommand(join(this.hooksDirectory, "compact-record.cjs"))} post claude` }] }],
+          } : {}),
         },
         permissions: claudePermissions({
           policy,

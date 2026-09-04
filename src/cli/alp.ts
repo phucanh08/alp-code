@@ -167,7 +167,11 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
   });
   const adapters = new Map<RuntimeId, ClaudeRuntimeAdapter | CodexRuntimeAdapter>([
     ["claude", new ClaudeRuntimeAdapter({ hooksDirectory: join(repoRoot, "hooks") })],
-    ["codex", new CodexRuntimeAdapter()],
+    // Previously left to default to `ALP_REPO_ROOT` (set by `scripts/alp.cjs`) the way
+    // Claude's constructor already falls back too. That implicit path was fine carrying two
+    // hooks; wiring two more onto it (PreCompact/PostCompact) turns a coincidence into a
+    // real dependency, so it is passed explicitly here like Claude's.
+    ["codex", new CodexRuntimeAdapter({ hooksDirectory: join(repoRoot, "hooks") })],
   ]);
   const backend = new LocalProcessBackend();
   const selector = new RuntimeSelector({ output: stdout });

@@ -1,6 +1,6 @@
 import { delimiter, dirname, join } from "node:path";
 import { agentRegistry } from "../agents/registry";
-import { atomicRuntimeFile, baseRuntimeEnvironment, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
+import { atomicRuntimeFile, baseRuntimeEnvironment, compactBridgeEnabled, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
 import { codexSandboxLines, tomlString } from "./permission-rules";
 import type { PrepareRuntimeInput, RuntimeAdapter, RuntimeHealth, RuntimeLaunchSpec } from "./runtime-adapter";
 
@@ -89,6 +89,14 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
     const stopCommand = this.hookCommand("session-end.cjs");
     const bootHooks = `[{ hooks = [{ type = "command", command = ${tomlString(bootCommand)}, timeout = 30 }] }]`;
     const stopHooks = `[{ hooks = [{ type = "command", command = ${tomlString(stopCommand)}, timeout = 30 }] }]`;
+    // Gated on the flag (§10), same as Claude — only the two events CB-0 measured as firing
+    // on this runtime. `manual` and `auto` were measured identical apart from `trigger`
+    // (plan §Runtime capability), so one registration covers both.
+    const bridgeEnabled = compactBridgeEnabled(this.env);
+    const preCompactCommand = `${this.hookCommand("compact-record.cjs")} pre codex`;
+    const postCompactCommand = `${this.hookCommand("compact-record.cjs")} post codex`;
+    const preCompactHooks = `[{ hooks = [{ type = "command", command = ${tomlString(preCompactCommand)}, timeout = 30 }] }]`;
+    const postCompactHooks = `[{ hooks = [{ type = "command", command = ${tomlString(postCompactCommand)}, timeout = 30 }] }]`;
     const configFile = await atomicRuntimeFile(
       join(artifacts.runtimeDirectory, "codex-config.toml"),
       [
@@ -138,6 +146,8 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
         "-c", `model_reasoning_effort=${tomlString(input.reasoningEffort)}`,
         "-c", `hooks.SessionStart=${bootHooks}`,
         "-c", `hooks.Stop=${stopHooks}`,
+        ...(bridgeEnabled && this.compact.preCompact ? ["-c", `hooks.PreCompact=${preCompactHooks}`] : []),
+        ...(bridgeEnabled && this.compact.postCompact ? ["-c", `hooks.PostCompact=${postCompactHooks}`] : []),
         // Đối xứng với `--dangerously-skip-permissions` của Claude: phiên interactive bỏ approval
         // và sandbox. `-s` bị bỏ đi chứ không để lẫn — Codex không báo lỗi khi có cả hai (chỉ
         // `--approve-for-me` mới khai `conflicts_with`), cờ bypass thắng và `-s` thành dòng chết

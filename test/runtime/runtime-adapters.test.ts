@@ -303,6 +303,73 @@ describe("runtime adapters", () => {
 });
 
 /**
+ * `ALP_COMPACT_BRIDGE` gates PreCompact/PostCompact registration on both runtimes.
+ * Everything else about a launch — task/no-task, env parity, sandboxing — must be identical
+ * whether the flag is set or not, since rollback is unsetting one environment variable
+ * (plan §10/§18).
+ */
+describe("compact bridge flag", () => {
+  it("registers PreCompact/PostCompact on Claude only when the flag is set", async () => {
+    // Two separate fixtures, not one shared `prepared` — both adapters would otherwise
+    // write `claude-settings.json` to the same path, and the second `prepare()` call
+    // overwrites what the first one wrote before either file is read back.
+    const off = await fixture();
+    const on = await fixture();
+    const options = (execution: PreparedExecution) => ({ execution, model: "m", reasoningEffort: "high", interactive: false }) as const;
+
+    const offLaunch = await new ClaudeRuntimeAdapter({ platform: "linux", env: { HOME: off.root, ALP_REPO_ROOT: off.root } })
+      .prepare(options(off.prepared));
+    const onLaunch = await new ClaudeRuntimeAdapter({ platform: "linux", env: { HOME: on.root, ALP_REPO_ROOT: on.root, ALP_COMPACT_BRIDGE: "1" } })
+      .prepare(options(on.prepared));
+    const offSettings = JSON.parse(await readFile(runtimeFile(offLaunch, "claude-settings.json"), "utf8"));
+    const onSettings = JSON.parse(await readFile(runtimeFile(onLaunch, "claude-settings.json"), "utf8"));
+
+    expect(offSettings.hooks).not.toHaveProperty("PreCompact");
+    expect(offSettings.hooks).not.toHaveProperty("PostCompact");
+    expect(onSettings.hooks.PreCompact[0].hooks[0].command).toMatch(/compact-record\.cjs"?\s+pre\s+claude$/);
+    expect(onSettings.hooks.PostCompact[0].hooks[0].command).toMatch(/compact-record\.cjs"?\s+post\s+claude$/);
+    // Nothing else about the launch shape moves with the flag.
+    expect(Object.keys(onSettings.hooks).sort()).toEqual(["PostCompact", "PreCompact", "SessionStart", "Stop"]);
+    expect(Object.keys(offSettings.hooks).sort()).toEqual(["SessionStart", "Stop"]);
+    expect(onLaunch.args.length).toBe(offLaunch.args.length);
+  });
+
+  it("registers PreCompact/PostCompact on Codex only when the flag is set", async () => {
+    const { root, prepared } = await fixture();
+    const options = { execution: prepared, model: "m", reasoningEffort: "high", interactive: false } as const;
+
+    const off = new CodexRuntimeAdapter({ platform: "linux", env: { HOME: root, ALP_REPO_ROOT: root } });
+    const on = new CodexRuntimeAdapter({ platform: "linux", env: { HOME: root, ALP_REPO_ROOT: root, ALP_COMPACT_BRIDGE: "1" } });
+
+    const offLaunch = await off.prepare(options);
+    const onLaunch = await on.prepare(options);
+
+    expect(offLaunch.args.some((arg) => arg.startsWith("hooks.PreCompact="))).toBe(false);
+    expect(offLaunch.args.some((arg) => arg.startsWith("hooks.PostCompact="))).toBe(false);
+    const preCompactArg = onLaunch.args.find((arg) => arg.startsWith("hooks.PreCompact="));
+    const postCompactArg = onLaunch.args.find((arg) => arg.startsWith("hooks.PostCompact="));
+    expect(preCompactArg).toMatch(/compact-record\.cjs\\"\s+pre\s+codex/);
+    expect(postCompactArg).toMatch(/compact-record\.cjs\\"\s+post\s+codex/);
+  });
+
+  it("carries the continuity and policy-hash env on both runtimes regardless of the flag", async () => {
+    const { root, prepared } = await fixture();
+    const options = { execution: prepared, model: "m", reasoningEffort: "high", interactive: false } as const;
+    const env = { HOME: root, ALP_REPO_ROOT: root };
+
+    for (const build of [
+      (e: NodeJS.ProcessEnv) => new ClaudeRuntimeAdapter({ platform: "linux", env: e }),
+      (e: NodeJS.ProcessEnv) => new CodexRuntimeAdapter({ platform: "linux", env: e }),
+    ] as const) {
+      const launch = await build(env).prepare(options);
+      expect(launch.env.ALP_CONTINUITY_CONTEXT).toContain("continuity.md");
+      expect(launch.env.ALP_COMPACT_EVENTS).toContain("compact-events.jsonl");
+      expect(launch.env.ALP_POLICY_HASH).toBe("policy-hash");
+    }
+  });
+});
+
+/**
  * One contract, both runtimes, and every runtime added later. The rule it pins is the
  * reason this suite exists: launching a harness must not spend a turn. Identity arrives on
  * the session channel; only a headless run has a task to submit, and it submits it once.
