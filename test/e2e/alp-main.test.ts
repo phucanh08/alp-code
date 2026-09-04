@@ -13,7 +13,7 @@ afterEach(cleanupEnvironments);
 
 /**
  * Nấc là thứ duy nhất được chọn — runtime rơi ra từ model mà nấc ghim cho `main`. `ultra`
- * ghim Fable (Claude Code) còn `puck` ghim Sol (Codex), nên hai nấc này là cách gọi cả hai
+ * ghim Opus 5 (Claude Code) còn `puck` ghim Sol (Codex), nên hai nấc này là cách gọi cả hai
  * CLI mà không cần ai truyền runtime vào.
  */
 async function runMain(

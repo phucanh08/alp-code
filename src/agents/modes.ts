@@ -16,7 +16,7 @@ import type {
  * Một model cho mỗi vai kéo theo một hệ quả lớn: **model quyết định runtime**. `claude-*`
  * phóng Claude Code, `gpt-*` phóng Codex CLI (`MODEL_RUNTIMES`). Không còn bước "chọn
  * runtime rồi tra model" — nấc là lựa chọn duy nhất, và một nấc có thể trộn hai CLI trong
- * cùng một phiên, đúng như Amp trộn (`high`: agent Sol, oracle Claude Fable).
+ * cùng một phiên, đúng như Amp trộn (`high`: agent Sol, oracle Claude).
  *
  * Bốn nấc dial chỉ xoay hai ghế mà độ khó chạm tới — `main` (người làm) và `oracle` (người
  * được hỏi khi bí). Sáu vai còn lại giữ nguyên qua cả bốn nấc, đúng chỗ Amp ghim cứng
@@ -86,14 +86,14 @@ export const MODE_PROFILES: Readonly<Record<ModeId, ModeProfile>> = Object.freez
     roles: {
       ...FIXED_ROLES,
       main: { model: "gpt-5.6-sol", reasoningEffort: "xhigh" },
-      oracle: { model: "claude-fable-5-1", reasoningEffort: "high" },
+      oracle: { model: "claude-opus-5", reasoningEffort: "high" },
     },
   },
   ultra: {
     summary: "việc mà trả lời sai tốn hơn phần chênh — thiết kế, migration, sự cố",
     roles: {
       ...FIXED_ROLES,
-      main: { model: "claude-fable-5-1", reasoningEffort: "high" },
+      main: { model: "claude-opus-5", reasoningEffort: "high" },
       oracle: { model: "gpt-5.6-sol", reasoningEffort: "xhigh" },
     },
   },

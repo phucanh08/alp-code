@@ -22,8 +22,8 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   |---|---|---|---|---|
   | `low` | claude-haiku-4-5 | low | gpt-5.6-sol | high |
   | `medium` (mặc định) | gpt-5.6-sol | medium | gpt-5.6-sol | high |
-  | `high` | gpt-5.6-sol | xhigh | claude-fable-5-1 | high |
-  | `ultra` | claude-fable-5-1 | high | gpt-5.6-sol | xhigh |
+  | `high` | gpt-5.6-sol | xhigh | claude-opus-5 | high |
+  | `ultra` | claude-opus-5 | high | gpt-5.6-sol | xhigh |
   | `puck` | gpt-5.6-sol | xhigh | gpt-5.6-sol | xhigh |
 
   Bốn nấc dial chỉ xoay hai ghế mà độ khó chạm tới: `main` (người làm) và `oracle` (người được
@@ -48,10 +48,10 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   **Đổi hành vi mặc định:** `main` trước đây là opus-5 (Claude) hoặc gpt-5.6-sol (Codex) @
   high/xhigh. Mặc định mới `medium` cho `main` `gpt-5.6-sol` @ medium — tức phiên mặc định giờ
   chạy trên Codex CLI, không phải Claude Code. Muốn một phiên main do Claude cầm bút: `alp
-  --mode ultra` (Fable) hoặc `--mode low` (Haiku), hoặc `export ALP_MODE=ultra`.
+  --mode ultra` (Opus 5) hoặc `--mode low` (Haiku), hoặc `export ALP_MODE=ultra`.
 
-  `claude-fable-5-1` (cửa sổ 1M) được thêm vào `MODEL_CONTEXT_WINDOWS`; một test giữ điều kiện
-  mọi model của mọi nấc đều có mặt trong cả `MODEL_RUNTIMES` lẫn `MODEL_CONTEXT_WINDOWS` —
+  Một test giữ điều kiện mọi model của mọi nấc đều có mặt trong cả `MODEL_RUNTIMES` lẫn
+  `MODEL_CONTEXT_WINDOWS` —
   thiếu bảng đầu thì không biết phóng CLI nào, thiếu bảng sau thì ngưỡng auto-compact mặc định
   (90% cửa sổ) lặng lẽ biến mất đúng ở nấc đó.
 

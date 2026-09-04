@@ -179,7 +179,7 @@ execution snapshot; `alp doctor` kiểm compiled registry và build-source drift
 
 **`main` chạy được trên cả hai runtime, nhưng không ai chọn runtime nữa** (2026-09-04): nấc
 ghim đúng một model cho `main`, và model quyết định CLI. `--mode medium|high|puck` cho `main`
-`gpt-5.6-sol` → Codex; `--mode ultra` cho `claude-fable-5-1` và `--mode low` cho
+`gpt-5.6-sol` → Codex; `--mode ultra` cho `claude-opus-5` và `--mode low` cho
 `claude-haiku-4-5` → Claude Code. Muốn tiết kiệm quota Claude thì hạ/đổi nấc, không có cờ
 runtime để bật.
 

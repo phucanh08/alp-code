@@ -49,12 +49,12 @@ describe("mode dial — loadout", () => {
     expect(MODE_PROFILES.low.roles.main.model).toBe("claude-haiku-4-5");
     expect(MODE_PROFILES.medium.roles.main.model).toBe("gpt-5.6-sol");
     expect(MODE_PROFILES.high.roles.main.reasoningEffort).toBe("xhigh");
-    expect(MODE_PROFILES.ultra.roles.main.model).toBe("claude-fable-5-1");
+    expect(MODE_PROFILES.ultra.roles.main.model).toBe("claude-opus-5");
   });
 
-  /** `high` cầm bút bằng Sol và soi lại bằng Fable; `ultra` đảo lại — đúng khuôn Amp. */
+  /** `high` cầm bút bằng Sol và soi lại bằng Opus 5; `ultra` đảo lại — đúng khuôn Amp. */
   it("swaps the two strongest models between the seats at the top two levels", () => {
-    expect(MODE_PROFILES.high.roles.oracle.model).toBe("claude-fable-5-1");
+    expect(MODE_PROFILES.high.roles.oracle.model).toBe("claude-opus-5");
     expect(MODE_PROFILES.ultra.roles.oracle.model).toBe("gpt-5.6-sol");
   });
 
@@ -89,7 +89,7 @@ describe("mode dial — resolution", () => {
   const search = agentRegistry.get("search");
 
   it("resolves the dialled model, effort, and the runtime that model implies", () => {
-    expect(modelForMode(main, "ultra")).toBe("claude-fable-5-1");
+    expect(modelForMode(main, "ultra")).toBe("claude-opus-5");
     expect(runtimeForMode(main, "ultra")).toBe("claude");
     expect(modelForMode(main, "low")).toBe("claude-haiku-4-5");
     expect(reasoningEffortForMode(main, "high")).toBe("xhigh");

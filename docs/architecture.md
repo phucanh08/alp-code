@@ -188,8 +188,8 @@ khi bí):
 |---|---|---|---|---|
 | `low` | claude-haiku-4-5 | low | gpt-5.6-sol | high |
 | `medium` (mặc định) | gpt-5.6-sol | medium | gpt-5.6-sol | high |
-| `high` | gpt-5.6-sol | xhigh | claude-fable-5-1 | high |
-| `ultra` | claude-fable-5-1 | high | gpt-5.6-sol | xhigh |
+| `high` | gpt-5.6-sol | xhigh | claude-opus-5 | high |
+| `ultra` | claude-opus-5 | high | gpt-5.6-sol | xhigh |
 | `puck` | gpt-5.6-sol | xhigh | gpt-5.6-sol | xhigh |
 
 Sáu vai còn lại giữ nguyên qua cả bốn nấc dial — đúng chỗ Amp ghim cứng subagent — vì model

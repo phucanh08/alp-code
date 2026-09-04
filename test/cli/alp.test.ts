@@ -184,8 +184,8 @@ describe("runMainSession", () => {
   /**
    * Nấc là thứ duy nhất phân biệt hai lần chạy cùng một `main`, nên nó phải đi tới tận
    * launch spec — nếu chỉ nằm trong policy thì `policy.json` nói `ultra` còn tiến trình vẫn
-   * chạy model của `medium`. Nấc cũng chọn luôn CLI: `ultra` ghim Fable, và Fable chỉ chạy
-   * trên Claude Code.
+   * chạy model của `medium`. Nấc cũng chọn luôn CLI: `ultra` ghim Opus 5, và Opus 5 chỉ
+   * chạy trên Claude Code.
    */
   it("launches the dialled model and effort on the runtime that model implies", async () => {
     const events: string[] = [];
@@ -215,7 +215,7 @@ describe("runMainSession", () => {
       interactive: false,
     });
 
-    expect(events).toEqual(["adapter:claude-fable-5-1:high"]);
+    expect(events).toEqual(["adapter:claude-opus-5:high"]);
     expect(preparedMode).toBe("ultra");
   });
 
