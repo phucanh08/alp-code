@@ -8,6 +8,92 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thêm
+
+- **Ba grant khai bằng tên: `capabilities.skills`, `capabilities.subagents`,
+  `capabilities.mcpServers`.** Một vai trước đây chỉ khai `tools`, nên `Skill` là một ô vuông
+  duy nhất: có hoặc không. Có nghĩa là mọi skill trên máy — kể cả cái vừa `git pull` về sáng
+  nay. Ba field mới nói tên cụ thể, và chỉ tên (§5.3): định nghĩa không được viết `command:`
+  hay đường dẫn, vì một file khai báo tự viết được egress của mình thì nó không còn là khai
+  báo nữa. Tên resolve đúng một lần, ở `createExecutionPolicy`, đối chiếu với catalog của
+  principal trong `src/agents/capability-catalog.ts`; **spec đã resolve** (command, args,
+  egress, prompt) mới là thứ đi vào snapshot. Nhờ vậy `policy.json` ghi lại lệnh thật sự đã
+  chạy chứ không trỏ vào machine config có thể đổi phía dưới.
+
+  Cả ba vào `definitionHash` **và** `policyHash`: nới một grant là đổi định danh của vai, y
+  như đổi `tools`.
+
+- **Trần thi hành lúc registry load.** `UNKNOWN_SKILL`, `UNKNOWN_SUBAGENT`,
+  `UNKNOWN_MCP_SERVER` cho tên ngoài catalog; `DUPLICATE_GRANT` cho tên khai hai lần; và một
+  bất biến hai chiều — có `Skill` trong `tools` thì phải kể tên skill, kể tên skill thì phải
+  có `Skill` (`INVALID_SKILL_GRANT`). Chiều thứ nhất bắt được đúng hình dạng §5.5 cấm, và nó
+  đang tồn tại thật: sáu built-in cầm `Skill` mà không kể tên gì, tức trần bằng cả skill root
+  của máy. Subagent còn một trần nữa — `tools` của nó không bao giờ rộng hơn `tools` của vai
+  cấp nó (`UNKNOWN_TOOL`), vì subagent không phải đường vòng qua một giới hạn.
+
+  `SUBAGENT_CATALOG` và `MCP_SERVER_CATALOG` **rỗng** ở v1 (§5.5). Rỗng là mặc định
+  fail-closed chứ không phải chỗ trống chờ điền: khai bất cứ tên nào cũng bị từ chối ngay lúc
+  load. `SKILL_CATALOG` liệt kê 14 skill trong project scope, có test giữ đồng bộ với thư mục
+  `skills/`.
+
+- **Policy engine trả lời được ba câu hỏi mới** — `SKILL_NOT_GRANTED`, `SUBAGENT_NOT_GRANTED`,
+  `MCP_SERVER_NOT_GRANTED` — và tự route tool name dạng `mcp__<server>__<tool>` về grant của
+  server đó. Route này nằm **sau** guardrail raw runtime tool, nên `mcp__paseo__spawn_agent`
+  vẫn dừng ở `RAW_RUNTIME_TOOL_DENIED` chứ không rơi xuống thành một câu hỏi về MCP.
+
+- **Ba dòng mới trong bảng Authority** của session context: `Skills`, `Subagents`,
+  `MCP servers` — server in kèm egress (`docs (network egress)`), vì "được nối MCP nào" thực
+  chất là câu hỏi "cái gì rời khỏi máy này".
+
+- **Harness test tier 2–3 cho agent** (`test/support/agent-dry-run.ts`): prepare một
+  execution thật, đọc argv, settings file, `mcp-config.json` và bảng Authority mà không chạy
+  runtime. Bộ test mới đi kèm phủ cả ba grant trên cả hai adapter.
+
+### Thay đổi
+
+- **Mọi delegated execution giờ chạy với `--mcp-config` tường minh cộng `--strict-mcp-config`.**
+  Trước bản này, một vai delegated kế thừa toàn bộ MCP config của máy — egress không policy
+  nào cho phép, không hash nào ghi lại. Giờ ALP ghi ra một file cho từng execution, rỗng
+  (`{"mcpServers":{}}`) khi vai không được cấp gì, và cờ strict cấm runtime đọc thêm chỗ khác.
+  Phiên interactive vẫn giữ config của máy, cùng đánh đổi đã ghi với
+  `--dangerously-skip-permissions`.
+
+- **Codex nhận MCP qua `-c mcp_servers.<name>={ … }` trên argv**, không qua
+  `codex-config.toml`. Lý do là file đó Codex không đọc: nó đọc `$CODEX_HOME/config.toml`, thứ
+  ALP không ghi. Grant nào chỉ nằm trong file ấy là grant chỉ tồn tại trên giấy — hook đã đi
+  đường `-c` từ trước, MCP giờ đi cùng đường. Codex không có subagent in-process và không có
+  cờ strict tương đương; §4.6 đã ghi subagent là tối ưu hoá chứ không phải điều kiện, nên bên
+  Codex không dịch gì cả.
+
+- **Claude ACL đổi từ deny-only sang có `allow`.** Skill được cấp vào allow list dạng
+  `Skill(<tên>)` thay vì deny từng skill không cấp — vì một tool name trần trong `deny` gỡ hẳn
+  tool khỏi context của model, nên "chỉ những skill này" bắt buộc phải viết bằng allow.
+  Subagent thành `Agent(<tên>)`, MCP server thành `mcp__<tên>`.
+
+- **`Task` và `Agent` thật sự bị deny.** Vòng lặp deny chỉ chạy trên `TOOL_CATALOG`, mà hai
+  tool này không nằm trong đó — nên chúng chưa từng bị chặn dù không vai nào được cấp. `Task`
+  giờ luôn deny; `Agent` chỉ mở khi vai có subagent được cấp.
+
+- **House rule tách theo audience.** Một vai đọc quy tắc của chính nó, không phải quy tắc của
+  vai khác; `InstructionOptions.audience` quyết định block nào được render.
+
+- Review chuyển sang `gpt-5.6-terra` ở phía Codex (`docs/model-routing.md` cập nhật theo).
+
+### Sửa
+
+- **Workspace root tương đối resolve theo từng request**, không còn theo `process.cwd()` lúc
+  policy được tạo. Một delegation phát đi từ thư mục khác trước đây nhận nhầm root.
+
+- **Vai không có workspace root giờ prepare được.** `ExecutionService.prepare` vẫn hỏi câu
+  workspace cho cả vai chỉ đọc memory, nên `compaction` và `titling` chết ngay ở bước chuẩn
+  bị. `ExecutionPolicy` có thêm `workspaceAccess: "granted" | "none"` để phần còn lại của
+  chuỗi biết phân biệt "không được cấp" với "chưa resolve".
+
+**Cần làm khi nâng cấp:** ba field mới là **bắt buộc** trên mọi `AgentCapabilities` — một
+định nghĩa cũ không khai sẽ không compile. Vai không dùng skill khai `skills: []` và bỏ
+`Skill` khỏi `tools`; vai có dùng thì kể tên, và tên phải có trong `SKILL_CATALOG`.
+`subagents` và `mcpServers` khai `[]`, vì catalog của cả hai đang rỗng.
+
 ## [0.7.0] - 2026-09-04
 
 ### Thêm
