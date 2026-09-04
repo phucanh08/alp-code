@@ -1,6 +1,6 @@
 import { access, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { basename, delimiter, dirname, join, resolve } from "node:path";
-import type { IdentityCapsule, PreparedExecution } from "../execution/types";
+import type { ExecutionArtifactPaths, IdentityCapsule, PreparedExecution } from "../execution/types";
 import { renderSessionContext } from "./render-session-context";
 import { renderTaskInput } from "./render-task-input";
 
@@ -98,6 +98,7 @@ export function taskArguments(files: RuntimeContextFiles): readonly string[] {
 export function baseRuntimeEnvironment(
   capsule: IdentityCapsule,
   files: RuntimeContextFiles,
+  artifacts: Pick<ExecutionArtifactPaths, "continuityFile" | "compactEventsFile">,
 ): Record<string, string> {
   return {
     ALP_ROLE: capsule.role,
@@ -108,7 +109,27 @@ export function baseRuntimeEnvironment(
     // stops a runtime from being wired up without it and silently falling back to the
     // static role document, which carries no invariants or policy context.
     ALP_SESSION_CONTEXT: files.sessionContextFile,
+    // Bound to the capsule's own policy, not read from a file: this is what
+    // `compact-record.cjs` stamps onto every journal line, and what `alp context` checks a
+    // checkpoint against before trusting it (invariant 5).
+    ALP_POLICY_HASH: capsule.policyHash,
+    // Read by `session-boot.cjs` on every SessionStart, `source="compact"` included — the
+    // continuity bridge's reinjection channel (plan §8.6).
+    ALP_CONTINUITY_CONTEXT: artifacts.continuityFile,
+    // Read only by `compact-record.cjs`; unconditional here because the checkpoint and its
+    // rendering exist regardless of `ALP_COMPACT_BRIDGE` — only the PreCompact/PostCompact
+    // hook registration is gated on that flag (see `compactBridgeEnabled`).
+    ALP_COMPACT_EVENTS: artifacts.compactEventsFile,
   };
+}
+
+/**
+ * Whether this launch should register the PreCompact/PostCompact hooks. Gated on an
+ * environment variable rather than a runtime capability check: rollback is unsetting one
+ * variable, and Stage 4 of the rollout (plan §18) changes only the default returned here.
+ */
+export function compactBridgeEnabled(env: NodeJS.ProcessEnv): boolean {
+  return env.ALP_COMPACT_BRIDGE === "1";
 }
 
 export function runtimeSkillRoots(env: NodeJS.ProcessEnv): string {

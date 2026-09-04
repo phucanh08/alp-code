@@ -117,7 +117,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
       `${JSON.stringify(skillRoots.split(delimiter).filter(Boolean), null, 2)}\n`,
     );
     const env = {
-      ...baseRuntimeEnvironment(capsule, contextFiles),
+      ...baseRuntimeEnvironment(capsule, contextFiles, artifacts),
       ALP_EXECUTION_ROOT: dirname(artifacts.directory),
       ALP_MEMORY_ROOT: this.memoryRoot(),
       ALP_IDENTITY_CAPSULE: capsuleFile,

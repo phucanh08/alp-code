@@ -50,6 +50,33 @@ function delegationSection(
   ];
 }
 
+/**
+ * Teaches how to keep continuity alive across a runtime's own compaction.
+ *
+ * Gated on the same session-wide `Bash` grant as `delegationSection`, for the same reason:
+ * a read-only role (search, librarian, compaction…) has no shell to run `alp context pin`
+ * from, and a section it cannot act on would just be noise. `source: "agent"` therefore only
+ * ever shows up where the command is actually reachable.
+ */
+function continuitySection(policy: ExecutionPolicy): readonly string[] {
+  if (!policy.allowedTools.includes("Bash")) return [];
+  return [
+    "## Continuity",
+    "",
+    "Record decisions and constraints the moment you settle them, not at the end of the session. After the runtime compacts, only what you pinned survives:",
+    "",
+    "```",
+    'alp context pin decision -- "chose X over Y because Z"',
+    'alp context pin constraint -- "do not touch Z"',
+    'alp context pin open-item -- "..."',
+    'alp context pin next-action -- "..."',
+    "```",
+    "",
+    "A pin is one sentence, not a summary. Never pin a secret or a file's contents.",
+    "",
+  ];
+}
+
 export function renderSessionContext(
   capsule: IdentityCapsule,
   policy: ExecutionPolicy,
@@ -75,6 +102,7 @@ export function renderSessionContext(
     "That table is the whole of your authority. If something you need is blocked, report it — do not route around it.",
     "",
     ...delegationSection(capsule, policy),
+    ...continuitySection(policy),
     "## Invariants",
     "",
     capsule.memoryContext.invariantContext,

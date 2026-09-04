@@ -103,3 +103,32 @@ describe("renderSessionContext delegation section", () => {
     expect(context).not.toContain("--parent-role");
   });
 });
+
+describe("renderSessionContext continuity section", () => {
+  it("shows the pin commands to a role that holds Bash", () => {
+    const context = renderSessionContext(capsule(), policy());
+
+    expect(context).toContain("## Continuity");
+    expect(context).toContain("alp context pin decision --");
+    expect(context).toContain("alp context pin constraint --");
+    expect(context).toContain("alp context pin open-item --");
+    expect(context).toContain("alp context pin next-action --");
+  });
+
+  it("omits the section for a role with no shell", () => {
+    const context = renderSessionContext(
+      capsule(),
+      policy({ allowedTools: ["Read", "Glob", "Grep"] as ToolId[] }),
+    );
+
+    expect(context).not.toContain("## Continuity");
+    expect(context).not.toContain("alp context pin");
+  });
+
+  it("teaches no identity flag for the pin command either", () => {
+    const context = renderSessionContext(capsule(), policy());
+
+    expect(context).not.toContain("--role");
+    expect(context).not.toContain("--parent-role");
+  });
+});

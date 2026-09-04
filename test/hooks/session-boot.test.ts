@@ -97,3 +97,114 @@ describe("session-boot hook", () => {
     expect(warning).toContain("invalid role");
   });
 });
+
+describe("session-boot hook continuity reinjection", () => {
+  it("merges session context and continuity into one additionalContext", async () => {
+    const { root } = await fixture();
+    const contextFile = join(root, "session-context.md");
+    const continuityFile = join(root, "continuity.md");
+    await writeFile(contextFile, "# execution session context\n");
+    await writeFile(continuityFile, "## ALP continuity checkpoint\n\n### Objective\nfind the launcher\n");
+
+    const { context, warning } = await boot({
+      ALP_SESSION_CONTEXT: contextFile,
+      ALP_CONTINUITY_CONTEXT: continuityFile,
+      ALP_ROLE: "search",
+      ALP_REPO_ROOT: root,
+    });
+
+    expect(context).toContain("execution session context");
+    expect(context).toContain("ALP continuity checkpoint");
+    expect(context).toContain("find the launcher");
+    expect(warning).toBeUndefined();
+  });
+
+  it("falls back to session context only, quietly, when continuity is missing", async () => {
+    const { root } = await fixture();
+    const contextFile = join(root, "session-context.md");
+    await writeFile(contextFile, "# execution session context\n");
+
+    const { context, warning } = await boot({
+      ALP_SESSION_CONTEXT: contextFile,
+      ALP_CONTINUITY_CONTEXT: join(root, "absent-continuity.md"),
+      ALP_ROLE: "search",
+      ALP_REPO_ROOT: root,
+    });
+
+    // Missing is the common state — bridge-off, or before the first pin — not an error.
+    expect(context).toBe("# execution session context\n");
+    expect(warning).toBeUndefined();
+  });
+
+  it("falls back quietly when continuity renders empty", async () => {
+    const { root } = await fixture();
+    const contextFile = join(root, "session-context.md");
+    const continuityFile = join(root, "continuity.md");
+    await writeFile(contextFile, "# execution session context\n");
+    await writeFile(continuityFile, "   \n");
+
+    const { context, warning } = await boot({
+      ALP_SESSION_CONTEXT: contextFile,
+      ALP_CONTINUITY_CONTEXT: continuityFile,
+      ALP_ROLE: "search",
+      ALP_REPO_ROOT: root,
+    });
+
+    expect(context).toBe("# execution session context\n");
+    expect(warning).toBeUndefined();
+  });
+
+  it("falls back with a warning when continuity cannot be read", async () => {
+    const { root } = await fixture();
+    const contextFile = join(root, "session-context.md");
+    await writeFile(contextFile, "# execution session context\n");
+    // A directory in place of the file forces a real read error (EISDIR), unlike a chmod'd
+    // file whose enforcement is not reliable cross-platform.
+    const continuityDirectory = join(root, "continuity.md");
+    await mkdir(continuityDirectory);
+
+    const { context, warning } = await boot({
+      ALP_SESSION_CONTEXT: contextFile,
+      ALP_CONTINUITY_CONTEXT: continuityDirectory,
+      ALP_ROLE: "search",
+      ALP_REPO_ROOT: root,
+    });
+
+    expect(context).toBe("# execution session context\n");
+    expect(warning).toContain("ALP continuity not loaded");
+  });
+
+  it("falls back with a warning when continuity exceeds the injection bound", async () => {
+    const { root } = await fixture();
+    const contextFile = join(root, "session-context.md");
+    const continuityFile = join(root, "continuity.md");
+    await writeFile(contextFile, "# execution session context\n");
+    await writeFile(continuityFile, "x".repeat(24 * 1024 + 1));
+
+    const { context, warning } = await boot({
+      ALP_SESSION_CONTEXT: contextFile,
+      ALP_CONTINUITY_CONTEXT: continuityFile,
+      ALP_ROLE: "search",
+      ALP_REPO_ROOT: root,
+    });
+
+    expect(context).toBe("# execution session context\n");
+    expect(warning).toContain("injection bound");
+  });
+
+  it("never touches continuity when session context itself fails to load", async () => {
+    const { root } = await fixture();
+    const continuityFile = join(root, "continuity.md");
+    await writeFile(continuityFile, "## ALP continuity checkpoint\n");
+
+    const { context, warning } = await boot({
+      ALP_SESSION_CONTEXT: join(root, "absent-session-context.md"),
+      ALP_CONTINUITY_CONTEXT: continuityFile,
+      ALP_ROLE: "search",
+      ALP_REPO_ROOT: root,
+    });
+
+    expect(context).toBe("");
+    expect(warning).toContain("ALP identity not loaded");
+  });
+});
