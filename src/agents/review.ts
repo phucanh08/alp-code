@@ -6,12 +6,15 @@ import { defineLinearWorkflow } from "../workflow/types";
 export const reviewAgent = defineAgent({
   id: "review",
   displayName: "Review 🔎",
-  model: { claude: "claude-opus-5", codex: "gpt-5.5" },
+  model: { claude: "claude-opus-5", codex: "gpt-5.6-terra" },
   reasoningEffort: { claude: "high", codex: "medium" },
   reportsTo: "main",
   delegatesTo: [],
   capabilities: {
     tools: ["Read", "Glob", "Grep", "Bash", "Skill"],
+    skills: ["code-review", "alp-scenario", "security-scan"],
+    subagents: [],
+    mcpServers: [],
     memory: {
       read: ["shared", "project:*", "private:review"],
       write: ["private:review"],

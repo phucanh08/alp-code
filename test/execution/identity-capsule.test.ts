@@ -31,6 +31,9 @@ describe("identity capsules", () => {
       delegatesTo: [],
       capabilities: {
         tools: ["Read", "Grep"],
+        skills: [],
+        subagents: [],
+        mcpServers: [],
         memory: {
           read: ["shared", "private:search"],
           write: ["private:search"],
@@ -118,6 +121,9 @@ describe("identity capsules", () => {
       delegatesTo: [],
       capabilities: {
         tools: ["Read"],
+        skills: [],
+        subagents: [],
+        mcpServers: [],
         memory: { read: ["shared"], write: [] },
         workspace: { readRoots: ["/workspace"], writeRoots: [] },
       },

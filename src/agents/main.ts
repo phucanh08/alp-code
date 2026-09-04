@@ -12,6 +12,9 @@ export const mainAgent = defineAgent({
   delegatesTo: ["search", "librarian", "read-thread", "review", "oracle", "compaction", "titling"],
   capabilities: {
     tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Skill"],
+    skills: ["alp-plan", "problem-solving", "delegation", "git", "agent-memory"],
+    subagents: [],
+    mcpServers: [],
     memory: {
       read: ["shared", "project:*", "private:main"],
       write: ["shared", "project:*", "private:main"],

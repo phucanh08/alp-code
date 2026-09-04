@@ -1,5 +1,20 @@
+/**
+ * Two bans, not one, because they rest on different reasons.
+ *
+ * Herdr and Paseo are foreign runtimes: whatever they launch is outside ALP policy entirely,
+ * and no grant can ever put it back inside. An in-process subagent is the opposite — it runs
+ * inside the session ALP itself started, under the workspace, sandbox and deny list this
+ * execution already carries, so it is bannable by *not being granted*, not by being what it is.
+ *
+ * These lived in one sentence ("never launch raw Herdr, Paseo, or in-process agents") until
+ * 2026-09-04. That sentence forbids the whole class, so the day a definition first declares
+ * `capabilities.subagents` the prompt would contradict the grant — vision §4.6. Splitting it
+ * before any grant exists means the rule needs no rewrite when one does: today no role is
+ * granted a subagent, and the rule already says exactly what that means.
+ */
 export const CODE_NATIVE_HOUSE_RULES = Object.freeze([
-  "Use ALP policy and delegation boundaries; never launch raw Herdr, Paseo, or in-process agents.",
+  "Use ALP policy and delegation boundaries; never launch raw Herdr or Paseo.",
+  "Launch no in-process subagent that this execution's policy does not grant — a subagent is not a way around your own limits.",
   "Treat private memory as owner-only; hierarchy does not grant private access.",
   "Do not commit, push, deploy, or perform destructive operations without explicit principal approval.",
   "Return verifiable evidence and do not claim checks that were not run.",

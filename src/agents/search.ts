@@ -12,6 +12,9 @@ export const searchAgent = defineAgent({
   delegatesTo: [],
   capabilities: {
     tools: ["Read", "Glob", "Grep", "Bash", "Skill"],
+    skills: ["gkg", "repomix"],
+    subagents: [],
+    mcpServers: [],
     memory: {
       read: ["shared", "project:*", "private:search"],
       write: ["private:search"],

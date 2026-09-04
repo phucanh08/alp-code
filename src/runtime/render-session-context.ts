@@ -91,10 +91,20 @@ export function renderSessionContext(
     "",
     "| | |",
     "| --- | --- |",
-    `| Workspace | \`${capsule.activeWorkspace}\` (${policy.workspaceMode}) |`,
-    // Workflow-state filtered, so this is narrower than the definition's full grant and is
-    // the list that actually applies right now.
-    `| Tools | ${list(capsule.allowedTools)} |`,
+    `| Workspace | ${policy.workspaceAccess === "none"
+      ? "— (no workspace grant; memory only)"
+      : `\`${capsule.activeWorkspace}\` (${policy.workspaceMode})`} |`,
+    // The session-wide grant, which is what both runtimes actually enforce. `capsule.allowedTools`
+    // is narrowed to the opening workflow state and only advances at the Stop hook, so printing
+    // it here told `main` it held three tools for a whole session in which it held nine — under a
+    // table that calls itself the whole of your authority. The workflow still gates the output
+    // contract; it was never the runtime's tool list.
+    `| Tools | ${list(policy.allowedTools)} |`,
+    // Named grants (§5.3). A role that holds none still sees the row: "you have no MCP
+    // server" is authority information, and its absence reads as an unanswered question.
+    `| Skills | ${list(policy.skills)} |`,
+    `| Subagents | ${list(policy.subagents.map((subagent) => subagent.name))} |`,
+    `| MCP servers | ${list(policy.mcpServers.map((server) => `${server.name} (${server.egress} egress)`))} |`,
     `| Memory read | ${list(policy.memory.read)} |`,
     `| Memory write | ${list(policy.memory.write)} |`,
     `| Delegates to | ${list(policy.delegatesTo)} |`,

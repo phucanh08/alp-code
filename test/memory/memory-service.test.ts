@@ -93,6 +93,9 @@ function agent(
     delegatesTo: [],
     capabilities: {
       tools: ["Read"],
+      skills: [],
+      subagents: [],
+      mcpServers: [],
       memory,
       workspace: { readRoots: ["/workspace"], writeRoots: [] },
     },

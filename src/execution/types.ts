@@ -1,4 +1,8 @@
 import type {
+  McpServerCatalogEntry,
+  SubagentCatalogEntry,
+} from "../agents/capability-catalog";
+import type {
   AgentId,
   MemoryGrants,
   ToolId,
@@ -13,12 +17,37 @@ import type { WorkflowRunStatus } from "../workflow/types";
 
 export type ExecutionId = string;
 
+/**
+ * A capability grant after its name has been resolved against the catalog.
+ *
+ * The resolution is snapshotted rather than looked up again at launch: the policy record is
+ * what an execution is judged against afterwards, and "which command did this run, reaching
+ * what" is exactly the question a name alone cannot answer once the catalog has moved on.
+ */
+export interface McpServerAuthorization extends McpServerCatalogEntry {
+  readonly name: string;
+}
+
+export interface SubagentAuthorization extends SubagentCatalogEntry {
+  readonly name: string;
+}
+
 export interface ExecutionPolicy {
   readonly executionId: ExecutionId;
   readonly role: AgentId;
   readonly workspace: string;
   readonly workspaceMode: "read-only" | "workspace-write";
+  /**
+   * Whether this role holds any workspace grant at all. `none` for a role that declares no
+   * root (read-thread, compaction, titling): it works from memory, the workspace is only
+   * the process cwd, and the runtime ACL must not hand it the tree as a read root.
+   */
+  readonly workspaceAccess: "granted" | "none";
   readonly allowedTools: readonly ToolId[];
+  /** Named skill grants (§5.3). The runtime ACL allows exactly these through `Skill`. */
+  readonly skills: readonly string[];
+  readonly subagents: readonly SubagentAuthorization[];
+  readonly mcpServers: readonly McpServerAuthorization[];
   readonly memory: MemoryGrants;
   readonly delegatesTo: readonly AgentId[];
   readonly createdAt: string;

@@ -1,4 +1,4 @@
-import { isAbsolute, relative } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import type { AgentDefinition, AgentId, AgentRegistry } from "../agents/types";
 import { InvalidPolicyStateError } from "./errors";
 import {
@@ -19,18 +19,30 @@ function within(root: string, target: string): boolean {
   return relation === "" || (!relation.startsWith("..") && !isAbsolute(relation));
 }
 
+/**
+ * Resolves a role's declared roots for *this* execution.
+ *
+ * A relative root — `"."`, which every code-native role declares — means "the workspace
+ * this execution was launched against", not "wherever the launcher process happened to be
+ * standing". Resolving it once, at construction, against the launcher's cwd is what made
+ * `alp delegate review --project ~/code/api` deny every path inside the project it was
+ * pointed at, from any directory but the launcher's own. Absolute roots are unaffected and
+ * still mean exactly what they say.
+ *
+ * Per-request rather than cached: an execution's active workspace is what a grant is
+ * relative to, so there is nothing stable to cache under the role's id.
+ */
 function canonicalizeRoots(
   definition: AgentDefinition<unknown>,
+  activeWorkspace: string,
   canonicalizePath: PathCanonicalizer,
 ): CanonicalWorkspaceGrants {
+  const resolve = (root: string): string =>
+    canonicalizePath(isAbsolute(root) ? root : join(activeWorkspace, root));
   try {
     return Object.freeze({
-      readRoots: Object.freeze(
-        definition.capabilities.workspace.readRoots.map(canonicalizePath),
-      ),
-      writeRoots: Object.freeze(
-        definition.capabilities.workspace.writeRoots.map(canonicalizePath),
-      ),
+      readRoots: Object.freeze(definition.capabilities.workspace.readRoots.map(resolve)),
+      writeRoots: Object.freeze(definition.capabilities.workspace.writeRoots.map(resolve)),
     });
   } catch (error) {
     throw new InvalidPolicyStateError(
@@ -41,17 +53,14 @@ function canonicalizeRoots(
 }
 
 export class WorkspacePolicy {
-  private readonly grants = new Map<AgentId, CanonicalWorkspaceGrants>();
+  private readonly definitions = new Map<AgentId, AgentDefinition<unknown>>();
 
   constructor(
     registry: AgentRegistry,
     private readonly canonicalizePath: PathCanonicalizer,
   ) {
     for (const definition of registry.list()) {
-      this.grants.set(
-        definition.id,
-        canonicalizeRoots(definition, canonicalizePath),
-      );
+      this.definitions.set(definition.id, definition);
     }
   }
 
@@ -78,10 +87,11 @@ export class WorkspacePolicy {
       return deny("PATH_RESOLUTION_FAILED", `cannot canonicalize workspace path: ${reason}`);
     }
 
-    const grants = this.grants.get(actor);
-    if (!grants) {
+    const definition = this.definitions.get(actor);
+    if (!definition) {
       throw new InvalidPolicyStateError(`missing workspace grants for \`${actor}\``);
     }
+    const grants = canonicalizeRoots(definition, activeWorkspace, this.canonicalizePath);
 
     if (execution.delegated && !within(activeWorkspace, target)) {
       return deny(

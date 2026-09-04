@@ -18,7 +18,7 @@ const ROUTING = {
   search: ["claude-sonnet-5", "gpt-5.6-terra", "low", "low"],
   librarian: ["claude-opus-5", "gpt-5.6-sol", "high", "high"],
   "read-thread": ["claude-haiku-4-5", "gpt-5.6-luna", "low", "low"],
-  review: ["claude-opus-5", "gpt-5.5", "high", "medium"],
+  review: ["claude-opus-5", "gpt-5.6-terra", "high", "medium"],
   oracle: ["claude-opus-5", "gpt-5.6-sol", "high", "xhigh"],
   compaction: ["claude-opus-5", "gpt-5.6-sol", "medium", "medium"],
   titling: ["claude-haiku-4-5", "gpt-5.6-luna", "low", "low"],

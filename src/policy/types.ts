@@ -16,6 +16,9 @@ export type PolicyErrorCode =
   | "RAW_RUNTIME_TOOL_DENIED"
   | "INDIRECT_TOOL_REQUEST"
   | "TOOL_NOT_GRANTED"
+  | "SKILL_NOT_GRANTED"
+  | "SUBAGENT_NOT_GRANTED"
+  | "MCP_SERVER_NOT_GRANTED"
   | "UNKNOWN_REQUEST";
 
 export type Authorization =
@@ -64,6 +67,21 @@ export type AuthorizationRequest =
       readonly actor: AgentId;
       readonly tool: string;
       readonly command?: string;
+    }
+  | {
+      readonly type: "skill";
+      readonly actor: AgentId;
+      readonly skill: string;
+    }
+  | {
+      readonly type: "subagent";
+      readonly actor: AgentId;
+      readonly subagent: string;
+    }
+  | {
+      readonly type: "mcp";
+      readonly actor: AgentId;
+      readonly server: string;
     };
 
 export type PathCanonicalizer = (value: string) => string;

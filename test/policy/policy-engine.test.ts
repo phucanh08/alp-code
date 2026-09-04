@@ -21,6 +21,9 @@ function agent(
     delegatesTo: id === "main" ? ["search"] : [],
     capabilities: {
       tools: id === "main" ? ["Read", "Write", "Bash"] : ["Read", "Bash"],
+      skills: [],
+      subagents: [],
+      mcpServers: [],
       memory: {
         read: ["shared", `private:${id}`],
         write: [`private:${id}`],
@@ -236,6 +239,9 @@ describe("PolicyEngine deny-first matrix", () => {
       reportsTo: "main",
       capabilities: {
         ...agent("librarian").capabilities,
+        skills: [],
+        subagents: [],
+        mcpServers: [],
         memory: {
           read: ["shared", "project:*", "private:librarian"],
           write: ["shared:reference:*", "project:*:refs:*", "private:librarian"],

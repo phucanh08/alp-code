@@ -1,5 +1,6 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import { defineAgent } from "./agent-definition";
+import { capabilityCatalog, type CapabilityCatalog } from "./capability-catalog";
 import { AgentRegistryError } from "./errors";
 import { memoryGrantCovers } from "./memory-grant";
 import type {
@@ -61,8 +62,98 @@ function privateOwner(grant: MemoryScopeGrant): AgentId | null {
   return grant.startsWith("private:") ? grant.slice("private:".length) : null;
 }
 
+function assertNoDuplicates(
+  agentId: AgentId,
+  label: string,
+  names: readonly string[],
+): void {
+  const seen = new Set<string>();
+  for (const name of names) {
+    if (seen.has(name)) {
+      throw new AgentRegistryError(
+        "DUPLICATE_GRANT",
+        `agent \`${agentId}\` names ${label} \`${name}\` twice`,
+      );
+    }
+    seen.add(name);
+  }
+}
+
+/**
+ * The three name-declared grants of §5.3, checked against the catalog the principal keeps.
+ *
+ * A name that resolves to nothing is refused rather than ignored: a definition asking for
+ * `mcpServers: ["github"]` on a machine that never trusted `github` is stating an intent
+ * the execution cannot honour, and the quiet reading of that — no server, run anyway — is
+ * how a role ends up reporting failure for a reason nobody can see.
+ */
+function assertCapabilityGrants(
+  definition: AgentDefinition<unknown>,
+  catalog: CapabilityCatalog,
+): void {
+  const { skills, subagents, mcpServers, tools } = definition.capabilities;
+  assertNoDuplicates(definition.id, "skill", skills);
+  assertNoDuplicates(definition.id, "subagent", subagents);
+  assertNoDuplicates(definition.id, "mcp server", mcpServers);
+
+  const known = new Set(catalog.skills);
+  for (const skill of skills) {
+    if (!known.has(skill)) {
+      throw new AgentRegistryError(
+        "UNKNOWN_SKILL",
+        `agent \`${definition.id}\` has unknown skill \`${skill}\``,
+      );
+    }
+  }
+  for (const subagent of subagents) {
+    if (!Object.hasOwn(catalog.subagents, subagent)) {
+      throw new AgentRegistryError(
+        "UNKNOWN_SUBAGENT",
+        `agent \`${definition.id}\` has unknown subagent \`${subagent}\``,
+      );
+    }
+  }
+  for (const server of mcpServers) {
+    if (!Object.hasOwn(catalog.mcpServers, server)) {
+      throw new AgentRegistryError(
+        "UNKNOWN_MCP_SERVER",
+        `agent \`${definition.id}\` has unknown mcp server \`${server}\``,
+      );
+    }
+  }
+
+  // A subagent runs inside this role's own process. Handing it a tool the role does not
+  // hold would make the grant a way around the role's limits — the thing the house rule
+  // says it is not.
+  for (const subagent of subagents) {
+    for (const tool of catalog.subagents[subagent]?.tools ?? []) {
+      if (!definition.capabilities.tools.includes(tool)) {
+        throw new AgentRegistryError(
+          "UNKNOWN_TOOL",
+          `agent \`${definition.id}\` grants subagent \`${subagent}\` the ungranted tool \`${tool}\``,
+        );
+      }
+    }
+  }
+
+  const holdsSkillTool = tools.includes("Skill");
+  if (holdsSkillTool && skills.length === 0) {
+    throw new AgentRegistryError(
+      "INVALID_SKILL_GRANT",
+      `agent \`${definition.id}\` grants the \`Skill\` tool but names no skill`,
+    );
+  }
+  if (!holdsSkillTool && skills.length > 0) {
+    throw new AgentRegistryError(
+      "INVALID_SKILL_GRANT",
+      `agent \`${definition.id}\` names skills but has no \`Skill\` tool to invoke them`,
+    );
+  }
+}
+
 function assertDefinitionInvariants(
   definition: AgentDefinition<unknown>,
+  catalog: CapabilityCatalog,
 ): void {
   assertNonEmpty(definition.id, "id", definition.id);
   assertNonEmpty(definition.displayName, "displayName", definition.id);
@@ -108,6 +199,8 @@ function assertDefinitionInvariants(
       );
     }
   }
+
+  assertCapabilityGrants(definition, catalog);
 
   for (const grant of [
     ...definition.capabilities.memory.read,
@@ -180,9 +273,16 @@ function assertNoDelegationCycles(
   for (const definition of definitions) visit(definition.id);
 }
 
+export interface CreateAgentRegistryOptions {
+  /** Defaults to the shipped catalog; tests and future `.alp/` loads supply their own. */
+  readonly catalog?: CapabilityCatalog;
+}
+
 export function createAgentRegistry(
   input: readonly AgentDefinition<unknown>[],
+  options: CreateAgentRegistryOptions = {},
 ): AgentRegistry {
+  const catalog = options.catalog ?? capabilityCatalog;
   const definitions: AgentDefinition<unknown>[] = [];
   const byId = new Map<AgentId, AgentDefinition<unknown>>();
 
@@ -194,7 +294,7 @@ export function createAgentRegistry(
         `duplicate agent \`${definition.id}\``,
       );
     }
-    assertDefinitionInvariants(definition);
+    assertDefinitionInvariants(definition, catalog);
     definitions.push(definition);
     byId.set(definition.id, definition);
   }

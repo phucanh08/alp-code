@@ -12,6 +12,9 @@ export const librarianAgent = defineAgent({
   delegatesTo: [],
   capabilities: {
     tools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Skill"],
+    skills: ["docs-seeker", "research", "repomix"],
+    subagents: [],
+    mcpServers: [],
     memory: {
       read: ["shared", "project:*", "private:librarian"],
       write: ["shared:reference:*", "project:*:refs:*", "private:librarian"],

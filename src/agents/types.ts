@@ -34,6 +34,19 @@ export interface WorkspaceGrants {
 
 export interface AgentCapabilities {
   readonly tools: readonly ToolId[];
+  /**
+   * Skills this role may invoke, by name (§5.3). Non-empty exactly when `tools` carries
+   * `Skill`: the tool without a name is a grant on every skill root the machine happens to
+   * have, and a name without the tool is a grant nothing can reach.
+   */
+  readonly skills: readonly SkillName[];
+  /**
+   * In-process subagents, by name. A subagent is a grant like any other — not a seat on the
+   * team, and never a way around this role's own limits (§0, §4.6). Empty for every built-in.
+   */
+  readonly subagents: readonly SubagentName[];
+  /** MCP servers, by name, from the set the principal has trusted. Egress travels with each. */
+  readonly mcpServers: readonly McpServerName[];
   readonly memory: MemoryGrants;
   readonly workspace: WorkspaceGrants;
 }
@@ -67,4 +80,5 @@ export interface AgentRegistry {
   has(id: AgentId): boolean;
   list(): readonly AgentDefinition<unknown>[];
 }
+import type { McpServerName, SkillName, SubagentName } from "./capability-catalog";
 import type { WorkflowDefinition } from "../workflow/types";

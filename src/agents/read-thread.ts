@@ -12,6 +12,9 @@ export const readThreadAgent = defineAgent({
   delegatesTo: [],
   capabilities: {
     tools: ["Read", "Glob", "Grep", "Skill"],
+    skills: ["agent-memory"],
+    subagents: [],
+    mcpServers: [],
     memory: {
       read: ["shared", "project:*", "private:read-thread"],
       write: ["private:read-thread"],

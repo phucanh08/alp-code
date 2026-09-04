@@ -16,6 +16,9 @@ function probe(
     delegatesTo: [],
     capabilities: {
       tools: ["Read"],
+      skills: [],
+      subagents: [],
+      mcpServers: [],
       memory: { read: ["shared"], write: [] },
       workspace: { readRoots: ["/workspace"], writeRoots: [] },
     },
@@ -129,6 +132,9 @@ describe("createAgentRegistry", () => {
           probe({
             capabilities: {
               ...probe().capabilities,
+              skills: [],
+              subagents: [],
+              mcpServers: [],
               memory: { read: ["shared"], write: ["project:alp-code"] },
             },
           }),
@@ -144,6 +150,9 @@ describe("createAgentRegistry", () => {
           probe({
             capabilities: {
               ...probe().capabilities,
+              skills: [],
+              subagents: [],
+              mcpServers: [],
               memory: {
                 read: ["project:*"],
                 write: ["project:alp-code"],
@@ -162,6 +171,9 @@ describe("createAgentRegistry", () => {
           probe({
             capabilities: {
               ...probe().capabilities,
+              skills: [],
+              subagents: [],
+              mcpServers: [],
               memory: { read: ["private:other"], write: [] },
             },
           }),

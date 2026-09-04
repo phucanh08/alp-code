@@ -12,6 +12,9 @@ export const oracleAgent = defineAgent({
   delegatesTo: [],
   capabilities: {
     tools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Skill"],
+    skills: ["alp-debug", "alp-predict", "alp-scenario", "problem-solving"],
+    subagents: [],
+    mcpServers: [],
     memory: {
       read: ["shared", "project:*", "private:oracle"],
       write: ["private:oracle"],

@@ -45,6 +45,13 @@ export interface RuntimePermissionInput {
 export interface ClaudePermissions {
   readonly defaultMode: "default";
   readonly additionalDirectories: readonly string[];
+  /**
+   * The named half of the ACL. `deny` can only remove a whole tool — a bare `Skill` deny
+   * takes the tool out of the model's context entirely — so "these skills and no others" is
+   * expressible only as an allow list under `defaultMode: "default"`: a name that is not
+   * here needs approval, and a delegated execution has nobody to give it.
+   */
+  readonly allow: readonly string[];
   readonly deny: readonly string[];
 }
 
@@ -66,9 +73,19 @@ export function absoluteRule(verb: string, path: string): string {
 
 export function claudePermissions(input: RuntimePermissionInput): ClaudePermissions {
   const { policy } = input;
+  const allow = [
+    ...policy.skills.map((skill) => `Skill(${skill})`),
+    ...policy.subagents.map((subagent) => `Agent(${subagent.name})`),
+    // Whole-server rule: `--strict-mcp-config` already means these are the only servers
+    // connected, so the grant is the server, not each tool it happens to expose.
+    ...policy.mcpServers.map((server) => `mcp__${server.name}`),
+  ];
   const ownPrivate = join(input.memoryRoot, "private", policy.role);
   const additionalDirectories = [
-    policy.workspace,
+    // A role with no declared root gets no read grant on the tree it happens to stand in.
+    // The ACL is the enforcement, so listing the workspace here would hand read-thread,
+    // compaction and titling exactly what their own instructions forbid.
+    ...(policy.workspaceAccess === "none" ? [] : [policy.workspace]),
     input.runtimeDirectory,
     join(input.memoryRoot, "shared"),
     join(input.memoryRoot, "projects"),
@@ -91,6 +108,18 @@ export function claudePermissions(input: RuntimePermissionInput): ClaudePermissi
     if (!policy.allowedTools.includes(tool as ToolId)) deny.push(tool);
   }
 
+  // The loop above can only deny what ALP itself defines. The runtime's own in-process agent
+  // tool is not in `TOOL_CATALOG` and so was never denied at all — the house rule forbidding
+  // it was prompt text and nothing more. Named explicitly here so the split rule in
+  // `house-rules.ts` is enforced rather than merely stated. No role is granted a subagent
+  // today (§4.6); a definition that can declare one is what will take it off this list.
+  // `Task` is the tool's older name and ALP never grants it under that spelling. `Agent` is
+  // withheld only from a role holding no subagent grant: a bare deny would remove the tool
+  // from the model's context, so a role that *is* granted one gets the narrow `Agent(name)`
+  // allow rules above instead.
+  deny.push("Task");
+  if (policy.subagents.length === 0) deny.push("Agent");
+
   // A read-only role keeps that property through two independent mechanisms: no Write/Edit
   // grant, and a sandbox that denies writes to the workspace. Only the second one stops a
   // shell redirect, so where no sandbox exists the shell has to go instead. Losing Bash
@@ -106,6 +135,7 @@ export function claudePermissions(input: RuntimePermissionInput): ClaudePermissi
   return {
     defaultMode: "default",
     additionalDirectories: Object.freeze(additionalDirectories),
+    allow: Object.freeze(allow),
     deny: Object.freeze(deny),
   };
 }
@@ -156,4 +186,28 @@ export function codexSandboxLines(input: RuntimePermissionInput): readonly strin
     "allow = false",
     "",
   ]);
+}
+
+/**
+ * Granted MCP servers as `-c` overrides for Codex.
+ *
+ * They go on argv rather than into `codex-config.toml`, because that file is ALP's own
+ * record — Codex loads `$CODEX_HOME/config.toml`, which ALP does not write — and a server
+ * declared only there would be documentation of a connection that never happened.
+ *
+ * Codex has no `--strict-mcp-config`: whatever the principal configured on the machine
+ * stays connected alongside these. That asymmetry is real and is stated in §4.6 rather than
+ * papered over — the grant adds servers here, where on Claude it also removes them.
+ */
+export function codexMcpOverrides(policy: ExecutionPolicy): readonly string[] {
+  return Object.freeze(policy.mcpServers.flatMap((server) => {
+    const fields = [
+      `command = ${tomlString(server.command)}`,
+      `args = [${server.args.map(tomlString).join(", ")}]`,
+      ...(server.env === undefined ? [] : [
+        `env = { ${Object.entries(server.env).map(([key, value]) => `${key} = ${tomlString(value)}`).join(", ")} }`,
+      ]),
+    ];
+    return ["-c", `mcp_servers.${server.name}={ ${fields.join(", ")} }`];
+  }));
 }

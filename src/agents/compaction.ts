@@ -12,6 +12,9 @@ export const compactionAgent = defineAgent({
   delegatesTo: [],
   capabilities: {
     tools: ["Read", "Glob", "Grep"],
+    skills: [],
+    subagents: [],
+    mcpServers: [],
     memory: {
       read: ["shared", "project:*", "private:compaction"],
       write: ["private:compaction"],
@@ -22,6 +25,7 @@ export const compactionAgent = defineAgent({
     "Compaction, the continuation-context specialist",
     "Produce a continuation-ready handoff preserving objectives, constraints, decisions, state, open items, next actions, and exact anchors.",
     [...CODE_NATIVE_HOUSE_RULES, "Do not continue the underlying task, research missing facts, or communicate directly with the principal."],
+    { audience: "machine" },
   ),
   workflow: defineLinearWorkflow("compact-context", [
     { id: "EXTRACT", allowedTools: ["Read", "Glob", "Grep"] },

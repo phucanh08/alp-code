@@ -63,7 +63,11 @@ async function fixture(): Promise<{ root: string; project: string; prepared: Pre
       role: "search",
       workspace: project,
       workspaceMode: "read-only",
+      workspaceAccess: "granted",
       allowedTools: ["Read", "Grep"],
+      skills: [],
+      subagents: [],
+      mcpServers: [],
       memory: { read: ["shared"], write: [] },
       delegatesTo: [],
       createdAt: "2026-08-26T00:00:00.000Z",
@@ -128,7 +132,7 @@ describe("runtime adapters", () => {
       join(root, ".codex", "skills"),
       join(root, ".claude", "skills"),
     ]));
-    expect(launch.temporaryFiles).toHaveLength(5);
+    expect(launch.temporaryFiles).toHaveLength(6);
     expect(await readdir(project)).toEqual([]);
     expect(JSON.parse(await readFile(runtimeFile(launch, "identity-capsule.json"), "utf8"))).toMatchObject({
       executionId: "exec-runtime",

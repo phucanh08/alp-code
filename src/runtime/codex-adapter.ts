@@ -1,7 +1,7 @@
 import { delimiter, dirname, join } from "node:path";
 import { agentRegistry } from "../agents/registry";
 import { atomicRuntimeFile, baseRuntimeEnvironment, compactBridgeEnabled, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
-import { codexSandboxLines, tomlString } from "./permission-rules";
+import { codexMcpOverrides, codexSandboxLines, tomlString } from "./permission-rules";
 import type { PrepareRuntimeInput, RuntimeAdapter, RuntimeHealth, RuntimeLaunchSpec } from "./runtime-adapter";
 
 export interface CodexRuntimeAdapterOptions {
@@ -148,6 +148,9 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
         "-c", `hooks.Stop=${stopHooks}`,
         ...(bridgeEnabled && this.compact.preCompact ? ["-c", `hooks.PreCompact=${preCompactHooks}`] : []),
         ...(bridgeEnabled && this.compact.postCompact ? ["-c", `hooks.PostCompact=${postCompactHooks}`] : []),
+        // Granted MCP servers. Codex has no in-process subagent, so a `subagents` grant is
+        // simply not translated here — §4.6: subagent là tối ưu hoá, không phải điều kiện.
+        ...codexMcpOverrides(policy),
         // Đối xứng với `--dangerously-skip-permissions` của Claude: phiên interactive bỏ approval
         // và sandbox. `-s` bị bỏ đi chứ không để lẫn — Codex không báo lỗi khi có cả hai (chỉ
         // `--approve-for-me` mới khai `conflicts_with`), cờ bypass thắng và `-s` thành dòng chết
@@ -158,7 +161,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
         // Measured on codex-cli 0.149.0: a positional PROMPT becomes a `role: user` message,
         // i.e. turn 1. Interactive must not have one — identity reaches the model as a
         // `role: developer` message from the SessionStart hook, ahead of the user's turn.
-        ...taskArguments(contextFiles),
+        ...taskArguments(contextFiles, policy),
       ]),
       cwd: capsule.activeWorkspace,
       env: Object.freeze(env),
