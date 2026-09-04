@@ -74,8 +74,8 @@ runtime; `agents/` không biết backend; `memory/` không biết execution.
 ### 3.1 `alp` — phiên main tương tác
 
 ```text
-alp [--runtime claude|codex]
-  → parseAlpArgs                       (cli/alp.ts)
+alp [--runtime claude|codex] [--mode low|medium|high|ultra]
+  → parseAlpArgs                       (cli/alp.ts; mode: cờ → ALP_MODE → DEFAULT_MODE)
   → RuntimeSelector.select             (explicit | interactive TTY | persisted | default)
   → ProjectRegistryStore.isRegistered  → workspace-write nếu đã `alp init`, else read-only
   → ExecutionService.prepare           (parent = "principal", target = "main")
@@ -83,11 +83,11 @@ alp [--runtime claude|codex]
        ├─ PolicyEngine.authorize({ type: "workspace", ... })
        ├─ MemoryService.buildContext
        ├─ WorkflowRunner.initialize
-       ├─ createExecutionPolicy   → snapshot + definitionHash + policyHash
+       ├─ createExecutionPolicy   → snapshot (kèm `mode`) + definitionHash + policyHash
        ├─ createIdentityCapsule   → lọc memory theo grant, cắt tool theo workflow state
        └─ FileExecutionStore.create → ~/.alp/executions/<id>/{policy,state}.json  (0600)
   → RuntimeAdapter.probe               (binary có trên PATH không)
-  → RuntimeAdapter.prepare             → RuntimeLaunchSpec (command/args/cwd/env/tmpfiles)
+  → RuntimeAdapter.prepare             → RuntimeLaunchSpec; model/effort = modelForMode(main, runtime, mode)
   → LocalProcessBackend.spawn + wait
   → đọc lại state.json → status/output cuối cùng
 ```
@@ -106,7 +106,7 @@ alp delegate review --project /path -- "Review the diff"
        │         · target ∈ actor.delegatesTo ?
        │         · target.reportsTo === actor ?
        ├─ resolve runtime adapter      (request override → config.defaultRuntime)
-       ├─ adapter.prepare              → launch spec, model/effort lấy từ definition
+       ├─ adapter.prepare              → launch spec; model/effort = dial (ALP_MODE) → definition
        ├─ resolveBackend               (health check; fallback CHỈ trước spawn)
        ├─ executionStore.put           (pin backend vào record)
        └─ backend.spawn
@@ -153,16 +153,40 @@ Loadout hiện tại:
 
 | Agent | Claude / Codex | Effort | Tools | Memory write | Workspace |
 |---|---|---|---|---|---|
-| `main` (Phở 🍜) | opus-5 / gpt-5.6-sol | high / xhigh | tất cả 9 | shared, project:\*, private:main | read + write |
+| `main` (Phở 🍜) | dial, xem dưới | dial | tất cả 9 | shared, project:\*, private:main | read + write |
 | `search` | sonnet-5 / terra | low / low | Read Glob Grep Bash Skill | private:search | read |
 | `librarian` | opus-5 / sol | high / high | + WebSearch WebFetch | shared:reference:\*, project:\*:refs:\*, private | read |
 | `read-thread` | haiku-4-5 / luna | low / low | Read Glob Grep Skill | private:read-thread | — |
 | `review` | opus-5 / gpt-5.6-terra | high / medium | Read Glob Grep Bash Skill | private:review | read |
-| `oracle` | opus-5 / sol | high / xhigh | + WebSearch WebFetch | private:oracle | read |
+| `oracle` | dial, xem dưới | dial | + WebSearch WebFetch | private:oracle | read |
 | `compaction` | opus-5 / sol | medium / medium | Read Glob Grep | private:compaction | — |
 | `titling` | haiku-4-5 / luna | low / low | — | private:titling | — |
 
 Chỉ `main` có `delegatesTo` khác rỗng. Cây delegation phẳng: `principal → main → {7 specialist}`.
+
+#### Dial công suất — `low` · `medium` · `high` · `ultra`
+
+`modes.ts` giữ dial. Người dùng không phải nhớ model nào giỏi việc gì; câu hỏi duy nhất là
+**"việc này khó cỡ nào"**. Nấc chỉ xoay hai ghế mà độ khó chạm tới — `main` (người làm) và
+`oracle` (người được hỏi khi bí):
+
+| Nấc | `main` claude / codex | effort | `oracle` claude / codex |
+|---|---|---|---|
+| `low` | haiku-4-5 / luna | low / low | opus-5 / sol |
+| `medium` (mặc định) | sonnet-5 / sol | medium / medium | opus-5 / sol |
+| `high` | opus-5 / sol | high / xhigh | fable-5-1 / sol |
+| `ultra` | fable-5-1 / sol | high / xhigh | opus-5 / sol |
+
+Sáu vai còn lại không nằm trong dial: model của chúng là **một phần công việc** (`search` cần
+retrieval nhanh, `titling` viết một dòng) chứ không phải một mức cố gắng — cho chúng leo theo
+dial chỉ tốn tiền mà không đổi kết quả. `high` và `ultra` **đảo chỗ** hai model mạnh nhất giữa
+hai ghế thay vì cộng thêm: ở mức đó thứ quyết định kết quả là con nào cầm bút.
+
+Chọn nấc: `alp --mode <nấc>` → `ALP_MODE` → `DEFAULT_MODE` (`medium`). Nấc gõ sai dừng ngay
+chứ không rơi về mặc định. Nấc đi vào `ExecutionPolicy.mode` nên nó nằm trong `policy.json` và
+trong `policyHash` — hai lần chạy khác model không thể có cùng hash. Adapter export `ALP_MODE`,
+nên execution delegated kế thừa nấc của phiên cha. Mọi model trong dial phải có mặt trong
+`MODEL_CONTEXT_WINDOWS` (test giữ), nếu không ngưỡng compact mặc định biến mất đúng ở nấc đó.
 
 `model-context.ts` giữ `MODEL_CONTEXT_WINDOWS` — cửa sổ context của từng model. Ngưỡng compact
 khai **theo runtime** vì nó là ngân sách của model chứ không của vai một mình: cùng một

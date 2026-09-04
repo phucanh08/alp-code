@@ -19,6 +19,7 @@ export const AUTO_COMPACT_DEFAULT_PERCENT = 90;
 export const MODEL_CONTEXT_WINDOWS: Readonly<Record<string, number>> = Object.freeze({
   // 1M token native, standard pricing (claude.com/docs — Opus 5, Sonnet 5). Claude vẫn cap
   // lại theo cửa sổ thật của phiên, nên số này là trần chứ không phải lời hứa.
+  "claude-fable-5-1": 1_000_000,
   "claude-opus-5": 1_000_000,
   "claude-sonnet-5": 1_000_000,
   "claude-haiku-4-5": 200_000,

@@ -133,6 +133,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
       ALP_IDENTITY_CAPSULE: capsuleFile,
       ALP_RUNTIME_CONFIG: configFile,
       ALP_SKILL_ROOTS: skillRoots,
+      ALP_MODE: policy.mode,
       ...(policy.workspaceMode === "read-only" ? { ALP_READONLY_DIRS: capsule.activeWorkspace } : {}),
     };
     const command = (await resolveRuntimeCommand("codex", this.platform, this.env))

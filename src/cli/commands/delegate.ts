@@ -1,3 +1,4 @@
+import { parseMode } from "../../agents/modes";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -141,7 +142,12 @@ export async function createDefaultDelegationComposition(
     ]),
     backend,
     executionStore: new FileDelegationExecutionStore({ file: join(config.stateDir, "code-native-executions.json") }),
-    config: { defaultRuntime: preference.runtime ?? "claude" },
+    config: {
+      defaultRuntime: preference.runtime ?? "claude",
+      // Con kế thừa nấc của cha: một phiên `ultra` mà subagent lặng lẽ tụt về `medium` thì
+      // nấc chỉ còn đúng ở ghế ngoài cùng.
+      ...(env.ALP_MODE ? { mode: parseMode(env.ALP_MODE) } : {}),
+    },
   });
   return { service, config: { stateDir: config.stateDir } };
 }

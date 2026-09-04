@@ -37,6 +37,7 @@ function prepared(executionId: string, target = "search"): PreparedExecution {
       role: target,
       workspace,
       workspaceMode: "read-only",
+      mode: "medium",
       workspaceAccess: "granted",
       allowedTools: ["Read"],
       skills: [],

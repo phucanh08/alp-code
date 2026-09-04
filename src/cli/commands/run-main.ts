@@ -1,4 +1,5 @@
 import type { AgentDefinition, AgentRegistry, RuntimeId } from "../../agents/types";
+import { DEFAULT_MODE, modelForMode, reasoningEffortForMode, type ModeId } from "../../agents/modes";
 import { readFile } from "node:fs/promises";
 import type { BackendExecutionResult, ExecutionBackend } from "../../backend/execution-backend";
 import { INTERACTIVE_TASK_SENTINEL } from "../../context/continuity";
@@ -9,6 +10,8 @@ import type { RuntimeSelector } from "../../runtime/runtime-selector";
 export interface RunMainInput {
   readonly cwd: string;
   readonly requestedRuntime?: RuntimeId;
+  /** Nấc công suất cho phiên này; bỏ trống thì `DEFAULT_MODE`. */
+  readonly mode?: ModeId;
 }
 
 export interface RunMainDependencies {
@@ -27,6 +30,7 @@ export async function runMainSession(
   dependencies: RunMainDependencies,
 ): Promise<BackendExecutionResult> {
   const definition = dependencies.registry.get("main") as AgentDefinition<unknown>;
+  const mode = input.mode ?? DEFAULT_MODE;
   if (definition.reportsTo !== "principal") throw new Error("main must report to principal");
   const selection = await dependencies.selector.select({
     requestedRuntime: input.requestedRuntime,
@@ -47,6 +51,7 @@ export async function runMainSession(
     task: INTERACTIVE_TASK_SENTINEL,
     workspace: input.cwd,
     workspaceMode,
+    mode,
     memoryQueries: [],
     characterBudget: 0,
     invariantContext: "ALP execution policy is authoritative and fails closed.",
@@ -58,8 +63,10 @@ export async function runMainSession(
   if (!health.ok) throw new Error(`${health.message}${health.remediation ? `; ${health.remediation}` : ""}`);
   const launchSpec = await adapter.prepare({
     execution,
-    model: definition.model[selection.runtime],
-    reasoningEffort: definition.reasoningEffort[selection.runtime],
+    // Nấc thắng khai báo của vai — cùng một `main` chạy bốn model khác nhau. Lấy từ cùng
+    // giá trị đã đi vào policy, để `policy.json` và tiến trình thật sự chạy không lệch nhau.
+    model: modelForMode(definition, selection.runtime, mode),
+    reasoningEffort: reasoningEffortForMode(definition, selection.runtime, mode),
     interactive: true,
   });
   // The principal is sitting in front of this one, so it must own the terminal: a backend

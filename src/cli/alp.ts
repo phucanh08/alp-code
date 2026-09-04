@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import type { RuntimeId } from "../agents/types";
+import { MODE_IDS, MODE_PROFILES, parseMode, type ModeId } from "../agents/modes";
 import { agentRegistry } from "../agents/registry";
 import { LocalProcessBackend } from "../backend/local-process-backend";
 import { ExecutionService } from "../execution/execution-service";
@@ -26,7 +27,7 @@ import { runRuntimeCommand, type RuntimeCommandInput } from "./commands/runtime"
 import { checkForUpdate, FileUpdateCheckStore } from "./update-check";
 
 export type AlpCommand =
-  | { readonly command: "run-main"; readonly runtime?: RuntimeId }
+  | { readonly command: "run-main"; readonly runtime?: RuntimeId; readonly mode?: ModeId }
   | { readonly command: "runtime"; readonly action: "show" | "set"; readonly runtime?: RuntimeId }
   | { readonly command: "init"; readonly project?: string }
   | { readonly command: "deinit"; readonly project?: string }
@@ -44,18 +45,43 @@ function runtimeId(value: string | undefined): RuntimeId {
   return value;
 }
 
+/**
+ * `alp [--runtime <name>] [--mode <nấc>]` — hai cờ độc lập, thứ tự nào cũng được: runtime là
+ * *chạy bằng CLI nào*, mode là *khó cỡ nào*. Gõ sai một trong hai thì dừng ngay chứ không rơi
+ * về mặc định, vì một phiên chạy nấc khác nấc người dùng tưởng là im lặng tốn tiền hoặc im
+ * lặng yếu đi.
+ */
+function parseRunMainFlags(argv: readonly string[]): AlpCommand {
+  let runtime: RuntimeId | undefined;
+  let mode: ModeId | undefined;
+  for (let index = 0; index < argv.length; index += 1) {
+    const value = argv[index];
+    const flag = value === "--runtime" || value.startsWith("--runtime=")
+      ? "--runtime"
+      : value === "--mode" || value.startsWith("--mode=")
+        ? "--mode"
+        : undefined;
+    if (flag === undefined) {
+      throw new Error(`unknown option \`${value}\`; usage: alp [--runtime claude|codex] [--mode ${MODE_IDS.join("|")}]`);
+    }
+    let raw: string | undefined;
+    if (value === flag) { raw = argv[index + 1]; index += 1; } else { raw = value.slice(flag.length + 1); }
+    if (flag === "--runtime") {
+      if (runtime !== undefined) throw new Error("multiple runtime selections are not allowed");
+      if (raw === undefined || raw === "") throw new Error("alp --runtime accepts exactly one runtime");
+      runtime = runtimeId(raw);
+    } else {
+      if (mode !== undefined) throw new Error("multiple mode selections are not allowed");
+      if (raw === undefined || raw === "") throw new Error("alp --mode accepts exactly one mode");
+      mode = parseMode(raw);
+    }
+  }
+  return { command: "run-main", ...(runtime ? { runtime } : {}), ...(mode ? { mode } : {}) };
+}
+
 export function parseAlpArgs(argv: readonly string[]): AlpCommand {
   if (argv.length === 0) return { command: "run-main" };
-  const runtimeFlags = argv.filter((value) => value === "--runtime" || value.startsWith("--runtime="));
-  if (runtimeFlags.length > 1) throw new Error("multiple runtime selections are not allowed");
-  if (argv[0] === "--runtime") {
-    if (argv.length !== 2) throw new Error("alp --runtime accepts exactly one runtime");
-    return { command: "run-main", runtime: runtimeId(argv[1]) };
-  }
-  if (argv[0].startsWith("--runtime=")) {
-    if (argv.length !== 1) throw new Error("alp --runtime accepts exactly one runtime");
-    return { command: "run-main", runtime: runtimeId(argv[0].slice("--runtime=".length)) };
-  }
+  if (argv[0].startsWith("--runtime") || argv[0].startsWith("--mode")) return parseRunMainFlags(argv);
   if (argv[0] === "--version" || argv[0] === "-v") {
     if (argv.length !== 1) throw new Error("alp --version does not accept arguments");
     return { command: "version" };
@@ -299,7 +325,7 @@ function helpText(): string {
   return [
     "alp — code-native agent launcher",
     "",
-    "  alp [--runtime claude|codex]",
+    `  alp [--runtime claude|codex] [--mode ${MODE_IDS.join("|")}]`,
     "  alp runtime show|set <runtime>",
     "  alp init [path]",
     "  alp deinit [path]",
@@ -314,6 +340,9 @@ function helpText(): string {
     "  alp uninstall [--purge-memory] [--force]",
     "  alp --version",
     "",
+    "Modes (mặc định `medium`, hoặc đặt `ALP_MODE`):",
+    ...MODE_IDS.map((mode) => `  ${mode.padEnd(7)} ${MODE_PROFILES[mode].summary}`),
+    "",
     "Direct `claude`, `codex`, and identity-aware raw-runtime shortcuts are unsupported.",
   ].join("\n") + "\n";
 }
@@ -327,7 +356,16 @@ export async function main(argv: readonly string[] = process.argv.slice(2), inje
   const notice = await dependencies.checkForUpdate().catch(() => null);
   if (notice) stdout.write(notice);
   if (command.command === "version") { stdout.write(`alp ${dependencies.version}\n`); return 0; }
-  if (command.command === "run-main") return dependencies.runMain({ cwd, ...(command.runtime ? { requestedRuntime: command.runtime } : {}) });
+  if (command.command === "run-main") {
+    // Cờ thắng biến môi trường; `ALP_MODE` tồn tại để một phiên delegated kế thừa nấc của cha.
+    const inheritedMode = process.env.ALP_MODE ? parseMode(process.env.ALP_MODE) : undefined;
+    const mode = command.mode ?? inheritedMode;
+    return dependencies.runMain({
+      cwd,
+      ...(command.runtime ? { requestedRuntime: command.runtime } : {}),
+      ...(mode ? { mode } : {}),
+    });
+  }
   if (command.command === "runtime") return dependencies.runtimeCommand(command);
   if (command.command === "init") { await dependencies.initProject({ project: resolve(cwd, command.project ?? ".") }); return 0; }
   if (command.command === "deinit") { await dependencies.deinitProject({ project: resolve(cwd, command.project ?? ".") }); return 0; }

@@ -1,3 +1,4 @@
+import { DEFAULT_MODE, modelForMode, reasoningEffortForMode, type ModeId } from "../agents/modes";
 import { randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -21,6 +22,8 @@ import {
 
 export interface DelegationServiceConfig {
   defaultRuntime: RuntimeId;
+  /** Nấc công suất kế thừa từ phiên cha (`ALP_MODE`); bỏ trống thì `DEFAULT_MODE`. */
+  mode?: ModeId;
 }
 
 export interface DelegationExecutionPreparer {
@@ -208,6 +211,7 @@ export class DelegationService {
       task: request.task,
       workspace: request.workspace,
       workspaceMode: request.workspaceMode,
+      ...(this.config.mode === undefined ? {} : { mode: this.config.mode }),
       memoryQueries: [],
       characterBudget: 0,
       invariantContext: "ALP execution policy is authoritative and fails closed.",
@@ -222,10 +226,11 @@ export class DelegationService {
       throw new DelegationError("RUNTIME_UNAVAILABLE", `runtime \`${runtime}\` is not registered`);
     }
     const definition = this.registry.get(request.targetRole);
+    const mode = this.config.mode ?? DEFAULT_MODE;
     const launchSpec = await adapter.prepare({
       execution,
-      model: definition.model[runtime],
-      reasoningEffort: definition.reasoningEffort[runtime],
+      model: modelForMode(definition, runtime, mode),
+      reasoningEffort: reasoningEffortForMode(definition, runtime, mode),
       interactive: request.executionOptions.interactive,
     });
     return Object.freeze({ request, executionId, execution, runtime, launchSpec, backend: this.backend });

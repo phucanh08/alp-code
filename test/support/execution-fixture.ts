@@ -57,6 +57,7 @@ export function policyFixture(overrides: Partial<ExecutionPolicy> = {}): Executi
     role: "probe",
     workspace: "/workspace",
     workspaceMode: "read-only",
+    mode: "medium",
     workspaceAccess: "granted",
     allowedTools: ["Read", "Skill"],
     skills: ["git"],

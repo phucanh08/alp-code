@@ -147,6 +147,7 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
       ALP_IDENTITY_CAPSULE: capsuleFile,
       ALP_RUNTIME_CONFIG: settingsFile,
       ALP_SKILL_ROOTS: skillRoots,
+      ALP_MODE: policy.mode,
       ...(policy.workspaceMode === "read-only" ? { ALP_READONLY_DIRS: capsule.activeWorkspace } : {}),
     };
     const command = (await resolveRuntimeCommand("claude", this.platform, this.env))

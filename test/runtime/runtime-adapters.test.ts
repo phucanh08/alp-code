@@ -63,6 +63,7 @@ async function fixture(): Promise<{ root: string; project: string; prepared: Pre
       role: "search",
       workspace: project,
       workspaceMode: "read-only",
+      mode: "medium",
       workspaceAccess: "granted",
       allowedTools: ["Read", "Grep"],
       skills: [],

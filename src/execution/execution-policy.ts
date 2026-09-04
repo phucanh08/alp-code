@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { capabilityCatalog, type CapabilityCatalog } from "../agents/capability-catalog";
+import { DEFAULT_MODE, type ModeId } from "../agents/modes";
 import type { AgentDefinition, RuntimeId } from "../agents/types";
 import { RUNTIME_IDS } from "../agents/types";
 import {
@@ -13,6 +14,8 @@ export interface CreateExecutionPolicyInput {
   readonly definition: AgentDefinition<unknown>;
   readonly workspace: string;
   readonly workspaceMode: "read-only" | "workspace-write";
+  /** Nấc công suất; bỏ trống thì `DEFAULT_MODE`. */
+  readonly mode?: ModeId;
   readonly createdAt: string;
   /** Defaults to the shipped catalog — see `capability-catalog.ts`. */
   readonly catalog?: CapabilityCatalog;
@@ -97,6 +100,9 @@ export function createExecutionPolicy(
     role: input.definition.id,
     workspace: input.workspace,
     workspaceMode: input.workspaceMode,
+    // Trong snapshot chứ không trong `definitionHash`: nấc là lựa chọn lúc phóng, không phải
+    // một vai khác. Definition không đổi, execution thì có.
+    mode: input.mode ?? DEFAULT_MODE,
     workspaceAccess: input.definition.capabilities.workspace.readRoots.length > 0
       ? "granted" as const
       : "none" as const,

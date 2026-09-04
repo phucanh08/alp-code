@@ -10,6 +10,43 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ### Thêm
 
+- **Dial công suất bốn nấc: `alp --mode low|medium|high|ultra`.** Trước đây `main` chạy đúng
+  một model, khai cứng trong definition, nên câu hỏi "đổi sang con rẻ hơn cho việc vặt" chỉ
+  trả lời được bằng cách sửa file rồi commit. Dial đổi câu hỏi thành thứ người dùng thật sự
+  biết: **việc này khó cỡ nào**. Mượn khuôn của Amp — bốn nấc, `medium` mặc định — nhưng chỉ
+  dùng model Codex và Claude.
+
+  | Nấc | `main` claude / codex | effort | `oracle` claude / codex |
+  |---|---|---|---|
+  | `low` | haiku-4-5 / luna | low / low | opus-5 / sol |
+  | `medium` (mặc định) | sonnet-5 / sol | medium / medium | opus-5 / sol |
+  | `high` | opus-5 / sol | high / xhigh | fable-5-1 / sol |
+  | `ultra` | fable-5-1 / sol | high / xhigh | opus-5 / sol |
+
+  Nấc chỉ xoay hai ghế mà độ khó chạm tới: `main` (người làm) và `oracle` (người được hỏi khi
+  bí). Sáu vai còn lại giữ nguyên khai báo, vì model của chúng là một phần công việc chứ không
+  phải một mức cố gắng — `search` cần retrieval nhanh dù câu hỏi to hay nhỏ, `titling` viết
+  một dòng. `high` và `ultra` **đảo chỗ** hai model mạnh nhất giữa hai ghế thay vì cộng thêm:
+  ở mức đó thứ quyết định kết quả là con nào cầm bút, con nào soi lại.
+
+  Chọn nấc theo thứ tự `--mode` → `ALP_MODE` → `medium`. Nấc gõ sai (`--mode smart`) dừng ngay
+  chứ không rơi về mặc định, vì một phiên chạy nấc khác nấc người dùng tưởng là im lặng tốn
+  tiền hoặc im lặng yếu đi. Nấc đi vào `ExecutionPolicy.mode`, nên `policy.json` ghi lại nấc
+  đã chạy và `policyHash` đổi theo nấc — hai lần chạy khác model không thể trùng hash.
+  `definitionHash` **không** đổi: nấc là lựa chọn lúc phóng, không phải một vai khác. Adapter
+  export `ALP_MODE` nên execution delegated kế thừa nấc của phiên cha, thay vì subagent lặng
+  lẽ tụt về `medium` giữa một phiên `ultra`.
+
+  **Đổi hành vi mặc định:** `main` trước đây là opus-5 / gpt-5.6-sol @ high/xhigh — nay là nấc
+  `high`. Mặc định mới `medium` hạ `main` xuống sonnet-5. Muốn giữ nguyên như trước: `alp
+  --mode high`, hoặc `export ALP_MODE=high`.
+
+  `claude-fable-5-1` (cửa sổ 1M) được thêm vào `MODEL_CONTEXT_WINDOWS`; một test giữ điều kiện
+  mọi model của dial đều có cửa sổ trong bảng, nếu không ngưỡng auto-compact mặc định (90% cửa
+  sổ) sẽ lặng lẽ biến mất đúng ở nấc đó.
+
+### Thêm
+
 - **Ba grant khai bằng tên: `capabilities.skills`, `capabilities.subagents`,
   `capabilities.mcpServers`.** Một vai trước đây chỉ khai `tools`, nên `Skill` là một ô vuông
   duy nhất: có hoặc không. Có nghĩa là mọi skill trên máy — kể cả cái vừa `git pull` về sáng

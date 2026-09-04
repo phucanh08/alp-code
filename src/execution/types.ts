@@ -8,6 +8,7 @@ import type {
   RuntimeId,
   ToolId,
 } from "../agents/types";
+import type { ModeId } from "../agents/modes";
 import type {
   ContextDiagnostics,
   MemoryKind,
@@ -38,6 +39,12 @@ export interface ExecutionPolicy {
   readonly role: AgentId;
   readonly workspace: string;
   readonly workspaceMode: "read-only" | "workspace-write";
+  /**
+   * Nấc công suất đã chạy execution này (`low`…`ultra`). Cùng một definition chạy được nhiều
+   * model, nên nếu snapshot không nói ra nấc thì `policy.json` mô tả một execution mà nó
+   * không mô tả nổi — và hai lần chạy khác model lại có cùng `policyHash`.
+   */
+  readonly mode: ModeId;
   /**
    * Whether this role holds any workspace grant at all. `none` for a role that declares no
    * root (read-thread, compaction, titling): it works from memory, the workspace is only
@@ -131,6 +138,8 @@ export interface PrepareExecutionInput {
   readonly task: string;
   readonly workspace: string;
   readonly workspaceMode: "read-only" | "workspace-write";
+  /** Bỏ trống thì lấy `DEFAULT_MODE`. */
+  readonly mode?: ModeId;
   readonly memoryQueries: readonly MemoryQuery[];
   readonly characterBudget: number;
   readonly invariantContext: string;

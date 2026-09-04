@@ -8,6 +8,10 @@ describe("alp CLI parsing", () => {
     [[], { command: "run-main" }],
     [["--runtime", "claude"], { command: "run-main", runtime: "claude" }],
     [["--runtime=codex"], { command: "run-main", runtime: "codex" }],
+    [["--mode", "ultra"], { command: "run-main", mode: "ultra" }],
+    [["--mode=low"], { command: "run-main", mode: "low" }],
+    [["--runtime", "codex", "--mode", "high"], { command: "run-main", runtime: "codex", mode: "high" }],
+    [["--mode=high", "--runtime=claude"], { command: "run-main", runtime: "claude", mode: "high" }],
     [["runtime", "show"], { command: "runtime", action: "show" }],
     [["runtime", "set", "codex"], { command: "runtime", action: "set", runtime: "codex" }],
     [["init", "/tmp/project"], { command: "init", project: "/tmp/project" }],
@@ -29,6 +33,9 @@ describe("alp CLI parsing", () => {
   it.each([
     ["--runtime", "claude", "--runtime", "codex"],
     ["--runtime", "other"],
+    ["--mode", "smart"],
+    ["--mode"],
+    ["--mode", "low", "--mode", "high"],
     ["wat"],
     ["claude"],
     ["codex"],
@@ -191,10 +198,47 @@ describe("runMainSession", () => {
       "select:remembered",
       "prepare:principal->main:/project:workspace-write",
       "probe:codex",
-      "adapter:codex-main:xhigh",
+      "adapter:gpt-5.6-sol:medium",
       "spawn:/project",
       "wait",
     ]);
+  });
+
+  /**
+   * Nấc là thứ duy nhất phân biệt hai lần chạy cùng một `main`, nên nó phải đi tới tận
+   * launch spec — nếu chỉ nằm trong policy thì `policy.json` nói `ultra` còn tiến trình vẫn
+   * chạy model của `medium`.
+   */
+  it("launches the dialled model and effort, and records the mode in the snapshot", async () => {
+    const events: string[] = [];
+    let preparedMode: string | undefined;
+    await runMainSession({ cwd: "/project", mode: "ultra" }, {
+      registry: { get: () => ({ id: "main", reportsTo: "principal", model: { claude: "claude-main", codex: "codex-main" }, reasoningEffort: { claude: "high", codex: "xhigh" } }) as never },
+      selector: { async select() { return { ok: true, runtime: "claude", source: "default" }; } },
+      executionService: {
+        async prepare(input) { preparedMode = input.mode; return { capsule: { executionId: "exec-main" } } as never; },
+      },
+      adapters: new Map([["claude", {
+        name: "claude",
+        compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
+        async probe() { return { ok: true, runtime: "claude", message: "ok" }; },
+        async prepare(input) { events.push(`adapter:${input.model}:${input.reasoningEffort}`); return { command: "fake", args: [], cwd: "/project", env: {}, temporaryFiles: [] }; },
+      }]]),
+      backend: {
+        name: "local",
+        async healthCheck() { return { ok: true, message: "ok" }; },
+        async spawn(input) { return { executionId: input.executionId, status: "running" }; },
+        async status(executionId) { return { executionId, status: "running" }; },
+        async wait(executionId) { return { executionId, status: "completed" }; },
+        async cancel(executionId) { return { executionId, status: "cancelled" }; },
+        async cleanup() {},
+      },
+      executionId: () => "exec-main",
+      interactive: false,
+    });
+
+    expect(events).toEqual(["adapter:claude-fable-5-1:high"]);
+    expect(preparedMode).toBe("ultra");
   });
 
   it("defaults an unregistered cwd to read-only", async () => {

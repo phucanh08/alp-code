@@ -1,3 +1,4 @@
+import { DEFAULT_MODE, modelForMode } from "../../src/agents/modes";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -78,15 +79,16 @@ describe("e2e: alp main session", () => {
       expect(capture.sessionContext).not.toContain(capture.capsule.task);
     }
 
-    // Only launch syntax and the per-runtime model differ.
-    expect(claude.argv).toContain(definition.model.claude);
+    // Only launch syntax and the per-runtime model differ — và model là model của nấc đang
+    // chạy, không phải model khai trong definition: dial sở hữu ghế `main`.
+    expect(claude.argv).toContain(modelForMode(definition, "claude", DEFAULT_MODE));
     expect(claude.argv).toContain("--settings");
-    expect(codex.argv).toContain(definition.model.codex);
+    expect(codex.argv).toContain(modelForMode(definition, "codex", DEFAULT_MODE));
     expect(codex.argv.slice(0, 3)).toEqual(["--dangerously-bypass-hook-trust", "--enable", "hooks"]);
     expect(JSON.parse(claude.runtimeConfig).hooks).toHaveProperty("SessionStart");
     // Codex carries the same hook bridges as `-c` overrides rather than in its config file.
     expect(codex.argv.some((arg) => arg.startsWith("hooks.SessionStart="))).toBe(true);
-    expect(codex.runtimeConfig).toContain(`model = "${definition.model.codex}"`);
+    expect(codex.runtimeConfig).toContain(`model = "${modelForMode(definition, "codex", DEFAULT_MODE)}"`);
   });
 
   it("writes no runtime identity config into the project and cleans temporary files", async () => {

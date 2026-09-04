@@ -127,6 +127,7 @@ export class ExecutionService {
       definition,
       workspace,
       workspaceMode: input.workspaceMode,
+      ...(input.mode === undefined ? {} : { mode: input.mode }),
       createdAt,
     });
     const capsule = createIdentityCapsule({
