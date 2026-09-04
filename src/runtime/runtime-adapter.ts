@@ -1,4 +1,5 @@
 import type { ReasoningEffort, RuntimeId } from "../agents/types";
+import type { CompactCapabilities } from "../context/types";
 import type { PreparedExecution } from "../execution/types";
 
 export interface RuntimeHealth {
@@ -37,6 +38,12 @@ export interface PrepareRuntimeInput {
 
 export interface RuntimeAdapter {
   readonly name: RuntimeId;
+  /**
+   * What this runtime emits around compaction, pinned per CLI version. Static rather than
+   * probed: `scripts/probe-compact-hooks.cjs` needs a human at a TTY and a live model, and
+   * production cannot pay that on every session.
+   */
+  readonly compact: CompactCapabilities;
   probe(): Promise<RuntimeHealth>;
   prepare(input: PrepareRuntimeInput): Promise<RuntimeLaunchSpec>;
 }

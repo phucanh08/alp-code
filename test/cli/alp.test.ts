@@ -140,6 +140,7 @@ describe("runMainSession", () => {
       },
       adapters: new Map([["codex", {
         name: "codex",
+        compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
         async probe() { events.push("probe:codex"); return { ok: true, runtime: "codex", message: "ok" }; },
         async prepare(input) { events.push(`adapter:${input.model}:${input.reasoningEffort}`); return launchSpec; },
       }]]),
@@ -176,7 +177,7 @@ describe("runMainSession", () => {
       registry: { get: () => definition },
       selector: { async select() { return { ok: true, runtime: "claude", source: "default" }; } },
       executionService: { async prepare(input) { workspaceMode = input.workspaceMode; return { capsule: { executionId: "exec" } } as never; } },
-      adapters: new Map([["claude", { name: "claude", async probe() { return { ok: true, runtime: "claude", message: "ok" }; }, async prepare() { return { command: "fake", args: [], cwd: "/unknown", env: {}, temporaryFiles: [] }; } }]]),
+      adapters: new Map([["claude", { name: "claude", compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true }, async probe() { return { ok: true, runtime: "claude", message: "ok" }; }, async prepare() { return { command: "fake", args: [], cwd: "/unknown", env: {}, temporaryFiles: [] }; } }]]),
       backend: {
         name: "local",
         async healthCheck() { return { ok: true, message: "ok" }; },

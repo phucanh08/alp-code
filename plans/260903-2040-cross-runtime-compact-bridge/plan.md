@@ -689,6 +689,23 @@ Thêm sau lần đo Windows (2026-09-04):
 
 **Test:** `npm test -- test/context/compact-payload.test.ts`
 
+**Xong 2026-09-04.** 18 test, cả suite 260 test xanh, `tsc --noEmit` sạch. Ba điểm chốt lại khác
+với lúc viết task:
+
+- Fixture lấy từ payload đo thật ngày 2026-09-04 chứ không từ field chính thức, nên nó giữ cả
+  những chỗ schema không nói: Claude `PreCompact`/`PostCompact` **không** mang `model` trong khi
+  `SessionStart` của nó có, và `custom_instructions` là `null` chứ không vắng mặt.
+- `trigger` sai giá trị thì **không** reject, nó degrade thành `"unknown"` — kiểu dữ liệu có sẵn
+  trạng thái đó, và một trigger lạ trong tương lai không đáng làm hỏng cả lần replay. Reject dành
+  cho thứ nói rằng dòng đó không phải do hook của ALP viết: runtime lạ, phase lạ, `source` không
+  phải object. Đây là chỗ diễn giải "required field sai kiểu thì reject" hẹp lại một cách có chủ ý.
+- `dedupeKey` ưu tiên `sequence` do ALP cấp, rồi mới tới id của runtime. Có test cho đúng ca đã đo
+  ở `codex exec`: hai compaction dùng chung một `turn_id` vẫn phải ra hai key khác nhau.
+
+`CompactCapabilities` pin `true` cả ba trên cả hai adapter, comment kèm version và ngày probe.
+`RuntimeAdapter` có thêm `readonly compact`, nên ba stub trong test phải khai nó — đó là ý đồ: một
+adapter mới không được phép im lặng bỏ qua câu hỏi này.
+
 **Gate CB-0.** Bảng dưới điền ngày 2026-09-03 bằng schema đọc trực tiếp từ binary đã cài
 (bằng chứng đầy đủ ở §Runtime capability):
 

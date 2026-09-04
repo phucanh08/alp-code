@@ -12,6 +12,23 @@ export interface CodexRuntimeAdapterOptions {
 
 export class CodexRuntimeAdapter implements RuntimeAdapter {
   readonly name = "codex" as const;
+
+  /**
+   * Measured on Codex CLI 0.153.0 (schema 2026-09-03; live 2026-09-04 headless on darwin
+   * and win32, and inherited TTY on win32 with `trigger=manual`). Codex reinjects after it
+   * finishes, and only once the next turn begins:
+   *
+   *   PreCompact -> PostCompact -> SessionStart(source="compact")
+   *
+   * measured at 7s past `PostCompact`, which was a human typing. Two earlier sessions
+   * exited straight after compacting, saw no `SessionStart`, and nearly had this pinned
+   * `false`. `manual` and `auto` payloads are identical apart from `trigger`.
+   */
+  readonly compact = Object.freeze({
+    preCompact: true,
+    postCompact: true,
+    sessionStartAfterCompact: true,
+  });
   private readonly platform: NodeJS.Platform;
   private readonly env: NodeJS.ProcessEnv;
   private readonly hooksDirectory: string;

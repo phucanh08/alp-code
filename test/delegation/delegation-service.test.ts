@@ -62,6 +62,7 @@ function prepared(executionId: string, target = "search"): PreparedExecution {
 
 class FakeRuntime implements RuntimeAdapter {
   readonly name = "codex" as const;
+  readonly compact = { preCompact: true, postCompact: true, sessionStartAfterCompact: true };
   calls: unknown[] = [];
   async probe() { return { ok: true, runtime: this.name, message: "ok" } as const; }
   async prepare(input: Parameters<RuntimeAdapter["prepare"]>[0]): Promise<RuntimeLaunchSpec> {

@@ -12,6 +12,22 @@ export interface ClaudeRuntimeAdapterOptions {
 
 export class ClaudeRuntimeAdapter implements RuntimeAdapter {
   readonly name = "claude" as const;
+
+  /**
+   * Measured on Claude Code 2.1.259 (schema, 2026-09-03) and 2.1.240 (live, 2026-09-04):
+   * headless on darwin, and inherited TTY on win32 with `trigger=manual`. Both runs put
+   * reinjection inside the compaction:
+   *
+   *   PreCompact -> SessionStart(source="compact") -> PostCompact
+   *
+   * so `PostCompact` is not a safe place to learn that a compaction finished, and a
+   * `PreCompact` with no `PostCompact` after it is ordinary — one was measured.
+   */
+  readonly compact = Object.freeze({
+    preCompact: true,
+    postCompact: true,
+    sessionStartAfterCompact: true,
+  });
   private readonly platform: NodeJS.Platform;
   private readonly env: NodeJS.ProcessEnv;
   private readonly hooksDirectory: string;
