@@ -60,6 +60,7 @@ quyền. Backend thì chỉ còn một: `LocalProcessBackend`.
                                 │
 ┌───────────────────────────────▼──────────────────────────────────────┐
 │  hooks/          session-boot.cjs (SessionStart) · session-end (Stop) │
+│                  compact-record.cjs (PreCompact/PostCompact, opt-in) │
 │                  → src/hooks/execution-bridge.ts                     │
 │                  enforce policy *bên trong* tiến trình runtime       │
 └──────────────────────────────────────────────────────────────────────┘
@@ -302,7 +303,9 @@ thắng, nên giữ `-s` chỉ để lại một tham số nói sai về chế �
 
 Env chung: `ALP_ROLE`, `ALP_DELEGATED_ROLE`, `ALP_DELEGATION_EXECUTION_ID`,
 `ALP_DELEGATION_WORKSPACE`, `ALP_EXECUTION_ROOT`, `ALP_MEMORY_ROOT`, `ALP_IDENTITY_CAPSULE`,
-`ALP_SESSION_CONTEXT`, `ALP_RUNTIME_CONFIG`, `ALP_SKILL_ROOTS`, và `ALP_READONLY_DIRS` khi read-only.
+`ALP_SESSION_CONTEXT`, `ALP_RUNTIME_CONFIG`, `ALP_SKILL_ROOTS`, `ALP_POLICY_HASH`,
+`ALP_CONTINUITY_CONTEXT`, `ALP_COMPACT_EVENTS`, và `ALP_READONLY_DIRS` khi read-only. Ba biến
+cuối phục vụ compact bridge (§4.10) — luôn có mặt, không gated bởi flag nào.
 
 Positional prompt không nhúng task inline — nó trỏ agent tới `task.md` để tránh argv quá dài và để
 hook có thể verify nội dung độc lập.
@@ -360,6 +363,12 @@ spawn, nên file không ghi được là `prepare()` throw và không tiến tr�
 Tài liệu `.md` do `alp identity sync` sinh từ registry (`renderIdentityDocument`); registry
 vẫn là nguồn sự thật duy nhất, file chỉ là cache phẳng cho tốc độ boot.
 
+Từ 2026-09, `session-boot.cjs` ghép thêm một nguồn thứ hai vào cùng `additionalContext`:
+`ALP_CONTINUITY_CONTEXT` (`continuity.md`, xem §4.10). Continuity là best-effort — thiếu hoặc
+rỗng thì bỏ qua không cảnh báo (trạng thái bình thường của một execution chưa có pin nào),
+oversize hoặc không đọc được thì bỏ qua kèm cảnh báo. Chạy giống hệt cho mọi `source`, gồm cả
+`"compact"` — đây chính là điểm reinject sau native compaction.
+
 **`session-end.cjs`** (Stop) → `finalizeExecution()`: advance workflow tới output state rồi
 `submitOutput`. Message cuối được ghi thẳng vào `state.json` dưới dạng text. Hook này **không
 bao giờ** trả `decision: block` — phiên bản cũ parse JSON và block khi thất bại, đó chính là
@@ -407,6 +416,84 @@ AlpDependencies` nên E2E test thay được toàn bộ dependency graph.
 `.claude/`, `.codex/`, symlink skill hay config trong project, nên `git status` không đổi.
 `alp deinit` gỡ registration và dọn artifact do bản ALP cũ để lại.
 
+### 4.10 `src/context/` — cross-runtime compact bridge
+
+Claude Code và Codex CLI tự compact transcript của chính chúng; ALP không sửa, không đọc lại
+native summary. Thay vào đó ALP giữ một **checkpoint** nhỏ bên ngoài transcript — objective và
+các pin principal/agent tự chốt — và trả nó lại sau mỗi lần compact qua đúng một kênh:
+`SessionStart`, cho mọi `source` kể cả `"compact"`. Không synthetic user turn, không
+`PostCompact` (đo được là không runtime nào nhận `additionalContext` ở đó).
+
+**Storage**, dưới `context/` cạnh `runtime/` (§6) — sống sót cleanup của `runtime/` vì là thư
+mục anh em, không con:
+
+| File | Ghi bởi | Nội dung |
+|---|---|---|
+| `checkpoint.json` | `ExecutionService.prepare()` (seed) · `alp context pin\|unpin` | objective + 4 loại pin, hash toàn vẹn |
+| `continuity.md` | cùng hai nơi trên | render Markdown bounded 24 KiB, đây cũng là injection limit |
+| `compact-events.jsonl` | chỉ `hooks/compact-record.cjs` | envelope thô-đã-lọc, một dòng mỗi `PreCompact`/`PostCompact` |
+
+`checkpoint.json` seed ngay lúc `prepare()` với `objective = capsule.task` — execution đầu tiên
+đã có nội dung thật để reinject, không cần đợi ai gõ lệnh. Task interactive là một sentinel
+string (`INTERACTIVE_TASK_SENTINEL`, xuất từ `continuity.ts`); renderer bỏ qua đúng chuỗi đó.
+
+**Producer** — hai nguồn, không tốn model call: `alp context pin <kind> -- <text>` từ CLI, và
+một mục `## Continuity` trong session context (`continuitySection()` trong
+`render-session-context.ts`) dạy agent lệnh đó — gate theo đúng session-wide `Bash` grant như
+`## Delegation`, nên role read-only không thấy hướng dẫn nó không dùng được.
+
+**Hook** — `hooks/compact-record.cjs`, zero-dependency, ~90 dòng: đọc stdin (hard-stop 1 MiB),
+lọc theo whitelist per-runtime (`compact-payload.ts`), `appendFileSync` một dòng, exit 0 stdout
+rỗng luôn luôn. Không đọc journal, không đụng `checkpoint.json`/`continuity.md`, không thể làm
+hỏng dữ liệu cũ dù bị kill giữa chừng — một `O_APPEND` write dưới 16 KiB là atomic. `compact_summary`
+(Claude, đo được 22–32 KB) nằm ngoài whitelist tuyệt đối; đây là lý do chính của giới hạn đó,
+không chỉ để sạch sẽ.
+
+**State** dẫn xuất, không phải file: `CompactEventV1`/`CompactionStateV1` tính bằng hàm thuần
+(`compact-journal.ts`) mỗi khi `alp context status|validate` chạy. `generation` = số `completed`
+đã dedupe theo `dedupeKey = runtime|sessionId|eventId|phase`; một `started` chưa khớp
+`completed` là `pending` — trạng thái bình thường, không phải lỗi (đo được: Claude reinject
+*trong khi* compact đang chạy, nên `pending` xuất hiện một nhịp là đúng).
+
+**Capability đo được** (2026-09-03/04, xem plan gate CB-0), pin tĩnh trên từng adapter:
+
+| Runtime | Version | PreCompact | PostCompact | SessionStart(compact) |
+|---|---|---|---|---|
+| Claude | 2.1.259 (2.1.240 đo TTY) | có | có | có — **trong** lúc compact |
+| Codex | 0.153.0 | có | có | có — ở **đầu lượt sau** |
+
+Cả hai đã đo trong inherited-TTY lẫn headless, trên darwin và win32; runbook chạy lại nằm trong
+plan tại `plans/260903-2040-cross-runtime-compact-bridge/plan.md` §Gate CB-0. Runtime nào tương
+lai không phát `SessionStart` sau compact thì `alp context status` báo `restore: next-session`
+(persist-only) một cách trung thực, không giả vờ đã reinject.
+
+**Flag**: `ALP_COMPACT_BRIDGE=1` bật đăng ký `PreCompact`/`PostCompact` trên cả hai adapter
+(`compactBridgeEnabled()` trong `adapter-files.ts`). Rollback là bỏ biến môi trường; mọi thứ
+khác — checkpoint, continuity, journal — không phụ thuộc flag này.
+
+**CLI** (`src/cli/commands/context.ts`):
+
+```text
+alp context status [execution-id]      objective, số pin, generation, pending/last-completed, restore mode
+alp context validate [execution-id]    checkpoint schema+digest+binding, journal parse+replay ổn định
+alp context pin <decision|constraint|open-item|next-action> -- <text>
+alp context unpin <pin-id>
+```
+
+Execution ID: positional trước (status/validate), rồi `ALP_DELEGATION_EXECUTION_ID`; `pin`/`unpin`
+chỉ nhận từ env — dùng để một agent tự pin trong chính phiên nó đang chạy. Pin bị enforce 4 KiB,
+control character bị strip, `source` = `agent` khi có `ALP_DELEGATED_ROLE` else `principal`.
+
+**Riêng tư**: đừng pin secret hay nội dung file — pin sống trong `context/`, đọc lại được bằng
+`cat`, và reinject thẳng vào context window của model. `context/` mode `0700`, file `0600`.
+
+**Chạy live probe** (đo capability thật trên máy, không chạy trong CI):
+
+```bash
+node scripts/probe-compact-hooks.cjs --runtime claude --output ~/alp-probe/claude
+node scripts/probe-compact-hooks.cjs --runtime codex  --output ~/alp-probe/codex
+```
+
 ## 5. Ranh giới TypeScript / CommonJS
 
 Repo có hai thế giới, cố ý:
@@ -437,6 +524,10 @@ không có logic policy riêng.
     state.json               StoredExecutionState                  (0600)
     runtime/                 capsule, session-context.md, config, skill-roots
                              + task.md chỉ khi headless
+    context/                 sống sót cleanup của runtime/          (0700)
+      checkpoint.json          objective + pin, hash toàn vẹn       (0600)
+      continuity.md            render Markdown, bounded 24 KiB      (0600)
+      compact-events.jsonl     journal append-only, hook ghi        (0600)
   delegation/<repo-key>/
     code-native-executions.json  execution record của DelegationService
     local.json                   state riêng của backend (pid, log, result)
@@ -476,10 +567,10 @@ for f in scripts/test-*.cjs; do node "$f" || break; done
 
 | Tầng | Ở đâu | Kiểm gì |
 |---|---|---|
-| Unit | `test/{agents,policy,memory,execution,workflow,runtime}` | invariant từng layer |
+| Unit | `test/{agents,policy,memory,execution,workflow,runtime,context}` | invariant từng layer — `context/` gồm checkpoint, journal, payload normalizer, continuity renderer |
 | Contract | `test/memory/memory-store.contract.ts` | `MarkdownFileStore` và `RemoteApiStore` cùng hành vi |
-| Integration | `test/{delegation,backend,hooks,cli}` | ghép layer, deny ordering, hook enforcement |
-| E2E | `test/e2e/` | 4 suite, dựng fake `claude`/`codex` binary — kiểm launch contract, delegation, memory isolation, runtime selection mà không tốn tiền model |
+| Integration | `test/{delegation,backend,hooks,cli}` | ghép layer, deny ordering, hook enforcement, `alp context` CLI |
+| E2E | `test/e2e/` | 5 suite, dựng fake `claude`/`codex` binary — kiểm launch contract, delegation, memory isolation, runtime selection, compact bridge (pin → fixture pre/post → reinject) mà không tốn tiền model |
 | Cutover | `test/cutover/no-legacy-identity.test.ts` | không còn identity Markdown sót lại |
 | Cross-platform | 9 × `scripts/test-*.cjs` | CLI link, Codex role, backend, hook, installer Windows, update, uninstall |
 
@@ -507,6 +598,8 @@ Quy tắc chung: thêm implementation ở composition root, không thêm nhánh 
 | `alp uninstall [--purge-memory] [--force]` | gỡ CLI/state; mặc định backup memory |
 | `alp delegation health [backend]` | health check backend |
 | `alp delegation list` | execution record đang theo dõi |
+| `alp context status\|validate [execution-id]` | xem/kiểm checkpoint + journal compact bridge |
+| `alp context pin\|unpin` | chốt hoặc gỡ một decision/constraint/open-item/next-action |
 | `scripts/bootstrap.cjs [--no-path]` | scaffold memory → `npm ci` → build → validate registry + adapter → doctor → link CLI |
 
 ## 11. Câu hỏi còn mở
