@@ -72,9 +72,26 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
   Trần thi hành lúc registry load: số nguyên trong khoảng 100 000–1 000 000, ngoài khoảng thì
   `INVALID_AUTO_COMPACT_LIMIT`. Biên là biên Claude công bố; Codex không công bố biên nào, và
-  dùng chung một khoảng là thứ giữ cho một con số khai ra có nghĩa trên cả hai runtime. Bỏ
-  trống vẫn hợp lệ và có nghĩa là "để runtime tự chọn" — snapshot ghi `null` chứ không bỏ khoá,
-  vì policy phải nói điều đó ra thành lời.
+  dùng chung một khoảng là thứ giữ cho một con số khai ra có nghĩa trên cả hai runtime.
+
+- **Vai không khai ngưỡng thì mặc định là 90% cửa sổ context của model.** Bỏ trống trước đây
+  nghĩa là "để runtime tự chọn", mà hai runtime chọn khác nhau: Codex nén ở 90% cửa sổ model,
+  Claude nén ở cửa sổ nó tự tune theo model và theo settings của **máy** đang chạy. Cùng một vai
+  lại nhớ được nhiều ít khác nhau tuỳ chỗ chạy — đúng cái phụ thuộc-vào-máy mà việc khai ngưỡng
+  sinh ra để chấm dứt. Nay ALP tự tính mặc định từ bảng `MODEL_CONTEXT_WINDOWS`
+  (`src/agents/model-context.ts`) và ghi ra cả hai runtime như một ngưỡng khai tường minh:
+
+  | Model | Cửa sổ | Mặc định (90%) |
+  |---|---:|---:|
+  | `claude-opus-5` · `claude-sonnet-5` | 1 000 000 | 900 000 |
+  | `claude-haiku-4-5` | 200 000 | 180 000 |
+  | `gpt-5.6-sol` · `gpt-5.6-terra` · `gpt-5.6-luna` | 272 000 | 244 800 |
+
+  Model không có trong bảng thì không có mặc định — runtime giữ cửa sổ của nó, vì để runtime
+  tự lo còn hơn dựng ngân sách từ phỏng đoán. Test giữ bảng phủ hết model mà tám vai built-in
+  route tới, và pin 90% của mọi cửa sổ trong bảng vẫn nằm trong khoảng Claude chấp nhận.
+  Snapshot `policy.json` vẫn ghi `null` cho vai không khai: con số cuối cùng phụ thuộc runtime
+  được dispatch tới, còn snapshot thì runtime-agnostic.
 
 ### Thay đổi
 

@@ -473,7 +473,7 @@ Cưỡng chế lúc load, trước `createAgentRegistry`:
 | `skills` | ⊆ `SKILL_CATALOG` (§5.7; test giữ catalog khớp thư mục `skills/`). Không được thêm skill root mới — root là một quyền đọc, §4.4. Bắt buộc đi cùng tool `Skill`, và ngược lại |
 | `subagents` | ⊆ `SUBAGENT_CATALOG`, **rỗng ở v1** nên mọi grant đều bị từ chối. Tool của subagent phải ⊆ tool của agent cấp nó. Catalog mở sau khi `alp agent test` tầng 2–3 tồn tại (§10.3 — nay đã có ở `test/agents/agent-test-tiers.test.ts`) |
 | `mcpServers` | ⊆ `MCP_SERVER_CATALOG` (rỗng ở v1). `egress` là trường bắt buộc của mỗi entry, đi vào policy snapshot và in trong bảng Authority; `alp agent add` sẽ in nó khi có (§5.6) |
-| `autoCompactTokens` | 100 000–1 000 000 token nguyên, hoặc bỏ trống để runtime tự chọn cửa sổ nó tune theo model. Biên là biên Claude công bố cho `autoCompactWindow`; Codex không công bố biên nào cho `model_auto_compact_token_limit` nên dùng chung, để một con số khai ra có nghĩa trên cả hai runtime |
+| `autoCompactTokens` | 100 000–1 000 000 token nguyên, hoặc bỏ trống — bỏ trống nghĩa là **90% cửa sổ context của model** (`MODEL_CONTEXT_WINDOWS`), do ALP tự tính chứ không nhường cho runtime, vì hai runtime nén ở hai chỗ khác nhau. Biên là biên Claude công bố cho `autoCompactWindow`; Codex không công bố biên nào cho `model_auto_compact_token_limit` nên dùng chung, để một con số khai ra có nghĩa trên cả hai runtime |
 | `memory.write` | Chỉ `private:<id>` |
 | `memory.read` | `shared`, `shared:*`, `project:*`, `private:<id>` |
 | `workspace.writeRoots` | Rỗng, **trừ khi** principal approve — §6 |

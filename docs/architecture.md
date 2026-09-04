@@ -164,6 +164,12 @@ Loadout hiện tại:
 
 Chỉ `main` có `delegatesTo` khác rỗng. Cây delegation phẳng: `principal → main → {7 specialist}`.
 
+`model-context.ts` giữ `MODEL_CONTEXT_WINDOWS` — cửa sổ context của từng model, là mẫu số cho
+vai không khai `autoCompactTokens`: adapter lấy `policy.autoCompactTokens ??
+defaultAutoCompactTokens(model)`, tức 90% cửa sổ, giống nhau trên cả hai runtime. Model không
+có trong bảng thì không có mặc định và adapter bỏ hẳn khoá đó, để runtime giữ cửa sổ của nó.
+Test giữ bảng phủ hết model tám vai built-in route tới.
+
 `shared/` chứa phần dùng chung: `house-rules.ts` (`CODE_NATIVE_HOUSE_RULES` — 4 quy tắc
 code-native cho mọi vai; `CODE_CRAFT_RULES` — 4 quy tắc tay nghề chỉ spread vào `main`,
 `review`, `oracle` là các vai viết hoặc phán xét code), `voice.ts` (`renderInstructions` —
