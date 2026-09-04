@@ -34,8 +34,10 @@ async function fixture(): Promise<{ root: string; project: string; prepared: Pre
   const project = join(root, "project");
   const directory = join(root, "executions", "exec-runtime");
   const runtimeDirectory = join(directory, "runtime");
+  const contextDirectory = join(directory, "context");
   await mkdir(project, { recursive: true });
   await mkdir(runtimeDirectory, { recursive: true });
+  await mkdir(contextDirectory, { recursive: true });
   const prepared = {
     capsule: {
       executionId: "exec-runtime",
@@ -80,6 +82,10 @@ async function fixture(): Promise<{ root: string; project: string; prepared: Pre
       stateFile: join(directory, "state.json"),
       policyFile: join(directory, "policy.json"),
       runtimeDirectory,
+      contextDirectory,
+      checkpointFile: join(contextDirectory, "checkpoint.json"),
+      continuityFile: join(contextDirectory, "continuity.md"),
+      compactEventsFile: join(contextDirectory, "compact-events.jsonl"),
     },
   } satisfies PreparedExecution;
   return { root, project, prepared };

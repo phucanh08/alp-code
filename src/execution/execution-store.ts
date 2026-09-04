@@ -79,6 +79,7 @@ export class FileExecutionStore implements ExecutionStore {
     try {
       await mkdir(staging, { mode: 0o700 });
       await mkdir(join(staging, "runtime"), { mode: 0o700 });
+      await mkdir(join(staging, "context"), { mode: 0o700 });
       await writeSnapshot(join(staging, policyFileName), input.policy);
       await writeSnapshot(join(staging, stateFileName), input.state);
       await rename(staging, directory);
@@ -87,11 +88,16 @@ export class FileExecutionStore implements ExecutionStore {
       throw error;
     }
 
+    const contextDirectory = join(directory, "context");
     return Object.freeze({
       directory,
       stateFile: join(directory, stateFileName),
       policyFile: join(directory, policyFileName),
       runtimeDirectory: join(directory, "runtime"),
+      contextDirectory,
+      checkpointFile: join(contextDirectory, "checkpoint.json"),
+      continuityFile: join(contextDirectory, "continuity.md"),
+      compactEventsFile: join(contextDirectory, "compact-events.jsonl"),
     });
   }
 }

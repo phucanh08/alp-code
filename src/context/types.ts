@@ -37,6 +37,43 @@ export type CompactTrigger = "manual" | "auto" | "unknown";
  */
 export type CompactSource = Readonly<Record<string, string>>;
 
+/**
+ * The durable continuity file, `context/checkpoint.json`. Written only by
+ * `ExecutionService.prepare()` (seed) and `alp context pin|unpin` — no other writer exists,
+ * per invariant 3.
+ *
+ * Dropped versus the v1 draft of this plan: `generation` (derived from the journal, not
+ * stored), `state` (duplicated `openItems`), `evidence` (belongs to a report, not to
+ * continuity — YAGNI).
+ */
+export interface ContinuityCheckpointV1 {
+  readonly version: 1;
+  readonly executionId: string;
+  readonly policyHash: string;
+  /** `null` until a runtime adapter has actually launched this execution. */
+  readonly runtime: RuntimeId | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  /**
+   * Seeded from `capsule.task`. This is what keeps a fresh checkpoint from being empty —
+   * an interactive execution's task is a sentinel string instead, which the renderer skips.
+   */
+  readonly objective: string | null;
+  readonly decisions: readonly ContinuityPin[];
+  readonly constraints: readonly ContinuityPin[];
+  readonly openItems: readonly ContinuityPin[];
+  readonly nextActions: readonly ContinuityPin[];
+  readonly integrity: { readonly checkpointSha256: string };
+}
+
+/** A single pinned line. One sentence, not a summary — enforced at the CLI, not here. */
+export interface ContinuityPin {
+  readonly id: string;
+  readonly text: string;
+  readonly source: "execution" | "principal" | "agent";
+  readonly createdAt: string;
+}
+
 /** One compaction event, derived from a journal line. Never read from disk in this shape. */
 export interface CompactEventV1 {
   readonly dedupeKey: string;

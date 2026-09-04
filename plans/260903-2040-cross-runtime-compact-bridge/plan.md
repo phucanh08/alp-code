@@ -1048,6 +1048,18 @@ vi. Cách rẻ nhất là chạy lại trên đúng version đã pin trước kh
 
 **Test:** `npm test -- test/context/checkpoint.test.ts`
 
+**Xong 2026-09-04.** 13 test. "Interrupted write" hoá ra test được gọn nhất qua thứ tự sẵn có
+chứ không cần mock fs: `writeCheckpoint` chạy `checkpointSchema.parse` **trước** khi đụng đĩa,
+nên một checkpoint bị reject (pin oversize, tổng oversize) không bao giờ tới
+`atomicRuntimeFile` — file cũ, nếu có, không đổi một byte. Test khẳng định đúng điều đó: ghi
+một bản hợp lệ, thử ghi đè bằng bản hỏng, đọc lại file thấy nguyên bản đầu.
+
+Một bug thật bắt được nhờ test round-trip: `writeCheckpoint` nhận tham số gõ là
+`Omit<ContinuityCheckpointV1, "integrity">`, nhưng caller thường truyền thẳng một checkpoint
+đầy đủ đã có `integrity` (từ `seedCheckpoint` hoặc lần đọc trước) — TypeScript chỉ excess-check
+literal, không check biến, nên `integrity` cũ lọt qua runtime và bị hash nhầm cùng nội dung.
+Sửa bằng cách destructure bỏ `integrity` tường minh trước khi hash, bất kể type nói gì.
+
 ### Task 1.2: Durable artifact layout + seed
 
 **Files:** modify `src/execution/types.ts`, `src/execution/execution-store.ts`, `src/execution/execution-service.ts`, `test/execution/execution-service.test.ts`.
@@ -1061,6 +1073,23 @@ vi. Cách rẻ nhất là chạy lại trên đúng version đã pin trước kh
 5. Giữ deny-first: execution bị từ chối không tạo `context/`.
 
 **Test:** `npm test -- test/execution/execution-service.test.ts`
+
+**Xong 2026-09-04.** Bước 4 ("seed checkpoint + render continuity") kéo theo cả
+`src/context/continuity.ts` (đúng là Task 2.1, đứng sau trong roadmap) vì `prepare()` không
+có gì để gọi nếu renderer chưa tồn tại — làm luôn cho đúng thứ tự phụ thuộc thật, thay vì viết
+một renderer tạm rồi ném đi. `test/context/continuity.test.ts` (7 test) coi như xong luôn ở
+đây; Task 2.1 phía dưới chỉ còn việc treo cờ "đã xong" khi tới lượt.
+
+Hằng số sentinel interactive (`"Interactive principal session; the task arrives from the
+principal."`) được kéo ra khỏi `run-main.ts` thành `INTERACTIVE_TASK_SENTINEL` xuất từ
+`continuity.ts` — renderer phải so khớp đúng chuỗi đó để bỏ qua objective, hai bản sao cùng
+một hằng số là chỗ chờ drift, nên chỉ giữ một.
+
+Fixture ID trong test cũ dùng `exec-immutable` (gạch ngang) — qua được `assertExecutionId`
+lỏng của `execution-store.ts` nhưng không qua nổi regex `^exec_[a-zA-Z0-9_-]+$` chặt hơn mà
+`checkpoint.ts` dùng (khớp production thật: `exec_${randomUUID()...}`). Đổi ID trong test
+sang `exec_immutable`; đây là chỗ hai lớp validate trong cùng codebase vốn đã không đồng nhất
+từ trước, không phải lỗi mới.
 
 ### Task 1.3: Journal + reducer
 
@@ -1076,6 +1105,18 @@ vi. Cách rẻ nhất là chạy lại trên đúng version đã pin trước kh
 6. Implement dedupeKey: `runtime|sessionId|eventId|phase`, fallback fingerprint bounded của `source`.
 
 **Test:** `npm test -- test/context/compact-journal.test.ts`
+
+**Xong 2026-09-04.** 9 test. `dedupeKey` không tự cài lại lần hai trong journal — tái dùng
+nguyên hàm `normalizeCompactEvent()` đã có từ Task 0.2, gọi không kèm `sequence` (đó là tham
+số chỉ có ý nghĩa cho ca `exec` của Codex đã test riêng ở `compact-payload.test.ts`; ghép nó
+vào journal replay là việc chưa ai yêu cầu — YAGNI). Khoá ghép cặp start/complete (`pairKey`)
+là chính `dedupeKey` bỏ đoạn `|phase` cuối, không phải logic tính lại: tránh hai nơi phải đồng
+bộ định nghĩa "danh tính một compaction".
+
+Reducer chỉ theo dõi **một** pending duy nhất — start mới luôn đè start cũ chưa khớp, và một
+completed chỉ dọn pending khi `pairKey` khớp đúng cái đang treo. Test "orphaned PreCompact"
+(đo thật trên Claude 2026-09-04, xem gate CB-0) chính là ca này: pre1 treo mãi, pre2 đến sau
+thay chỗ, post đóng pre2 — cuối cùng `pending: null`, không phải "hai cái cùng treo".
 
 **Commit:** `feat(context): add continuity checkpoint and compact journal`
 
@@ -1096,6 +1137,12 @@ vi. Cách rẻ nhất là chạy lại trên đúng version đã pin trước kh
 3. Test objective bằng sentinel interactive thì không render.
 4. Test 24 KiB bound giữ Decisions/Constraints trước, bỏ pin cũ nhất trong section trước.
 5. Test không có đường nào để summary/content field lọt vào.
+
+**Xong 2026-09-04, làm sớm trong Task 1.2** (`ExecutionService.prepare()` cần renderer thật
+để seed `continuity.md`, xem ghi chú ở Task 1.2). 7 test, cả 5 bước trên đều có. Thứ tự cắt
+khi vượt 24 KiB là danh sách rời `nextActions → openItems → objective → constraints →
+decisions`, cắt hết một mục mới sang mục kế; objective bị bỏ nguyên khối (không có gì nhỏ hơn
+để cắt từ một chuỗi objective).
 
 ### Task 2.2: Agent producer
 
