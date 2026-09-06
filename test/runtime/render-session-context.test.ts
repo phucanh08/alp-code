@@ -31,6 +31,9 @@ function capsule(): IdentityCapsule {
 
 function policy(overrides: Partial<ExecutionPolicy> = {}): ExecutionPolicy {
   return {
+    skills: [],
+    subagents: [],
+    mcpServers: [],
     executionId: "exec-session-context",
     role: "main",
     workspace: WORKSPACE,

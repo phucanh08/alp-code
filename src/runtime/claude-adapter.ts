@@ -1,4 +1,5 @@
 import { delimiter, dirname, join } from "node:path";
+import { defaultAutoCompactTokens } from "../agents/model-context";
 import { agentRegistry } from "../agents/registry";
 import { atomicRuntimeFile, baseRuntimeEnvironment, compactBridgeEnabled, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
 import { claudePermissions } from "./permission-rules";
@@ -70,6 +71,7 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
     );
     const contextFiles = await writeRuntimeContextFiles(input.execution, input.interactive);
     const skillRoots = runtimeSkillRoots(this.env);
+    const autoCompactTokens = policy.autoCompactTokens[this.name] ?? defaultAutoCompactTokens(input.model);
     const settingsFile = await atomicRuntimeFile(
       join(artifacts.runtimeDirectory, "claude-settings.json"),
       `${JSON.stringify({
@@ -81,6 +83,10 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
           sessionContextFile: contextFiles.sessionContextFile,
           ...(contextFiles.taskFile === null ? {} : { taskFile: contextFiles.taskFile }),
         },
+        // Ngưỡng vai khai, hoặc 90% cửa sổ của model khi vai không khai (§5.5). Chỉ vắng
+        // mặt khi ALP cũng không biết cửa sổ của model — lúc đó Claude giữ cửa sổ nó tự
+        // tune. Claude vẫn cap con số này theo cửa sổ context thật của phiên.
+        ...(autoCompactTokens === null ? {} : { autoCompactWindow: autoCompactTokens }),
         hooks: {
           SessionStart: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-boot.cjs")) }] }],
           Stop: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-end.cjs")) }] }],
@@ -112,6 +118,24 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
         } : {}),
       }, null, 2)}\n`,
     );
+    /**
+     * Written for every execution, granted servers or none.
+     *
+     * The empty file is the point: paired with `--strict-mcp-config` it is what stops a
+     * delegated specialist from inheriting whatever MCP servers happen to be configured on
+     * this machine — egress no policy authorized and the Authority table never named.
+     */
+    const mcpConfigFile = await atomicRuntimeFile(
+      join(artifacts.runtimeDirectory, "mcp-config.json"),
+      `${JSON.stringify({
+        mcpServers: Object.fromEntries(policy.mcpServers.map((server) => [server.name, {
+          type: "stdio",
+          command: server.command,
+          args: [...server.args],
+          ...(server.env === undefined ? {} : { env: server.env }),
+        }])),
+      }, null, 2)}\n`,
+    );
     const skillRootsFile = await atomicRuntimeFile(
       join(artifacts.runtimeDirectory, "skill-roots.json"),
       `${JSON.stringify(skillRoots.split(delimiter).filter(Boolean), null, 2)}\n`,
@@ -123,6 +147,7 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
       ALP_IDENTITY_CAPSULE: capsuleFile,
       ALP_RUNTIME_CONFIG: settingsFile,
       ALP_SKILL_ROOTS: skillRoots,
+      ALP_MODE: policy.mode,
       ...(policy.workspaceMode === "read-only" ? { ALP_READONLY_DIRS: capsule.activeWorkspace } : {}),
     };
     const command = (await resolveRuntimeCommand("claude", this.platform, this.env))
@@ -132,6 +157,22 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
       args: Object.freeze([
         "--settings", settingsFile,
         "--model", input.model,
+        // Fail-closed MCP for a delegated execution. Interactive is the principal's own
+        // session at their own machine config — the same trade-off `--dangerously-skip-
+        // permissions` already makes one line below, and stated here so it is a decision
+        // rather than an omission.
+        "--mcp-config", mcpConfigFile,
+        ...(input.interactive ? [] : ["--strict-mcp-config"]),
+        // Session-scoped subagent definitions (§4.6). No built-in holds a grant, so this is
+        // absent from every launch ALP makes today.
+        ...(policy.subagents.length === 0 ? [] : ["--agents", JSON.stringify(
+          Object.fromEntries(policy.subagents.map((subagent) => [subagent.name, {
+            description: subagent.description,
+            prompt: subagent.prompt,
+            tools: [...subagent.tools],
+            ...(subagent.model === undefined ? {} : { model: subagent.model.claude }),
+          }])),
+        )]),
         // Principal ngồi trước phiên interactive và tự duyệt được từng bước, nên prompt quyền chỉ
         // là ma sát. Đánh đổi phải nói rõ: cờ này vô hiệu hoá `permissions.deny` ở settings trên —
         // gồm cả cách ly private memory giữa các role, thứ chỉ Claude cưỡng chế được (§ACL trong
@@ -142,7 +183,7 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
           : policy.workspaceMode === "read-only" ? ["--permission-mode", "plan"] : []),
         // Empty when interactive: the principal's own first message is turn 1. Identity,
         // invariants and policy have already arrived via the SessionStart hook.
-        ...taskArguments(contextFiles),
+        ...taskArguments(contextFiles, policy),
       ]),
       cwd: capsule.activeWorkspace,
       env: Object.freeze(env),
@@ -151,6 +192,7 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
         contextFiles.sessionContextFile,
         ...(contextFiles.taskFile === null ? [] : [contextFiles.taskFile]),
         settingsFile,
+        mcpConfigFile,
         skillRootsFile,
       ]),
     });

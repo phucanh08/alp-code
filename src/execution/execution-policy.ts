@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import type { AgentDefinition } from "../agents/types";
+import { capabilityCatalog, type CapabilityCatalog } from "../agents/capability-catalog";
+import { DEFAULT_MODE, type ModeId } from "../agents/modes";
+import type { AgentDefinition, RuntimeId } from "../agents/types";
+import { RUNTIME_IDS } from "../agents/types";
 import {
   deepFreezeExecutionValue,
   type ExecutionId,
@@ -11,7 +14,11 @@ export interface CreateExecutionPolicyInput {
   readonly definition: AgentDefinition<unknown>;
   readonly workspace: string;
   readonly workspaceMode: "read-only" | "workspace-write";
+  /** Nấc công suất; bỏ trống thì `DEFAULT_MODE`. */
+  readonly mode?: ModeId;
   readonly createdAt: string;
+  /** Defaults to the shipped catalog — see `capability-catalog.ts`. */
+  readonly catalog?: CapabilityCatalog;
 }
 
 function canonicalize(value: unknown): unknown {
@@ -34,6 +41,19 @@ function sha256(value: unknown): string {
     .digest("hex");
 }
 
+/**
+ * The declared budget with one entry per runtime, present or not. Normalised in one place so
+ * the hash cannot move just because a definition spelled the same budget with a key missing
+ * rather than set to nothing.
+ */
+function declaredAutoCompactTokens(
+  definition: AgentDefinition<unknown>,
+): Readonly<Record<RuntimeId, number | null>> {
+  return Object.fromEntries(
+    RUNTIME_IDS.map((runtime) => [runtime, definition.autoCompactTokens?.[runtime] ?? null]),
+  ) as Record<RuntimeId, number | null>;
+}
+
 export function hashAgentDefinition(
   definition: AgentDefinition<unknown>,
 ): string {
@@ -45,6 +65,7 @@ export function hashAgentDefinition(
     reportsTo: definition.reportsTo,
     delegatesTo: definition.delegatesTo,
     capabilities: definition.capabilities,
+    autoCompactTokens: declaredAutoCompactTokens(definition),
     instructions: definition.instructions,
     workflow: definition.workflow,
     output: {
@@ -59,12 +80,37 @@ export function createExecutionPolicy(
   input: CreateExecutionPolicyInput,
 ): ExecutionPolicy {
   const definitionHash = hashAgentDefinition(input.definition);
+  const catalog = input.catalog ?? capabilityCatalog;
+  const capabilities = input.definition.capabilities;
+  // Names were checked against this catalog at registry load; a miss here would mean the
+  // catalog changed underneath a definition, and an execution is not the place to find out.
+  const resolve = <TEntry>(
+    kind: string,
+    names: readonly string[],
+    entries: Readonly<Record<string, TEntry>>,
+  ): readonly (TEntry & { readonly name: string })[] => names.map((name) => {
+    const entry = entries[name];
+    if (entry === undefined) {
+      throw new Error(`unknown ${kind} \`${name}\` granted to \`${input.definition.id}\``);
+    }
+    return { name, ...entry };
+  });
   const snapshot = {
     executionId: input.executionId,
     role: input.definition.id,
     workspace: input.workspace,
     workspaceMode: input.workspaceMode,
-    allowedTools: [...input.definition.capabilities.tools],
+    // Trong snapshot chứ không trong `definitionHash`: nấc là lựa chọn lúc phóng, không phải
+    // một vai khác. Definition không đổi, execution thì có.
+    mode: input.mode ?? DEFAULT_MODE,
+    workspaceAccess: input.definition.capabilities.workspace.readRoots.length > 0
+      ? "granted" as const
+      : "none" as const,
+    allowedTools: [...capabilities.tools],
+    skills: [...capabilities.skills],
+    subagents: resolve("subagent", capabilities.subagents, catalog.subagents),
+    mcpServers: resolve("mcp server", capabilities.mcpServers, catalog.mcpServers),
+    autoCompactTokens: declaredAutoCompactTokens(input.definition),
     memory: {
       read: [...input.definition.capabilities.memory.read],
       write: [...input.definition.capabilities.memory.write],

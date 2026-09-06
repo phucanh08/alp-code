@@ -90,20 +90,28 @@ export class ExecutionService {
     }
 
     const workspace = await this.resolveWorkspace(input.workspace);
-    requireAuthorization(
-      "workspace",
-      this.policy.authorize({
-        type: "workspace",
-        actor: definition.id,
-        operation: input.workspaceMode === "workspace-write" ? "write" : "read",
-        path: workspace,
-        execution: {
-          activeWorkspace: workspace,
-          workspaceMode: input.workspaceMode,
-          delegated: parent !== "principal",
-        },
-      }),
-    );
+    // A role that declares no workspace root (read-thread, compaction, titling) reads memory,
+    // not the tree: there is no path for policy to authorize, and asking about one could only
+    // ever come back WORKSPACE_NOT_GRANTED — which is why those three could not be launched
+    // at all. A *write* request is still asked, because that is a grant they genuinely lack;
+    // the deny it returns is the right answer rather than an artefact of the question.
+    const grantsWorkspace = definition.capabilities.workspace.readRoots.length > 0;
+    if (grantsWorkspace || input.workspaceMode === "workspace-write") {
+      requireAuthorization(
+        "workspace",
+        this.policy.authorize({
+          type: "workspace",
+          actor: definition.id,
+          operation: input.workspaceMode === "workspace-write" ? "write" : "read",
+          path: workspace,
+          execution: {
+            activeWorkspace: workspace,
+            workspaceMode: input.workspaceMode,
+            delegated: parent !== "principal",
+          },
+        }),
+      );
+    }
 
     const memoryContext = await this.memory.buildContext({
       actor: definition.id,
@@ -119,6 +127,7 @@ export class ExecutionService {
       definition,
       workspace,
       workspaceMode: input.workspaceMode,
+      ...(input.mode === undefined ? {} : { mode: input.mode }),
       createdAt,
     });
     const capsule = createIdentityCapsule({

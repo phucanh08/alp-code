@@ -74,20 +74,21 @@ runtime; `agents/` không biết backend; `memory/` không biết execution.
 ### 3.1 `alp` — phiên main tương tác
 
 ```text
-alp [--runtime claude|codex]
-  → parseAlpArgs                       (cli/alp.ts)
-  → RuntimeSelector.select             (explicit | interactive TTY | persisted | default)
+alp [--mode low|medium|high|ultra|puck]
+  → parseAlpArgs                       (cli/alp.ts; mode: cờ → ALP_MODE → DEFAULT_MODE)
+  → ModeSelector.select                (explicit | interactive TTY | persisted | default)
+  → runtimeForMode(main, mode)         (model của nấc quyết định CLI — không ai chọn runtime)
   → ProjectRegistryStore.isRegistered  → workspace-write nếu đã `alp init`, else read-only
   → ExecutionService.prepare           (parent = "principal", target = "main")
        ├─ assert main.reportsTo === "principal"
        ├─ PolicyEngine.authorize({ type: "workspace", ... })
        ├─ MemoryService.buildContext
        ├─ WorkflowRunner.initialize
-       ├─ createExecutionPolicy   → snapshot + definitionHash + policyHash
+       ├─ createExecutionPolicy   → snapshot (kèm `mode`) + definitionHash + policyHash
        ├─ createIdentityCapsule   → lọc memory theo grant, cắt tool theo workflow state
        └─ FileExecutionStore.create → ~/.alp/executions/<id>/{policy,state}.json  (0600)
   → RuntimeAdapter.probe               (binary có trên PATH không)
-  → RuntimeAdapter.prepare             → RuntimeLaunchSpec (command/args/cwd/env/tmpfiles)
+  → RuntimeAdapter.prepare             → RuntimeLaunchSpec; model/effort = modelForMode(main, mode)
   → LocalProcessBackend.spawn + wait
   → đọc lại state.json → status/output cuối cùng
 ```
@@ -105,8 +106,8 @@ alp delegate review --project /path -- "Review the diff"
        │    └─ PolicyEngine.authorize({ type: "delegation", actor, target })
        │         · target ∈ actor.delegatesTo ?
        │         · target.reportsTo === actor ?
-       ├─ resolve runtime adapter      (request override → config.defaultRuntime)
-       ├─ adapter.prepare              → launch spec, model/effort lấy từ definition
+       ├─ runtimeForMode(target, mode) (nấc → model → CLI; request không chọn runtime)
+       ├─ adapter.prepare              → launch spec; model/effort = nấc (ALP_MODE) → definition
        ├─ resolveBackend               (health check; fallback CHỈ trước spawn)
        ├─ executionStore.put           (pin backend vào record)
        └─ backend.spawn
@@ -125,7 +126,8 @@ sự tồn tại của backend cho một request đã bị policy từ chối.
 
 ```ts
 { id, displayName, model: {claude, codex}, reasoningEffort: {claude, codex},
-  reportsTo, delegatesTo, capabilities: {tools, memory, workspace},
+  reportsTo, delegatesTo, autoCompactTokens?: {claude?, codex?},
+  capabilities: {tools, skills, subagents, mcpServers, memory, workspace},
   instructions(), workflow, output }
 ```
 
@@ -138,6 +140,7 @@ load, kể cả bởi code trong cùng process.
 |---|---|
 | id trùng | `DUPLICATE_AGENT` |
 | id/displayName/model/workflow rỗng, effort không hợp lệ | `INVALID_AGENT` |
+| `autoCompactTokens[runtime]` không nguyên, ngoài 100k–1M, hoặc vượt cửa sổ của model runtime đó | `INVALID_AUTO_COMPACT_LIMIT` |
 | tool ngoài `TOOL_CATALOG` | `UNKNOWN_TOOL` |
 | workspace write root không nằm trong read root | `INVALID_WORKSPACE_GRANT` |
 | memory write grant không được read grant bao phủ | `INVALID_MEMORY_GRANT` |
@@ -149,18 +152,97 @@ Registry là **DAG**, kiểm bằng DFS 3 màu (`assertNoDelegationCycles`).
 
 Loadout hiện tại:
 
-| Agent | Claude / Codex | Effort | Tools | Memory write | Workspace |
-|---|---|---|---|---|---|
-| `main` (Phở 🍜) | opus-5 / gpt-5.6-sol | high / xhigh | tất cả 9 | shared, project:\*, private:main | read + write |
-| `search` | sonnet-5 / terra | low / low | Read Glob Grep Bash Skill | private:search | read |
-| `librarian` | opus-5 / sol | high / high | + WebSearch WebFetch | shared:reference:\*, project:\*:refs:\*, private | read |
-| `read-thread` | haiku-4-5 / luna | low / low | Read Glob Grep Skill | private:read-thread | — |
-| `review` | opus-5 / gpt-5.5 | high / medium | Read Glob Grep Bash Skill | private:review | read |
-| `oracle` | opus-5 / sol | high / xhigh | + WebSearch WebFetch | private:oracle | read |
-| `compaction` | opus-5 / sol | medium / medium | Read Glob Grep | private:compaction | — |
-| `titling` | haiku-4-5 / luna | low / low | — | private:titling | — |
+Model **không** còn nằm trong bảng này: nấc sở hữu ghế của cả tám vai (§ dưới). Cái definition
+còn khai — `model: {claude, codex}` — chỉ là chỗ dựa cho vai không có trong loadout nào.
+
+| Agent | Model / effort | Tools | Memory write | Workspace |
+|---|---|---|---|---|
+| `main` (Phở 🍜) | nấc | tất cả 9 | shared, project:\*, private:main | read + write |
+| `search` | nấc | Read Glob Grep Bash Skill | private:search | read |
+| `librarian` | nấc | + WebSearch WebFetch | shared:reference:\*, project:\*:refs:\*, private | read |
+| `read-thread` | nấc | Read Glob Grep Skill | private:read-thread | — |
+| `review` | nấc | Read Glob Grep Bash Skill | private:review | read |
+| `oracle` | nấc | + WebSearch WebFetch | private:oracle | read |
+| `compaction` | nấc | Read Glob Grep | private:compaction | — |
+| `titling` | nấc | — | private:titling | — |
 
 Chỉ `main` có `delegatesTo` khác rỗng. Cây delegation phẳng: `principal → main → {7 specialist}`.
+
+#### Dial công suất — `low` · `medium` · `high` · `ultra`, cộng `puck`
+
+`modes.ts` giữ dial. Người dùng không phải nhớ model nào giỏi việc gì; câu hỏi duy nhất là
+**"việc này khó cỡ nào"**. Nấc trả lời bằng một **loadout hoàn chỉnh**: mỗi vai đúng **một**
+model và một mức suy nghĩ.
+
+Một model cho mỗi vai kéo theo hệ quả lớn nhất của thiết kế này: **model quyết định runtime**.
+`claude-*` phóng Claude Code, `gpt-*` phóng Codex CLI, tra qua bảng `MODEL_RUNTIMES` viết tay
+trong `model-context.ts` (không đoán theo prefix — một tên lệch quy ước mà đoán sai thì phóng
+nhầm CLI trong im lặng). Không còn bước "chọn runtime rồi tra model": nấc là lựa chọn duy
+nhất, và một nấc trộn được hai CLI trong cùng một phiên — `medium` chạy `main` trên Codex và
+`oracle` trên Claude.
+
+Bốn nấc dial xoay hai ghế mà độ khó chạm tới — `main` (người làm) và `oracle` (người được hỏi
+khi bí):
+
+| Nấc | `main` | effort | `oracle` | effort |
+|---|---|---|---|---|
+| `low` | claude-haiku-4-5 | low | gpt-5.6-sol | high |
+| `medium` (mặc định) | gpt-5.6-sol | high | claude-opus-5 | high |
+| `high` | claude-opus-5 | high | gpt-5.6-sol | xhigh |
+| `ultra` | claude-opus-5 | high | gpt-6-astra | high |
+| `puck` | gpt-5.6-sol | xhigh | gpt-5.6-sol | xhigh |
+
+Sáu vai còn lại giữ nguyên qua cả bốn nấc dial — đúng chỗ Amp ghim cứng subagent — vì model
+của chúng là **một phần công việc** (`search` cần retrieval nhanh, `titling` viết một dòng)
+chứ không phải một mức cố gắng. `oracle` luôn đứng ở runtime **đối diện** `main`: người được
+hỏi khi bí phải là một cách nhìn khác, không phải cùng model tự hỏi lại chính nó. `high` và
+`ultra` cùng cầm bút bằng Opus 5 — khác nhau ở oracle, nơi `ultra` leo lên model mới nhất
+(Astra) thay vì chỉ cộng thêm effort.
+
+| Vai | `low`/`medium`/`high`/`ultra` | `puck` |
+|---|---|---|
+| `search` | gpt-5.6-terra · low | gpt-5.6-terra · low |
+| `librarian` | gpt-5.6-sol · high | gpt-5.6-sol · high |
+| `read-thread` | claude-haiku-4-5 · low | gpt-5.6-luna · low |
+| `review` | claude-opus-5 · high | gpt-5.6-terra · medium |
+| `compaction` | claude-opus-5 · medium | gpt-5.6-sol · medium |
+| `titling` | claude-haiku-4-5 · low | gpt-5.6-luna · low |
+
+`puck` nằm **ngoài** trục độ khó: nó là câu trả lời cho "chạy toàn Codex" — máy chỉ cài
+`codex`, hạn mức Claude đã hết, hoặc muốn đúng loadout Amp mặc định. Đây là nấc duy nhất
+không có Claude ở bất kỳ vai nào.
+
+Chọn nấc: `alp --mode <nấc>` → `ALP_MODE` → `alp mode set` (`~/.alp/mode.json`) → menu ↑/↓ trên
+TTY → `DEFAULT_MODE` (`medium`). Nấc gõ sai dừng ngay chứ không rơi về mặc định. Nấc đi vào
+`ExecutionPolicy.mode` nên nó nằm trong `policy.json` và trong `policyHash` — hai lần chạy khác
+model không thể có cùng hash; `definitionHash` **không** đổi theo nấc, vì nấc là lựa chọn lúc
+phóng chứ không phải một vai khác. Adapter export `ALP_MODE`, nên execution delegated kế thừa
+nấc của phiên cha. Mọi model trong loadout phải có mặt trong cả `MODEL_RUNTIMES` lẫn
+`MODEL_CONTEXT_WINDOWS` (test giữ): thiếu bảng đầu thì không biết phóng CLI nào, thiếu bảng sau
+thì ngưỡng compact mặc định biến mất đúng ở nấc đó.
+
+**`--runtime` đã bị bỏ** (2026-09-04). Runtime là hệ quả của model, không phải một lựa chọn
+song song — giữ cả hai thì một `--runtime claude` cộng nấc `medium` sẽ hỏi Claude Code chạy
+`gpt-5.6-sol`. `alp --runtime`, `alp runtime show|set` và `alp delegate --runtime` đều **dừng
+với lỗi chỉ sang nấc**, chứ không bị bỏ qua trong im lặng.
+
+`model-context.ts` giữ `MODEL_CONTEXT_WINDOWS` — cửa sổ context của từng model. Ngưỡng compact
+khai **theo runtime** vì nó là ngân sách của model chứ không của vai một mình: cùng một
+500 000 là "nén sớm" trên cửa sổ 1M và là một dòng không bao giờ chạm tới trên cửa sổ 272k.
+Adapter lấy `policy.autoCompactTokens[runtime] ?? defaultAutoCompactTokens(model)`, tức 90%
+cửa sổ khi vai bỏ trống phía đó. Registry chặn ngưỡng vượt cửa sổ ngay lúc load. Model không
+có trong bảng thì không có mặc định và adapter bỏ hẳn khoá đó, để runtime giữ cửa sổ của nó.
+Test giữ bảng phủ hết model tám vai built-in route tới.
+
+Ngân sách tám vai (— là bỏ trống, tức 90% cửa sổ):
+
+| Vai | claude | codex | Thực nén ở (claude / codex) |
+|---|---:|---:|---|
+| `main` · `oracle` | — | — | 900 000 / 244 800 |
+| `librarian` · `review` | 300 000 | — | 300 000 / 244 800 |
+| `read-thread` | — | 200 000 | 180 000 / 200 000 |
+| `search` · `compaction` | 150 000 | 150 000 | 150 000 / 150 000 |
+| `titling` | 100 000 | 100 000 | 100 000 / 100 000 |
 
 `shared/` chứa phần dùng chung: `house-rules.ts` (`CODE_NATIVE_HOUSE_RULES` — 4 quy tắc
 code-native cho mọi vai; `CODE_CRAFT_RULES` — 4 quy tắc tay nghề chỉ spread vào `main`,
@@ -287,7 +369,8 @@ phiên interactive không sinh `task.md`: không có gì để adapter lỡ tay 
 |---|---|---|
 | Config | `claude-settings.json` (`--settings`) | `codex-config.toml` + loạt `-c` |
 | Hook | `hooks.SessionStart` / `hooks.Stop` | tương tự, qua `-c hooks.*` + `--enable hooks` |
-| ACL | `permissions.{additionalDirectories,deny}` | `[sandbox_workspace_write]` + `[[rules]]` |
+| ACL | `permissions.{additionalDirectories,allow,deny}` | `[sandbox_workspace_write]` + `[[rules]]` |
+| Skill/subagent/MCP grant | `allow: Skill(<tên>)`, `Agent(<tên>)`, `mcp__<server>`; `--mcp-config` + `--strict-mcp-config`; `--agents <json>` | `-c mcp_servers.<tên>={…}`; không có subagent in-process |
 | Read-only | `sandbox.filesystem.denyWrite` + `--permission-mode plan` | `-s read-only` |
 | Interactive | `--dangerously-skip-permissions` · **không positional prompt** | `--dangerously-bypass-approvals-and-sandbox` · **không positional prompt** |
 | Headless | positional trỏ tới `task.md` | `exec --skip-git-repo-check` + positional trỏ tới `task.md` |
@@ -310,9 +393,10 @@ cuối phục vụ compact bridge (§4.10) — luôn có mặt, không gated b�
 Positional prompt không nhúng task inline — nó trỏ agent tới `task.md` để tránh argv quá dài và để
 hook có thể verify nội dung độc lập.
 
-`RuntimeSelector` giải quyết runtime theo thứ tự: `explicit (--runtime)` → `interactive` (menu
-↑/↓ trên TTY, ghi lại lựa chọn) → `persisted` (`~/.alp/runtime.json`) → `default` (claude).
-Preference hỏng → warning + fallback claude, không throw.
+`ModeSelector` giải quyết **nấc** theo thứ tự: `explicit (--mode)` → `interactive` (menu ↑/↓
+trên TTY, ghi lại lựa chọn) → `persisted` (`~/.alp/mode.json`, ghi bằng `alp mode set`) →
+`default` (`medium`). Preference hỏng → warning + fallback `medium`, không throw. Runtime
+không có mặt trong chuỗi này ở đâu cả — nó rơi ra từ model của nấc.
 
 ### 4.7 `src/backend/` + `src/delegation/` — lifecycle
 
@@ -517,7 +601,7 @@ không có logic policy riêng.
 ```text
 ~/.alp/
   projects.json              danh sách project đã init + backend  (0600)
-  runtime.json               runtime preference                    (0600)
+  mode.json                  nấc đã ghi nhớ                         (0600)
   principal.json             tên + xưng hô của principal           (0600)
   executions/<exec_id>/
     policy.json              ExecutionPolicy snapshot              (0600)

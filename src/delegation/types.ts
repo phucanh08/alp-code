@@ -27,7 +27,6 @@ export interface DelegationExecutionOptions {
   readonly background?: boolean;
   readonly interactive?: boolean;
   readonly timeoutMs?: number | null;
-  readonly runtime?: RuntimeId;
 }
 
 export interface DelegationRequestInput {
@@ -53,7 +52,6 @@ export interface DelegationRequest {
   readonly metadata: { readonly backend?: string };
   readonly executionOptions: Required<Pick<DelegationExecutionOptions, "background" | "interactive">> & {
     readonly timeoutMs: number | null;
-    readonly runtime?: RuntimeId;
   };
 }
 

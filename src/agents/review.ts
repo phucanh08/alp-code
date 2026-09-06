@@ -6,12 +6,18 @@ import { defineLinearWorkflow } from "../workflow/types";
 export const reviewAgent = defineAgent({
   id: "review",
   displayName: "Review 🔎",
-  model: { claude: "claude-opus-5", codex: "gpt-5.5" },
+  model: { claude: "claude-opus-5", codex: "gpt-5.6-terra" },
   reasoningEffort: { claude: "high", codex: "medium" },
   reportsTo: "main",
   delegatesTo: [],
+  // Một diff cộng code quanh nó, và mối nghi phải sống tới lúc ra phán quyết. Phía codex
+  // bỏ trống vì mặc định 90% của 272k đã thấp hơn trần này.
+  autoCompactTokens: { claude: 300_000 },
   capabilities: {
     tools: ["Read", "Glob", "Grep", "Bash", "Skill"],
+    skills: ["code-review", "alp-scenario", "security-scan"],
+    subagents: [],
+    mcpServers: [],
     memory: {
       read: ["shared", "project:*", "private:review"],
       write: ["private:review"],

@@ -171,12 +171,16 @@ export async function createE2eEnvironment(options: {
     await chmod(executable, 0o755);
   }
 
-  // `alp` always runs from the project, so relative workspace grants (".") resolve there.
+  // No canonicalizer override: a relative workspace grant (".") is resolved against the
+  // execution's own active workspace by `WorkspacePolicy`. This used to inject one that
+  // resolved it against `project` instead, which made every e2e run agree with the policy
+  // engine only because the test had told it where "." was — the exact defect that let
+  // `alp delegate --project <elsewhere>` ship broken.
+  const policy = new PolicyEngine({ registry: agentRegistry });
   const canonicalizePath = (value: string): string => {
     const absolute = isAbsolute(value) ? value : resolve(project, value);
     try { return realpathSync(absolute); } catch { return absolute; }
   };
-  const policy = new PolicyEngine({ registry: agentRegistry, canonicalizePath });
   const memory = new MemoryService({
     store: new MarkdownFileStore({ root: memoryRoot }),
     policy,

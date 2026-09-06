@@ -10,8 +10,14 @@ export const mainAgent = defineAgent({
   reasoningEffort: { claude: "high", codex: "xhigh" },
   reportsTo: "principal",
   delegatesTo: ["search", "librarian", "read-thread", "review", "oracle", "compaction", "titling"],
+  // Ghế giữ toàn cảnh: giữ tối đa model cho phép, tức đúng mặc định 90% cửa sổ của từng
+  // model — 900k trên opus-5, 244 800 trên gpt-5.6-sol. Không khai số ở đây là có chủ ý:
+  // một con số cứng sẽ mục ngay khi routing đổi model, còn "90%" thì không.
   capabilities: {
     tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Skill"],
+    skills: ["alp-plan", "problem-solving", "delegation", "git", "agent-memory"],
+    subagents: [],
+    mcpServers: [],
     memory: {
       read: ["shared", "project:*", "private:main"],
       write: ["shared", "project:*", "private:main"],

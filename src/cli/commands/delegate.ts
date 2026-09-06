@@ -1,3 +1,4 @@
+import { parseMode } from "../../agents/modes";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -14,7 +15,6 @@ import { PolicyEngine } from "../../policy/policy-engine";
 import { ClaudeRuntimeAdapter } from "../../runtime/claude-adapter";
 import { CodexRuntimeAdapter } from "../../runtime/codex-adapter";
 import type { RuntimeAdapter } from "../../runtime/runtime-adapter";
-import { FileRuntimePreferenceStore } from "../../runtime/runtime-preference-store";
 import { WorkflowRunner } from "../../workflow/workflow-runner";
 
 export interface RunDelegateDependencies {
@@ -35,7 +35,6 @@ export async function runDelegateCommand(
 ): Promise<DelegationResult> {
   const targetRole = argv[0];
   if (!targetRole) throw new Error("delegate requires a target role");
-  let runtime: RuntimeId | undefined;
   let background = false;
   let timeoutMs: number | null = null;
   let workspace = dependencies.cwd;
@@ -43,9 +42,9 @@ export async function runDelegateCommand(
   for (let index = 1; index < argv.length; index += 1) {
     const value = argv[index];
     if (value === "--runtime") {
-      const selected = required(argv, ++index, "--runtime requires claude or codex");
-      if (selected !== "claude" && selected !== "codex") throw new Error(`invalid runtime \`${selected}\``);
-      runtime = selected;
+      // Nấc quyết định model, model quyết định CLI. Một cờ `--runtime` còn sót trong script
+      // cũ sẽ chọn sai CLI cho model của nấc, nên nó dừng ở đây chứ không bị bỏ qua.
+      throw new Error("`--runtime` không còn tồn tại; nấc quyết định model và runtime — dùng `alp mode set` hoặc ALP_MODE");
     } else if (value === "--background") background = true;
     else if (value === "--timeout-ms") {
       timeoutMs = Number(required(argv, ++index, "--timeout-ms requires a number"));
@@ -74,7 +73,7 @@ export async function runDelegateCommand(
       ? "workspace-write"
       : "read-only",
     metadata: {},
-    executionOptions: { background, interactive: false, timeoutMs, ...(runtime ? { runtime } : {}) },
+    executionOptions: { background, interactive: false, timeoutMs },
   });
   return !background && spawned.status === "running"
     ? dependencies.service.wait(spawned.executionId, { timeoutMs })
@@ -114,9 +113,6 @@ export async function createDefaultDelegationComposition(
   // advisory. Its state lives in `local.json` under the delegation state directory, so a
   // later CLI process can run lifecycle commands against an execution this one started.
   const backend = new LocalProcessBackend({ env, stateDir: config.stateDir });
-  const preference = await new FileRuntimePreferenceStore({
-    file: join(env.HOME || homedir(), ".alp", "runtime.json"),
-  }).read();
   const policy = new PolicyEngine({ registry: agentRegistry });
   const memory = new MemoryService({
     store: new MarkdownFileStore({ root: join(repoRoot, "memory") }),
@@ -141,7 +137,9 @@ export async function createDefaultDelegationComposition(
     ]),
     backend,
     executionStore: new FileDelegationExecutionStore({ file: join(config.stateDir, "code-native-executions.json") }),
-    config: { defaultRuntime: preference.runtime ?? "claude" },
+    // Con kế thừa nấc của cha: một phiên `ultra` mà subagent lặng lẽ tụt về `medium` thì
+    // nấc chỉ còn đúng ở ghế ngoài cùng.
+    config: env.ALP_MODE ? { mode: parseMode(env.ALP_MODE) } : {},
   });
   return { service, config: { stateDir: config.stateDir } };
 }

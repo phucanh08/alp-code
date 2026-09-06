@@ -10,8 +10,15 @@ export const readThreadAgent = defineAgent({
   reasoningEffort: { claude: "low", codex: "low" },
   reportsTo: "main",
   delegatesTo: [],
+  // Một thread là hữu hạn — đây là trần, không phải kỳ vọng. Chỉ khai được phía codex:
+  // cửa sổ của haiku-4-5 đúng bằng 200k, nên trên Claude trần này là chính bức tường, và
+  // mặc định 180k mới là con số còn chừa chỗ để nén.
+  autoCompactTokens: { codex: 200_000 },
   capabilities: {
     tools: ["Read", "Glob", "Grep", "Skill"],
+    skills: ["agent-memory"],
+    subagents: [],
+    mcpServers: [],
     memory: {
       read: ["shared", "project:*", "private:read-thread"],
       write: ["private:read-thread"],

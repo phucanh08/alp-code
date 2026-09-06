@@ -1,8 +1,14 @@
 import type {
+  McpServerCatalogEntry,
+  SubagentCatalogEntry,
+} from "../agents/capability-catalog";
+import type {
   AgentId,
   MemoryGrants,
+  RuntimeId,
   ToolId,
 } from "../agents/types";
+import type { ModeId } from "../agents/modes";
 import type {
   ContextDiagnostics,
   MemoryKind,
@@ -13,12 +19,51 @@ import type { WorkflowRunStatus } from "../workflow/types";
 
 export type ExecutionId = string;
 
+/**
+ * A capability grant after its name has been resolved against the catalog.
+ *
+ * The resolution is snapshotted rather than looked up again at launch: the policy record is
+ * what an execution is judged against afterwards, and "which command did this run, reaching
+ * what" is exactly the question a name alone cannot answer once the catalog has moved on.
+ */
+export interface McpServerAuthorization extends McpServerCatalogEntry {
+  readonly name: string;
+}
+
+export interface SubagentAuthorization extends SubagentCatalogEntry {
+  readonly name: string;
+}
+
 export interface ExecutionPolicy {
   readonly executionId: ExecutionId;
   readonly role: AgentId;
   readonly workspace: string;
   readonly workspaceMode: "read-only" | "workspace-write";
+  /**
+   * Nấc công suất đã chạy execution này (`low`…`ultra`). Cùng một definition chạy được nhiều
+   * model, nên nếu snapshot không nói ra nấc thì `policy.json` mô tả một execution mà nó
+   * không mô tả nổi — và hai lần chạy khác model lại có cùng `policyHash`.
+   */
+  readonly mode: ModeId;
+  /**
+   * Whether this role holds any workspace grant at all. `none` for a role that declares no
+   * root (read-thread, compaction, titling): it works from memory, the workspace is only
+   * the process cwd, and the runtime ACL must not hand it the tree as a read root.
+   */
+  readonly workspaceAccess: "granted" | "none";
   readonly allowedTools: readonly ToolId[];
+  /** Named skill grants (§5.3). The runtime ACL allows exactly these through `Skill`. */
+  readonly skills: readonly string[];
+  readonly subagents: readonly SubagentAuthorization[];
+  readonly mcpServers: readonly McpServerAuthorization[];
+  /**
+   * Token count at which each runtime compacts — `null` on a side the role declared none
+   * for, where the adapter resolves 90% of that model's window at launch. `null` rather
+   * than an absent key: the snapshot has to say "not declared" out loud, the same way it
+   * says which tools were withheld. Every runtime keeps its own entry because this snapshot
+   * is written before dispatch and does not know which one will run it.
+   */
+  readonly autoCompactTokens: Readonly<Record<RuntimeId, number | null>>;
   readonly memory: MemoryGrants;
   readonly delegatesTo: readonly AgentId[];
   readonly createdAt: string;
@@ -93,6 +138,8 @@ export interface PrepareExecutionInput {
   readonly task: string;
   readonly workspace: string;
   readonly workspaceMode: "read-only" | "workspace-write";
+  /** Bỏ trống thì lấy `DEFAULT_MODE`. */
+  readonly mode?: ModeId;
   readonly memoryQueries: readonly MemoryQuery[];
   readonly characterBudget: number;
   readonly invariantContext: string;

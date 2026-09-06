@@ -1,8 +1,8 @@
+import { modelForMode, type ModeId } from "../../src/agents/modes";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { agentRegistry } from "../../src/agents/registry";
-import type { RuntimeId } from "../../src/agents/types";
 import { runMainSession } from "../../src/cli/commands/run-main";
 import type { BackendExecutionResult } from "../../src/backend/execution-backend";
 import { cleanupEnvironments, createE2eEnvironment, type E2eEnvironment } from "./harness";
@@ -11,18 +11,23 @@ const MAIN_OUTPUT = "Completed — entrypoint located at index.ts:1.";
 
 afterEach(cleanupEnvironments);
 
+/**
+ * Nấc là thứ duy nhất được chọn — runtime rơi ra từ model mà nấc ghim cho `main`. `ultra`
+ * ghim Opus 5 (Claude Code) còn `puck` ghim Sol (Codex), nên hai nấc này là cách gọi cả hai
+ * CLI mà không cần ai truyền runtime vào.
+ */
 async function runMain(
   environment: E2eEnvironment,
-  requestedRuntime: RuntimeId,
+  mode: ModeId,
 ): Promise<BackendExecutionResult> {
-  return runMainSession({ cwd: environment.project, requestedRuntime }, {
+  return runMainSession({ cwd: environment.project, mode }, {
     registry: agentRegistry,
-    // An explicit --runtime never prompts, so selection is deterministic here.
-    selector: { select: async (input) => ({ ok: true, runtime: input.requestedRuntime!, source: "explicit" }) },
+    // An explicit --mode never prompts, so selection is deterministic here.
+    selector: { select: async (input) => ({ ok: true, mode: input.requestedMode!, source: "explicit" }) },
     executionService: environment.executionService,
     adapters: environment.adapters,
     backend: environment.backend,
-    executionId: () => `exec_main_${requestedRuntime}`,
+    executionId: () => `exec_main_${mode}`,
     interactive: false,
     workspaceModeFor: async () => "workspace-write",
   });
@@ -32,8 +37,8 @@ describe("e2e: alp main session", () => {
   it("gives both runtimes the same main identity and returns validated output", async () => {
     const environment = await createE2eEnvironment({ output: MAIN_OUTPUT });
 
-    const claudeResult = await runMain(environment, "claude");
-    const codexResult = await runMain(environment, "codex");
+    const claudeResult = await runMain(environment, "ultra");
+    const codexResult = await runMain(environment, "puck");
 
     for (const result of [claudeResult, codexResult]) {
       expect(result).toMatchObject({ status: "completed", output: MAIN_OUTPUT });
@@ -78,32 +83,33 @@ describe("e2e: alp main session", () => {
       expect(capture.sessionContext).not.toContain(capture.capsule.task);
     }
 
-    // Only launch syntax and the per-runtime model differ.
-    expect(claude.argv).toContain(definition.model.claude);
+    // Only launch syntax and the per-runtime model differ — và model là model của nấc đang
+    // chạy, không phải model khai trong definition: dial sở hữu ghế `main`.
+    expect(claude.argv).toContain(modelForMode(definition, "ultra"));
     expect(claude.argv).toContain("--settings");
-    expect(codex.argv).toContain(definition.model.codex);
+    expect(codex.argv).toContain(modelForMode(definition, "puck"));
     expect(codex.argv.slice(0, 3)).toEqual(["--dangerously-bypass-hook-trust", "--enable", "hooks"]);
     expect(JSON.parse(claude.runtimeConfig).hooks).toHaveProperty("SessionStart");
     // Codex carries the same hook bridges as `-c` overrides rather than in its config file.
     expect(codex.argv.some((arg) => arg.startsWith("hooks.SessionStart="))).toBe(true);
-    expect(codex.runtimeConfig).toContain(`model = "${definition.model.codex}"`);
+    expect(codex.runtimeConfig).toContain(`model = "${modelForMode(definition, "puck")}"`);
   });
 
   it("writes no runtime identity config into the project and cleans temporary files", async () => {
     const environment = await createE2eEnvironment({ output: MAIN_OUTPUT });
 
-    await runMain(environment, "claude");
+    await runMain(environment, "ultra");
 
     expect(await readdir(environment.project)).toEqual(["index.ts"]);
     // Runtime artifacts live under the execution root and are removed once the child exits.
-    expect(await readdir(environment.executionsRoot)).toEqual(["exec_main_claude"]);
-    expect(await readdir(join(environment.executionsRoot, "exec_main_claude", "runtime"))).toEqual([]);
+    expect(await readdir(environment.executionsRoot)).toEqual(["exec_main_ultra"]);
+    expect(await readdir(join(environment.executionsRoot, "exec_main_ultra", "runtime"))).toEqual([]);
   });
 
   it("reports a failing runtime as a failed session without inventing output", async () => {
     const environment = await createE2eEnvironment({ exitCode: 3 });
 
-    await expect(runMain(environment, "codex")).resolves.toMatchObject({ status: "failed", exitCode: 3 });
+    await expect(runMain(environment, "puck")).resolves.toMatchObject({ status: "failed", exitCode: 3 });
     await expect(environment.capture("codex")).resolves.toMatchObject({ capsule: { role: "main" } });
   });
 });

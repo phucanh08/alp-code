@@ -10,8 +10,13 @@ export const oracleAgent = defineAgent({
   reasoningEffort: { claude: "high", codex: "xhigh" },
   reportsTo: "main",
   delegatesTo: [],
+  // Suy luận trên cả tập bằng chứng một lượt; nén sớm là vứt đi chính bằng chứng đó. Nên
+  // vai này cũng lấy mặc định 90% như `main`, không tự siết mình xuống thấp hơn.
   capabilities: {
     tools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Skill"],
+    skills: ["alp-debug", "alp-predict", "alp-scenario", "problem-solving"],
+    subagents: [],
+    mcpServers: [],
     memory: {
       read: ["shared", "project:*", "private:oracle"],
       write: ["private:oracle"],

@@ -1,6 +1,7 @@
 import { realpathSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type { AgentRegistry } from "../agents/types";
+import { CapabilityPolicy, mcpServerOf } from "./capability-policy";
 import { DelegationPolicy } from "./delegation-policy";
 import {
   hasIndirectCommand,
@@ -39,6 +40,7 @@ export class PolicyEngine {
   private readonly registry: AgentRegistry;
   private readonly delegation: DelegationPolicy;
   private readonly memory = new MemoryPolicy();
+  private readonly capability = new CapabilityPolicy();
   private readonly workspace: WorkspacePolicy;
 
   constructor(options: PolicyEngineOptions) {
@@ -81,6 +83,18 @@ export class PolicyEngine {
               "DEFINITION_MUTATION_DENIED",
               `\`${request.actor}\` cannot mutate agent definition \`${request.target.agentId}\``,
             );
+      case "skill":
+        return this.capability.authorize(
+          actor, "skill", request.skill, actor.capabilities.skills, "SKILL_NOT_GRANTED",
+        );
+      case "subagent":
+        return this.capability.authorize(
+          actor, "subagent", request.subagent, actor.capabilities.subagents, "SUBAGENT_NOT_GRANTED",
+        );
+      case "mcp":
+        return this.capability.authorize(
+          actor, "mcp server", request.server, actor.capabilities.mcpServers, "MCP_SERVER_NOT_GRANTED",
+        );
       case "tool": {
         if (
           isRawRuntimeTool(request.tool) ||
@@ -98,6 +112,12 @@ export class PolicyEngine {
           return deny(
             "INDIRECT_TOOL_REQUEST",
             `indirect command cannot be authorized safely`,
+          );
+        }
+        const server = mcpServerOf(request.tool);
+        if (server !== null) {
+          return this.capability.authorize(
+            actor, "mcp server", server, actor.capabilities.mcpServers, "MCP_SERVER_NOT_GRANTED",
           );
         }
         if (!actor.capabilities.tools.some((tool) => tool === request.tool)) {

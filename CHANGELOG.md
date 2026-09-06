@@ -8,6 +8,214 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thêm
+
+- **Dial công suất năm nấc: `alp --mode low|medium|high|ultra|puck`.** Trước đây mỗi vai chạy
+  đúng một model **cho mỗi runtime**, khai cứng trong definition, nên hai câu hỏi lúc mở phiên
+  là "chạy Claude hay Codex" và "sửa file nào để đổi model". Dial gộp cả hai thành thứ người
+  dùng thật sự biết: **việc này khó cỡ nào**. Mượn khuôn của Amp — `medium` mặc định — nhưng
+  chỉ dùng model Codex và Claude.
+
+  Mỗi nấc là một **loadout hoàn chỉnh**: mỗi vai đúng **một** model và một mức suy nghĩ.
+
+  | Nấc | `main` | effort | `oracle` | effort |
+  |---|---|---|---|---|
+  | `low` | claude-haiku-4-5 | low | gpt-5.6-sol | high |
+  | `medium` (mặc định) | gpt-5.6-sol | high | claude-opus-5 | high |
+  | `high` | claude-opus-5 | high | gpt-5.6-sol | xhigh |
+  | `ultra` | claude-opus-5 | high | gpt-6-astra | high |
+  | `puck` | gpt-5.6-sol | xhigh | gpt-5.6-sol | xhigh |
+
+  Bốn nấc dial chỉ xoay hai ghế mà độ khó chạm tới: `main` (người làm) và `oracle` (người được
+  hỏi khi bí). Sáu vai còn lại giống nhau qua cả bốn nấc — `search` gpt-5.6-terra, `librarian`
+  gpt-5.6-sol, `read-thread` và `titling` claude-haiku-4-5, `review` và `compaction`
+  claude-opus-5 — đúng chỗ Amp ghim cứng subagent: model của chúng là một phần công việc chứ
+  không phải một mức cố gắng. `oracle` luôn đứng ở runtime **đối diện** `main`: người được hỏi
+  khi bí phải là một cách nhìn khác, không phải cùng model tự hỏi lại chính nó. `high` và
+  `ultra` cùng cầm bút bằng Opus 5 — khác nhau ở oracle, nơi `ultra` leo lên model mới nhất
+  (`gpt-6-astra`) thay vì chỉ cộng thêm effort.
+
+  **`puck` nằm ngoài trục độ khó**: toàn Codex ở cả tám vai (`read-thread`/`titling` sang
+  gpt-5.6-luna, `review` sang gpt-5.6-terra). Dành cho máy chỉ cài `codex`, cho lúc hạn mức
+  Claude đã hết, hoặc cho người muốn đúng loadout Amp mặc định.
+
+  Chọn nấc theo thứ tự `--mode` → `ALP_MODE` → `alp mode set` (`~/.alp/mode.json`) → menu ↑/↓
+  trên TTY → `medium`. Nấc gõ sai (`--mode smart`) dừng ngay chứ không rơi về mặc định, vì một
+  phiên chạy nấc khác nấc người dùng tưởng là im lặng tốn tiền hoặc im lặng yếu đi. Nấc đi vào
+  `ExecutionPolicy.mode`, nên `policy.json` ghi lại nấc đã chạy và `policyHash` đổi theo nấc —
+  hai lần chạy khác model không thể trùng hash. `definitionHash` **không** đổi: nấc là lựa chọn
+  lúc phóng, không phải một vai khác. Adapter export `ALP_MODE` nên execution delegated kế thừa
+  nấc của phiên cha, thay vì subagent lặng lẽ tụt về `medium` giữa một phiên `ultra`.
+
+  **Đổi hành vi mặc định:** `main` trước đây là opus-5 (Claude) hoặc gpt-5.6-sol (Codex) @
+  high/xhigh. Mặc định mới `medium` cho `main` `gpt-5.6-sol` @ high — tức phiên mặc định giờ
+  chạy trên Codex CLI, không phải Claude Code. Muốn một phiên main do Claude cầm bút: `alp
+  --mode high|ultra` (Opus 5) hoặc `--mode low` (Haiku), hoặc `export ALP_MODE=ultra`.
+
+  Một test giữ điều kiện mọi model của mọi nấc đều có mặt trong cả `MODEL_RUNTIMES` lẫn
+  `MODEL_CONTEXT_WINDOWS` —
+  thiếu bảng đầu thì không biết phóng CLI nào, thiếu bảng sau thì ngưỡng auto-compact mặc định
+  (90% cửa sổ) lặng lẽ biến mất đúng ở nấc đó.
+
+- **`alp mode show|set <nấc>`** — nấc ghi nhớ machine-local ở `~/.alp/mode.json` (0600, atomic
+  write), thay chỗ `alp runtime show|set` và `~/.alp/runtime.json`. Menu lúc mở phiên giờ hỏi
+  nấc chứ không hỏi runtime, mỗi dòng kèm một câu nói nấc đó dành cho việc gì. Preference hỏng
+  → warning + fallback `medium`, không throw. `alp update` bảo toàn `mode.json` qua các lần
+  cập nhật.
+
+### Thêm
+
+- **Ba grant khai bằng tên: `capabilities.skills`, `capabilities.subagents`,
+  `capabilities.mcpServers`.** Một vai trước đây chỉ khai `tools`, nên `Skill` là một ô vuông
+  duy nhất: có hoặc không. Có nghĩa là mọi skill trên máy — kể cả cái vừa `git pull` về sáng
+  nay. Ba field mới nói tên cụ thể, và chỉ tên (§5.3): định nghĩa không được viết `command:`
+  hay đường dẫn, vì một file khai báo tự viết được egress của mình thì nó không còn là khai
+  báo nữa. Tên resolve đúng một lần, ở `createExecutionPolicy`, đối chiếu với catalog của
+  principal trong `src/agents/capability-catalog.ts`; **spec đã resolve** (command, args,
+  egress, prompt) mới là thứ đi vào snapshot. Nhờ vậy `policy.json` ghi lại lệnh thật sự đã
+  chạy chứ không trỏ vào machine config có thể đổi phía dưới.
+
+  Cả ba vào `definitionHash` **và** `policyHash`: nới một grant là đổi định danh của vai, y
+  như đổi `tools`.
+
+- **Trần thi hành lúc registry load.** `UNKNOWN_SKILL`, `UNKNOWN_SUBAGENT`,
+  `UNKNOWN_MCP_SERVER` cho tên ngoài catalog; `DUPLICATE_GRANT` cho tên khai hai lần; và một
+  bất biến hai chiều — có `Skill` trong `tools` thì phải kể tên skill, kể tên skill thì phải
+  có `Skill` (`INVALID_SKILL_GRANT`). Chiều thứ nhất bắt được đúng hình dạng §5.5 cấm, và nó
+  đang tồn tại thật: sáu built-in cầm `Skill` mà không kể tên gì, tức trần bằng cả skill root
+  của máy. Subagent còn một trần nữa — `tools` của nó không bao giờ rộng hơn `tools` của vai
+  cấp nó (`UNKNOWN_TOOL`), vì subagent không phải đường vòng qua một giới hạn.
+
+  `SUBAGENT_CATALOG` và `MCP_SERVER_CATALOG` **rỗng** ở v1 (§5.5). Rỗng là mặc định
+  fail-closed chứ không phải chỗ trống chờ điền: khai bất cứ tên nào cũng bị từ chối ngay lúc
+  load. `SKILL_CATALOG` liệt kê 14 skill trong project scope, có test giữ đồng bộ với thư mục
+  `skills/`.
+
+- **Policy engine trả lời được ba câu hỏi mới** — `SKILL_NOT_GRANTED`, `SUBAGENT_NOT_GRANTED`,
+  `MCP_SERVER_NOT_GRANTED` — và tự route tool name dạng `mcp__<server>__<tool>` về grant của
+  server đó. Route này nằm **sau** guardrail raw runtime tool, nên `mcp__paseo__spawn_agent`
+  vẫn dừng ở `RAW_RUNTIME_TOOL_DENIED` chứ không rơi xuống thành một câu hỏi về MCP.
+
+- **Ba dòng mới trong bảng Authority** của session context: `Skills`, `Subagents`,
+  `MCP servers` — server in kèm egress (`docs (network egress)`), vì "được nối MCP nào" thực
+  chất là câu hỏi "cái gì rời khỏi máy này".
+
+- **Harness test tier 2–3 cho agent** (`test/support/agent-dry-run.ts`): prepare một
+  execution thật, đọc argv, settings file, `mcp-config.json` và bảng Authority mà không chạy
+  runtime. Bộ test mới đi kèm phủ cả ba grant trên cả hai adapter.
+
+- **`autoCompactTokens` — ngưỡng compact khai theo vai, theo từng model.** Trước bản này,
+  một execution ALP spawn ra nén transcript theo cửa sổ mặc định của runtime, tức theo cấu
+  hình của **máy** đang chạy chứ không theo vai đang chạy. Nhưng "còn nhớ được bao nhiêu" là
+  thuộc tính của vai: `main` giữ cả bức tranh nên phải giữ được tối đa model cho phép, còn một
+  `search` phình tới 150k token là đã hỏng — nén sớm là cách hỏng rẻ hơn.
+
+  Field mới nằm trên `AgentDefinition` như một **map theo runtime** — `{ claude?, codex? }`,
+  cùng khuôn với `model` và `reasoningEffort` — vì ngân sách này đi theo model chứ không theo
+  vai một mình: cùng một con số 500 000 là "nén sớm" trên cửa sổ 1M của opus-5, nhưng trên cửa
+  sổ 272k của gpt-5.6 thì transcript không bao giờ chạm tới, và runtime lặng lẽ rơi về chốt
+  cứng của nó (95% cửa sổ) — muộn hơn cả mặc định, trong khi argv vẫn in ra con số nói ngược
+  lại. Cả map vào `definitionHash` và `policyHash`; snapshot ghi đủ một khoá mỗi runtime, vì
+  policy viết ra trước lúc dispatch và chưa biết runtime nào sẽ chạy.
+
+  Dịch khác nhau ở hai runtime: Claude nhận `autoCompactWindow` trong settings file của
+  execution, Codex nhận `-c model_auto_compact_token_limit=` **trên argv** — cùng lý do với
+  hook và MCP, vì `codex-config.toml` là file ALP ghi chứ không phải file Codex đọc.
+
+  Ngân sách tám vai built-in (— là bỏ trống, nhận mặc định 90%):
+
+  | Vai | claude | codex | Thực nén ở (claude / codex) | Vì sao |
+  |---|---:|---:|---|---|
+  | `main` · `oracle` | — | — | 900 000 / 244 800 | Giữ tối đa model cho phép; suy luận trên cả tập bằng chứng |
+  | `librarian` · `review` | 300 000 | — | 300 000 / 244 800 | Doc nguyên văn, diff cộng code quanh nó; quá 300k trên cửa sổ 1M là đã đi lạc |
+  | `read-thread` | — | 200 000 | 180 000 / 200 000 | Thread hữu hạn; cửa sổ haiku-4-5 đúng bằng 200k nên phía Claude phải là mặc định |
+  | `search` · `compaction` | 150 000 | 150 000 | 150 000 / 150 000 | Không được phép phình; viết handoff chứ không gom corpus |
+  | `titling` | 100 000 | 100 000 | 100 000 / 100 000 | Sàn; một cái tiêu đề gần như không cần gì |
+
+  Trần thi hành lúc registry load, cho **từng phía**: số nguyên trong khoảng 100 000–1 000 000
+  **và** không vượt cửa sổ context của chính model phía đó, ngoài khoảng thì
+  `INVALID_AUTO_COMPACT_LIMIT`. Vế thứ hai là vế bắt được lỗi im lặng: khai vượt cửa sổ không
+  hỏng gì trông thấy, chỉ khiến vai nén **muộn hơn** mức nó tưởng. Chặn ở chỗ con số được viết
+  ra, chứ không clamp ở chỗ nó được đọc.
+
+- **Vai không khai ngưỡng thì mặc định là 90% cửa sổ context của model đó.** Bỏ trống trước đây
+  nghĩa là "để runtime tự chọn", mà hai runtime chọn khác nhau: Codex nén ở 90% cửa sổ model,
+  Claude nén ở cửa sổ nó tự tune theo model và theo settings của **máy** đang chạy. Cùng một vai
+  lại nhớ được nhiều ít khác nhau tuỳ chỗ chạy — đúng cái phụ thuộc-vào-máy mà việc khai ngưỡng
+  sinh ra để chấm dứt. Nay ALP tự tính mặc định từ bảng `MODEL_CONTEXT_WINDOWS`
+  (`src/agents/model-context.ts`) và ghi ra cả hai runtime như một ngưỡng khai tường minh:
+
+  | Model | Cửa sổ | Mặc định (90%) |
+  |---|---:|---:|
+  | `claude-opus-5` · `claude-sonnet-5` | 1 000 000 | 900 000 |
+  | `claude-haiku-4-5` | 200 000 | 180 000 |
+  | `gpt-5.6-sol` · `gpt-5.6-terra` · `gpt-5.6-luna` | 272 000 | 244 800 |
+
+  Model không có trong bảng thì không có mặc định — runtime giữ cửa sổ của nó, vì để runtime
+  tự lo còn hơn dựng ngân sách từ phỏng đoán. Test giữ bảng phủ hết model mà tám vai built-in
+  route tới, và pin 90% của mọi cửa sổ trong bảng vẫn nằm trong khoảng Claude chấp nhận.
+
+### Đã bỏ
+
+- **`--runtime`, `alp runtime show|set`, và `alp delegate --runtime`.** Từ khi mỗi vai ở mỗi
+  nấc chỉ có một model, **model quyết định runtime**: `claude-*` phóng Claude Code, `gpt-*`
+  phóng Codex CLI, tra qua bảng `MODEL_RUNTIMES` viết tay trong `model-context.ts` (không đoán
+  theo prefix — một tên lệch quy ước mà đoán sai thì phóng nhầm CLI trong im lặng). Giữ thêm
+  một lựa chọn runtime song song chỉ tạo ra tổ hợp vô nghĩa: `--runtime claude` cộng nấc
+  `medium` là yêu cầu Claude Code chạy `gpt-5.6-sol`.
+
+  Cả ba đường cũ **dừng với lỗi chỉ sang nấc**, không bị bỏ qua trong im lặng — một script cũ
+  còn `--runtime codex` sẽ nói ra rằng nó không còn ép được gì, thay vì chạy đúng nấc mặc định
+  mà người viết tưởng đang ép Codex. `DelegationExecutionOptions.runtime` cũng biến mất khỏi
+  request; `DelegationExecutionRecord.runtime` giữ nguyên, vì nó ghi lại CLI **đã thật sự
+  chạy**. Một nấc có thể trộn hai CLI trong cùng một phiên — `high` chạy `main` trên Codex và
+  `oracle` trên Claude — nên "runtime của phiên" không còn là một khái niệm có thật.
+
+### Thay đổi
+
+- **Mọi delegated execution giờ chạy với `--mcp-config` tường minh cộng `--strict-mcp-config`.**
+  Trước bản này, một vai delegated kế thừa toàn bộ MCP config của máy — egress không policy
+  nào cho phép, không hash nào ghi lại. Giờ ALP ghi ra một file cho từng execution, rỗng
+  (`{"mcpServers":{}}`) khi vai không được cấp gì, và cờ strict cấm runtime đọc thêm chỗ khác.
+  Phiên interactive vẫn giữ config của máy, cùng đánh đổi đã ghi với
+  `--dangerously-skip-permissions`.
+
+- **Codex nhận MCP qua `-c mcp_servers.<name>={ … }` trên argv**, không qua
+  `codex-config.toml`. Lý do là file đó Codex không đọc: nó đọc `$CODEX_HOME/config.toml`, thứ
+  ALP không ghi. Grant nào chỉ nằm trong file ấy là grant chỉ tồn tại trên giấy — hook đã đi
+  đường `-c` từ trước, MCP giờ đi cùng đường. Codex không có subagent in-process và không có
+  cờ strict tương đương; §4.6 đã ghi subagent là tối ưu hoá chứ không phải điều kiện, nên bên
+  Codex không dịch gì cả.
+
+- **Claude ACL đổi từ deny-only sang có `allow`.** Skill được cấp vào allow list dạng
+  `Skill(<tên>)` thay vì deny từng skill không cấp — vì một tool name trần trong `deny` gỡ hẳn
+  tool khỏi context của model, nên "chỉ những skill này" bắt buộc phải viết bằng allow.
+  Subagent thành `Agent(<tên>)`, MCP server thành `mcp__<tên>`.
+
+- **`Task` và `Agent` thật sự bị deny.** Vòng lặp deny chỉ chạy trên `TOOL_CATALOG`, mà hai
+  tool này không nằm trong đó — nên chúng chưa từng bị chặn dù không vai nào được cấp. `Task`
+  giờ luôn deny; `Agent` chỉ mở khi vai có subagent được cấp.
+
+- **House rule tách theo audience.** Một vai đọc quy tắc của chính nó, không phải quy tắc của
+  vai khác; `InstructionOptions.audience` quyết định block nào được render.
+
+- Review chuyển sang `gpt-5.6-terra` ở phía Codex (`docs/model-routing.md` cập nhật theo).
+
+### Sửa
+
+- **Workspace root tương đối resolve theo từng request**, không còn theo `process.cwd()` lúc
+  policy được tạo. Một delegation phát đi từ thư mục khác trước đây nhận nhầm root.
+
+- **Vai không có workspace root giờ prepare được.** `ExecutionService.prepare` vẫn hỏi câu
+  workspace cho cả vai chỉ đọc memory, nên `compaction` và `titling` chết ngay ở bước chuẩn
+  bị. `ExecutionPolicy` có thêm `workspaceAccess: "granted" | "none"` để phần còn lại của
+  chuỗi biết phân biệt "không được cấp" với "chưa resolve".
+
+**Cần làm khi nâng cấp:** ba field mới là **bắt buộc** trên mọi `AgentCapabilities` — một
+định nghĩa cũ không khai sẽ không compile. Vai không dùng skill khai `skills: []` và bỏ
+`Skill` khỏi `tools`; vai có dùng thì kể tên, và tên phải có trong `SKILL_CATALOG`.
+`subagents` và `mcpServers` khai `[]`, vì catalog của cả hai đang rỗng.
+
 ## [0.7.0] - 2026-09-04
 
 ### Thêm

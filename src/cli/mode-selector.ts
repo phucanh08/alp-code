@@ -1,33 +1,41 @@
 import { PassThrough } from "node:stream";
 import { emitKeypressEvents } from "node:readline";
+import { DEFAULT_MODE, MODE_IDS, MODE_PROFILES, type ModeId } from "../agents/modes";
 import {
-  FileRuntimePreferenceStore,
-  type RuntimePreferenceStore,
-} from "./runtime-preference-store";
+  FileModePreferenceStore,
+  type ModePreferenceStore,
+} from "./mode-preference-store";
 import type {
-  RuntimeId,
-  RuntimeSelection,
   RuntimeTerminalInput,
   RuntimeTerminalOutput,
   TerminalKey,
-} from "./types";
+} from "../runtime/types";
 
-const RUNTIMES: readonly RuntimeId[] = ["claude", "codex"];
-const LABELS: Readonly<Record<RuntimeId, string>> = {
-  claude: "Claude",
-  codex: "Codex",
-};
-const DEFAULT_RUNTIME: RuntimeId = "claude";
+/**
+ * Menu chọn **nấc**, không phải chọn runtime.
+ *
+ * Từ khi mỗi vai ở mỗi nấc chỉ có một model, model quyết định CLI — nên câu hỏi lúc mở phiên
+ * không còn là "chạy Claude hay Codex" mà là "việc này khó cỡ nào". Menu vẫn giữ nguyên
+ * khuôn cũ: nhớ lựa chọn lần trước, hỏi một lần trên TTY, Ctrl+C là huỷ chứ không phải chọn
+ * bừa.
+ */
+const MODES: readonly ModeId[] = MODE_IDS;
 
-export interface RuntimeSelectorOptions {
-  readonly preferenceStore?: RuntimePreferenceStore;
+export type ModeSelectionSource = "explicit" | "interactive" | "persisted" | "default";
+
+export type ModeSelection =
+  | { readonly ok: true; readonly mode: ModeId; readonly source: ModeSelectionSource }
+  | { readonly ok: false; readonly exitCode: 130 };
+
+export interface ModeSelectorOptions {
+  readonly preferenceStore?: ModePreferenceStore;
   readonly input?: RuntimeTerminalInput;
   readonly output?: RuntimeTerminalOutput;
   readonly readKey?: () => Promise<TerminalKey>;
 }
 
-export interface SelectRuntimeInput {
-  readonly requestedRuntime?: RuntimeId;
+export interface SelectModeInput {
+  readonly requestedMode?: ModeId;
   readonly interactive: boolean;
 }
 
@@ -105,66 +113,62 @@ function createKeypressReader(input: RuntimeTerminalInput): KeypressReader {
 
 function renderMenu(
   output: RuntimeTerminalOutput,
-  current: RuntimeId,
+  current: ModeId,
   selectedIndex: number,
   redraw: boolean,
 ): void {
-  if (redraw) output.write(`\u001b[${RUNTIMES.length + 1}A`);
-  for (const [index, runtime] of RUNTIMES.entries()) {
+  if (redraw) output.write(`\u001b[${MODES.length + 1}A`);
+  for (const [index, mode] of MODES.entries()) {
     const pointer = index === selectedIndex ? "❯" : " ";
-    const persisted = runtime === current ? " (current)" : "";
-    output.write(`\r\u001b[2K  ${pointer} ${LABELS[runtime]}${persisted}\n`);
+    const persisted = mode === current ? " (current)" : "";
+    output.write(`\r\u001b[2K  ${pointer} ${mode.padEnd(6)}${persisted} — ${MODE_PROFILES[mode].summary}\n`);
   }
   output.write("\r\u001b[2K↑/↓ select · Enter confirm · Ctrl+C cancel\n");
 }
 
-export class RuntimeSelector {
-  private readonly preferenceStore: RuntimePreferenceStore;
+export class ModeSelector {
+  private readonly preferenceStore: ModePreferenceStore;
   private readonly input?: RuntimeTerminalInput;
   private readonly output: RuntimeTerminalOutput;
   private readonly injectedReadKey?: () => Promise<TerminalKey>;
 
-  constructor(options: RuntimeSelectorOptions = {}) {
-    this.preferenceStore = options.preferenceStore ?? new FileRuntimePreferenceStore();
+  constructor(options: ModeSelectorOptions = {}) {
+    this.preferenceStore = options.preferenceStore ?? new FileModePreferenceStore();
     this.input = options.input ?? (process.stdin as RuntimeTerminalInput);
     this.output = options.output ?? process.stdout;
     this.injectedReadKey = options.readKey;
   }
 
-  async select(input: SelectRuntimeInput): Promise<RuntimeSelection> {
-    if (input.requestedRuntime !== undefined) {
-      if (!RUNTIMES.includes(input.requestedRuntime)) {
-        throw new Error(`invalid runtime \`${String(input.requestedRuntime)}\``);
+  async select(input: SelectModeInput): Promise<ModeSelection> {
+    if (input.requestedMode !== undefined) {
+      if (!MODES.includes(input.requestedMode)) {
+        throw new Error(`invalid mode \`${String(input.requestedMode)}\``);
       }
-      return {
-        ok: true,
-        runtime: input.requestedRuntime,
-        source: "explicit",
-      };
+      return { ok: true, mode: input.requestedMode, source: "explicit" };
     }
 
     const preference = await this.preferenceStore.read();
     if (preference.warning) {
       this.output.write(`WARNING  ${preference.warning}\n`);
     }
-    const current = preference.runtime ?? DEFAULT_RUNTIME;
+    const current = preference.mode ?? DEFAULT_MODE;
     if (!input.interactive) {
       return {
         ok: true,
-        runtime: current,
-        source: preference.runtime === null ? "default" : "persisted",
+        mode: current,
+        source: preference.mode === null ? "default" : "persisted",
       };
     }
 
     const selected = await this.prompt(current);
     if (selected === null) return { ok: false, exitCode: 130 };
     await this.preferenceStore.write(selected);
-    return { ok: true, runtime: selected, source: "interactive" };
+    return { ok: true, mode: selected, source: "interactive" };
   }
 
-  private async prompt(current: RuntimeId): Promise<RuntimeId | null> {
+  private async prompt(current: ModeId): Promise<ModeId | null> {
     if (!this.injectedReadKey && !this.input) {
-      throw new Error("interactive runtime selection requires terminal input");
+      throw new Error("interactive mode selection requires terminal input");
     }
     const wasFlowing = this.input?.readableFlowing === true;
     const wasRaw = Boolean(this.input?.isRaw);
@@ -173,9 +177,9 @@ export class RuntimeSelector {
       : createKeypressReader(this.input);
     const readKey = this.injectedReadKey ?? keypress!.read;
     let changedRawMode = false;
-    let selectedIndex = Math.max(0, RUNTIMES.indexOf(current));
+    let selectedIndex = Math.max(0, MODES.indexOf(current));
 
-    this.output.write("\nSelect runtime for this ALP session:\n");
+    this.output.write("\nSelect mode for this ALP session:\n");
     this.output.write("\u001b[?25l");
     try {
       if (
@@ -193,13 +197,13 @@ export class RuntimeSelector {
       for (;;) {
         const key = await readKey();
         if (key === "up") {
-          selectedIndex = (selectedIndex - 1 + RUNTIMES.length) % RUNTIMES.length;
+          selectedIndex = (selectedIndex - 1 + MODES.length) % MODES.length;
           renderMenu(this.output, current, selectedIndex, true);
         } else if (key === "down") {
-          selectedIndex = (selectedIndex + 1) % RUNTIMES.length;
+          selectedIndex = (selectedIndex + 1) % MODES.length;
           renderMenu(this.output, current, selectedIndex, true);
         } else if (key === "enter") {
-          return RUNTIMES[selectedIndex];
+          return MODES[selectedIndex];
         } else if (key === "cancel") {
           return null;
         }

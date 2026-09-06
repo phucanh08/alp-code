@@ -124,7 +124,7 @@ function testAlpFacadePreservesCallerWorkspace() {
 
   const run = spawnSync(process.execPath, [
     path.join(process.cwd(), "scripts", "alp.cjs"),
-    "delegate", "search", "--runtime", "codex", "--background", "--", "cwd probe",
+    "delegate", "search", "--background", "--", "cwd probe",
   ], {
     cwd: project,
     encoding: "utf8",

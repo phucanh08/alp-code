@@ -1,6 +1,6 @@
 # ALP Code — Triết lý thiết kế & Tầm nhìn kiến trúc
 
-> **Status:** Draft · **Ngày:** 2026-08-27 · **Owner:** anhlp
+> **Status:** Draft · **Ngày:** 2026-08-27 · cập nhật 2026-09-04 (§0, §4.6, §10.3) · **Owner:** anhlp
 > **Quan hệ với các doc khác:** `docs/architecture.md` mô tả hệ thống **đang là**. Doc này mô tả
 > hệ thống **nên trở thành** và các nguyên tắc để quyết định từng bước đi. Khi hai doc mâu thuẫn,
 > `architecture.md` đúng về hiện trạng, doc này đúng về hướng.
@@ -17,12 +17,20 @@ Bản nháp trước dùng một từ "Harness" cho hai thứ nằm ở hai phí
 | **Surface** | Nơi principal tương tác, gọi *vào* ALP. Nằm **trên** ALP | `alp` CLI; một phiên Claude Code gọi `alp delegate` |
 | **Runtime** | Tiến trình chạy vòng lặp model, do ALP **khởi chạy**. Nằm **dưới** ALP | Claude Code (`claude`), Codex CLI (`codex`) |
 | **Backend** | Nơi tiến trình runtime thực sự chạy | `LocalProcessBackend`: child process + supervisor detached cho background |
-| **Agent** | Đơn vị identity: ai chịu trách nhiệm, được làm gì | 8 agent trong `src/agents/` |
+| **Agent** | Đơn vị identity **đầy đủ**: một mục đích cụ thể, cộng trọn bộ phương tiện để phục vụ mục đích đó — tool, skill, subagent, MCP server, memory, workspace | 8 agent trong `src/agents/`, nhưng `capabilities` mới có tool, memory, workspace |
+| **Agents team** | Tập agent đã đăng ký trong registry, cùng quan hệ `reportsTo`/`delegatesTo` giữa chúng. Thành viên của team là Agent, **không** phải subagent | `main` + 7 specialist |
+| **Subagent** | Đơn vị thực thi **phụ thuộc**, sống bên trong tiến trình runtime của một agent. Không identity, không memory, không policy snapshot, không execution record — nó là một **grant** của agent, ngang hàng skill và MCP server, không phải một chỗ ngồi trong team | Chưa có. Claude Code cấp qua `--agents <json>`; Codex chưa có tương đương |
 
 Điểm dễ nhầm nhất: **Claude Code vừa có thể là surface vừa có thể là runtime.** Khi principal gõ
 `alp delegate review` từ trong một phiên Claude Code, Claude Code là surface. Khi
 `ClaudeRuntimeAdapter` spawn tiến trình `claude` để chạy agent `review`, Claude Code là runtime.
 ALP đứng giữa, và không được phụ thuộc vào chi tiết của bên nào.
+
+**Điểm dễ nhầm thứ hai: Agent không phải subagent.** `search`, `review`, `oracle` là Agent — mỗi vai
+có identity, memory, policy snapshot và execution record riêng, và chỉ đến được qua
+`DelegationService`. Subagent thì ngược lại: nó chỉ tồn tại trong một tiến trình runtime, không để
+lại dấu vết nào ở tầng ALP, và tồn tại để **một** Agent hoàn thành mục đích của chính nó. Nói
+"`main` spawn subagent `review`" sai ở cả hai vế. Hệ quả kỹ thuật ở §4.6.
 
 ---
 
@@ -57,6 +65,8 @@ Doc này chỉ có giá trị nếu nó thành thật về khoảng cách. Tại
 | Vùng | Hiện trạng | Mục tiêu | Khoảng cách |
 |---|---|---|---|
 | Agent identity | 8 agent TS, freeze + hash | + custom agent declarative có trần capability; + built-in `orchestrator` | **Chưa có** — §5, §5.9 |
+| Bề mặt của agent | `AgentCapabilities` = tool + memory + workspace | + skill, subagent, MCP server **theo từng agent**, pin trong `ExecutionPolicy` | **Chưa có** — §0, §4.6, §5.5 |
+| Công cụ test agent | `npm test` (unit, registry giả) | `alp agent test`: static → dry-run prepare → deny-path → live, chạy được cả agent built-in | **Chưa có** — §10.3 |
 | Policy | `PolicyEngine` fail-closed, nhị phân allow/deny | + `require_approval` là quyết định của core | **Chưa có** — §6 |
 | Delegation | `DelegationService` → policy → backend, deny-first | Giữ nguyên | ✅ Đạt |
 | Tool | `TOOL_CATALOG` hardcode từ vựng Claude Code | Capability là kiểu chính; tên tool sống trong adapter | **Ngược hướng** — §4.5 |
@@ -180,16 +190,19 @@ Migration này không rẻ: nó chạm `TOOL_CATALOG`, `ExecutionPolicy.allowedT
 `WorkflowState.allowedTools`, `definitionHash` và `src/runtime/permission-rules.ts` — nơi ACL khai
 báo ra config từng runtime kể từ v0.2.0. Nên làm **một lần, có kế hoạch riêng**, không làm dần.
 
-### 4.6. Subagent là tool, nhưng delegation đi qua service
+### 4.6. Agent đi qua delegation; subagent là grant trong runtime
 
-Model có thể nhìn thấy `delegate.search`, `delegate.review`, `delegate.oracle`. Implementation
-không spawn tuỳ ý:
+Hai thứ nằm ở hai tầng khác nhau, và bản nháp trước gọi chung là "subagent" nên trộn mất ranh giới
+enforcement.
+
+**Agent ngang hàng.** Model nhìn thấy `delegate.search`, `delegate.review`, `delegate.oracle`.
+Implementation không spawn tuỳ ý:
 
 ```text
 Agent → Agent tool → DelegationService → PolicyEngine → ExecutionService
 ```
 
-Không bao giờ `Agent → spawn(subagent)` trực tiếp. Nhờ đó mọi delegation chung một cơ chế
+Không bao giờ `Agent → spawn(agent)` trực tiếp. Nhờ đó mọi delegation chung một cơ chế
 authorization, quan hệ parent-child, budget, cancellation, structured result, và depth control.
 
 Hệ quả bảo mật cần nói rõ: **delegate là tool nhìn thấy được với model, nên nó là bề mặt prompt
@@ -198,6 +211,61 @@ definition và depth/budget do runtime enforce.
 
 Phần này khớp đúng code hiện tại — `ExecutionService.prepare` chạy trước cả resolve runtime và
 health check backend, để một request đã bị từ chối không làm rò rỉ sự tồn tại của backend.
+
+**Subagent không đi đường đó.** Nó sống trong tiến trình runtime mà ALP vừa spawn: ALP không thấy
+từng lần gọi, không cấp policy snapshot, không ghi execution record. Vậy nó được cấp **một lần, lúc
+prepare** — y hệt skill root và tool grant. Definition khai `capabilities.subagents`, adapter dịch
+sang cấu hình runtime, và tập đó đi vào `definitionHash`. Cùng luật áp cho MCP server:
+`capabilities.mcpServers`.
+
+**Đã code (2026-09-04).** Cả ba trường có thật trên `AgentCapabilities`, bắt buộc khai, và tên được
+resolve một lần ở `createExecutionPolicy` qua `src/agents/capability-catalog.ts` — catalog là tập
+principal trust, `SUBAGENT_CATALOG` và `MCP_SERVER_CATALOG` rỗng ở v1 đúng theo trần §5.5. Cái đi
+vào `ExecutionPolicy` không phải cái tên mà là **spec đã resolve** (`command`, `args`, `egress`,
+prompt của subagent), nên `policy.json` trả lời được câu "execution này được phép mở đường ra đâu"
+mà không phải tra lại cấu hình máy — thứ có thể đã đổi sau đó. Trần cưỡng chế ở registry: tên lạ bị
+từ chối (`UNKNOWN_SKILL`/`UNKNOWN_SUBAGENT`/`UNKNOWN_MCP_SERVER`), subagent không được mang tool mà
+agent cha không có, và `Skill` phải đi kèm ít nhất một tên skill — *tool `Skill` mà không nêu tên là
+grant lên **mọi** skill root của máy*, đúng hình dạng §5.5 cấm, và đó là thứ cả năm built-in giữ
+`Skill` đang có trước hôm nay.
+
+Đây là điều làm nên định nghĩa ở §0: một Agent **tự đủ** cho mục đích của nó. Tool, skill, subagent,
+MCP server không phải bốn tính năng rời — chúng là bốn loại phương tiện của cùng một identity, nên
+phải khai cùng chỗ, hash cùng lúc, và hiện trong cùng một bảng Authority mà agent đọc được.
+
+Ba thứ phải nói thẳng vì chúng là giá phải trả:
+
+1. **Enforcement chỉ ở mức cấu hình, không ở mức từng call.** Cùng loại mất mát mà
+   `architecture.md` đã ghi khi bỏ `acl-guard.cjs`: ALP quyết *tập* subagent, runtime quyết *lần
+   gọi*. Bảo đảm duy nhất ALP đưa ra là subagent thừa hưởng workspace, sandbox và deny list của
+   agent cha — nó không mở thêm đường ghi hay đường egress nào mà agent cha chưa có. Đừng hứa hơn thế.
+2. **House rule đã tách (2026-09-04, làm trước khi có grant đầu tiên).** Câu cũ ở
+   `src/agents/shared/house-rules.ts` — `"never launch raw Herdr, Paseo, or in-process agents"` —
+   cấm cả loại, nên ngày một definition khai `capabilities.subagents` thì prompt sẽ nói ngược lại
+   chính grant đó. Nay là hai rule đi cùng nhau, vì hai lý do khác nhau: Herdr/Paseo bị cấm tuyệt
+   đối vì là **runtime lạ ngoài policy**, không grant nào kéo lại được; subagent bị cấm bằng cách
+   **không được cấp** — `"Launch no in-process subagent that this execution's policy does not
+   grant"`. Rule này không cần viết lại khi grant đầu tiên xuất hiện.
+
+   Cùng lúc, phần enforcement mới được thêm: vòng lặp deny của `permission-rules.ts` chỉ phủ được
+   `TOOL_CATALOG` — tool subagent của chính runtime (`Task`/`Agent` của Claude Code) không nằm
+   trong đó nên **chưa từng bị deny lần nào**, tức lệnh cấm cũ chỉ tồn tại trong prompt. Giờ hai
+   tên đó vào thẳng deny list của mọi execution; khi definition khai được subagent, chính grant sẽ
+   là thứ gỡ tên ra. Codex không có tool tương đương nên danh sách này chỉ dành cho Claude.
+3. **Bất đối xứng runtime, và cách sống chung với nó.** Claude Code nhận cả hai qua CLI:
+   `--agents <json>` cho subagent, `--mcp-config <file>` cộng `--strict-mcp-config` cho MCP — cái
+   sau đúng chất fail-closed vì nó bỏ qua mọi cấu hình MCP khác trên máy. Mọi execution delegate
+   nay đi kèm cả hai cờ MCP, kể cả khi grant rỗng: file `mcp-config.json` rỗng cộng `--strict` là
+   thứ chặn specialist thừa hưởng nguyên bộ MCP server của máy — egress không policy nào duyệt và
+   bảng Authority không hề nêu. Phiên interactive vẫn nhận cấu hình máy: cùng một đánh đổi đã ghi
+   cho `--dangerously-skip-permissions`, principal ngồi đó và tự duyệt. Codex có `mcp_servers`
+   nhưng phải đi qua `-c` trên argv chứ không phải `codex-config.toml` — file đó là bản ghi của
+   ALP, Codex đọc `$CODEX_HOME/config.toml` mà ALP không ghi — và Codex **không có
+   `--strict-mcp-config`**: grant ở đó chỉ *thêm* server, không lấy bớt. Codex cũng
+   **không có subagent in-process tương đương**. Nên design test số 1 của §10.1 sẽ đỏ với bất kỳ
+   agent nào lấy subagent làm phương tiện chính. Luật giữ portability: **subagent là tối ưu hoá,
+   không phải điều kiện.** Việc gì bắt buộc phải có nó thì việc đó thuộc về một Agent thật, gọi qua
+   delegation.
 
 ### 4.7. Policy fail-closed, và approval là quyết định của core
 
@@ -329,7 +397,7 @@ schemaVersion: 1
 id: migrator
 displayName: "Migrator 🔧"
 
-model:          { claude: claude-opus-5, codex: gpt-5.5 }
+model:          { claude: claude-opus-5, codex: gpt-5.6-terra }
 reasoningEffort: { claude: high, codex: medium }
 
 instructions:
@@ -342,6 +410,9 @@ instructions:
 
 capabilities:
   tools: [Read, Glob, Grep, Bash]
+  skills:     [framework-migration]   # tên skill trong scope, không phải đường dẫn
+  subagents:  []                      # tên subagent runtime — rỗng ở v1, §5.5
+  mcpServers: []                      # tên server principal đã khai và trust
   memory:
     read:  [shared, "project:*", "private:migrator"]
     write: ["private:migrator"]
@@ -369,6 +440,10 @@ Ràng buộc bắt buộc:
   tự viết. House rule là nơi các bất biến của hệ thống sống; principal thêm rule riêng ở `rules`.
 - **`rules` có giới hạn**: mỗi rule ≤ 240 ký tự, tối đa 20 rule. §4.9 — context là hữu hạn, và một
   agent definition không được lặng lẽ ăn hết ngân sách.
+- **`skills`, `subagents`, `mcpServers` khai bằng tên, không bằng đường dẫn hay lệnh.** Một custom
+  agent không được tự mô tả cách khởi chạy một MCP server hay tự trỏ ra một skill root mới — nó
+  chọn trong tập principal đã khai và đã trust. Cùng luật với `houseRules`: chọn từ tập dựng sẵn,
+  không tự do viết. Cả ba trường vào `definitionHash`, nên nới quyền là một lần trust lại (§5.6).
 - **`instructionSpec` phải được lưu như dữ liệu trên `AgentDefinition`**, không chỉ đóng trong
   closure. Lý do rất cụ thể: `canonicalize` (`src/execution/execution-policy.ts:18`) hash hàm bằng
   `.toString()`. Mọi custom agent dùng chung một closure sẽ cho **cùng một chuỗi hàm** — hash mất
@@ -395,6 +470,11 @@ Cưỡng chế lúc load, trước `createAgentRegistry`:
 | `reportsTo` | Bắt buộc `main` |
 | `delegatesTo` | Bắt buộc `[]` — custom agent là lá ở v1 |
 | `tools` | ⊆ `TOOL_CATALOG` **và** ⊆ tool của `main` |
+| `skills` | ⊆ `SKILL_CATALOG` (§5.7; test giữ catalog khớp thư mục `skills/`). Không được thêm skill root mới — root là một quyền đọc, §4.4. Bắt buộc đi cùng tool `Skill`, và ngược lại |
+| `subagents` | ⊆ `SUBAGENT_CATALOG`, **rỗng ở v1** nên mọi grant đều bị từ chối. Tool của subagent phải ⊆ tool của agent cấp nó. Catalog mở sau khi `alp agent test` tầng 2–3 tồn tại (§10.3 — nay đã có ở `test/agents/agent-test-tiers.test.ts`) |
+| `mcpServers` | ⊆ `MCP_SERVER_CATALOG` (rỗng ở v1). `egress` là trường bắt buộc của mỗi entry, đi vào policy snapshot và in trong bảng Authority; `alp agent add` sẽ in nó khi có (§5.6) |
+| `autoCompactTokens` | Map theo runtime (`{ claude?, codex? }`), cùng khuôn với `model` và `reasoningEffort` — ngân sách đi theo model chứ không theo vai một mình. Mỗi phía: 100 000–1 000 000 token nguyên **và** không vượt cửa sổ context của chính model phía đó (`MODEL_CONTEXT_WINDOWS`); vượt là `INVALID_AUTO_COMPACT_LIMIT` lúc load, vì một ngưỡng transcript không bao giờ chạm tới chỉ làm runtime rơi về chốt cứng của nó trong im lặng. Phía bỏ trống nhận **90% cửa sổ của model phía đó**, do ALP tự tính chứ không nhường cho runtime, vì hai runtime nén ở hai chỗ khác nhau. Biên chung là biên Claude công bố cho `autoCompactWindow`; Codex không công bố biên nào cho `model_auto_compact_token_limit` |
+| `model` / `reasoningEffort` | Bắt buộc khai đủ hai phía, nhưng với tám vai built-in phần khai đó chỉ còn là chỗ dựa: **nấc** (`low`/`medium`/`high`/`ultra`/`puck`, §4.1 architecture) ghim đúng **một** model cho mỗi vai và ghi đè lúc phóng. Vì mỗi vai chỉ còn một model, **model quyết định runtime** — không còn ai chọn CLI, nên custom agent phải khai model mà `MODEL_RUNTIMES` biết. Cùng một definition chạy năm model khác nhau, nên `ExecutionPolicy.mode` phải ghi lại nấc đã chạy — không thì `policy.json` mô tả một execution mà nó không mô tả nổi. Nấc gõ sai dừng ngay chứ không rơi về mặc định |
 | `memory.write` | Chỉ `private:<id>` |
 | `memory.read` | `shared`, `shared:*`, `project:*`, `private:<id>` |
 | `workspace.writeRoots` | Rỗng, **trừ khi** principal approve — §6 |
@@ -746,11 +826,17 @@ trong doc.
 | Có extension nào tự quản execution loop / cancellation / delegation? | Runtime boundary đang vỡ |
 | Trace được execution này từ parent xuống child và tool? | Chưa đạt chuẩn runtime |
 | Thêm được bao nhiêu token vào context, ai chịu ngân sách đó? | §4.9 đang bị bỏ qua |
+| Agent này tự đủ cho mục đích của nó, hay đang mượn phương tiện của agent khác? | Ranh giới Agent/subagent ở §0 đang nhoè |
+| Gỡ hết subagent và MCP của agent này, nó còn làm được việc ở mức thấp hơn không? | Subagent đang là điều kiện chứ không phải tối ưu hoá — §4.6 |
+| Grant mới này có deny-path test không? | Trần capability mới chỉ là lời hứa trong doc — §10.3 |
 
 ### 10.2. Milestone — bằng chứng, không phải sơ đồ
 
 Doc này chỉ được coi là đang thành hiện thực khi các mốc sau đo được:
 
+- **M0 — Công cụ test agent.** `alp agent test <id>` chạy được tầng 1–3 của §10.3 trên cả 8 agent
+  built-in. *Bằng chứng: cho nó chạy trên commit trước bản vá 2026-09-04 thì đỏ ở đúng hai lỗi
+  chặn đã tìm ra, chạy trên commit sau thì xanh.*
 - **M1 — Portability thật.** Cùng một agent `review` chạy qua Claude và qua Codex, sinh output khớp
   cùng một `OutputContract`, và hai policy trace so sánh được cạnh nhau. *Bằng chứng: một test so
   sánh hai trace.*
@@ -764,8 +850,36 @@ Doc này chỉ được coi là đang thành hiện thực khi các mốc sau đ
 - **M4 — Nợ capability đã trả.** `TOOL_CATALOG` không còn là từ vựng của core;
   `execution-bridge.ts` không còn map `apply_patch` → `Write`. *Bằng chứng: grep sạch.*
 
-Thứ tự đề xuất: **M2 → M3 → M1 → M4.** M2 và M3 tạo giá trị trực tiếp cho principal; M4 là nợ kiến
-trúc nên trả khi đã có đủ áp lực từ hai runtime, không phải trước.
+Thứ tự đề xuất: **M0 → M2 → M3 → M1 → M4.** M0 đứng trước vì M2 là mở cho principal viết identity
+chạy với quyền thật — không có deny-path test thì trần capability ở §5.5 không kiểm chứng được. M2
+và M3 tạo giá trị trực tiếp cho principal; M4 là nợ kiến trúc nên trả khi đã có đủ áp lực từ hai
+runtime, không phải trước.
+
+### 10.3. Công cụ test cho agent
+
+Custom agent (§5) nghĩa là principal viết identity mà không build lại binary, và §0 vừa mở rộng
+identity đó thêm ba loại phương tiện. Không có công cụ test, mỗi agent mới là một lần thử trực tiếp
+trên việc thật — đúng thứ mà fail-closed sinh ra để tránh. Nên `alp agent test` là **điều kiện để mở
+§5**, không phải tiện ích thêm vào sau.
+
+Bốn tầng, rẻ trước đắt sau, dừng ở tầng đầu tiên đỏ:
+
+| Tầng | Kiểm gì | Cần model? |
+|---|---|---|
+| **1. Static** | schema, trần capability (§5.5), id trùng built-in, workflow reachable + terminal, ngân sách rule/prompt, symlink escape, skill/MCP tên lạ | Không |
+| **2. Dry-run prepare** | `ExecutionService.prepare` chạy thật rồi dừng trước spawn: in policy snapshot, capsule, tập skill/subagent/MCP đã resolve, và launch spec của **cả hai** runtime để diff cạnh nhau | Không |
+| **3. Deny-path** | Mỗi grant vượt trần phải deny **đúng mã lỗi**, không chỉ "thất bại": workspace ngoài root, private memory của vai khác, tool ngoài catalog, MCP chưa trust, subagent không khai báo | Không |
+| **4. Live** | Một task cố định chạy thật trên cả hai runtime; so output với `OutputContract`, so hai policy trace | Có — chạy khi definition đổi, không chạy mỗi commit |
+
+Tầng 2 phải in ra đúng ba thứ principal cần thấy trước khi trust: **quyền** (bảng Authority đúng như
+agent sẽ đọc), **egress** (MCP nào ra mạng, có `WebFetch`/`WebSearch` không), và **chi phí** (model,
+effort, tập skill sẽ vào context cùng token của nó).
+
+Và nó phải chạy được trên agent **built-in**, không chỉ custom. Hai lỗi chặn tìm thấy khi rà soát
+2026-09-04 — ba vai `readRoots: []` không delegate được, và `"."` canonicalize theo cwd của launcher
+nên `--project` ngoài cwd luôn deny — nằm gọn trong tầng 2 và tầng 3, và cả hai sống sót qua 336
+unit test vì `test/policy/` dựng registry giả với root tuyệt đối. Đó là bằng chứng cụ thể rằng tầng
+2–3 không trùng với unit test hiện có, chứ không phải một lớp kiểm tra cho đẹp đội hình.
 
 ---
 
@@ -784,6 +898,9 @@ phương án ngang nhau về giá trị — nới ra sau rẻ hơn thu lại.
 | 6 | **Hỗ trợ cả `.skillref`** cạnh symlink và thư mục thật | ~15 dòng loader, gỡ hẳn rào Windows và các checkout git không giữ symlink |
 | 7 | **Giữ deny** cho specialist, kể cả khi có TTY | TTY không chứng minh có người đang nhìn; và lá hỏi được thì prompt injection có thể tự chế câu hỏi để dụ approve. Approval đi lên theo cây — §6.3 |
 | 8 | **Hỗ trợ N và N-1**, auto-migrate trong bộ nhớ lúc load; ghi lại file chỉ khi principal chạy `alp agent migrate` | Không im lặng sửa file trong repo của principal. Version < N-1 ⇒ deny kèm hướng dẫn |
+| 9 | **Agent ≠ subagent** (§0). Thành viên agents team luôn là Agent có identity đầy đủ — mục đích riêng cộng tool, skill, subagent, MCP, memory, workspace của riêng nó | Một từ dùng cho hai thứ ở hai tầng enforcement khác nhau: cái đi qua `PolicyEngine` từng lần, và cái chỉ được cấp một lần lúc prepare. Bản nháp §4.6 trộn đúng hai cái đó |
+| 10 | **Subagent là in-process của runtime**, khai trong definition ngang hàng skill và MCP — không phải một execution con do ALP spawn | Execution con đã có tên: đó là delegation. Thêm loại execution con thứ hai không identity sẽ đẻ ra hai đường làm cùng một việc, và đường thứ hai không trace được (§4.10) |
+| 11 | **`alp agent test` (§10.3) chặn trước §5** — không mở custom agent khi chưa có tầng 1–3 | Custom agent là identity do principal viết, chạy với quyền thật. Không có deny-path test thì trần capability ở §5.5 chỉ là lời hứa trong doc |
 
 Ba hệ quả của các quyết định trên cần ghi nhận vì chúng tạo ma sát thật:
 
@@ -805,3 +922,7 @@ Ba thứ dưới đây không quyết được bằng lập luận, chỉ quyế
    case thật cần cây sâu hai tầng, không phải một use case tưởng tượng ra được.
 3. **Ngưỡng trả nợ capability (M4).** Nợ ở §4.5 là thật, nhưng thời điểm trả phụ thuộc mức đau khi
    thêm tool mới cho cả hai runtime. Đo bằng số lần phải sửa `normalizedTool`.
+4. **Agent built-in nào được cấp subagent, và có nên cấp không.** Trần §5.5 đã khoá `subagents: []`
+   cho custom agent, nhưng `main` thì đã delegate được sang 7 Agent — subagent riêng cho nó là thêm
+   năng lực hay thêm một đường trùng lặp không trace được, chưa trả lời bằng lập luận được. Đo bằng
+   §10.3 tầng 2: in chi phí context và token của cả hai đường rồi so.

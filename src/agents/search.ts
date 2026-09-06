@@ -10,8 +10,14 @@ export const searchAgent = defineAgent({
   reasoningEffort: { claude: "low", codex: "low" },
   reportsTo: "main",
   delegatesTo: [],
+  // Một cuộc tìm phình tới đây là đã hỏng; nén là cách hỏng rẻ hơn. Bằng nhau hai phía:
+  // trần này nói về việc tìm kiếm, không về model.
+  autoCompactTokens: { claude: 150_000, codex: 150_000 },
   capabilities: {
     tools: ["Read", "Glob", "Grep", "Bash", "Skill"],
+    skills: ["gkg", "repomix"],
+    subagents: [],
+    mcpServers: [],
     memory: {
       read: ["shared", "project:*", "private:search"],
       write: ["private:search"],

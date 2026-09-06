@@ -89,6 +89,11 @@ việc nhiều bước hoặc có đánh đổi. OpenAI nói rõ **không có á
 Đã deprecated, đừng dùng mới: `gpt-5.4` (→ Terra), `gpt-5.4-mini` (→ Luna).
 `gpt-5.5` còn chạy nhưng thang effort dừng ở `xhigh`.
 
+**`gpt-6-astra`** (`oracle` ở nấc `ultra` — bảng dial, `docs/architecture.md`) — thêm
+2026-09-06, **giá và effort scale
+chưa xác nhận qua nguồn chính thức**. `model-context.ts` tạm mượn cửa sổ context 272K của
+họ Sol/Terra/Luna; sửa lại ngay khi `developers.openai.com/api/docs/pricing` lên số thật.
+
 ---
 
 ## 4. Ma trận định tuyến
@@ -108,7 +113,7 @@ vẫn ở Claude Code; một câu hỏi dễ nhưng cần đào sâu vẫn sang 
 | Context summarization cho thread dài | Compaction · `gpt-5.6-sol` · `medium` |
 | Fast title generation cho thread | Titling · `gpt-5.6-luna` · `low` |
 | Tìm code local | Search · `gpt-5.6-terra` · `low` |
-| Code review theo một concern | Review · `gpt-5.5` · `medium` |
+| Code review theo một concern | Review · `gpt-5.6-terra` · `medium` |
 | Khảo sát rộng nhưng nông, chỉ cần kết luận | `codex exec -m gpt-5.6-terra` |
 | — *ranh giới* — | |
 | Điều phối, giữ bức tranh tổng thể | **Phở (Opus 5)** — tự làm |
@@ -177,15 +182,20 @@ Việc dài hoặc chạy song song dùng `--background`, rồi theo dõi bằng
 ALP không dùng Codex role profile. Runtime adapter luôn truyền model, effort và sandbox từ
 execution snapshot; `alp doctor` kiểm compiled registry và build-source drift.
 
-**`main` chạy được trên cả hai runtime** (`alp --runtime codex`) — đường phụ khi muốn tiết
-kiệm quota Claude. Hai điểm khác specialist nằm trong `src/agents/main.ts`:
+**`main` chạy được trên cả hai runtime, nhưng không ai chọn runtime nữa** (2026-09-06): nấc
+ghim đúng một model cho `main`, và model quyết định CLI. `--mode medium|puck` cho `main`
+`gpt-5.6-sol` → Codex; `--mode high|ultra` cho `claude-opus-5` và `--mode low` cho
+`claude-haiku-4-5` → Claude Code. Muốn tiết kiệm quota Claude thì hạ/đổi nấc, không có cờ
+runtime để bật.
 
-- Model Codex là `model.codex` (`gpt-5.6-sol`); Claude là `model.claude`.
+Hai điểm khác specialist nằm trong `src/agents/main.ts`:
+
 - Sandbox là `workspace-write`, nhưng **chỉ** ở workspace đã đăng ký machine-local.
   Ở cwd lạ main vẫn `read-only` như mọi vai khác.
+- Delegation: chỉ `main` có `delegatesTo` khác rỗng.
 
 Đổi lại, Codex không nạp được skill `alp:plan`/`alp:cook` (marketplace của Claude Code) —
-việc cần hai skill đó thì phải chạy main trên Claude.
+việc cần hai skill đó thì phải chạy main ở nấc Claude (`high`, `ultra`, hoặc `low`).
 
 Trong phiên tương tác: `/model` để đổi model và effort.
 

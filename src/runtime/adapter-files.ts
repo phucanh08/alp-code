@@ -1,6 +1,6 @@
 import { access, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { basename, delimiter, dirname, join, resolve } from "node:path";
-import type { ExecutionArtifactPaths, IdentityCapsule, PreparedExecution } from "../execution/types";
+import type { ExecutionArtifactPaths, ExecutionPolicy, IdentityCapsule, PreparedExecution } from "../execution/types";
 import { renderSessionContext } from "./render-session-context";
 import { renderTaskInput } from "./render-task-input";
 
@@ -54,6 +54,8 @@ export interface RuntimeContextFiles {
   readonly sessionContextFile: string;
   /** Written only for a headless run — an interactive session's first turn is the principal's. */
   readonly taskFile: string | null;
+  /** The same text. Kept here for the role that has no way to open the file. */
+  readonly taskText: string | null;
 }
 
 /**
@@ -74,25 +76,32 @@ export async function writeRuntimeContextFiles(
     join(artifacts.runtimeDirectory, "session-context.md"),
     renderSessionContext(capsule, policy),
   );
-  const taskFile = interactive
+  const taskText = interactive ? null : renderTaskInput(capsule);
+  const taskFile = taskText === null
     ? null
-    : await atomicRuntimeFile(
-      join(artifacts.runtimeDirectory, "task.md"),
-      renderTaskInput(capsule),
-    );
-  return Object.freeze({ sessionContextFile, taskFile });
+    : await atomicRuntimeFile(join(artifacts.runtimeDirectory, "task.md"), taskText);
+  return Object.freeze({ sessionContextFile, taskFile, taskText });
 }
 
 /**
- * The positional argument that turns a task file into the session's first turn.
+ * The positional argument that turns a task into the session's first turn.
  *
- * Empty for an interactive launch. That emptiness is the whole point of this change, so it
- * is expressed once here rather than repeated as a conditional in each adapter.
+ * Empty for an interactive launch. That emptiness is the whole point of the split, so it is
+ * expressed once here rather than repeated as a conditional in each adapter.
+ *
+ * A path is only a task for a role that may open it. `titling` holds no tools at all and
+ * every other role's file reads are ACL-gated, so pointing such a role at `task.md` makes
+ * its first move the one thing it cannot do. It gets the task itself instead — the file is
+ * still written, because it is the artefact of record for the execution.
  */
-export function taskArguments(files: RuntimeContextFiles): readonly string[] {
-  return files.taskFile === null
-    ? Object.freeze([])
-    : Object.freeze([`ALP task is in ${files.taskFile}; execute it.`]);
+export function taskArguments(
+  files: RuntimeContextFiles,
+  policy: Pick<ExecutionPolicy, "allowedTools">,
+): readonly string[] {
+  if (files.taskFile === null || files.taskText === null) return Object.freeze([]);
+  return Object.freeze(policy.allowedTools.includes("Read")
+    ? [`ALP task is in ${files.taskFile}; execute it.`]
+    : [files.taskText]);
 }
 
 export function baseRuntimeEnvironment(

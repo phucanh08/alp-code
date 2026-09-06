@@ -1,7 +1,8 @@
 import { delimiter, dirname, join } from "node:path";
+import { defaultAutoCompactTokens } from "../agents/model-context";
 import { agentRegistry } from "../agents/registry";
 import { atomicRuntimeFile, baseRuntimeEnvironment, compactBridgeEnabled, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
-import { codexSandboxLines, tomlString } from "./permission-rules";
+import { codexMcpOverrides, codexSandboxLines, tomlString } from "./permission-rules";
 import type { PrepareRuntimeInput, RuntimeAdapter, RuntimeHealth, RuntimeLaunchSpec } from "./runtime-adapter";
 
 export interface CodexRuntimeAdapterOptions {
@@ -124,6 +125,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
       join(artifacts.runtimeDirectory, "skill-roots.json"),
       `${JSON.stringify(skillRoots.split(delimiter).filter(Boolean), null, 2)}\n`,
     );
+    const autoCompactTokens = policy.autoCompactTokens[this.name] ?? defaultAutoCompactTokens(input.model);
     const env = {
       ...baseRuntimeEnvironment(capsule, contextFiles, artifacts),
       ALP_EXECUTION_ROOT: dirname(artifacts.directory),
@@ -131,6 +133,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
       ALP_IDENTITY_CAPSULE: capsuleFile,
       ALP_RUNTIME_CONFIG: configFile,
       ALP_SKILL_ROOTS: skillRoots,
+      ALP_MODE: policy.mode,
       ...(policy.workspaceMode === "read-only" ? { ALP_READONLY_DIRS: capsule.activeWorkspace } : {}),
     };
     const command = (await resolveRuntimeCommand("codex", this.platform, this.env))
@@ -148,6 +151,15 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
         "-c", `hooks.Stop=${stopHooks}`,
         ...(bridgeEnabled && this.compact.preCompact ? ["-c", `hooks.PreCompact=${preCompactHooks}`] : []),
         ...(bridgeEnabled && this.compact.postCompact ? ["-c", `hooks.PostCompact=${postCompactHooks}`] : []),
+        // Same reason the hooks ride here: `codex-config.toml` is ALP's file, not the one
+        // Codex loads. Vai không khai thì ALP tự tính 90% cửa sổ model — trùng đúng mặc định
+        // của Codex, nhưng tính ở đây thì Claude cũng nén ở cùng chỗ.
+        ...(autoCompactTokens === null
+          ? []
+          : ["-c", `model_auto_compact_token_limit=${autoCompactTokens}`]),
+        // Granted MCP servers. Codex has no in-process subagent, so a `subagents` grant is
+        // simply not translated here — §4.6: subagent là tối ưu hoá, không phải điều kiện.
+        ...codexMcpOverrides(policy),
         // Đối xứng với `--dangerously-skip-permissions` của Claude: phiên interactive bỏ approval
         // và sandbox. `-s` bị bỏ đi chứ không để lẫn — Codex không báo lỗi khi có cả hai (chỉ
         // `--approve-for-me` mới khai `conflicts_with`), cờ bypass thắng và `-s` thành dòng chết
@@ -158,7 +170,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
         // Measured on codex-cli 0.149.0: a positional PROMPT becomes a `role: user` message,
         // i.e. turn 1. Interactive must not have one — identity reaches the model as a
         // `role: developer` message from the SessionStart hook, ahead of the user's turn.
-        ...taskArguments(contextFiles),
+        ...taskArguments(contextFiles, policy),
       ]),
       cwd: capsule.activeWorkspace,
       env: Object.freeze(env),

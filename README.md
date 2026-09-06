@@ -58,7 +58,7 @@ Installer cần Git và Node.js >= 18. Mặc định nó clone rồi resolve tag
 | Theo dõi một nhánh (dev, bỏ qua release) | `bash -s -- --branch dev` hoặc `ALP_BRANCH=…` | `$env:ALP_BRANCH = "dev"` |
 
 Chạy lại installer hoặc `alp update` sẽ resolve + checkout tag GitHub Release mới nhất rồi
-rebuild. Update backup và khôi phục nguyên trạng `memory/` cùng runtime preference.
+rebuild. Update backup và khôi phục nguyên trạng `memory/` cùng nấc đã ghi nhớ.
 Staged/tracked change chưa commit làm update dừng; ALP không tự merge hay clobber
 source. Đặt `--branch`/`ALP_BRANCH` để theo dõi trực tiếp một nhánh thay vì release (chỉ dùng
 khi phát triển) — khi đó `alp update` quay lại hành vi fast-forward pull như cũ.
@@ -73,10 +73,15 @@ tại. Nếu có bản mới, ALP chỉ in một dòng gợi ý `alp update`; n�
 ```bash
 cd ~/code/my-app
 alp init                        # đăng ký project hiện tại
-alp                             # chọn runtime tương tác
-alp --runtime claude
-alp --runtime codex
+alp                             # chọn nấc tương tác (menu ↑/↓)
+alp --mode high
+alp --mode puck
 ```
+
+Nấc (`low` · `medium` · `high` · `ultra` · `puck`) là lựa chọn duy nhất lúc mở phiên: nó ghim
+đúng **một** model cho từng vai, và model quyết định CLI nào chạy vai đó (`claude-*` → Claude
+Code, `gpt-*` → Codex). Không có `--runtime`; bốn nấc đầu xếp theo độ khó của việc, `puck`
+chạy toàn Codex. Xem bảng model từng nấc ở `docs/architecture.md` §4.1.
 
 `alp init` canonicalize và đăng ký project trong `~/.alp/projects.json`, sinh lại tài liệu
 identity trong `.alp/agents/`, rồi ghi
@@ -109,17 +114,19 @@ Project đã đăng ký cho phiên `main` quyền `workspace-write`; cwd chưa �
 `read-only`. `alp deinit` gỡ registration và dọn artifact cũ do các bản ALP trước tạo ra,
 nhưng không xoá memory của project.
 
-Runtime dùng cho phiên main nhớ được giữa các lần chạy:
+Nấc dùng cho phiên main nhớ được giữa các lần chạy (`~/.alp/mode.json`):
 
 ```bash
-alp runtime show
-alp runtime set codex
+alp mode show
+alp mode set high
 ```
+
+Thứ tự quyết định: `--mode` → `ALP_MODE` → `alp mode set` → menu trên TTY → `medium`.
 
 ## Delegation
 
 ```bash
-alp delegate search --project /path/to/app --runtime codex --background -- "Find auth entrypoint"
+alp delegate search --project /path/to/app --background -- "Find auth entrypoint"
 alp delegate review --project /path/to/app -- "Review the current diff"
 
 alp delegation status exec_...
@@ -220,7 +227,7 @@ src/
   runtime/      Claude/Codex launch-spec adapters
   backend/      runtime-neutral execution lifecycle (child process + supervisor)
   delegation/   request normalization, execution tracking, result routing
-  cli/          alp commands và runtime selection
+  cli/          alp commands và mode selection
 scripts/        stable CJS wrappers, maintenance, installers và compatibility tests
 hooks/          execution-policy/workflow bridges
 scaffold/       memory skeleton cho clean install
@@ -239,7 +246,7 @@ for f in scripts/test-*.cjs; do node "$f" || break; done
 
 `npm test` chạy unit, contract, integration và E2E. Năm suite E2E (`test/e2e/`) dựng fake
 runtime binaries cho `claude`/`codex` để kiểm launch contract, delegation, memory isolation,
-runtime selection và compact bridge (pin → fixture compaction → reinject) mà không gọi model
+mode selection và compact bridge (pin → fixture compaction → reinject) mà không gọi model
 trả phí. Chín script `scripts/test-*.cjs` giữ phần
 cross-platform: CLI link, Codex role, delegation, execution hooks, runtime/Windows
 installer, update và uninstall — trong đó uninstall có process-level fixture để chứng minh

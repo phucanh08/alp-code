@@ -24,7 +24,10 @@ if (input.includes("--dry-run") || input.includes("--anchor")) {
 const output = ["delegate", role];
 for (let index = 0; index < input.length; index += 1) {
   const value = input[index];
-  if (value === "--kind") output.push("--runtime", input[++index]);
+  if (value === "--kind") {
+    console.error("ERROR     `--kind` chọn runtime, mà runtime giờ là hệ quả của nấc; dùng `alp mode set <nấc>` hoặc ALP_MODE");
+    process.exit(2);
+  }
   else if (value === "--pane") output.push("--background");
   else if (value === "--exec") continue;
   else if (value === "--release") {

@@ -38,6 +38,9 @@ function role(
     delegatesTo: id === "main" ? ["search"] : [],
     capabilities: {
       tools,
+      skills: [],
+      subagents: [],
+      mcpServers: [],
       memory: { read: ["shared", `private:${id}`], write: [`private:${id}`] },
       workspace: {
         readRoots: ["/workspace"],
@@ -183,6 +186,9 @@ describe("ExecutionService", () => {
       workspace,
       workspaceMode: "read-only",
       allowedTools: ["Read"],
+      skills: [],
+      subagents: [],
+      mcpServers: [],
       memory: { read: ["shared", "private:search"], write: ["private:search"] },
     });
 

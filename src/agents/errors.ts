@@ -6,7 +6,13 @@ export type AgentRegistryErrorCode =
   | "INVALID_DELEGATION"
   | "INVALID_MEMORY_GRANT"
   | "INVALID_WORKSPACE_GRANT"
-  | "UNKNOWN_TOOL";
+  | "UNKNOWN_TOOL"
+  | "UNKNOWN_SKILL"
+  | "UNKNOWN_SUBAGENT"
+  | "UNKNOWN_MCP_SERVER"
+  | "INVALID_SKILL_GRANT"
+  | "DUPLICATE_GRANT"
+  | "INVALID_AUTO_COMPACT_LIMIT";
 
 export class AgentRegistryError extends Error {
   readonly code: AgentRegistryErrorCode;
