@@ -48,14 +48,28 @@ describe("mode dial — loadout", () => {
   it("dials the working seat up across the four levels", () => {
     expect(MODE_PROFILES.low.roles.main.model).toBe("claude-haiku-4-5");
     expect(MODE_PROFILES.medium.roles.main.model).toBe("gpt-5.6-sol");
-    expect(MODE_PROFILES.high.roles.main.reasoningEffort).toBe("xhigh");
+    expect(MODE_PROFILES.high.roles.main.model).toBe("claude-opus-5");
+    expect(MODE_PROFILES.high.roles.main.reasoningEffort).toBe("high");
     expect(MODE_PROFILES.ultra.roles.main.model).toBe("claude-opus-5");
   });
 
-  /** `high` cầm bút bằng Sol và soi lại bằng Opus 5; `ultra` đảo lại — đúng khuôn Amp. */
-  it("swaps the two strongest models between the seats at the top two levels", () => {
-    expect(MODE_PROFILES.high.roles.oracle.model).toBe("claude-opus-5");
-    expect(MODE_PROFILES.ultra.roles.oracle.model).toBe("gpt-5.6-sol");
+  /** `oracle` luôn đứng ở runtime đối diện `main` — người được hỏi khi bí phải là một cách
+   * nhìn khác, không phải cùng model tự hỏi lại chính nó. */
+  it("keeps the oracle seat on the runtime opposite main at every dial level", () => {
+    for (const mode of ["low", "medium", "high", "ultra"] as const) {
+      const mainRuntime = runtimeForModel(MODE_PROFILES[mode].roles.main.model);
+      const oracleRuntime = runtimeForModel(MODE_PROFILES[mode].roles.oracle.model);
+      expect(oracleRuntime, mode).not.toBe(mainRuntime);
+    }
+  });
+
+  /** `high` và `ultra` cùng cầm bút bằng Opus 5; khác nhau ở oracle — `ultra` leo lên model
+   * mới nhất (Astra) thay vì chỉ tăng effort. */
+  it("escalates the oracle model rather than main between high and ultra", () => {
+    expect(MODE_PROFILES.high.roles.oracle.model).toBe("gpt-5.6-sol");
+    expect(MODE_PROFILES.high.roles.oracle.reasoningEffort).toBe("xhigh");
+    expect(MODE_PROFILES.ultra.roles.oracle.model).toBe("gpt-6-astra");
+    expect(MODE_PROFILES.ultra.roles.oracle.reasoningEffort).toBe("high");
   });
 
   /** Sáu vai ngoài trục độ khó không đổi qua bốn nấc dial: model của chúng là việc, không phải mức cố gắng. */
@@ -92,7 +106,7 @@ describe("mode dial — resolution", () => {
     expect(modelForMode(main, "ultra")).toBe("claude-opus-5");
     expect(runtimeForMode(main, "ultra")).toBe("claude");
     expect(modelForMode(main, "low")).toBe("claude-haiku-4-5");
-    expect(reasoningEffortForMode(main, "high")).toBe("xhigh");
+    expect(reasoningEffortForMode(main, "high")).toBe("high");
     expect(runtimeForMode(main, "puck")).toBe("codex");
     // Một nấc trộn hai CLI trong cùng phiên — Amp cũng vậy.
     expect(runtimeForMode(search, "ultra")).toBe("codex");

@@ -178,7 +178,7 @@ Một model cho mỗi vai kéo theo hệ quả lớn nhất của thiết kế n
 `claude-*` phóng Claude Code, `gpt-*` phóng Codex CLI, tra qua bảng `MODEL_RUNTIMES` viết tay
 trong `model-context.ts` (không đoán theo prefix — một tên lệch quy ước mà đoán sai thì phóng
 nhầm CLI trong im lặng). Không còn bước "chọn runtime rồi tra model": nấc là lựa chọn duy
-nhất, và một nấc trộn được hai CLI trong cùng một phiên — `high` chạy `main` trên Codex và
+nhất, và một nấc trộn được hai CLI trong cùng một phiên — `medium` chạy `main` trên Codex và
 `oracle` trên Claude.
 
 Bốn nấc dial xoay hai ghế mà độ khó chạm tới — `main` (người làm) và `oracle` (người được hỏi
@@ -187,15 +187,17 @@ khi bí):
 | Nấc | `main` | effort | `oracle` | effort |
 |---|---|---|---|---|
 | `low` | claude-haiku-4-5 | low | gpt-5.6-sol | high |
-| `medium` (mặc định) | gpt-5.6-sol | medium | gpt-5.6-sol | high |
-| `high` | gpt-5.6-sol | xhigh | claude-opus-5 | high |
-| `ultra` | claude-opus-5 | high | gpt-5.6-sol | xhigh |
+| `medium` (mặc định) | gpt-5.6-sol | high | claude-opus-5 | high |
+| `high` | claude-opus-5 | high | gpt-5.6-sol | xhigh |
+| `ultra` | claude-opus-5 | high | gpt-6-astra | high |
 | `puck` | gpt-5.6-sol | xhigh | gpt-5.6-sol | xhigh |
 
 Sáu vai còn lại giữ nguyên qua cả bốn nấc dial — đúng chỗ Amp ghim cứng subagent — vì model
 của chúng là **một phần công việc** (`search` cần retrieval nhanh, `titling` viết một dòng)
-chứ không phải một mức cố gắng. `high` và `ultra` **đảo chỗ** hai model mạnh nhất giữa hai
-ghế thay vì cộng thêm: ở mức đó thứ quyết định kết quả là con nào cầm bút.
+chứ không phải một mức cố gắng. `oracle` luôn đứng ở runtime **đối diện** `main`: người được
+hỏi khi bí phải là một cách nhìn khác, không phải cùng model tự hỏi lại chính nó. `high` và
+`ultra` cùng cầm bút bằng Opus 5 — khác nhau ở oracle, nơi `ultra` leo lên model mới nhất
+(Astra) thay vì chỉ cộng thêm effort.
 
 | Vai | `low`/`medium`/`high`/`ultra` | `puck` |
 |---|---|---|

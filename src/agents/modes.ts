@@ -16,7 +16,9 @@ import type {
  * Một model cho mỗi vai kéo theo một hệ quả lớn: **model quyết định runtime**. `claude-*`
  * phóng Claude Code, `gpt-*` phóng Codex CLI (`MODEL_RUNTIMES`). Không còn bước "chọn
  * runtime rồi tra model" — nấc là lựa chọn duy nhất, và một nấc có thể trộn hai CLI trong
- * cùng một phiên, đúng như Amp trộn (`high`: agent Sol, oracle Claude).
+ * cùng một phiên, đúng như Amp trộn. `oracle` luôn đứng ở runtime **đối diện** `main` — người
+ * được hỏi khi bí phải là một cách nhìn khác, không phải cùng model tự hỏi lại chính nó
+ * (vd `medium`: main Sol/Codex, oracle Opus 5/Claude).
  *
  * Bốn nấc dial chỉ xoay hai ghế mà độ khó chạm tới — `main` (người làm) và `oracle` (người
  * được hỏi khi bí). Sáu vai còn lại giữ nguyên qua cả bốn nấc, đúng chỗ Amp ghim cứng
@@ -77,16 +79,16 @@ export const MODE_PROFILES: Readonly<Record<ModeId, ModeProfile>> = Object.freez
     summary: "mặc định — việc thường ngày, sửa và đọc code trong một repo quen",
     roles: {
       ...FIXED_ROLES,
-      main: { model: "gpt-5.6-sol", reasoningEffort: "medium" },
-      oracle: { model: "gpt-5.6-sol", reasoningEffort: "high" },
+      main: { model: "gpt-5.6-sol", reasoningEffort: "high" },
+      oracle: { model: "claude-opus-5", reasoningEffort: "high" },
     },
   },
   high: {
     summary: "việc khó — refactor xuyên module, bug không tái hiện được ngay",
     roles: {
       ...FIXED_ROLES,
-      main: { model: "gpt-5.6-sol", reasoningEffort: "xhigh" },
-      oracle: { model: "claude-opus-5", reasoningEffort: "high" },
+      main: { model: "claude-opus-5", reasoningEffort: "high" },
+      oracle: { model: "gpt-5.6-sol", reasoningEffort: "xhigh" },
     },
   },
   ultra: {
@@ -94,7 +96,7 @@ export const MODE_PROFILES: Readonly<Record<ModeId, ModeProfile>> = Object.freez
     roles: {
       ...FIXED_ROLES,
       main: { model: "claude-opus-5", reasoningEffort: "high" },
-      oracle: { model: "gpt-5.6-sol", reasoningEffort: "xhigh" },
+      oracle: { model: "gpt-6-astra", reasoningEffort: "high" },
     },
   },
   puck: {

@@ -29,6 +29,7 @@ export const MODEL_RUNTIMES: Readonly<Record<string, RuntimeId>> = Object.freeze
   "gpt-5.6-sol": "codex",
   "gpt-5.6-terra": "codex",
   "gpt-5.6-luna": "codex",
+  "gpt-6-astra": "codex",
 });
 
 export function runtimeForModel(model: string): RuntimeId {
@@ -53,6 +54,9 @@ export const MODEL_CONTEXT_WINDOWS: Readonly<Record<string, number>> = Object.fr
   "gpt-5.6-sol": 272_000,
   "gpt-5.6-terra": 272_000,
   "gpt-5.6-luna": 272_000,
+  // Chưa có nguồn công bố chính thức — tạm lấy bằng cửa sổ đang hoạt động của họ Sol/Terra/Luna,
+  // sửa lại ngay khi có số thật.
+  "gpt-6-astra": 272_000,
 });
 
 /**

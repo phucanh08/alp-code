@@ -89,6 +89,11 @@ việc nhiều bước hoặc có đánh đổi. OpenAI nói rõ **không có á
 Đã deprecated, đừng dùng mới: `gpt-5.4` (→ Terra), `gpt-5.4-mini` (→ Luna).
 `gpt-5.5` còn chạy nhưng thang effort dừng ở `xhigh`.
 
+**`gpt-6-astra`** (`oracle` ở nấc `ultra` — bảng dial, `docs/architecture.md`) — thêm
+2026-09-06, **giá và effort scale
+chưa xác nhận qua nguồn chính thức**. `model-context.ts` tạm mượn cửa sổ context 272K của
+họ Sol/Terra/Luna; sửa lại ngay khi `developers.openai.com/api/docs/pricing` lên số thật.
+
 ---
 
 ## 4. Ma trận định tuyến
@@ -177,9 +182,9 @@ Việc dài hoặc chạy song song dùng `--background`, rồi theo dõi bằng
 ALP không dùng Codex role profile. Runtime adapter luôn truyền model, effort và sandbox từ
 execution snapshot; `alp doctor` kiểm compiled registry và build-source drift.
 
-**`main` chạy được trên cả hai runtime, nhưng không ai chọn runtime nữa** (2026-09-04): nấc
-ghim đúng một model cho `main`, và model quyết định CLI. `--mode medium|high|puck` cho `main`
-`gpt-5.6-sol` → Codex; `--mode ultra` cho `claude-opus-5` và `--mode low` cho
+**`main` chạy được trên cả hai runtime, nhưng không ai chọn runtime nữa** (2026-09-06): nấc
+ghim đúng một model cho `main`, và model quyết định CLI. `--mode medium|puck` cho `main`
+`gpt-5.6-sol` → Codex; `--mode high|ultra` cho `claude-opus-5` và `--mode low` cho
 `claude-haiku-4-5` → Claude Code. Muốn tiết kiệm quota Claude thì hạ/đổi nấc, không có cờ
 runtime để bật.
 
@@ -190,7 +195,7 @@ Hai điểm khác specialist nằm trong `src/agents/main.ts`:
 - Delegation: chỉ `main` có `delegatesTo` khác rỗng.
 
 Đổi lại, Codex không nạp được skill `alp:plan`/`alp:cook` (marketplace của Claude Code) —
-việc cần hai skill đó thì phải chạy main ở nấc Claude (`ultra`, hoặc `low`).
+việc cần hai skill đó thì phải chạy main ở nấc Claude (`high`, `ultra`, hoặc `low`).
 
 Trong phiên tương tác: `/model` để đổi model và effort.
 

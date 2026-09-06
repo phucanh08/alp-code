@@ -21,17 +21,19 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   | Nấc | `main` | effort | `oracle` | effort |
   |---|---|---|---|---|
   | `low` | claude-haiku-4-5 | low | gpt-5.6-sol | high |
-  | `medium` (mặc định) | gpt-5.6-sol | medium | gpt-5.6-sol | high |
-  | `high` | gpt-5.6-sol | xhigh | claude-opus-5 | high |
-  | `ultra` | claude-opus-5 | high | gpt-5.6-sol | xhigh |
+  | `medium` (mặc định) | gpt-5.6-sol | high | claude-opus-5 | high |
+  | `high` | claude-opus-5 | high | gpt-5.6-sol | xhigh |
+  | `ultra` | claude-opus-5 | high | gpt-6-astra | high |
   | `puck` | gpt-5.6-sol | xhigh | gpt-5.6-sol | xhigh |
 
   Bốn nấc dial chỉ xoay hai ghế mà độ khó chạm tới: `main` (người làm) và `oracle` (người được
   hỏi khi bí). Sáu vai còn lại giống nhau qua cả bốn nấc — `search` gpt-5.6-terra, `librarian`
   gpt-5.6-sol, `read-thread` và `titling` claude-haiku-4-5, `review` và `compaction`
   claude-opus-5 — đúng chỗ Amp ghim cứng subagent: model của chúng là một phần công việc chứ
-  không phải một mức cố gắng. `high` và `ultra` **đảo chỗ** hai model mạnh nhất giữa hai ghế
-  thay vì cộng thêm: ở mức đó thứ quyết định kết quả là con nào cầm bút, con nào soi lại.
+  không phải một mức cố gắng. `oracle` luôn đứng ở runtime **đối diện** `main`: người được hỏi
+  khi bí phải là một cách nhìn khác, không phải cùng model tự hỏi lại chính nó. `high` và
+  `ultra` cùng cầm bút bằng Opus 5 — khác nhau ở oracle, nơi `ultra` leo lên model mới nhất
+  (`gpt-6-astra`) thay vì chỉ cộng thêm effort.
 
   **`puck` nằm ngoài trục độ khó**: toàn Codex ở cả tám vai (`read-thread`/`titling` sang
   gpt-5.6-luna, `review` sang gpt-5.6-terra). Dành cho máy chỉ cài `codex`, cho lúc hạn mức
@@ -46,9 +48,9 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   nấc của phiên cha, thay vì subagent lặng lẽ tụt về `medium` giữa một phiên `ultra`.
 
   **Đổi hành vi mặc định:** `main` trước đây là opus-5 (Claude) hoặc gpt-5.6-sol (Codex) @
-  high/xhigh. Mặc định mới `medium` cho `main` `gpt-5.6-sol` @ medium — tức phiên mặc định giờ
+  high/xhigh. Mặc định mới `medium` cho `main` `gpt-5.6-sol` @ high — tức phiên mặc định giờ
   chạy trên Codex CLI, không phải Claude Code. Muốn một phiên main do Claude cầm bút: `alp
-  --mode ultra` (Opus 5) hoặc `--mode low` (Haiku), hoặc `export ALP_MODE=ultra`.
+  --mode high|ultra` (Opus 5) hoặc `--mode low` (Haiku), hoặc `export ALP_MODE=ultra`.
 
   Một test giữ điều kiện mọi model của mọi nấc đều có mặt trong cả `MODEL_RUNTIMES` lẫn
   `MODEL_CONTEXT_WINDOWS` —

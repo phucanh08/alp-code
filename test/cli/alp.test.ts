@@ -175,7 +175,7 @@ describe("runMainSession", () => {
       "select:remembered",
       "prepare:principal->main:/project:workspace-write",
       "probe:codex",
-      "adapter:gpt-5.6-sol:medium",
+      "adapter:gpt-5.6-sol:high",
       "spawn:/project",
       "wait",
     ]);
