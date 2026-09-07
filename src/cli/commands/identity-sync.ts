@@ -3,15 +3,19 @@ import { join } from "node:path";
 import { renderIdentityDocument } from "../../agents/render-identity";
 import type { AgentDefinition, AgentRegistry } from "../../agents/types";
 
-/** Directory holding the generated per-role identity documents, relative to the repo root. */
-export const AGENT_DOCUMENT_DIRECTORY = join(".alp", "agents");
-
-export function agentDocumentPath(repoRoot: string, role: string): string {
-  return join(repoRoot, AGENT_DOCUMENT_DIRECTORY, `${role}.md`);
+export function agentDocumentPath(directory: string, role: string): string {
+  return join(directory, `${role}.md`);
 }
 
 export interface SyncIdentityInput {
-  readonly repoRoot: string;
+  /**
+   * Nơi đặt tài liệu identity — `~/.alp/agents` khi chạy thật (`agentsDirectory()`).
+   *
+   * Trước v0.9.0 đây là `<repoRoot>/.alp/agents`, tức nằm trong thư mục cài. Thư mục cài giờ
+   * là artifact bị thay nguyên khối mỗi lần update, nên tài liệu sinh ở đó sẽ biến mất đúng
+   * lúc hook SessionStart cần đọc chúng.
+   */
+  readonly directory: string;
 }
 
 export interface SyncIdentityDependencies {
@@ -19,7 +23,7 @@ export interface SyncIdentityDependencies {
 }
 
 /**
- * Regenerates `.alp/agents/<role>.md` for every role in the registry.
+ * Regenerates `<directory>/<role>.md` for every role in the registry.
  *
  * The registry stays the single source of truth; these files are a derived, machine-local
  * cache that exists purely so the SessionStart hook can stay fast and dependency-free.
@@ -29,11 +33,11 @@ export async function syncIdentityDocuments(
   input: SyncIdentityInput,
   dependencies: SyncIdentityDependencies,
 ): Promise<readonly string[]> {
-  const directory = join(input.repoRoot, AGENT_DOCUMENT_DIRECTORY);
+  const directory = input.directory;
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const written: string[] = [];
   for (const definition of dependencies.registry.list()) {
-    const file = agentDocumentPath(input.repoRoot, definition.id);
+    const file = agentDocumentPath(directory, definition.id);
     await writeFile(file, renderIdentityDocument(definition as AgentDefinition<unknown>), {
       encoding: "utf8",
       mode: 0o600,

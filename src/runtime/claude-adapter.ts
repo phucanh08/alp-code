@@ -1,6 +1,7 @@
 import { delimiter, dirname, join } from "node:path";
 import { defaultAutoCompactTokens } from "../agents/model-context";
 import { agentRegistry } from "../agents/registry";
+import { memoryRoot as resolveMemoryRoot } from "../state-paths";
 import { atomicRuntimeFile, baseRuntimeEnvironment, compactBridgeEnabled, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
 import { claudePermissions } from "./permission-rules";
 import type { PrepareRuntimeInput, RuntimeAdapter, RuntimeHealth, RuntimeLaunchSpec } from "./runtime-adapter";
@@ -52,7 +53,7 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
   }
 
   private memoryRoot(): string {
-    return this.env.ALP_MEMORY_ROOT ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "memory");
+    return resolveMemoryRoot(this.env);
   }
 
   async probe(): Promise<RuntimeHealth> {

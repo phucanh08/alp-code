@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { stateHome } from "../state-paths";
 
 const TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -21,7 +21,7 @@ export class FileUpdateCheckStore implements UpdateCheckStore {
   private readonly file: string;
 
   constructor(options: { readonly file?: string } = {}) {
-    this.file = options.file ?? join(homedir(), ".alp", "update-check.json");
+    this.file = options.file ?? join(stateHome(), "update-check.json");
   }
 
   async read(): Promise<UpdateCheckCache | null> {

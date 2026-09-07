@@ -13,6 +13,7 @@ const sandbox = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "alp-unin
 let failed = 0;
 try {
   testKeepsMemoryAndCleansIntegration();
+  testChannelAwareRemoval();
   testPurgeMemory();
   testRefusesCwdInsideRepo();
   testRefusesDirtyRepo();
@@ -34,22 +35,26 @@ function testMachineLocalProjectRegistry() {
 }
 
 if (failed) process.exit(1);
-console.log("OK               uninstall: 6 nhóm ca đều xanh");
+console.log("OK               uninstall: 8 nhóm ca đều xanh");
 
 function testKeepsMemoryAndCleansIntegration() {
   const repo = makeRepo("keep-memory");
+  const home = path.join(sandbox, "keep-home");
   const project = path.join(sandbox, "project");
-  const localAppData = path.join(sandbox, "local-app-data-keep");
+  const localAppData = path.join(home, "local-app-data");
   const bin = path.join(localAppData, "alp", "bin");
-  const env = { HOME: sandbox, USERPROFILE: sandbox, LOCALAPPDATA: localAppData, Path: `C:\\Windows;${bin}` };
-  const memoryFile = path.join(repo, "memory", "projects", "demo.md");
+  const env = { HOME: home, USERPROFILE: home, LOCALAPPDATA: localAppData, Path: `C:\\Windows;${bin}` };
+  const state = path.join(home, ".alp");
+  const memoryFile = path.join(state, "memory", "projects", "demo.md");
   fs.mkdirSync(path.dirname(memoryFile), { recursive: true });
   fs.writeFileSync(memoryFile, "important memory\n");
   makeGeneratedProjectConfig(project);
   CLI.installCli(repo, { env, platform: "win32" });
-  const runtimeState = path.join(sandbox, ".alp");
-  fs.mkdirSync(path.join(runtimeState, "executions", "exec_old"), { recursive: true });
-  fs.writeFileSync(path.join(runtimeState, "runtime"), "codex\n");
+  fs.mkdirSync(path.join(state, "executions", "exec_old"), { recursive: true });
+  fs.writeFileSync(path.join(state, "install.json"), '{"root":"x"}\n');
+  // `~/.alp` là nhà chung — những thứ dưới đây không phải của alp-code và phải sống sót.
+  fs.mkdirSync(path.join(state, "memories"), { recursive: true });
+  fs.writeFileSync(path.join(state, "SOUL.md"), "not ours\n");
 
   let removedPath = null;
   const result = U.uninstall(repo, {
@@ -63,23 +68,30 @@ function testKeepsMemoryAndCleansIntegration() {
       removedPath = dir;
       return "removed";
     },
-    runtimeStateRoot: runtimeState,
   });
 
-  check("uninstall xoá repo, CLI/PATH và config project", () => {
+  check("uninstall xoá bản cài, CLI/PATH và config project", () => {
     assert(!fs.existsSync(repo));
     assert(!fs.existsSync(path.join(bin, "alp.cmd")));
     assert.strictEqual(removedPath, bin);
     assert(!fs.existsSync(path.join(project, ".claude", "settings.local.json")));
     assert(!fs.existsSync(path.join(project, ".codex", "config.toml")));
   });
-  check("uninstall mặc định chuyển memory ra backup", () => {
+  check("uninstall mặc định chuyển memory ra backup cạnh ~/.alp", () => {
     assert(result.memoryBackup);
     assert.strictEqual(fs.readFileSync(path.join(result.memoryBackup, "projects", "demo.md"), "utf8"), "important memory\n");
-    assert(result.memoryBackup.endsWith(".memory-backup-20260822T010203Z"));
+    assert.strictEqual(result.memoryBackup, `${state}.memory-backup-20260822T010203Z`);
+    assert(!fs.existsSync(path.join(state, "memory")));
   });
-  check("uninstall gỡ compiled runtime/execution state", () => {
-    assert(!fs.existsSync(runtimeState));
+  check("uninstall gỡ state của alp-code trong ~/.alp", () => {
+    assert(!fs.existsSync(path.join(state, "executions")));
+    assert(!fs.existsSync(path.join(state, "install.json")));
+  });
+  // Đây là ca hồi quy đắt nhất của file này: bản trước xoá thẳng cả `~/.alp`, và từ khi
+  // memory dọn vào đó thì cách làm ấy đồng nghĩa với xoá dữ liệu người dùng.
+  check("uninstall không đụng thứ của người khác trong ~/.alp", () => {
+    assert.strictEqual(fs.readFileSync(path.join(state, "SOUL.md"), "utf8"), "not ours\n");
+    assert(fs.existsSync(path.join(state, "memories")));
   });
   check("cleanup CLI chạy lại vẫn an toàn", () => {
     const again = CLI.uninstallCli(repo, {
@@ -91,14 +103,76 @@ function testKeepsMemoryAndCleansIntegration() {
   });
 }
 
+/**
+ * Mỗi channel được gỡ theo đúng cách của nó.
+ *
+ * Bản npm là ca dễ sai nhất: thư mục nằm trong `node_modules` của npm, và `rm -rf` nó sau lưng
+ * npm để lại một entry ma khiến lần cài lại sau đó im lặng không làm gì.
+ */
+function testChannelAwareRemoval() {
+  const npmRoot = path.join(sandbox, "npm-prefix", "lib", "node_modules", "alp-code");
+  makeInstallAt(npmRoot);
+  const npmHome = path.join(sandbox, "npm-home");
+  const commands = [];
+  const npmResult = U.uninstall(npmRoot, {
+    env: { HOME: npmHome, USERPROFILE: npmHome },
+    cwd: sandbox,
+    force: true,
+    projectPaths: [],
+    runCommand(command, args) { commands.push([command, ...args].join(" ")); return { status: 0, error: null, stdout: "", stderr: "" }; },
+  });
+  check("bản npm được gỡ bằng npm uninstall -g, không rm -rf", () => {
+    assert.strictEqual(npmResult.channel, "npm");
+    assert.deepStrictEqual(commands, ["npm uninstall --global alp-code"]);
+    assert(fs.existsSync(npmRoot), "uninstall không được tự xoá thư mục do npm sở hữu");
+  });
+
+  // npm hỏng giữa chừng: memory đã dời đi phải quay về, không để dữ liệu tách khỏi bản cài.
+  const failHome = path.join(sandbox, "npm-fail-home");
+  const failMemory = path.join(failHome, ".alp", "memory");
+  fs.mkdirSync(failMemory, { recursive: true });
+  fs.writeFileSync(path.join(failMemory, "fact.md"), "still here\n");
+  check("npm uninstall thất bại thì memory quay về chỗ cũ", () => {
+    assert.throws(() => U.uninstall(npmRoot, {
+      env: { HOME: failHome, USERPROFILE: failHome },
+      cwd: sandbox,
+      force: true,
+      projectPaths: [],
+      runCommand() { return { status: 1, error: null, stdout: "", stderr: "EACCES" }; },
+    }), /npm uninstall -g alp-code` thất bại/);
+    assert.strictEqual(fs.readFileSync(path.join(failMemory, "fact.md"), "utf8"), "still here\n");
+  });
+
+  // Tarball: `current` và mọi version cùng đi, không chỉ version đang chạy.
+  const tarballHome = path.join(sandbox, "tarball-home");
+  const running = path.join(tarballHome, "versions", "v1.0.0");
+  makeInstallAt(running);
+  makeInstallAt(path.join(tarballHome, "versions", "v0.9.0"));
+  fs.symlinkSync(running, path.join(tarballHome, "current"), process.platform === "win32" ? "junction" : "dir");
+  const tarballHomeHome = path.join(sandbox, "tarball-user-home");
+  const tarballResult = U.uninstall(running, {
+    env: { HOME: tarballHomeHome, USERPROFILE: tarballHomeHome },
+    cwd: sandbox,
+    force: true,
+    projectPaths: [],
+  });
+  check("bản tarball gỡ cả ~/.alp-code: versions/ lẫn current", () => {
+    assert.strictEqual(tarballResult.channel, "tarball");
+    assert(!fs.existsSync(tarballHome));
+    assert.strictEqual(U.tarballHomeOf(running), tarballHome);
+    assert.strictEqual(U.tarballHomeOf(path.join(tarballHome, "current")), tarballHome);
+  });
+}
+
 function testPurgeMemory() {
   const repo = makeRepo("purge-memory");
-  const memoryFile = path.join(repo, "memory", "private", "fact.md");
+  const home = path.join(sandbox, "purge-home");
+  const memoryFile = path.join(home, ".alp", "memory", "private", "fact.md");
   fs.mkdirSync(path.dirname(memoryFile), { recursive: true });
   fs.writeFileSync(memoryFile, "delete me\n");
 
   const result = U.uninstall(repo, {
-    env: { HOME: sandbox, USERPROFILE: sandbox, LOCALAPPDATA: path.join(sandbox, "local-app-data-purge"), Path: "C:\\Windows" },
+    env: { HOME: home, USERPROFILE: home, LOCALAPPDATA: path.join(home, "local-app-data"), Path: "C:\\Windows" },
     platform: "win32",
     cwd: sandbox,
     force: true,
@@ -106,8 +180,9 @@ function testPurgeMemory() {
     projectPaths: [],
     removeWindowsPath() { return "absent"; },
   });
-  check("--purge-memory xoá memory cùng repo và không tạo backup", () => {
+  check("--purge-memory xoá memory cùng bản cài và không tạo backup", () => {
     assert(!fs.existsSync(repo));
+    assert(!fs.existsSync(path.dirname(path.dirname(memoryFile))));
     assert.strictEqual(result.memoryBackup, null);
     assert(result.log.some((x) => x.level === "PURGED"));
   });
@@ -202,11 +277,14 @@ function testCliWiring() {
 }
 
 function makeRepo(name) {
-  const repo = path.join(sandbox, name);
-  fs.mkdirSync(path.join(repo, "scripts"), { recursive: true });
-  fs.writeFileSync(path.join(repo, "package.json"), "{}\n");
-  fs.writeFileSync(path.join(repo, "scripts", "alp.cjs"), "// fixture\n");
-  return repo;
+  return makeInstallAt(path.join(sandbox, name));
+}
+
+function makeInstallAt(root) {
+  fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
+  fs.writeFileSync(path.join(root, "package.json"), "{}\n");
+  fs.writeFileSync(path.join(root, "scripts", "alp.cjs"), "// fixture\n");
+  return root;
 }
 
 function makeGeneratedProjectConfig(project) {

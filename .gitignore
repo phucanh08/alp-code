@@ -8,9 +8,11 @@
 
 # Trí nhớ là dữ liệu CỤC BỘ của từng máy — không bao giờ đẩy lên remote.
 # Đồng bộ giữa máy sẽ do Agent runtime lo, không phải git.
-# Khung rỗng để dựng lại `memory/` trên máy mới nằm ở `scaffold/memory/` (tracked),
-# `scripts/bootstrap.cjs` chép sang những file còn thiếu — không bao giờ đè file đã có.
+# Từ v0.9.0 memory sống ở `~/.alp/memory`, ngoài mọi thư mục cài; khung rỗng để dựng lại nằm ở
+# `scaffold/memory/` (tracked) và `scripts/lib/state.cjs` chỉ chép sang file còn thiếu.
+# Hai dòng dưới là cho clone đã có `memory/` từ trước v0.9.0 và dấu vết di trú nó để lại.
 /memory/
+/memory.moved-to.txt
 
 .DS_Store
 
@@ -22,3 +24,6 @@ dist/
 
 # Installed Node.js dependencies.
 node_modules/
+
+# Artifact phát hành do scripts/pack-release.cjs dựng.
+/build/

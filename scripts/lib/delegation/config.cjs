@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const P = require("../install-paths.cjs");
 
 /**
  * Cả `core/` bên cạnh file này từng giữ một cây lỗi delegation cho backend CJS. Backend đó
@@ -53,7 +54,20 @@ function loadDelegationConfig(repoRoot, env = process.env) {
   return { file, stateDir: path.resolve(stateDir) };
 }
 
+/**
+ * Băm theo đường dẫn thư mục cài để hai clone không giẫm lên state của nhau. Đúng khi thư mục
+ * cài là một clone cố định — và chỉ khi đó. Từ v0.9.0 bản cài là artifact thay được, có thể
+ * nằm ở `versions/<tag>` khác nhau mỗi lần update, nên băm nó nghĩa là mất state mỗi bản.
+ */
 function defaultStateDir(repoRoot, env) {
+  const home = env.HOME || os.homedir();
+  return P.detectChannel(repoRoot) === "dev"
+    ? legacyStateDir(repoRoot, env)
+    : path.join(home, ".alp", "delegation", "installed");
+}
+
+/** Đường dẫn state theo luật cũ (băm repo root) — cần để di trú bản cài trước v0.9.0. */
+function legacyStateDir(repoRoot, env) {
   const home = env.HOME || os.homedir();
   const repoKey = crypto.createHash("sha256").update(path.resolve(repoRoot)).digest("hex").slice(0, 12);
   return path.join(home, ".alp", "delegation", repoKey);
@@ -62,5 +76,6 @@ function defaultStateDir(repoRoot, env) {
 module.exports = {
   loadDelegationConfig,
   defaultStateDir,
+  legacyStateDir,
   parseConfig,
 };

@@ -28,40 +28,60 @@ workspace access và tool request.
 
 ## Cài đặt
 
-macOS / Linux / WSL:
+```bash
+npm i -g alp-code
+```
+
+Cần Node.js >= 18. Không cần Git, không cần build: bản phát hành đã mang sẵn `dist/`, máy bạn
+chỉ giải nén và chạy.
+
+Máy không có npm, hoặc registry bị chặn — installer tải thẳng bundle của GitHub Release:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/phucanh08/alp-code/main/install.sh | bash
 ```
 
-Windows PowerShell:
-
 ```powershell
 irm https://raw.githubusercontent.com/phucanh08/alp-code/main/install.ps1 | iex
 ```
 
-Installer cần Git và Node.js >= 18. Mặc định nó clone rồi resolve tag GitHub Release mới nhất
-(`api.github.com/repos/.../releases/latest`, fallback `git ls-remote --tags` khi API không tới
-được) và checkout đúng tag đó, trước khi gọi `scripts/bootstrap.cjs` để:
+Installer tự chọn channel: có `npm` thì cài qua npm; không thì tải
+`alp-code-<tag>-bundle.tar.gz` về `~/.alp-code/versions/<tag>` và trỏ symlink
+`~/.alp-code/current` vào đó. Hai channel cho ra cùng một cây file — khác nhau chỉ ở ai sở hữu
+thư mục cài. Sau đó nó gọi `scripts/bootstrap.cjs` để:
 
-1. dựng phần memory/state còn thiếu mà không ghi đè dữ liệu;
-2. chạy `npm ci --include=dev` và build TypeScript;
-3. validate `AgentRegistry` và hai runtime adapter;
-4. chạy doctor;
-5. cài lệnh `alp` vào PATH.
+1. dựng `~/.alp` (memory, hook forwarder, install record) mà không ghi đè dữ liệu sẵn có;
+2. validate `AgentRegistry` và hai runtime adapter;
+3. chạy doctor;
+4. cài lệnh `alp` vào PATH — bản npm bỏ qua bước này vì npm đã làm rồi.
 
 | Tuỳ chọn | bash | PowerShell |
 |---|---|---|
-| Đổi vị trí cài | `bash -s -- --home ~/dev/alp` hoặc `ALP_HOME=…` | `$env:ALP_HOME = "D:\alp-code"` |
+| Ép channel | `bash -s -- --channel tarball` hoặc `ALP_CHANNEL=…` | `$env:ALP_CHANNEL = "tarball"` |
+| Ghim một phiên bản | `bash -s -- --version v0.9.0` hoặc `ALP_VERSION=…` | `$env:ALP_VERSION = "v0.9.0"` |
+| Đổi vị trí cài (tarball) | `bash -s -- --home ~/dev/alp` hoặc `ALP_HOME=…` | `$env:ALP_HOME = "D:\alp-code"` |
 | Không sửa PATH | `bash -s -- --no-path` hoặc `ALP_NO_PATH=1` | `$env:ALP_NO_PATH = "1"` |
-| Ghim một phiên bản | `bash -s -- --version v0.2.0` hoặc `ALP_VERSION=…` | `$env:ALP_VERSION = "v0.2.0"` |
-| Theo dõi một nhánh (dev, bỏ qua release) | `bash -s -- --branch dev` hoặc `ALP_BRANCH=…` | `$env:ALP_BRANCH = "dev"` |
+| Dev clone theo nhánh | `bash -s -- --branch dev` hoặc `ALP_BRANCH=…` | `$env:ALP_BRANCH = "dev"` |
 
-Chạy lại installer hoặc `alp update` sẽ resolve + checkout tag GitHub Release mới nhất rồi
-rebuild. Update backup và khôi phục nguyên trạng `memory/` cùng nấc đã ghi nhớ.
-Staged/tracked change chưa commit làm update dừng; ALP không tự merge hay clobber
-source. Đặt `--branch`/`ALP_BRANCH` để theo dõi trực tiếp một nhánh thay vì release (chỉ dùng
-khi phát triển) — khi đó `alp update` quay lại hành vi fast-forward pull như cũ.
+`--branch` là channel thứ ba: clone repo và build tại chỗ. Đó là đường duy nhất còn build trên
+máy người dùng, và chỉ dành cho người phát triển chính ALP.
+
+### Cập nhật
+
+`alp update` đi theo channel của bản cài:
+
+| Channel | Cách nhận diện | `alp update` làm gì |
+|---|---|---|
+| `npm` | thư mục cài nằm dưới một `node_modules/` | `npm install -g alp-code@<version>` |
+| `tarball` | còn lại, thường `~/.alp-code/versions/<tag>` | tải bundle mới, giải nén sang `versions/<tag>` rồi mới đổi `current` |
+| `dev` | có `.git` và `src/` | checkout tag release mới nhất rồi build lại |
+
+Không còn bước backup/restore dữ liệu nào trong update. Từ v0.9.0 mọi thứ thuộc về bạn — memory,
+nấc đã chọn, execution state, project registry — nằm ở `~/.alp`, còn thư mục cài là artifact
+thay được nguyên khối. Bản cài cũ hơn được di trú tự động ở lần chạy `alp` đầu tiên.
+
+Riêng dev clone vẫn dừng khi có staged/tracked change chưa commit: ALP không merge hay clobber
+source của bạn.
 
 Mỗi lần chạy `alp` (bất kỳ lệnh nào), ALP kiểm tra ngầm xem có bản release mới không, dùng
 cache tại `~/.alp/update-check.json` với TTL 24h — việc kiểm tra không bao giờ chặn lệnh hiện
@@ -161,13 +181,15 @@ project:<slug>:<id>
 private:<role>:<id>
 ```
 
-Hiện `MarkdownFileStore` lưu body Markdown dưới `memory/`. `RemoteApiStore` triển khai cùng
+Hiện `MarkdownFileStore` lưu body Markdown dưới `~/.alp/memory` (`ALP_MEMORY_ROOT` để đổi chỗ).
+`RemoteApiStore` triển khai cùng
 contract qua một `MemoryApiClient` injected, để tương lai chuyển sang server mà không đổi
 agent logic. Policy authorize trước mọi store call; optimistic versioning và audit metadata
 được giữ ở service boundary.
 
-`memory/` không đi theo Git. Bootstrap chỉ chép scaffold còn thiếu. `alp uninstall` mặc
-định chuyển toàn bộ memory sang backup cạnh installation; chỉ `--purge-memory` mới xoá nó.
+Memory nằm NGOÀI thư mục cài, vì thư mục cài bị thay nguyên khối mỗi lần update. Bootstrap chỉ
+chép phần scaffold còn thiếu và không bao giờ ghi đè nội dung. `alp uninstall` mặc định chuyển
+toàn bộ memory sang backup cạnh `~/.alp`; chỉ `--purge-memory` mới xoá nó.
 
 ## Continuity qua compaction
 
@@ -193,10 +215,11 @@ pin đọc lại được bằng `cat` và reinject thẳng vào context window 
 | Lệnh | Việc |
 |---|---|
 | `alp doctor [--quiet]` | registry, runtimes, memory, execution state, stale legacy, build drift |
-| `alp update` | resolve + checkout tag GitHub Release mới nhất, rebuild, giữ memory và runtime preference |
+| `alp update` | cập nhật theo channel (npm / tarball / dev clone); dữ liệu ở `~/.alp` không bị đụng |
 | `alp --version` | in phiên bản đang cài (đọc `package.json`) |
-| `alp uninstall [--purge-memory] [--force]` | gỡ CLI/runtime state; backup memory mặc định |
-| `scripts/bootstrap.cjs [--no-path]` | clean install/build/validate/doctor/CLI link |
+| `alp uninstall [--purge-memory] [--force]` | gỡ bản cài theo channel; backup memory mặc định; trong `~/.alp` chỉ xoá thứ của alp-code |
+| `scripts/bootstrap.cjs [--no-path]` | dựng state, validate, doctor, link CLI (build chỉ với dev clone) |
+| `scripts/ensure-state.cjs [--quiet]` | dựng lại `~/.alp` và hook forwarder cho bản cài hiện hành |
 
 Doctor exit `0` khi healthy, `1` khi có finding cần xử lý, `2` khi doctor tự lỗi. Mỗi finding
 có remediation cụ thể. Cutover đã hoàn tất, nên `STALE-LEGACY` chỉ xuất hiện khi máy còn sót
@@ -209,10 +232,15 @@ artifact của bản ALP cũ (`identity/`, `CHARTER.md`, compiled ACL); doctor s
    đóng mục CHANGELOG theo ngày, tạo commit `chore(release): vX.Y.Z` và tag. Thêm
    `--dry-run` để xem trước. Script cố ý dừng trước push.
 3. `git push origin main --tags`.
-4. `gh release create vX.Y.Z --generate-notes` — publish GitHub Release từ máy, biết kết quả
-   ngay. Repo cố ý không dùng GitHub Actions cho việc này; lý do ghi trong
+4. `node scripts/pack-release.cjs` — dựng hai artifact vào `build/`: `.tgz` cho npm và
+   `alp-code-vX.Y.Z-bundle.tar.gz` (kèm sẵn dependency runtime) cho GitHub Release. Script
+   kiểm nội dung artifact rồi cố ý dừng trước khi đẩy đi.
+5. `npm publish build/alp-code-X.Y.Z.tgz`.
+6. `gh release create vX.Y.Z --generate-notes` rồi
+   `gh release upload vX.Y.Z build/alp-code-vX.Y.Z-bundle.tar.gz` — publish từ máy, biết kết
+   quả ngay. Repo cố ý không dùng GitHub Actions cho việc này; lý do ghi trong
    `.claude/skills/release/SKILL.md`.
-5. Từ đây, `alp update` và installer trên máy khác sẽ resolve được `vX.Y.Z` làm bản mới nhất.
+7. Từ đây `npm i -g alp-code`, installer và `alp update` trên máy khác đều thấy `vX.Y.Z`.
 
 ## Cấu trúc
 
@@ -247,10 +275,11 @@ for f in scripts/test-*.cjs; do node "$f" || break; done
 `npm test` chạy unit, contract, integration và E2E. Năm suite E2E (`test/e2e/`) dựng fake
 runtime binaries cho `claude`/`codex` để kiểm launch contract, delegation, memory isolation,
 mode selection và compact bridge (pin → fixture compaction → reinject) mà không gọi model
-trả phí. Chín script `scripts/test-*.cjs` giữ phần
-cross-platform: CLI link, Codex role, delegation, execution hooks, runtime/Windows
-installer, update và uninstall — trong đó uninstall có process-level fixture để chứng minh
-CLI vẫn hoàn tất sau khi xoá installation đang chứa code của chính nó.
+trả phí. Mười hai script `scripts/test-*.cjs` giữ phần
+cross-platform: CLI link, Codex role, delegation, execution hooks, installer (POSIX và
+Windows), state `~/.alp`, nội dung artifact phát hành, update và uninstall — trong đó
+uninstall có process-level fixture để chứng minh CLI vẫn hoàn tất sau khi xoá installation
+đang chứa code của chính nó.
 
 ## Guardrails
 
@@ -259,3 +288,8 @@ CLI vẫn hoàn tất sau khi xoá installation đang chứa code của chính n
 - Private memory chỉ role sở hữu được đọc.
 - Không sửa agent definition/policy source từ một delegated execution.
 - Không commit, push, deploy hay purge memory nếu principal chưa yêu cầu rõ.
+
+## Giấy phép
+
+[MIT](LICENSE) © 2026 Phúc Anh. Giấy phép đi kèm trong cả hai artifact phát hành — bản npm và
+bundle tarball — nên bản cài nào cũng tự nói được điều kiện dùng của nó.

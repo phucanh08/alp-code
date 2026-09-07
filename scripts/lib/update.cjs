@@ -1,12 +1,23 @@
-// Safe `alp update` support for code-native ALP. Project registrations are machine-local,
-// so tracked source must be clean; the update itself resolves and checks out the latest
-// GitHub Release tag (detached HEAD) instead of fast-forwarding a branch.
+// `alp update`, một đường cho mỗi kiểu cài. Kiểu cài quyết định cách cập nhật, và cả ba đường
+// đều KHÔNG build gì trên máy người dùng nữa:
+//
+//   npm      — `npm install -g alp-code@<version>`; npm lo cả code lẫn dependency.
+//   tarball  — tải bundle của GitHub Release, giải nén sang `versions/<tag>` rồi trỏ lại
+//              `current`. Thư mục cũ còn nguyên tới khi bản mới đứng được.
+//   dev      — clone của người phát triển: vẫn checkout tag rồi build tại chỗ, vì đó chính là
+//              thứ một dev clone dùng để làm việc.
+//
+// Không còn bước backup/restore memory quanh update: từ v0.9.0 memory và mọi state khác nằm ở
+// `~/.alp`, ngoài tầm với của thứ đang bị thay. Chép dữ liệu qua lại quanh một thao tác không
+// đụng tới nó chỉ thêm một đường có thể hỏng.
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const semver = require("./semver-lite.cjs");
+const P = require("./install-paths.cjs");
+
+const REPO_SLUG = "phucanh08/alp-code";
 
 function assertCleanWorkingTree(repoRoot, env) {
   const staged = gitLines(repoRoot, ["diff", "--cached", "--name-only"], env);
@@ -22,7 +33,7 @@ function assertCleanWorkingTree(repoRoot, env) {
 }
 
 async function resolveLatestReleaseTag(repoRoot, options = {}) {
-  const repoSlug = options.repoSlug || "phucanh08/alp-code";
+  const repoSlug = options.repoSlug || REPO_SLUG;
   const fetchImpl = options.fetch || globalThis.fetch;
   if (fetchImpl) {
     try {
@@ -43,7 +54,12 @@ async function resolveLatestReleaseTag(repoRoot, options = {}) {
       /* fall through to git-based fallback */
     }
   }
+  // `git ls-remote` chỉ là lối thoát cho dev clone. Bản cài từ npm hay tarball không có `.git`
+  // nào cả, nên hỏi git ở đó chắc chắn hỏng — và hỏng bằng một thông báo của git, che mất lý
+  // do thật là không gọi được GitHub API.
   const remote = options.remote || "origin";
+  if (!fs.existsSync(path.join(repoRoot, ".git")))
+    return { ok: false, message: "không hỏi được GitHub Releases (mạng?) và bản cài này không phải git clone để tra tag" };
   const listed = gitText(repoRoot, ["ls-remote", "--tags", "--refs", remote], options.env || process.env);
   if (!listed.ok) return { ok: false, message: `không lấy được danh sách tag: ${listed.message}` };
   const tags = listed.text
@@ -99,61 +115,218 @@ async function checkoutLatestRelease(repoRoot, options = {}) {
   return { ok: true, status: 0, tag: resolved.tag, source: resolved.source, preserved: [] };
 }
 
-function preserveMaintenanceState(repoRoot, options = {}) {
-  const env = options.env || process.env;
-  const home = env.HOME || env.USERPROFILE;
-  const paths = [path.join(repoRoot, "memory")];
-  if (home) paths.push(path.join(home, ".alp", "mode.json"), path.join(home, ".alp", "projects.json"), path.join(home, ".alp", "delegation"));
-  const backupRoot = fs.mkdtempSync(path.join(options.tempRoot || os.tmpdir(), "alp-update-state-"));
-  const entries = paths.filter((file) => fs.existsSync(file)).map((file, index) => {
-    const backup = path.join(backupRoot, String(index));
-    fs.cpSync(file, backup, { recursive: true, force: true });
-    return { file, backup };
-  });
-  Object.defineProperty(entries, "backupRoot", { value: backupRoot });
-  return entries;
-}
-
-function restoreMaintenanceState(snapshot) {
-  try {
-    for (const entry of snapshot) {
-      fs.rmSync(entry.file, { recursive: true, force: true });
-      fs.mkdirSync(path.dirname(entry.file), { recursive: true });
-      fs.cpSync(entry.backup, entry.file, { recursive: true, force: true });
-    }
-  } finally {
-    discardMaintenanceState(snapshot);
-  }
-}
-
-function discardMaintenanceState(snapshot) {
-  if (snapshot.backupRoot) fs.rmSync(snapshot.backupRoot, { recursive: true, force: true });
-}
-
+/**
+ * `alp update` — chọn đường theo kiểu cài rồi đi.
+ *
+ * `options.channel` chỉ để test ép nhánh; ngoài đời kiểu cài đọc được từ chính thư mục cài,
+ * vì cùng một cây file đi cả npm lẫn tarball nên chỉ vị trí mới phân biệt được chúng.
+ */
 async function updateInstallation(repoRoot, options = {}) {
+  const channel = options.channel || P.detectChannel(repoRoot);
+  if (channel === "npm") return updateNpmInstall(repoRoot, options);
+  if (channel === "tarball") return updateTarballInstall(repoRoot, options);
+  return updateDevClone(repoRoot, options);
+}
+
+/** Version đích cho một bản cài, sau khi hỏi GitHub Release (hoặc theo `--version` đã ghim). */
+async function resolveTarget(repoRoot, options) {
   const from = packageVersion(repoRoot);
-  const snapshot = preserveMaintenanceState(repoRoot, options);
-  const checkedOut = await checkoutLatestRelease(repoRoot, options);
-  if (!checkedOut.ok) {
-    discardMaintenanceState(snapshot);
-    return checkedOut;
-  }
-  const notify = options.onCheckout || (() => {});
-  notify({ from, tag: checkedOut.tag });
+  const resolved = options.pinTag
+    ? { ok: true, tag: normalizeTag(options.pinTag), source: "pinned" }
+    : await (options.resolveLatestReleaseTag || resolveLatestReleaseTag)(repoRoot, options);
+  if (!resolved.ok) return { ok: false, message: resolved.message };
+  return { ok: true, from, tag: resolved.tag, version: resolved.tag.replace(/^v/, ""), source: resolved.source };
+}
+
+function normalizeTag(tag) {
+  return String(tag).startsWith("v") ? String(tag) : `v${tag}`;
+}
+
+/**
+ * Chạy `ensure-state.cjs` bằng một tiến trình MỚI trên thư mục cài MỚI.
+ *
+ * Không gọi thẳng `ensureState()` trong tiến trình này được: code đang chạy đến từ thư mục vừa
+ * bị thay, `require` một file chưa nạp sẽ đọc trúng bản đã bị xoá hoặc bản nửa cũ nửa mới.
+ */
+function runEnsureState(root, options) {
   const spawnProcess = options.spawnProcess || spawnSync;
-  let built;
-  try {
-    built = spawnProcess(process.execPath, [path.join(repoRoot, "scripts", "bootstrap.cjs"), "--no-path"], {
-      cwd: repoRoot,
-      env: options.env || process.env,
-      stdio: quietStdio(options),
-    });
-  } finally {
-    restoreMaintenanceState(snapshot);
+  const result = spawnProcess(process.execPath, [path.join(root, "scripts", "ensure-state.cjs"), "--quiet"], {
+    cwd: root,
+    env: options.env || process.env,
+    stdio: quietStdio(options),
+  });
+  return succeeded(result) ? { ok: true } : failure(commandFailure("ensure-state.cjs", result));
+}
+
+// ------------------------------------------------------------------ channel npm
+
+async function updateNpmInstall(repoRoot, options = {}) {
+  const target = await resolveTarget(repoRoot, options);
+  if (!target.ok) return failure(target.message);
+  if (target.from === target.version && !options.force)
+    return { ok: true, tag: target.tag, from: target.from, to: target.from, channel: "npm", unchanged: true };
+
+  (options.onCheckout || (() => {}))({ from: target.from, tag: target.tag });
+  const runCommand = options.runCommand || spawnCommand;
+  const installed = runCommand("npm", ["install", "--global", `alp-code@${target.version}`], {
+    env: options.env || process.env,
+    stdio: quietStdio(options),
+  });
+  if (!succeeded(installed)) {
+    const detail = commandFailure("npm install -g", installed);
+    return failure(/EACCES|permission denied/i.test(detail)
+      ? `npm không ghi được vào thư mục global: ${detail}\n         Sửa quyền (npm config set prefix ~/.npm-global) hoặc cài lại bằng installer tarball.`
+      : detail);
   }
+
+  const ensured = runEnsureState(repoRoot, options);
+  if (!ensured.ok) return ensured;
+  return { ok: true, tag: target.tag, from: target.from, to: packageVersion(repoRoot) || target.version, channel: "npm" };
+}
+
+// -------------------------------------------------------------- channel tarball
+
+/** `~/.alp-code` suy từ thư mục cài: `<home>/versions/<tag>` hoặc chính nó nếu layout cũ. */
+function tarballHomeFor(repoRoot, env) {
+  const resolved = path.resolve(repoRoot);
+  const parent = path.dirname(resolved);
+  return path.basename(parent) === "versions" ? path.dirname(parent) : resolved;
+}
+
+function bundleAssetName(tag) {
+  return `alp-code-${tag}-bundle.tar.gz`;
+}
+
+function bundleUrl(tag, options = {}) {
+  return `https://github.com/${options.repoSlug || REPO_SLUG}/releases/download/${tag}/${bundleAssetName(tag)}`;
+}
+
+async function updateTarballInstall(repoRoot, options = {}) {
+  const target = await resolveTarget(repoRoot, options);
+  if (!target.ok) return failure(target.message);
+  if (target.from === target.version && !options.force)
+    return { ok: true, tag: target.tag, from: target.from, to: target.from, channel: "tarball", unchanged: true };
+
+  (options.onCheckout || (() => {}))({ from: target.from, tag: target.tag });
+  const home = options.tarballHome ? path.resolve(options.tarballHome) : tarballHomeFor(repoRoot, options.env || process.env);
+  const installed = await installBundle(home, target.tag, options);
+  if (!installed.ok) return installed;
+
+  const ensured = runEnsureState(installed.root, options);
+  if (!ensured.ok) return ensured;
+  pruneVersions(home, [path.basename(installed.root), path.basename(path.resolve(repoRoot))]);
+  return { ok: true, tag: target.tag, from: target.from, to: target.version, channel: "tarball", root: installed.root };
+}
+
+/**
+ * Tải bundle về, giải nén sang một thư mục MỚI, rồi mới trỏ `current` sang đó.
+ *
+ * Thứ tự này là điểm mấu chốt: bản đang chạy không bị đụng tới cho đến khi bản mới đã nằm đủ
+ * trên đĩa. Tải dở giữa chừng hay tar hỏng thì `current` vẫn trỏ vào bản cũ và người dùng vẫn
+ * còn một `alp` chạy được — thay tại chỗ thì hỏng giữa chừng là mất luôn cả hai.
+ */
+async function installBundle(home, tag, options = {}) {
+  const versions = path.join(home, "versions");
+  const destination = path.join(versions, tag);
+  const staging = path.join(versions, `.incoming-${tag}-${process.pid}`);
+  fs.mkdirSync(versions, { recursive: true });
+  fs.rmSync(staging, { recursive: true, force: true });
+  fs.mkdirSync(staging, { recursive: true });
+
+  const archive = path.join(versions, `.${tag}-${process.pid}.tar.gz`);
+  try {
+    const downloaded = await downloadFile(bundleUrl(tag, options), archive, options);
+    if (!downloaded.ok) return failure(downloaded.message);
+
+    const extracted = (options.runCommand || spawnCommand)("tar", ["-xzf", archive, "-C", staging], {
+      stdio: quietStdio(options),
+      env: options.env || process.env,
+    });
+    if (!succeeded(extracted)) return failure(commandFailure("tar -xzf", extracted));
+    if (!fs.existsSync(path.join(staging, "scripts", "alp.cjs")))
+      return failure(`bundle ${bundleAssetName(tag)} không đúng cấu trúc — thiếu scripts/alp.cjs`);
+
+    fs.rmSync(destination, { recursive: true, force: true });
+    fs.renameSync(staging, destination);
+  } finally {
+    fs.rmSync(archive, { force: true });
+    fs.rmSync(staging, { recursive: true, force: true });
+  }
+
+  const pointed = pointCurrent(home, destination);
+  if (!pointed.ok) return pointed;
+  return { ok: true, root: destination };
+}
+
+/**
+ * `<home>/current` → version đang dùng, thay bằng rename nên không có khoảnh khắc nào nó
+ * không trỏ đi đâu cả. Windows dùng junction: symlink thư mục ở đó cần quyền admin hoặc
+ * Developer Mode, junction thì không cần gì.
+ */
+function pointCurrent(home, target) {
+  const link = path.join(home, "current");
+  const temporary = path.join(home, `.current-${process.pid}`);
+  const type = process.platform === "win32" ? "junction" : "dir";
+  try {
+    fs.rmSync(temporary, { recursive: true, force: true });
+    fs.symlinkSync(target, temporary, type);
+    fs.rmSync(link, { recursive: true, force: true });
+    fs.renameSync(temporary, link);
+    return { ok: true, link };
+  } catch (error) {
+    fs.rmSync(temporary, { recursive: true, force: true });
+    return failure(`không trỏ được ${link} sang ${target}: ${error.message}`);
+  }
+}
+
+/** Giữ bản đang chạy và bản vừa cài, dọn phần còn lại — đủ để lùi một bước, không hơn. */
+function pruneVersions(home, keep) {
+  const versions = path.join(home, "versions");
+  let entries;
+  try { entries = fs.readdirSync(versions); } catch { return; }
+  for (const entry of entries) {
+    if (keep.includes(entry)) continue;
+    if (entry.startsWith(".incoming-")) { fs.rmSync(path.join(versions, entry), { recursive: true, force: true }); continue; }
+    if (!semver.isValid(entry)) continue;
+    fs.rmSync(path.join(versions, entry), { recursive: true, force: true });
+  }
+}
+
+async function downloadFile(url, destination, options = {}) {
+  const fetchImpl = options.fetch || globalThis.fetch;
+  if (!fetchImpl) return { ok: false, message: "Node này không có fetch — cần Node >= 18" };
+  try {
+    const response = await fetchImpl(url, { headers: { "User-Agent": "alp-code-updater" }, redirect: "follow" });
+    if (!response.ok) return { ok: false, message: `tải ${url} thất bại (HTTP ${response.status})` };
+    fs.writeFileSync(destination, Buffer.from(await response.arrayBuffer()));
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: `tải ${url} thất bại: ${error.message}` };
+  }
+}
+
+// ------------------------------------------------------------------ channel dev
+
+async function updateDevClone(repoRoot, options = {}) {
+  const from = packageVersion(repoRoot);
+  const checkedOut = await checkoutLatestRelease(repoRoot, options);
+  if (!checkedOut.ok) return checkedOut;
+  (options.onCheckout || (() => {}))({ from, tag: checkedOut.tag });
+
+  const spawnProcess = options.spawnProcess || spawnSync;
+  const built = spawnProcess(process.execPath, [path.join(repoRoot, "scripts", "bootstrap.cjs"), "--no-path"], {
+    cwd: repoRoot,
+    env: options.env || process.env,
+    stdio: quietStdio(options),
+  });
   return succeeded(built)
-    ? { ...checkedOut, from, to: packageVersion(repoRoot) }
+    ? { ...checkedOut, from, to: packageVersion(repoRoot), channel: "dev" }
     : failure(commandFailure("bootstrap.cjs", built));
+}
+
+function spawnCommand(command, args, options) {
+  const { spawnSyncCommand } = require("./delegation/command-runner.cjs");
+  return spawnSyncCommand(command, args, options);
 }
 
 function onlyWorkspaceChanged(base, current) {
@@ -163,27 +336,6 @@ function onlyWorkspaceChanged(base, current) {
   if (!workspacePattern.test(normalizedBase) || !workspacePattern.test(normalizedCurrent)) return false;
   return normalizedBase.replace(workspacePattern, "workspaces:\n") ===
     normalizedCurrent.replace(workspacePattern, "workspaces:\n");
-}
-
-function restoreStash(repoRoot, stashHash, env, stdio) {
-  const applied = runGit(repoRoot, ["stash", "apply", stashHash], { env, stdio });
-  if (!succeeded(applied)) return { ok: false, message: commandFailure("git stash apply", applied) };
-  return dropStash(repoRoot, stashHash, env);
-}
-
-function dropStash(repoRoot, stashHash, env) {
-  const listed = gitLines(repoRoot, ["stash", "list", "--format=%H"], env);
-  if (!listed.ok) return listed;
-  const index = listed.lines.indexOf(stashHash);
-  if (index < 0) return { ok: false, message: `không tìm thấy ${stashHash} trong stash list` };
-  const dropped = runGit(repoRoot, ["stash", "drop", `stash@{${index}}`], {
-    env,
-    stdio: ["ignore", "pipe", "pipe"],
-    encoding: "utf8",
-  });
-  return succeeded(dropped)
-    ? { ok: true }
-    : { ok: false, message: commandFailure("git stash drop", dropped) };
 }
 
 function gitLines(repoRoot, args, env) {
@@ -230,8 +382,14 @@ module.exports = {
   assertCleanWorkingTree,
   resolveLatestReleaseTag,
   checkoutLatestRelease,
-  preserveMaintenanceState,
-  restoreMaintenanceState,
-  discardMaintenanceState,
   updateInstallation,
+  updateNpmInstall,
+  updateTarballInstall,
+  updateDevClone,
+  installBundle,
+  pointCurrent,
+  pruneVersions,
+  tarballHomeFor,
+  bundleAssetName,
+  bundleUrl,
 };

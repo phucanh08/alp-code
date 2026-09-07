@@ -185,7 +185,7 @@ execution snapshot; `alp doctor` kiểm compiled registry và build-source drift
 **`main` chạy được trên cả hai runtime, nhưng không ai chọn runtime nữa** (2026-09-06): nấc
 ghim đúng một model cho `main`, và model quyết định CLI. `--mode medium|puck` cho `main`
 `gpt-5.6-sol` → Codex; `--mode high|ultra` cho `claude-opus-5` và `--mode low` cho
-`claude-haiku-4-5` → Claude Code. Muốn tiết kiệm quota Claude thì hạ/đổi nấc, không có cờ
+`claude-sonnet-5` → Claude Code. Muốn tiết kiệm quota Claude thì hạ/đổi nấc, không có cờ
 runtime để bật.
 
 Hai điểm khác specialist nằm trong `src/agents/main.ts`:

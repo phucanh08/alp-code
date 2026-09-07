@@ -1,11 +1,41 @@
 {
   "name": "alp-code",
   "version": "0.8.0",
-  "private": true,
+  "description": "Code-native agent layer for Claude Code and Codex CLI",
+  "license": "MIT",
+  "author": "Phúc Anh (https://github.com/phucanh08)",
+  "bin": {
+    "alp": "scripts/alp.cjs"
+  },
+  "files": [
+    "dist/src",
+    "scripts",
+    "!scripts/test-*.cjs",
+    "!scripts/cut-release.cjs",
+    "!scripts/pack-release.cjs",
+    "!scripts/probe-compact-hooks.cjs",
+    "hooks",
+    "skills",
+    "scaffold",
+    "alp.config.yaml",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phucanh08/alp-code.git"
+  },
+  "homepage": "https://github.com/phucanh08/alp-code#readme",
+  "bugs": {
+    "url": "https://github.com/phucanh08/alp-code/issues"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepack": "npm run build"
   },
   "dependencies": {
     "zod": "^4.0.0"
