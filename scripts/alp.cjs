@@ -37,12 +37,12 @@ if (maintenance === "update") {
   // và không update gì cả.
   updateInstallation(repoRoot, {
     verbose,
-    // Bước build là bước lâu nhất, nên nó phải có một dòng báo — im lặng vài chục giây
+    // Tải hoặc cài đặt là bước lâu nhất, nên nó phải có một dòng báo — im lặng vài chục giây
     // trông như treo. Không dùng `\r` để vẽ lại dòng: `alp update` hay bị chạy qua log,
     // qua CI hay qua pane không phải TTY, chỗ đó `\r` chỉ thành rác.
     onCheckout({ from, tag }) {
       console.log(`${from ? `v${from} → ` : ""}${tag}`);
-      console.log("Đang build…");
+      console.log("Đang cập nhật…");
     },
   }).then(
     (result) => {
@@ -50,7 +50,8 @@ if (maintenance === "update") {
         console.error(`✗ ${result.message}`);
         process.exit(1);
       }
-      console.log(`✓ alp-code ${result.tag} — memory, runtime và backend preferences giữ nguyên`);
+      if (result.unchanged) console.log(`✓ alp-code ${result.tag} — đã là bản mới nhất`);
+      else console.log(`✓ alp-code ${result.tag} — memory, runtime và backend preferences giữ nguyên (~/.alp)`);
       process.exit(0);
     },
     (error) => {
@@ -77,8 +78,15 @@ if (maintenance === "uninstall") {
     process.exit(1);
   }
 }
+// Bản phát hành đã có sẵn `dist/`; chỉ dev clone mới có `src/` để build. Thiếu `dist/` trong
+// một bản cài phát hành nghĩa là artifact hỏng hoặc bị xoá dở — chạy `npm run build` ở đó chỉ
+// đổi một lỗi rõ ràng lấy một lỗi tsc khó hiểu, vì `src/` và devDependencies đều không có.
 const entry = path.join(repoRoot, "dist", "src", "cli", "alp.js");
 if (!fs.existsSync(entry)) {
+  if (!fs.existsSync(path.join(repoRoot, "src"))) {
+    console.error(`ERROR     bản cài tại ${repoRoot} thiếu dist/ — cài lại bằng \`npm i -g alp-code\` hoặc installer`);
+    process.exit(2);
+  }
   const built = spawnSyncCommand("npm", ["run", "build"], {
     cwd: repoRoot,
     stdio: "inherit",
@@ -89,6 +97,10 @@ if (!fs.existsSync(entry)) {
   }
 }
 
+// `npm i -g alp-code` không chạy bootstrap, và `--ignore-scripts` là mặc định ở nhiều nơi.
+// Nên điều kiện tiên quyết (`~/.alp` và hook forwarder) phải tự dựng ở lần dùng đầu tiên. Đọc
+// một file JSON nhỏ để biết có cần làm gì không: bình thường thì đây chỉ là một stat thừa.
+ensureStateIfStale();
 process.env.ALP_REPO_ROOT = repoRoot;
 require(entry).main(process.argv.slice(2)).then(
   (code) => { process.exitCode = code; },
@@ -97,3 +109,18 @@ require(entry).main(process.argv.slice(2)).then(
     process.exitCode = 2;
   },
 );
+
+function ensureStateIfStale() {
+  try {
+    const P = require("./lib/install-paths.cjs");
+    const version = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")).version || null;
+    const record = P.readInstallRecord();
+    if (record && record.root === repoRoot && record.version === version) return;
+    const { ensureState } = require("./lib/state.cjs");
+    ensureState({ root: repoRoot, version });
+  } catch (error) {
+    // Không chặn lệnh người dùng đang gõ: nếu thật sự thiếu state thì lệnh đó sẽ hỏng với
+    // thông báo của chính nó, còn `alp doctor` mới là chỗ nói ra chuyện này cho tử tế.
+    console.error(`WARN      không dựng được ~/.alp: ${error && error.message ? error.message : String(error)}`);
+  }
+}

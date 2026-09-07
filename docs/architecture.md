@@ -584,7 +584,7 @@ Repo có hai thế giới, cố ý:
 
 | | `src/**.ts` → `dist/` | `scripts/**.cjs` |
 |---|---|---|
-| Chứa | policy, identity, memory, execution, runtime, delegation core, backend | installer, doctor, update/uninstall, config loader, command runner |
+| Chứa | policy, identity, memory, execution, runtime, delegation core, backend | installer, doctor, state `~/.alp`, update/uninstall, đóng gói release, config loader, command runner |
 | Vì sao | type safety, test được, là nguồn sự thật | phải chạy được *trước khi* build tồn tại, và trên máy chỉ có Node |
 
 Cầu nối duy nhất là `createRequire` trong `cli/commands/delegate.ts`: TS load
@@ -598,32 +598,68 @@ không có logic policy riêng.
 
 ## 6. Trạng thái trên đĩa
 
+Từ v0.9.0 có đúng hai loại thư mục, và ranh giới giữa chúng là ranh giới quan trọng nhất của
+phần vận hành: **thư mục cài là artifact thay được**, **`~/.alp` là dữ liệu người dùng**. Máy
+người dùng không build gì, nên update = thay nguyên khối thư mục cài. Bất cứ thứ gì của người
+dùng còn nằm trong đó đều là dữ liệu hẹn ngày mất.
+
 ```text
-~/.alp/
-  projects.json              danh sách project đã init + backend  (0600)
-  mode.json                  nấc đã ghi nhớ                         (0600)
-  principal.json             tên + xưng hô của principal           (0600)
+~/.alp/                        DỮ LIỆU — không bao giờ bị update đụng vào
+  install.json               bản cài hiện hành: root, channel, version   (0600)
+  projects.json              danh sách project đã init + backend         (0600)
+  mode.json                  nấc đã ghi nhớ                              (0600)
+  principal.json             tên + xưng hô của principal                 (0600)
+  update-check.json          cache kiểm bản mới, TTL 24h                 (0600)
+  memory/                    scaffold từ `scaffold/memory/`, không theo Git
+  agents/<role>.md           cache identity phẳng cho SessionStart hook
+  hooks/<tên>.cjs            forwarder có đường dẫn ỔN ĐỊNH → hook của bản cài
   executions/<exec_id>/
-    policy.json              ExecutionPolicy snapshot              (0600)
-    state.json               StoredExecutionState                  (0600)
-    runtime/                 capsule, session-context.md, config, skill-roots
-                             + task.md chỉ khi headless
-    context/                 sống sót cleanup của runtime/          (0700)
-      checkpoint.json          objective + pin, hash toàn vẹn       (0600)
-      continuity.md            render Markdown, bounded 24 KiB      (0600)
-      compact-events.jsonl     journal append-only, hook ghi        (0600)
-  delegation/<repo-key>/
+    policy.json                ExecutionPolicy snapshot                  (0600)
+    state.json                 StoredExecutionState                      (0600)
+    runtime/                   capsule, session-context.md, config, skill-roots
+                               + task.md chỉ khi headless
+    context/                   sống sót cleanup của runtime/             (0700)
+      checkpoint.json            objective + pin, hash toàn vẹn          (0600)
+      continuity.md              render Markdown, bounded 24 KiB         (0600)
+      compact-events.jsonl       journal append-only, hook ghi           (0600)
+  delegation/<key>/          `installed` cho bản cài, hash repo cho dev clone
     code-native-executions.json  execution record của DelegationService
     local.json                   state riêng của backend (pid, log, result)
     logs/ · results/ · specs/    transcript, exit status và spec cho supervisor
     execution-snapshots/
 
-<repo>/memory/               không theo Git; scaffold từ scaffold/memory/
-<repo>/dist/                 build output; doctor kiểm build-source drift
+<install>/                     ARTIFACT — xoá và dựng lại lúc nào cũng được
+  dist/ scripts/ hooks/ skills/ scaffold/ alp.config.yaml
 ```
 
 Mọi file state ghi bằng pattern **temp file → atomic rename → chmod**, và mọi directory tạo
 với mode `0700`.
+
+### 6.1 Ba channel cài
+
+`install-paths.cjs::detectChannel` nhận diện channel từ chính vị trí thư mục cài — nội dung
+hai channel phát hành giống hệt nhau nên không phân biệt được bằng file:
+
+| Channel | Nhận ra bằng | Thư mục cài | `alp update` |
+|---|---|---|---|
+| `npm` | nằm dưới một `node_modules/` | npm sở hữu | `npm install -g alp-code@<version>` |
+| `tarball` | còn lại | `~/.alp-code/versions/<tag>`, `current` là symlink/junction | tải bundle → `versions/<tag>` → đổi `current` |
+| `dev` | có `.git` **và** `src/` | clone của người phát triển | checkout tag rồi build tại chỗ |
+
+Đường tarball không bao giờ sửa tại chỗ: tải về file tạm, giải nén sang thư mục staging, kiểm
+`scripts/alp.cjs` tồn tại, rename vào `versions/<tag>`, rồi mới trỏ lại `current`. Tải hỏng
+giữa chừng để lại một thư mục rác chứ không để lại một bản cài dở.
+
+### 6.2 Hook forwarder
+
+`alp init` ghi `<project>/.claude/settings.local.json` trỏ vào `~/.alp/hooks/session-boot.cjs`,
+không trỏ thẳng vào thư mục cài. File settings đó nằm trong repo của người dùng và sống lâu hơn
+mọi bản cài; không có bước nào đi sửa lại nó khi ALP đổi version hay đổi channel. Forwarder đọc
+`~/.alp/install.json` để biết bản cài hiện hành rồi require hook thật. `ensureState` ghi lại
+forwarder mỗi lần chạy và sửa luôn những project đã init từ trước v0.9.0.
+
+`scripts/ensure-state.cjs` tồn tại vì việc này phải chạy trong một **tiến trình mới**: sau khi
+update thay xong thư mục cài, tiến trình `alp` đang chạy vẫn giữ code cũ trong RAM.
 
 ## 7. Mô hình mối đe doạ
 
@@ -656,10 +692,12 @@ for f in scripts/test-*.cjs; do node "$f" || break; done
 | Integration | `test/{delegation,backend,hooks,cli}` | ghép layer, deny ordering, hook enforcement, `alp context` CLI |
 | E2E | `test/e2e/` | 5 suite, dựng fake `claude`/`codex` binary — kiểm launch contract, delegation, memory isolation, runtime selection, compact bridge (pin → fixture pre/post → reinject) mà không tốn tiền model |
 | Cutover | `test/cutover/no-legacy-identity.test.ts` | không còn identity Markdown sót lại |
-| Cross-platform | 9 × `scripts/test-*.cjs` | CLI link, Codex role, backend, hook, installer Windows, update, uninstall |
+| Cross-platform | 12 × `scripts/test-*.cjs` | CLI link, Codex role, backend, hook, installer POSIX/Windows, state `~/.alp`, nội dung artifact phát hành, update, uninstall |
 
 `scripts/test-uninstall.cjs` có process-level fixture chứng minh CLI hoàn tất được ngay cả khi
-nó vừa xoá chính thư mục chứa code của mình.
+nó vừa xoá chính thư mục chứa code của mình. `scripts/test-installer.cjs` chạy `install.sh`
+thật với `curl`/`npm` giả trong PATH, và `scripts/test-pack-release.cjs` đọc danh sách file mà
+`npm publish` sẽ gửi đi — hai chỗ mà lỗi chỉ lộ ra ở máy người dùng, sau khi đã phát hành.
 
 ## 9. Mở rộng hệ thống
 
@@ -678,13 +716,15 @@ Quy tắc chung: thêm implementation ở composition root, không thêm nhánh 
 | Lệnh | Việc |
 |---|---|
 | `alp doctor [--quiet]` | `AGENT-REGISTRY`, `RUNTIME-CLAUDE/CODEX`, `MEMORY-ADAPTER`, `EXECUTION-STATE`, `ORPHAN-EXECUTION`, `BUILD-DRIFT`. Exit `0` healthy · `1` có finding · `2` doctor lỗi |
-| `alp update` | fast-forward source, rebuild, giữ nguyên memory + runtime/backend preference |
-| `alp uninstall [--purge-memory] [--force]` | gỡ CLI/state; mặc định backup memory |
+| `alp update` | cập nhật theo channel (npm / tarball / dev clone); `~/.alp` không bị đụng |
+| `alp uninstall [--purge-memory] [--force]` | gỡ bản cài theo channel; backup memory; trong `~/.alp` chỉ xoá thứ của alp-code |
 | `alp delegation health [backend]` | health check backend |
 | `alp delegation list` | execution record đang theo dõi |
 | `alp context status\|validate [execution-id]` | xem/kiểm checkpoint + journal compact bridge |
 | `alp context pin\|unpin` | chốt hoặc gỡ một decision/constraint/open-item/next-action |
-| `scripts/bootstrap.cjs [--no-path]` | scaffold memory → `npm ci` → build → validate registry + adapter → doctor → link CLI |
+| `scripts/bootstrap.cjs [--no-path]` | build (chỉ dev clone) → `ensureState` → validate registry + adapter → doctor → link CLI |
+| `scripts/ensure-state.cjs [--quiet]` | dựng `~/.alp`, ghi lại hook forwarder và install record |
+| `scripts/pack-release.cjs [--out …]` | dựng artifact npm + bundle GitHub Release, dừng trước khi đẩy đi |
 
 ## 11. Câu hỏi còn mở
 

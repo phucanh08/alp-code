@@ -13,6 +13,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { hookForwarder } from "../../state-paths";
 
 export interface RegisteredProject {
   readonly path: string;
@@ -134,7 +135,11 @@ async function writeProjectSettings(project: string, repoRoot: string): Promise<
     if (!content.toLowerCase().includes("alp init")) await rename(file, `${file}.alp-backup`);
   }
   await mkdir(dirname(file), { recursive: true });
-  const hook = `${JSON.stringify(process.execPath)} ${JSON.stringify(join(repoRoot, "hooks", "session-boot.cjs"))}`;
+  // Forwarder ở `~/.alp/hooks`, KHÔNG phải hook trong thư mục cài: file này nằm trong repo của
+  // người dùng và sống lâu hơn bản cài ALP đã ghi ra nó. Một đường dẫn tuyệt đối tới thư mục
+  // cài sẽ chết khi lên version, đổi channel hoặc cài lại chỗ khác — và phiên `claude` mở tay
+  // chỉ im lặng mất identity, đúng kiểu hỏng câm khó lần ra nhất.
+  const hook = `${JSON.stringify(process.execPath)} ${JSON.stringify(hookForwarder("session-boot"))}`;
   await writeFile(file, `${JSON.stringify({
     $generatedBy: "alp init",
     hooks: { SessionStart: [{ hooks: [{ type: "command", command: hook }] }] },

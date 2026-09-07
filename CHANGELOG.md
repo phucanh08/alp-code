@@ -8,7 +8,73 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thêm
+
+- **`npm i -g alp-code` — máy người dùng không build gì nữa.** Trước đây installer clone repo
+  rồi chạy `npm ci --include=dev` và `tsc` ngay trên máy người dùng. Cách đó bắt mọi người cài
+  phải có Git, phải tải toàn bộ devDependencies, và biến mỗi lần cài thành một lần build có thể
+  hỏng vì lý do chẳng liên quan gì tới ALP. Claude Code và Codex CLI đều không làm vậy, và
+  không có lý do gì ALP phải làm khác.
+
+  Từ bản này có hai kênh phát hành, cùng một cây file, khác nhau ở ai sở hữu thư mục cài:
+
+  | Channel | Cài bằng | Thư mục cài |
+  |---|---|---|
+  | `npm` (chính) | `npm i -g alp-code` | npm sở hữu, dưới `node_modules/` |
+  | `tarball` (dự phòng) | `install.sh` / `install.ps1` tải bundle của GitHub Release | `~/.alp-code/versions/<tag>`, `current` trỏ vào bản đang dùng |
+
+  Tarball tồn tại cho máy không có npm hoặc bị chặn registry, và nó mang sẵn dependency runtime
+  — giải nén ra là chạy, không `npm install` sau đó. Dev clone (`--branch`) là channel thứ ba
+  và là chỗ duy nhất còn build tại máy.
+
+- **`scripts/pack-release.cjs`** dựng cả hai artifact trên máy maintainer, kiểm nội dung
+  (`scripts/lib/release-manifest.cjs`) rồi cố ý dừng trước `npm publish` và `gh release
+  upload` — giống `cut-release.cjs` dừng trước `git push`. `scripts/test-pack-release.cjs`
+  kiểm cùng hợp đồng đó ở mỗi lần chạy test, vì `files` trong `package.json` sai thì `npm pack`
+  vẫn xanh và lỗi chỉ lộ ra ở máy người dùng.
+
+- **Giấy phép MIT.** `LICENSE` ở gốc repo và `"license": "MIT"` trong `package.json`.
+  Trước đây cả hai đều thiếu: npm hiển thị package là không có giấy phép, và người dùng không
+  có căn cứ nào để biết mình được phép làm gì với nó. `LICENSE` nằm trong danh sách file bắt
+  buộc của artifact nên nó đi theo mọi bản cài.
+
+- **Hook forwarder `~/.alp/hooks/<tên>.cjs` và `scripts/ensure-state.cjs`.**
+  `<project>/.claude/settings.local.json` do `alp init` ghi nằm trong repo của người dùng và
+  sống lâu hơn mọi bản cài, nên nó phải trỏ vào một đường dẫn không đổi. Forwarder đọc
+  `~/.alp/install.json` để tìm bản cài hiện hành; project đã init từ trước được sửa lại tự
+  động. `ensure-state.cjs` chạy được như một tiến trình riêng vì sau update, tiến trình `alp`
+  đang chạy vẫn giữ code cũ trong RAM.
+
 ### Thay đổi
+
+- **Memory và toàn bộ state chuyển sang `~/.alp`; thư mục cài thành artifact thay được.**
+  Đây là điều kiện để bỏ được bước build: update giờ thay nguyên khối thư mục cài, nên bất cứ
+  thứ gì của người dùng còn nằm trong đó đều là dữ liệu hẹn ngày mất. `<thư mục cài>/memory`
+  được di trú sang `~/.alp/memory` ở lần chạy `alp` đầu tiên sau khi lên bản này, kèm một dòng
+  ghi chú để lại chỗ cũ. Di trú chỉ chạy khi chỗ mới chưa có dữ liệu thật, và không hàm nào
+  trong `state.cjs` được phép ghi đè nội dung đã có.
+
+- **`alp update` đi theo channel của bản cài** — `npm install -g alp-code@<version>`, hoặc tải
+  bundle mới và đổi `current`, hoặc checkout tag rồi build (dev clone). Không còn bước
+  backup/restore memory nào cả: không có gì của người dùng nằm trong vùng bị thay nữa. Đường
+  tarball tải về staging rồi mới rename và trỏ lại `current`, nên tải hỏng để lại thư mục rác
+  chứ không để lại bản cài dở.
+
+- **`alp uninstall` không còn xoá cả `~/.alp`.** Nó xoá đúng những tên do alp-code tạo
+  (`agents`, `hooks`, `executions`, `delegation`, `install.json`, `update-check.json`,
+  `mode.json`, `projects.json`) và không đụng vào thứ của người khác trong cùng thư mục.
+  Memory vẫn được chuyển sang backup cạnh `~/.alp` trừ khi có `--purge-memory`. Bản npm được gỡ
+  bằng `npm uninstall -g alp-code` thay vì `rm -rf` sau lưng npm; bản tarball gỡ cả
+  `~/.alp-code`.
+
+- **`install.sh`/`install.ps1` viết lại quanh `--channel auto|npm|tarball`.** `auto` dùng npm
+  khi có, tự lùi về tarball khi npm thất bại. Cả hai không còn chạy `npm ci` hay `tsc`.
+  `bootstrap.cjs` chỉ build khi channel là dev clone, và bỏ qua bước link `alp` cho bản npm —
+  hai lệnh `alp` tranh nhau PATH thì lệnh của ta trỏ vào thư mục npm có quyền xoá.
+
+- **`alp doctor` biết channel.** Bản phát hành được kiểm là còn đủ file artifact và install
+  record còn khớp; gợi ý sửa là `alp update` thay vì `npm run build`. Kiểm build drift chỉ còn
+  ý nghĩa với dev clone nên chỉ chạy ở đó.
 
 - **`low` nâng `main` từ `claude-haiku-4-5 @ low` lên `claude-sonnet-5 @ high`.** `oracle` của
   `low` giữ nguyên `gpt-5.6-sol @ high`, nên bất biến "oracle luôn ở runtime đối diện main"

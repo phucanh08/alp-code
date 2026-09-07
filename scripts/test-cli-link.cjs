@@ -262,23 +262,25 @@ function testForeignWindowsUninstall() {
 }
 
 /**
- * Bootstrap is exercised against a throwaway copy of the repository, never the working
- * one. `bootstrap.cjs` resolves its root from `__dirname`, not the caller's cwd, so
- * pointing `cwd` elsewhere does nothing — the copy's own script has to be the one spawned.
- * That matters because the first thing bootstrap does is `npm ci`, which deletes
- * `node_modules` before reinstalling: aimed at this repo, a failed reinstall leaves the
- * checkout without its dependencies.
+ * Bootstrap chạy trên một BẢN SAO vứt đi của repo, không bao giờ trên bản đang làm việc:
+ * `bootstrap.cjs` lấy root từ `__dirname` chứ không từ cwd của người gọi, nên phải spawn đúng
+ * script trong bản sao.
+ *
+ * Bản sao được dựng thành một bản cài channel `tarball` — có `dist/`, không có `.git` — vì đó
+ * là thứ người dùng thật nhận được. `node_modules` là symlink sang cây thật, đúng vai trò của
+ * `node_modules` mà bundle GitHub Release mang sẵn: có mặt, và KHÔNG phải do bootstrap cài.
  */
 function copyRepositoryForBootstrap() {
   const source = path.resolve(__dirname, "..");
   const destination = path.join(sandbox, "bootstrap-repo");
-  // Skipped: rebuilt by bootstrap (`node_modules`, `dist`), irrelevant to it (`.git`,
-  // `.worktrees`), or machine state it must not inherit (`.alp`).
-  const skipped = new Set(["node_modules", "dist", ".git", ".worktrees", ".alp"]);
+  // Bỏ qua: state của máy (`.alp`), thứ không liên quan (`.git`, `.worktrees`), và
+  // `node_modules` — nó được symlink lại ngay bên dưới thay vì chép mấy nghìn file.
+  const skipped = new Set(["node_modules", ".git", ".worktrees", ".alp"]);
   fs.cpSync(source, destination, {
     recursive: true,
     filter: (from) => !skipped.has(path.basename(from)),
   });
+  fs.symlinkSync(path.join(source, "node_modules"), path.join(destination, "node_modules"), "dir");
   return destination;
 }
 
@@ -297,19 +299,22 @@ function testBootstrapWiring() {
       LOCALAPPDATA: localAppData,
       SHELL: "/bin/zsh",
       PATH: process.env.PATH,
-      npm_config_cache: path.join(os.homedir(), ".npm"),
-      // Cache-first, but able to fetch what the cache lacks. Hard `offline` made the whole
-      // step fail the moment one tarball was missing.
-      npm_config_prefer_offline: "true",
       ALP_DELEGATION_STATE_DIR: delegationState,
     },
   });
-  check("bootstrap clean-install chạy dependencies/build/registry/runtime/state/doctor/CLI", () => {
+  check("bootstrap dựng state, validate registry/runtime, chạy doctor và link CLI", () => {
     assert.strictEqual(run.status, 0, (run.stdout || "") + (run.stderr || ""));
     assert.match(run.stdout, /AgentRegistry 8 agents; runtime adapters claude,codex/);
-    assert.match(run.stdout, /BUILD-DRIFT\s+compiled artifacts match source hash/);
+    assert.match(run.stdout, /ARTIFACT\s+bản cài tarball/);
     assert(fs.existsSync(path.join(home, ".alp", "executions")));
+    assert(fs.existsSync(path.join(home, ".alp", "hooks", "session-boot.cjs")));
     assert(fs.existsSync(delegationState));
+  });
+  // Đây là điều kiện tiên quyết của cả mô hình phát hành mới: máy người dùng không build.
+  check("bootstrap KHÔNG build gì ở bản cài phát hành", () => {
+    assert.match(run.stdout, /bản cài tarball — dùng dist\/ dựng sẵn, không build trên máy này/);
+    assert(!/npm (ci|install)|tsc /.test(run.stdout), `bootstrap không được gọi npm/tsc: ${run.stdout}`);
+    assert(fs.lstatSync(path.join(repoCopy, "node_modules")).isSymbolicLink(), "npm ci đã chạy và thay node_modules");
   });
   check("bootstrap --no-path creates the shared CLI link without editing a shell profile", () => {
     const cli = path.join(repoCopy, "scripts", "alp.cjs");

@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 // test-windows-installer.cjs — integration test wrapper `irm ... | iex` trên Windows.
 //
-// Dùng fake git/node trong process PowerShell con để không clone, không trust và không sửa
+// Dùng fake git/node trong process PowerShell con để không clone, không tải và không sửa
 // User PATH thật. Fixture chỉ kiểm contract của install.ps1: PS 5.1 đọc đúng Node version,
 // lỗi không `exit` host, success kích hoạt alp.cmd ngay và child scope không rò biến/function.
+//
+// Chạy trên channel `dev` (ALP_BRANCH) vì đó là channel duy nhất không cần mạng: npm và
+// tarball đều phải ra ngoài Internet, và một installer test bắt buộc phải chạy ngoại tuyến.
+// Phần riêng của hai channel kia được khoá bằng assertion tĩnh ở dưới.
 
 const assert = require("assert");
 const fs = require("fs");
@@ -57,9 +61,15 @@ function runEngine(engine) {
       assert(output.includes("NODE_VERSION_MODE::dash-dash-version"), output);
       assert(!output.includes("NODE_VERSION_MODE::node-p"), output);
     });
-    check(`${engine}: bootstrap sở hữu npm ci/build code-native`, () => {
+    check(`${engine}: mọi channel đều bàn giao cho bootstrap.cjs`, () => {
       const source = fs.readFileSync(installer, "utf8");
       assert(source.includes("scripts\\bootstrap.cjs"));
+      // Ba channel phải cùng tồn tại trong wrapper: thiếu một cái là Windows mất đường cài
+      // mà không ai phát hiện, vì đường đó chỉ chạy trên máy không có npm.
+      for (const marker of ["Install-Npm", "Install-Tarball", "Install-Dev", "ItemType Junction"])
+        assert(source.includes(marker), `install.ps1 thiếu ${marker}`);
+      // Không được build trên máy người dùng nữa — đó là toàn bộ điểm của v0.9.0.
+      assert(!/npm (ci|run build)/.test(source), "install.ps1 vẫn build trên máy người dùng");
     });
     check(`${engine}: alp dùng được ngay trong terminal hiện tại`, () => {
       assert(output.includes("PATH_ACTIVE::True"), output);
@@ -79,6 +89,9 @@ function harnessSource({ installer, target, badTarget, localAppData }) {
 $env:ALP_HOME = ${psQuote(target)}
 $env:LOCALAPPDATA = ${psQuote(localAppData)}
 $env:ALP_NO_TRUST = '1'
+$env:ALP_BRANCH = 'main'
+Remove-Item Env:ALP_CHANNEL -ErrorAction SilentlyContinue
+Remove-Item Env:ALP_VERSION -ErrorAction SilentlyContinue
 Remove-Item Env:ALP_NO_PATH -ErrorAction SilentlyContinue
 $global:NodeVersionMode = 'missing'
 

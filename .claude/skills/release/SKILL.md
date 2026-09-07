@@ -15,16 +15,20 @@ của chính repo này, nên nằm ở `.claude/skills/` (project scope) chứ k
 
 ## Cổng chặn — đọc trước mọi thứ khác
 
-**Không tạo tag, không push tag, không publish release, trừ khi principal yêu cầu trong phiên
-này.** Tag đã push và release đã publish là việc ra ngoài máy: người khác `alp update` về ngay
-lập tức. Duyệt ở lần trước không tính cho lần này (HOUSE-RULES §1.2).
+**Không tạo tag, không push tag, không `npm publish`, không publish release, trừ khi principal
+yêu cầu trong phiên này.** Tag đã push, package đã publish và release đã publish đều là việc ra
+ngoài máy: người khác `npm i -g alp-code` hoặc `alp update` về ngay lập tức. Duyệt ở lần trước
+không tính cho lần này (HOUSE-RULES §1.2).
 
-Hai việc **không bao giờ tự làm**, kể cả khi thấy sai:
+Ba việc **không bao giờ tự làm**, kể cả khi thấy sai:
 
 | Việc | Vì sao |
 |---|---|
 | xoá / trỏ lại tag đã push | máy khác đã checkout tag đó; đổi nghĩa tag là đổi code dưới chân người dùng |
 | sửa/xoá GitHub Release đã publish | release notes là bản ghi công khai |
+| `npm unpublish` | npm chỉ cho gỡ trong 72h và **không bao giờ** cho dùng lại số version đó; gỡ một bản đang có người cài là làm hỏng máy họ |
+
+Version đã `npm publish` là vĩnh viễn. Sai thì publish bản vá tiếp theo, không gỡ bản cũ.
 
 Tag sai thì **cắt version mới** (`v0.1.1`), không sửa tag cũ. Báo principal, để họ quyết.
 
@@ -49,6 +53,7 @@ git status --porcelain                    # phải rỗng
 git fetch origin --tags && git log --oneline -1 origin/main   # main local phải bằng origin
 git tag -l                                # xem version gần nhất đã phát hành
 gh auth status                            # publish release cần gh đã đăng nhập
+npm whoami                                # `npm publish` cần đã đăng nhập registry
 npm run typecheck && npm run build && npm test
 for f in scripts/test-*.cjs; do node "$f" || break; done
 ```
@@ -95,28 +100,57 @@ Script tự chặn: tree bẩn, tag đã tồn tại, version không tăng, mụ
 (`--allow-empty` để vượt, chỉ dùng khi principal đồng ý). Cần tự tay commit thì thêm
 `--no-commit` — script chỉ ghi file rồi in lệnh git cần chạy.
 
-### 3. Push và publish — hỏi principal trước
+### 3. Dựng artifact
+
+```bash
+node scripts/pack-release.cjs
+```
+
+Ra hai file trong `build/`, cho hai channel cài:
+
+| File | Đi đâu | Là gì |
+|---|---|---|
+| `alp-code-X.Y.Z.tgz` | `npm publish` | đúng cây file `npm pack` sinh ra (chạy `prepack` → `tsc`) |
+| `alp-code-vX.Y.Z-bundle.tar.gz` | asset của GitHub Release | cùng cây file đó, kèm sẵn `node_modules` chỉ có dependency runtime |
+
+Script kiểm artifact trước khi dừng: đủ file bắt buộc, không lọt `src/`/`test/`/`memory/`, và
+load thật registry + hai adapter từ một thư mục ngoài repo để bắt lỗi thiếu dependency runtime
+— thứ ở trong repo luôn chạy được và chỉ hỏng ở máy người dùng. Nó **dừng trước** `npm publish`
+và `gh release upload`, giống `cut-release.cjs` dừng trước `git push`.
+
+Bundle mang sẵn dependency vì đó là toàn bộ lý do có channel thứ hai: máy không có npm hoặc bị
+chặn registry. Một tarball vẫn bắt `npm install` sau khi giải nén thì không giải quyết gì.
+
+### 4. Push và publish — hỏi principal trước
 
 ```bash
 git push origin main --tags
+npm publish build/alp-code-X.Y.Z.tgz
 gh release create vX.Y.Z --generate-notes
+gh release upload vX.Y.Z build/alp-code-vX.Y.Z-bundle.tar.gz
 ```
 
 Push commit và tag **cùng lúc**: tag trỏ vào commit mà `origin/main` chưa có thì release trỏ
 vào lịch sử mà người khác chưa fetch được.
 
-`gh release create` chạy tại máy nên biết kết quả ngay — nó in URL release. Không có bước
-async nào để phải đi moi log.
+Thứ tự trên là có ý: tag lên trước, rồi npm, rồi release + asset. `install.sh` ở channel
+tarball resolve `releases/latest` rồi tải asset theo tên — release có mặt mà thiếu asset nghĩa
+là mọi lần cài tarball trong khoảng đó đều 404.
 
-### 4. Xác minh
+Cả `npm publish` lẫn `gh release` đều chạy tại máy nên biết kết quả ngay. Không có bước async
+nào để phải đi moi log.
+
+### 5. Xác minh
 
 ```bash
 gh release view vX.Y.Z --json tagName,isDraft,url
 gh api repos/phucanh08/alp-code/releases/latest --jq .tag_name   # đúng cái alp update đọc
+gh release view vX.Y.Z --json assets --jq '.assets[].name'       # phải có bundle .tar.gz
+npm view alp-code version                                        # phải là X.Y.Z
 ```
 
-Release phải tồn tại, không phải draft, và `releases/latest` phải trả đúng tag vừa cắt — đây
-mới là thứ `resolveLatestReleaseTag` dựa vào.
+Release phải tồn tại, không phải draft, `releases/latest` phải trả đúng tag vừa cắt — đây mới
+là thứ `resolveLatestReleaseTag` dựa vào — và asset bundle phải có mặt cho channel tarball.
 
 ## Mẫu báo cáo về principal
 
@@ -125,10 +159,13 @@ mới là thứ `resolveLatestReleaseTag` dựa vào.
 ✓ version:   0.1.0 → 0.2.0 (MINOR: thêm `alp --version`)
 ✓ changelog: [0.2.0] - 2026-08-27
 ✓ commit:    <hash> chore(release): v0.2.0
+✓ artifact:  build/alp-code-0.2.0.tgz + build/alp-code-v0.2.0-bundle.tar.gz
 ✗ tag/push:  CHƯA — chờ principal duyệt
+✗ npm/release: CHƯA — chờ principal duyệt
 ```
 
-Chưa push thì ghi rõ chưa push. Đã push thì dán link release.
+Chưa push thì ghi rõ chưa push, và ghi riêng npm với GitHub Release: dựng được artifact không
+có nghĩa là đã đẩy đi. Đã publish thì dán link release và dòng `npm view alp-code version`.
 
 ## Xử lý lỗi
 
@@ -161,13 +198,17 @@ nhớ: push `release.yml` lên `main` thành **một cú push riêng trước**,
 
 ## Sau khi release
 
-`alp update` trên máy khác resolve tag mới nhất qua GitHub API (fallback `git ls-remote --tags`).
+`alp update` cập nhật theo channel của bản cài: bản npm gọi `npm install -g alp-code@X.Y.Z`,
+bản tarball tải asset bundle của tag mới nhất, dev clone checkout tag rồi build. Cả ba đều
+resolve tag mới nhất qua GitHub API (fallback `git ls-remote --tags`).
 Máy đang chạy `alp` chỉ thấy thông báo sau khi cache `~/.alp/update-check.json` hết TTL 24h —
 đây là hành vi đúng, không phải lỗi. Muốn kiểm tra ngay thì xoá file cache đó rồi chạy lại `alp`.
 
 ## Ranh giới
 
 - Không release từ nhánh khác `main`, không release khi test đỏ.
+- Không `npm publish` khi principal mới chỉ duyệt tag/GitHub Release — đó là hai lần ra ngoài
+  máy khác nhau, hỏi riêng từng lần.
 - Không tự viết release notes đè lên auto-generated notes trừ khi principal yêu cầu.
 - Không thêm lại GitHub Actions cho release trong lúc đang cắt release — đó là thay đổi thiết
   kế, cần bàn riêng (xem mục "Vì sao không dùng GitHub Actions").

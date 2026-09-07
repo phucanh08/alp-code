@@ -157,8 +157,10 @@ describe("runtime adapters", () => {
     // gets no `--permission-mode plan` to wave reads through — was refused on its very
     // first `Read` and finished having done nothing.
     expect(settings.permissions.additionalDirectories).toContain(dirname(settings.alp.taskFile));
+    // `<HOME>/.alp/memory`, không phải `<thư mục cài>/memory`: state của người dùng đã ra
+    // khỏi thư mục cài từ v0.9.0 để bản cài trở thành artifact thay được.
     expect(settings.permissions.deny).toContain(
-      absoluteRule("Read", join(root, "memory", "private", "main")),
+      absoluteRule("Read", join(root, ".alp", "memory", "private", "main")),
     );
     // The format itself, pinned once: two leading slashes and no more, whatever the
     // platform's absolute paths look like.
@@ -213,7 +215,7 @@ describe("runtime adapters", () => {
     const settings = JSON.parse(await readFile(runtimeFile(delegated, "claude-settings.json"), "utf8"));
 
     expect(settings.permissions.deny).toContain(
-      absoluteRule("Read", join(root, "memory", "private", "main")),
+      absoluteRule("Read", join(root, ".alp", "memory", "private", "main")),
     );
   });
 

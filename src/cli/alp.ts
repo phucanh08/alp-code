@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { accessSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import type { RuntimeId } from "../agents/types";
@@ -24,6 +23,7 @@ import { deinitializeProject, initializeProject, ProjectRegistryStore } from "./
 import { ensurePrincipalProfile, runPrincipalCommand, type PrincipalCommandInput } from "./commands/principal";
 import { runMainSession, type RunMainInput } from "./commands/run-main";
 import { runModeCommand, type ModeCommandInput } from "./commands/mode";
+import { agentsDirectory, executionsDirectory, memoryRoot } from "../state-paths";
 import { checkForUpdate, FileUpdateCheckStore } from "./update-check";
 
 export type AlpCommand =
@@ -171,7 +171,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
   const version = readVersion(repoRoot);
   const policy = new PolicyEngine({ registry: agentRegistry });
   const memory = new MemoryService({
-    store: new MarkdownFileStore({ root: join(repoRoot, "memory") }),
+    store: new MarkdownFileStore({ root: memoryRoot() }),
     policy,
     audit: { record() {} },
   });
@@ -180,7 +180,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
     policy,
     memory,
     workflowRunner: new WorkflowRunner(),
-    store: new FileExecutionStore({ root: join(process.env.HOME || homedir(), ".alp", "executions") }),
+    store: new FileExecutionStore({ root: executionsDirectory() }),
   });
   const adapters = new Map<RuntimeId, ClaudeRuntimeAdapter | CodexRuntimeAdapter>([
     ["claude", new ClaudeRuntimeAdapter({ hooksDirectory: join(repoRoot, "hooks") })],
@@ -235,7 +235,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
       );
       // Identity documents are what the SessionStart hook reads; a project registered
       // without them would boot with an empty identity and a warning.
-      await syncIdentityDocuments({ repoRoot }, { registry: agentRegistry });
+      await syncIdentityDocuments({ directory: agentsDirectory() }, { registry: agentRegistry });
       stdout.write(`READY    ${registered.path}\n`);
     },
     async deinitProject(input) {
@@ -243,7 +243,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
       stdout.write(`REMOVED  ${resolve(input.project)}\n`);
     },
     async syncIdentity() {
-      const written = await syncIdentityDocuments({ repoRoot }, { registry: agentRegistry });
+      const written = await syncIdentityDocuments({ directory: agentsDirectory() }, { registry: agentRegistry });
       for (const file of written) stdout.write(`IDENTITY ${file}\n`);
     },
     async principalCommand(input) {
@@ -251,7 +251,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
         write: (text) => stdout.write(text),
         // A changed name must reach the generated identity documents, or the next native
         // session would boot with the previous one.
-        syncIdentity: async () => { await syncIdentityDocuments({ repoRoot }, { registry: agentRegistry }); },
+        syncIdentity: async () => { await syncIdentityDocuments({ directory: agentsDirectory() }, { registry: agentRegistry }); },
       });
     },
     async delegateCommand(args) {
@@ -266,7 +266,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
     },
     async contextCommand(args) {
       return runContextCommand(args, {
-        executionsRoot: join(process.env.HOME || homedir(), ".alp", "executions"),
+        executionsRoot: executionsDirectory(),
         env: process.env,
         write: (text) => stdout.write(text),
       });

@@ -1,17 +1,22 @@
 #!/usr/bin/env node
-// bootstrap.cjs — bước 2 của installer: install/build code-native ALP rồi kiểm tra health.
+// bootstrap.cjs — bước 2 của installer: dựng state, kiểm tra bản cài rồi đưa `alp` vào PATH.
 //   bootstrap.cjs --no-path    tạo lệnh `alp` nhưng không sửa shell profile/User PATH
 //
-// VÌ SAO TÁCH KHỎI install.sh: install.sh/install.ps1 chạy khi repo CHƯA tồn tại nên
-// buộc phải viết bằng shell. Từ lúc có repo trở đi, ba OS dùng chung một implementation
-// Node — đúng luật của repo này: .sh/.ps1 là wrapper, .cjs là bản thật duy nhất.
+// VÌ SAO TÁCH KHỎI install.sh: install.sh/install.ps1 chạy khi chưa có gì trên máy nên buộc
+// phải viết bằng shell. Từ lúc code đã nằm trên đĩa trở đi, ba OS dùng chung một
+// implementation Node — đúng luật của repo này: .sh/.ps1 là wrapper, .cjs là bản thật duy nhất.
+//
+// Từ v0.9.0 chỉ dev clone mới build. Bản npm và bản tarball tới máy người dùng đã có sẵn
+// `dist/`, nên ở đó bootstrap không gọi `npm ci` hay `tsc` — nó chỉ kiểm tra rằng artifact
+// đầy đủ. Đó chính là điều làm việc cài nhanh và không cần toolchain.
 
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const { spawnSyncCommand } = require("./lib/delegation/command-runner.cjs");
 const CLI = require("./lib/cli-link.cjs");
-const D = require("./lib/delegation/config.cjs");
+const P = require("./lib/install-paths.cjs");
+const { ensureState } = require("./lib/state.cjs");
 
 const repoRoot = path.resolve(__dirname, "..");
 if (!fs.existsSync(path.join(repoRoot, "package.json"))) die("không tìm thấy package.json của alp-code");
@@ -23,17 +28,24 @@ for (const a of args)
   if (a.startsWith("-") && !["--no-path", "-h", "--help"].includes(a))
     die(`tham số lạ: ${a}`);
 
-// 1. Machine-local state. Never overwrite memory or preferences.
-console.log("---");
-ensureMemory();
-ensureDelegationState();
-ensureExecutionState();
+const channel = P.detectChannel(repoRoot);
 
-// 2. Deterministic dependency install and build.
+// 1. Build — chỉ ở dev clone. Bản phát hành đã compile sẵn trên máy maintainer.
 console.log("---");
-mustNpm(["ci", "--include=dev"]);
-mustNpm(["run", "build"]);
-writeBuildHash();
+if (channel === "dev") {
+  mustNpm(["ci", "--include=dev"]);
+  mustNpm(["run", "build"]);
+  writeBuildHash();
+} else {
+  console.log(`OK       bản cài ${channel} — dùng dist/ dựng sẵn, không build trên máy này`);
+}
+
+// 2. State cục bộ ở `~/.alp`. Không bao giờ đè memory hay preferences.
+console.log("---");
+let state;
+try { state = ensureState({ root: repoRoot }); }
+catch (error) { die(error.message); }
+for (const entry of state.log) console.log(`${entry.level.padEnd(8)} ${entry.text}`);
 
 // 3. Validate the compiled registry and both runtime adapters without launching them.
 validateCodeNative();
@@ -42,67 +54,30 @@ validateCodeNative();
 //    phải lỗi cài đặt. Chỉ exit 2 mới là doctor tự gãy.
 console.log("---");
 const health = run("doctor.cjs", []);
-if (health === 2) die("doctor.cjs gãy — repo có thể clone thiếu file");
+if (health === 2) die("doctor.cjs gãy — bản cài có thể thiếu file");
 
 // 5. `alp` vào PATH. Không có bước này thì mọi lệnh trong README đều phải gõ đường dẫn
-//    tuyệt đối tới repo — tức là vẫn đúng cái phiền mà `alp init` sinh ra để xoá bỏ.
+//    tuyệt đối tới thư mục cài — tức là vẫn đúng cái phiền mà `alp init` sinh ra để xoá bỏ.
+//    Trừ bản npm: ở đó `alp` đã là bin do npm tạo trong global bin dir của chính nó. Tạo
+//    thêm một shim thứ hai trong `~/.local/bin` chỉ dựng lên hai lệnh `alp` tranh nhau PATH,
+//    và cái do ta tạo sẽ trỏ vào một thư mục npm có toàn quyền xoá ở lần cài kế tiếp.
 console.log("---");
-for (const entry of CLI.installCli(repoRoot, { skipPath }))
-  console.log(`${entry.level.padEnd(8)} ${entry.text}`);
+if (channel === "npm") {
+  console.log("OK       lệnh `alp` do npm cài — installer không tạo thêm shim nào");
+} else {
+  for (const entry of CLI.installCli(repoRoot, { skipPath }))
+    console.log(`${entry.level.padEnd(8)} ${entry.text}`);
+}
 
 console.log("---");
-console.log(`READY    code-native alp-code tại ${repoRoot}`);
+console.log(`READY    code-native alp-code tại ${repoRoot} (${channel})`);
+console.log(`         memory và state: ${state.stateHome}`);
 if (health !== 0) console.log("CHECK    doctor còn cảnh báo ở trên — cài đặt vẫn dùng được, xử lý sau cũng kịp");
 console.log("");
 console.log("  cd <project-bất-kỳ> && alp init");
 console.log("  alp                              # launch main agent");
 console.log("");
-console.log("Cập nhật về sau: chạy lại installer — rebuild code, giữ memory và runtime preference.");
-
-/**
- * Dựng `memory/` từ `scaffold/memory/` — chỉ những gì còn THIẾU.
- *
- * Trí nhớ là dữ liệu cục bộ của từng máy, không đi theo git. Hệ quả: clone sạch có đủ
- * code nhưng không có một byte trí nhớ nào, và hai file khung là bắt buộc mới chạy được —
- * `memory/projects/INDEX.md` và `memory/INDEX.md` vẫn là dữ liệu Markdown được
- * `MarkdownFileStore` phục vụ qua code-native policy boundary.
- *
- * KHÔNG BAO GIỜ ĐÈ. Trí nhớ mất là thiệt hại thật và không có bản sao trên remote để lấy
- * lại — nên hàm này chỉ biết tạo cái vắng mặt, không biết sửa cái đã có.
- */
-function ensureMemory() {
-  const seed = path.join(repoRoot, "scaffold", "memory");
-  const dest = path.join(repoRoot, "memory");
-  if (!fs.existsSync(seed)) die("thiếu scaffold/memory/ — clone hỏng, không dựng lại memory/ được");
-
-  const made = [];
-  copyMissing(seed, dest, made);
-
-  // Khoang không có file khung: shared/* rỗng là hợp lệ, private/<role> theo số vai hiện có.
-  const dirs = [
-    path.join(dest, "shared", "decisions"),
-    path.join(dest, "shared", "people"),
-    path.join(dest, "shared", "reference"),
-    path.join(dest, "private"),
-  ];
-  for (const d of dirs) {
-    if (fs.existsSync(d)) continue;
-    fs.mkdirSync(d, { recursive: true });
-    made.push(path.relative(repoRoot, d) + "/");
-  }
-
-  if (!made.length) console.log("OK       memory/ đã đủ khung — không đụng vào nội dung");
-  else for (const m of made) console.log(`WROTE    ${m}`);
-}
-
-function ensureExecutionState() {
-  const home = process.env.HOME || process.env.USERPROFILE;
-  if (!home) die("không xác định được HOME/USERPROFILE để tạo execution state");
-  const root = path.join(home, ".alp", "executions");
-  fs.mkdirSync(root, { recursive: true, mode: 0o700 });
-  try { fs.chmodSync(root, 0o700); } catch {}
-  console.log(`OK       execution state ${root}`);
-}
+console.log("Cập nhật về sau: `alp update` — thay thư mục cài, giữ nguyên mọi thứ trong ~/.alp.");
 
 function mustNpm(extra) {
   // spawnSync("npm.cmd", ...) trực tiếp trên Windows ăn EINVAL từ bản Node vá
@@ -124,7 +99,9 @@ function validateCodeNative() {
       throw new Error("runtime adapter name không hợp lệ");
     console.log(`OK       AgentRegistry ${agents.length} agents; runtime adapters claude,codex`);
   } catch (error) {
-    die(`code-native validation thất bại: ${error.message}`);
+    die(channel === "dev"
+      ? `code-native validation thất bại: ${error.message}`
+      : `bản cài ${channel} tại ${repoRoot} không dùng được: ${error.message}\n         Artifact hỏng hoặc thiếu dependency — cài lại thay vì build tại chỗ.`);
   }
 }
 
@@ -146,27 +123,6 @@ function collectTypeScript(directory, files) {
   }
 }
 
-function ensureDelegationState() {
-  let config;
-  try { config = D.loadDelegationConfig(repoRoot); }
-  catch (error) { die(`delegation config không hợp lệ: ${error.message}`); }
-  fs.mkdirSync(config.stateDir, { recursive: true, mode: 0o700 });
-  console.log(`OK       delegation state ${config.stateDir}`);
-}
-
-function copyMissing(srcDir, dstDir, made) {
-  fs.mkdirSync(dstDir, { recursive: true });
-  for (const e of fs.readdirSync(srcDir, { withFileTypes: true })) {
-    const src = path.join(srcDir, e.name);
-    const dst = path.join(dstDir, e.name);
-    if (e.isDirectory()) copyMissing(src, dst, made);
-    else if (!fs.existsSync(dst)) {
-      fs.copyFileSync(src, dst);
-      made.push(path.relative(repoRoot, dst));
-    }
-  }
-}
-
 // ---------------------------------------------------------------- tiện ích
 
 function run(script, extra) {
@@ -176,13 +132,9 @@ function run(script, extra) {
   return r.status ?? 1;
 }
 
-function mustRun(script, extra) {
-  const code = run(script, extra);
-  if (code !== 0) die(`bước bắt buộc \`${script}\` thất bại (exit ${code})`);
-}
-
 function usage(code) {
-  console.log("bootstrap.cjs [--no-path]   — npm ci, build, validate, initialize state, doctor, install CLI");
+  console.log("bootstrap.cjs [--no-path]   — dựng ~/.alp, validate bản cài, doctor, cài lệnh `alp`");
+  console.log("                              (dev clone: npm ci + build trước)");
   process.exit(code);
 }
 

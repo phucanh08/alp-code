@@ -38,6 +38,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const P = require("../scripts/lib/install-paths.cjs");
 
 const ROLE_PATTERN = /^[a-z][a-z0-9-]*$/;
 // Same bound as `renderContinuity`'s `MAX_RENDERED_BYTES` (plan §9) — there is only one
@@ -60,8 +61,21 @@ function loadSessionContext() {
   if (sessionContext) return fs.readFileSync(sessionContext, "utf8");
   const role = process.env.ALP_ROLE || "main";
   if (!ROLE_PATTERN.test(role)) throw new Error(`invalid role \`${role}\``);
-  const file = path.join(repoRoot(), ".alp", "agents", `${role}.md`);
-  return fs.readFileSync(file, "utf8");
+  // `~/.alp/agents`, không phải `<thư mục cài>/.alp/agents`: từ v0.9.0 thư mục cài là artifact
+  // bị thay nguyên khối mỗi lần update, nên tài liệu identity sinh trong đó biến mất đúng lúc
+  // hook này cần đọc. Vẫn thử chỗ cũ để một bản cài chưa `alp init` lại vẫn boot có identity.
+  const file = path.join(P.agentsDir(process.env), `${role}.md`);
+  try {
+    return fs.readFileSync(file, "utf8");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    const legacy = path.join(repoRoot(), ".alp", "agents", `${role}.md`);
+    try {
+      return fs.readFileSync(legacy, "utf8");
+    } catch {
+      throw error;
+    }
+  }
 }
 
 /**
