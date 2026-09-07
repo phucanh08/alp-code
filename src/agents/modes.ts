@@ -71,7 +71,7 @@ export const MODE_PROFILES: Readonly<Record<ModeId, ModeProfile>> = Object.freez
     summary: "việc vặt, câu trả lời nhanh — rẻ và đủ",
     roles: {
       ...FIXED_ROLES,
-      main: { model: "claude-haiku-4-5", reasoningEffort: "low" },
+      main: { model: "claude-sonnet-5", reasoningEffort: "high" },
       oracle: { model: "gpt-5.6-sol", reasoningEffort: "high" },
     },
   },

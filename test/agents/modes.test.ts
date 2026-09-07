@@ -46,7 +46,8 @@ describe("mode dial — loadout", () => {
   });
 
   it("dials the working seat up across the four levels", () => {
-    expect(MODE_PROFILES.low.roles.main.model).toBe("claude-haiku-4-5");
+    expect(MODE_PROFILES.low.roles.main.model).toBe("claude-sonnet-5");
+    expect(MODE_PROFILES.low.roles.main.reasoningEffort).toBe("high");
     expect(MODE_PROFILES.medium.roles.main.model).toBe("gpt-5.6-sol");
     expect(MODE_PROFILES.high.roles.main.model).toBe("claude-opus-5");
     expect(MODE_PROFILES.high.roles.main.reasoningEffort).toBe("high");
@@ -105,7 +106,7 @@ describe("mode dial — resolution", () => {
   it("resolves the dialled model, effort, and the runtime that model implies", () => {
     expect(modelForMode(main, "ultra")).toBe("claude-opus-5");
     expect(runtimeForMode(main, "ultra")).toBe("claude");
-    expect(modelForMode(main, "low")).toBe("claude-haiku-4-5");
+    expect(modelForMode(main, "low")).toBe("claude-sonnet-5");
     expect(reasoningEffortForMode(main, "high")).toBe("high");
     expect(runtimeForMode(main, "puck")).toBe("codex");
     // Một nấc trộn hai CLI trong cùng phiên — Amp cũng vậy.

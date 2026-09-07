@@ -8,6 +8,12 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thay đổi
+
+- **`low` nâng `main` từ `claude-haiku-4-5 @ low` lên `claude-sonnet-5 @ high`.** `oracle` của
+  `low` giữ nguyên `gpt-5.6-sol @ high`, nên bất biến "oracle luôn ở runtime đối diện main"
+  vẫn giữ nguyên qua cả năm nấc.
+
 ## [0.8.0] - 2026-09-06
 
 ### Thêm

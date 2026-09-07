@@ -186,7 +186,7 @@ khi bí):
 
 | Nấc | `main` | effort | `oracle` | effort |
 |---|---|---|---|---|
-| `low` | claude-haiku-4-5 | low | gpt-5.6-sol | high |
+| `low` | claude-sonnet-5 | high | gpt-5.6-sol | high |
 | `medium` (mặc định) | gpt-5.6-sol | high | claude-opus-5 | high |
 | `high` | claude-opus-5 | high | gpt-5.6-sol | xhigh |
 | `ultra` | claude-opus-5 | high | gpt-6-astra | high |
