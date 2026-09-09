@@ -48,6 +48,7 @@ export interface LocalProcessBackendOptions {
   readonly stateDir?: string;
   readonly store?: LocalExecutionStore;
   readonly supervisorScript?: string;
+  readonly supervisorInvocation?: { readonly executable: string; readonly args: readonly string[] };
   readonly platform?: NodeJS.Platform;
   readonly killProcess?: (pid: number, signal: NodeJS.Signals) => void;
   /** Injected so a health check can be asserted without the runtimes installed. */
@@ -148,7 +149,7 @@ export class LocalProcessBackend implements ExecutionBackend {
   private readonly spawnProcess: NonNullable<LocalProcessBackendOptions["spawnProcess"]>;
   private readonly stateDir: string;
   private readonly store: LocalExecutionStore;
-  private readonly supervisorScript: string;
+  private readonly supervisorInvocation: { readonly executable: string; readonly args: readonly string[] };
   private readonly platform: NodeJS.Platform;
   private readonly killProcess: NonNullable<LocalProcessBackendOptions["killProcess"]>;
   private readonly probeRuntimes: NonNullable<LocalProcessBackendOptions["probeRuntimes"]>;
@@ -173,7 +174,10 @@ export class LocalProcessBackend implements ExecutionBackend {
     this.store = options.store ?? (options.stateDir
       ? new FileLocalExecutionStore({ file: localStateFile(options.stateDir) })
       : new InMemoryLocalExecutionStore());
-    this.supervisorScript = options.supervisorScript ?? join(__dirname, "local-supervisor.js");
+    this.supervisorInvocation = options.supervisorInvocation ?? {
+      executable: process.execPath,
+      args: [options.supervisorScript ?? join(__dirname, "local-supervisor.js")],
+    };
     this.platform = options.platform ?? process.platform;
     this.killProcess = options.killProcess ?? ((pid, signal) => process.kill(pid, signal));
     this.probeRuntimes = options.probeRuntimes ?? (async () => {
@@ -236,7 +240,7 @@ export class LocalProcessBackend implements ExecutionBackend {
     mkdirSync(join(this.stateDir, "specs"), { recursive: true, mode: 0o700 });
     writeFileSync(specFile, `${JSON.stringify(supervisorSpec, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 
-    const child = this.spawnProcess(process.execPath, [this.supervisorScript, specFile], {
+    const child = this.spawnProcess(this.supervisorInvocation.executable, [...this.supervisorInvocation.args, specFile], {
       cwd: launchSpec.cwd,
       env: { ...this.env },
       stdio: "ignore",

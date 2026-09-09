@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { stateHome } from "../state-paths";
+import { compareSemver } from "../install/semver";
 
 const TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -49,6 +49,24 @@ export class FileUpdateCheckStore implements UpdateCheckStore {
   }
 }
 
+export async function refreshUpdateCheck(
+  store: UpdateCheckStore = new FileUpdateCheckStore(),
+  fetchLatest: typeof fetch = fetch,
+): Promise<void> {
+  let latestTag: string | null = null;
+  try {
+    const response = await fetchLatest("https://api.github.com/repos/phucanh08/alp-code/releases/latest", {
+      headers: { Accept: "application/vnd.github+json", "User-Agent": "alp-code-update-check" },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (response.ok) {
+      const body = await response.json() as { tag_name?: unknown };
+      if (typeof body.tag_name === "string") latestTag = body.tag_name;
+    }
+  } catch { /* cache a failed check so normal commands never wait/retry in a loop */ }
+  await store.write({ checkedAt: Date.now(), latestTag });
+}
+
 export function spawnBackgroundUpdateCheck(repoRoot: string): void {
   try {
     const child = spawn(process.execPath, [join(repoRoot, "scripts", "lib", "update-check-worker.cjs")], {
@@ -63,12 +81,21 @@ export function spawnBackgroundUpdateCheck(repoRoot: string): void {
   }
 }
 
-function isNewer(repoRoot: string, latestTag: string, currentVersion: string): boolean {
-  const semver = createRequire(__filename)(join(repoRoot, "scripts", "lib", "semver-lite.cjs")) as {
-    compare(a: string, b: string): number;
-  };
+export function spawnNativeBackgroundUpdateCheck(selfExecutable: string, cwd: string): void {
   try {
-    return semver.compare(latestTag, currentVersion) > 0;
+    const child = spawn(selfExecutable, ["__internal", "update-check"], {
+      cwd,
+      detached: true,
+      stdio: "ignore",
+      env: process.env,
+    });
+    child.unref();
+  } catch { /* best-effort */ }
+}
+
+function isNewer(latestTag: string, currentVersion: string): boolean {
+  try {
+    return compareSemver(latestTag, currentVersion) > 0;
   } catch {
     return false;
   }
@@ -87,6 +114,6 @@ export async function checkForUpdate(input: CheckForUpdateInput): Promise<string
   const cached = await input.store.read();
   if (!cached || now - cached.checkedAt >= TTL_MS) (input.triggerBackgroundRefresh ?? spawnBackgroundUpdateCheck)(input.repoRoot);
   if (!cached?.latestTag) return null;
-  if (!isNewer(input.repoRoot, cached.latestTag, input.currentVersion)) return null;
+  if (!isNewer(cached.latestTag, input.currentVersion)) return null;
   return `UPDATE    phiên bản mới ${cached.latestTag} hiện có (đang dùng v${input.currentVersion}) — chạy \`alp update\`\n`;
 }

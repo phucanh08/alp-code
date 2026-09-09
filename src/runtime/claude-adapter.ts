@@ -5,11 +5,14 @@ import { memoryRoot as resolveMemoryRoot } from "../state-paths";
 import { atomicRuntimeFile, baseRuntimeEnvironment, compactBridgeEnabled, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
 import { claudePermissions } from "./permission-rules";
 import type { PrepareRuntimeInput, RuntimeAdapter, RuntimeHealth, RuntimeLaunchSpec } from "./runtime-adapter";
+import { hookInvocation, renderHookCommand } from "./hook-command";
 
 export interface ClaudeRuntimeAdapterOptions {
   readonly platform?: NodeJS.Platform;
   readonly env?: NodeJS.ProcessEnv;
   readonly hooksDirectory?: string;
+  readonly stableCommand?: string;
+  readonly assetRoot?: string;
 }
 
 export class ClaudeRuntimeAdapter implements RuntimeAdapter {
@@ -33,11 +36,21 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
   private readonly platform: NodeJS.Platform;
   private readonly env: NodeJS.ProcessEnv;
   private readonly hooksDirectory: string;
+  private readonly stableCommand?: string;
+  private readonly assetRoot?: string;
 
   constructor(options: ClaudeRuntimeAdapterOptions = {}) {
     this.platform = options.platform ?? process.platform;
     this.env = options.env ?? process.env;
     this.hooksDirectory = options.hooksDirectory ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "hooks");
+    this.stableCommand = options.stableCommand;
+    this.assetRoot = options.assetRoot;
+  }
+
+  private hook(name: "session-boot" | "session-end" | "compact-record", args: readonly string[] = []): string {
+    return this.stableCommand
+      ? renderHookCommand(hookInvocation(this.stableCommand, name, args), { platform: this.platform, runtime: "claude" })
+      : `${hookCommand(join(this.hooksDirectory, `${name}.cjs`))}${args.length ? ` ${args.join(" ")}` : ""}`;
   }
 
   /**
@@ -71,7 +84,7 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
       `${JSON.stringify(capsule, null, 2)}\n`,
     );
     const contextFiles = await writeRuntimeContextFiles(input.execution, input.interactive);
-    const skillRoots = runtimeSkillRoots(this.env);
+    const skillRoots = runtimeSkillRoots(this.env, this.assetRoot);
     const autoCompactTokens = policy.autoCompactTokens[this.name] ?? defaultAutoCompactTokens(input.model);
     const settingsFile = await atomicRuntimeFile(
       join(artifacts.runtimeDirectory, "claude-settings.json"),
@@ -89,17 +102,17 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
         // tune. Claude vẫn cap con số này theo cửa sổ context thật của phiên.
         ...(autoCompactTokens === null ? {} : { autoCompactWindow: autoCompactTokens }),
         hooks: {
-          SessionStart: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-boot.cjs")) }] }],
-          Stop: [{ hooks: [{ type: "command", command: hookCommand(join(this.hooksDirectory, "session-end.cjs")) }] }],
+          SessionStart: [{ hooks: [{ type: "command", command: this.hook("session-boot") }] }],
+          Stop: [{ hooks: [{ type: "command", command: this.hook("session-end") }] }],
           // Gated on the flag (§10) and on the pinned capability — the latter only ever
           // withholds a registration this build cannot back up with a measured event. No
           // matcher: the measured `trigger` values are `manual`/`auto` and the bridge wants
           // both.
           ...(compactBridgeEnabled(this.env) && this.compact.preCompact ? {
-            PreCompact: [{ hooks: [{ type: "command", command: `${hookCommand(join(this.hooksDirectory, "compact-record.cjs"))} pre claude` }] }],
+            PreCompact: [{ hooks: [{ type: "command", command: this.hook("compact-record", ["pre", "claude"]) }] }],
           } : {}),
           ...(compactBridgeEnabled(this.env) && this.compact.postCompact ? {
-            PostCompact: [{ hooks: [{ type: "command", command: `${hookCommand(join(this.hooksDirectory, "compact-record.cjs"))} post claude` }] }],
+            PostCompact: [{ hooks: [{ type: "command", command: this.hook("compact-record", ["post", "claude"]) }] }],
           } : {}),
         },
         permissions: claudePermissions({

@@ -1,6 +1,4 @@
 import { parseMode } from "../../agents/modes";
-import { createRequire } from "node:module";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { agentRegistry } from "../../agents/registry";
 import type { RuntimeId } from "../../agents/types";
@@ -16,6 +14,9 @@ import { ClaudeRuntimeAdapter } from "../../runtime/claude-adapter";
 import { CodexRuntimeAdapter } from "../../runtime/codex-adapter";
 import type { RuntimeAdapter } from "../../runtime/runtime-adapter";
 import { WorkflowRunner } from "../../workflow/workflow-runner";
+import type { InstallLayout } from "../../install-layout";
+import { loadDelegationConfig } from "../../install/config";
+import { memoryRoot } from "../../install/paths";
 
 export interface RunDelegateDependencies {
   readonly cwd: string;
@@ -99,23 +100,25 @@ export interface DefaultDelegationComposition {
 }
 
 export async function createDefaultDelegationComposition(
-  repoRoot: string,
+  layout: InstallLayout,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<DefaultDelegationComposition> {
-  const localRequire = createRequire(__filename);
-  const configModule = localRequire(join(repoRoot, "scripts", "lib", "delegation", "config.cjs")) as {
-    loadDelegationConfig(root: string, environment: NodeJS.ProcessEnv): { stateDir: string };
-  };
-  const config = configModule.loadDelegationConfig(repoRoot, env);
+  const config = loadDelegationConfig(layout.installRoot, env, layout.channel);
   // The one backend. It spawns the runtime as a child process, so it needs no daemon and
   // works on a machine where nothing else is installed — and it hands the runtime its own
   // settings file, which is what makes a role's `permissions.deny` real rather than
   // advisory. Its state lives in `local.json` under the delegation state directory, so a
   // later CLI process can run lifecycle commands against an execution this one started.
-  const backend = new LocalProcessBackend({ env, stateDir: config.stateDir });
+  const backend = new LocalProcessBackend({
+    env,
+    stateDir: config.stateDir,
+    ...(layout.channel === "dev" ? {} : {
+      supervisorInvocation: { executable: layout.selfExecutable, args: ["__internal", "supervisor"] },
+    }),
+  });
   const policy = new PolicyEngine({ registry: agentRegistry });
   const memory = new MemoryService({
-    store: new MarkdownFileStore({ root: join(repoRoot, "memory") }),
+    store: new MarkdownFileStore({ root: memoryRoot(env) }),
     policy,
     audit: { record() {} },
   });

@@ -1,0 +1,7 @@
+[
+  { "id": "darwin-arm64", "platform": "darwin", "arch": "arm64", "libc": null, "bunTarget": "bun-darwin-arm64", "executable": "alp" },
+  { "id": "darwin-x64", "platform": "darwin", "arch": "x64", "libc": null, "bunTarget": "bun-darwin-x64", "executable": "alp" },
+  { "id": "linux-x64-gnu", "platform": "linux", "arch": "x64", "libc": "glibc", "bunTarget": "bun-linux-x64", "executable": "alp" },
+  { "id": "linux-arm64-gnu", "platform": "linux", "arch": "arm64", "libc": "glibc", "bunTarget": "bun-linux-arm64", "executable": "alp" },
+  { "id": "windows-x64", "platform": "win32", "arch": "x64", "libc": null, "bunTarget": "bun-windows-x64", "executable": "alp.exe" }
+]

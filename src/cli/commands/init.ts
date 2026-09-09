@@ -8,12 +8,14 @@ import {
   readlink,
   rename,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { hookForwarder } from "../../state-paths";
+import { hookInvocation, renderHookCommand } from "../../runtime/hook-command";
 
 export interface RegisteredProject {
   readonly path: string;
@@ -100,6 +102,8 @@ export interface InitializeProjectInput {
    * only delegated executions get identity, because they carry their own settings file.
    */
   readonly repoRoot?: string;
+  readonly stableCommand?: string;
+  readonly assetRoot?: string;
 }
 
 export interface InitializeProjectDependencies {
@@ -110,7 +114,11 @@ export interface InitializeProjectDependencies {
  * Marker string `deinitializeProject` looks for before deleting the file — it is how we
  * tell a config we generated from one the user wrote themselves.
  */
-const EXCLUDE_ENTRY = ".claude/settings.local.json";
+const EXCLUDE_ENTRIES = Object.freeze([
+  ".claude/settings.local.json",
+  ".claude/skills/",
+  ".agents/skills/",
+]);
 
 /**
  * Keeps the generated settings file out of `git status` without touching a tracked file.
@@ -120,30 +128,73 @@ const EXCLUDE_ENTRY = ".claude/settings.local.json";
 async function excludeLocally(project: string): Promise<void> {
   const file = join(project, ".git", "info", "exclude");
   try {
-    const current = (await exists(file)) ? await readFile(file, "utf8") : "";
-    if (current.split(/\r?\n/).some((line) => line.trim() === EXCLUDE_ENTRY)) return;
+    let current = (await exists(file)) ? await readFile(file, "utf8") : "";
+    const present = new Set(current.split(/\r?\n/).map((line) => line.trim()));
+    const missing = EXCLUDE_ENTRIES.filter((entry) => !present.has(entry));
+    if (!missing.length) return;
     await mkdir(dirname(file), { recursive: true });
     const separator = current === "" || current.endsWith("\n") ? "" : "\n";
-    await writeFile(file, `${current}${separator}${EXCLUDE_ENTRY}\n`, "utf8");
+    current = `${current}${separator}${missing.join("\n")}\n`;
+    await writeFile(file, current, "utf8");
   } catch { /* not a git checkout, or exclude unwritable — the settings file still works */ }
 }
 
-async function writeProjectSettings(project: string, repoRoot: string): Promise<void> {
+async function installSkillLinks(project: string, assetRoot: string): Promise<void> {
+  const source = join(assetRoot, "skills");
+  let entries;
+  try { entries = await readdir(source, { withFileTypes: true }); }
+  catch { throw new Error(`packaged skills are missing from ${source}`); }
+  for (const root of [join(project, ".claude", "skills"), join(project, ".agents", "skills")]) {
+    await mkdir(root, { recursive: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const link = join(root, entry.name);
+      const target = join(source, entry.name);
+      if (await exists(link)) {
+        const metadata = await lstat(link);
+        if (metadata.isSymbolicLink() && resolve(dirname(link), await readlink(link)) === resolve(target)) continue;
+        // A project skill with the same name belongs to the user. Keep it and let the runtime
+        // precedence rules decide instead of replacing project content during init.
+        continue;
+      }
+      await symlink(target, link, process.platform === "win32" ? "junction" : "dir");
+    }
+  }
+}
+
+function isAlpBootHook(value: unknown): value is { type: string; command: string } {
+  if (!value || typeof value !== "object") return false;
+  const command = (value as { command?: unknown }).command;
+  return typeof command === "string" && (/session-boot\.cjs/.test(command) || /\bhook\s+session-boot\b/.test(command));
+}
+
+async function writeProjectSettings(project: string, stableCommand?: string): Promise<void> {
   const file = join(project, ".claude", "settings.local.json");
+  let settings: Record<string, any> = {};
   if (await exists(file)) {
     const content = await readFile(file, "utf8");
     if (!content.toLowerCase().includes("alp init")) await rename(file, `${file}.alp-backup`);
+    else {
+      try { settings = JSON.parse(content) as Record<string, any>; } catch { settings = {}; }
+    }
   }
   await mkdir(dirname(file), { recursive: true });
-  // Forwarder ở `~/.alp/hooks`, KHÔNG phải hook trong thư mục cài: file này nằm trong repo của
-  // người dùng và sống lâu hơn bản cài ALP đã ghi ra nó. Một đường dẫn tuyệt đối tới thư mục
-  // cài sẽ chết khi lên version, đổi channel hoặc cài lại chỗ khác — và phiên `claude` mở tay
-  // chỉ im lặng mất identity, đúng kiểu hỏng câm khó lần ra nhất.
-  const hook = `${JSON.stringify(process.execPath)} ${JSON.stringify(hookForwarder("session-boot"))}`;
-  await writeFile(file, `${JSON.stringify({
-    $generatedBy: "alp init",
-    hooks: { SessionStart: [{ hooks: [{ type: "command", command: hook }] }] },
-  }, null, 2)}\n`, "utf8");
+  const hook = stableCommand
+    ? renderHookCommand(hookInvocation(stableCommand, "session-boot"), { platform: process.platform, runtime: "claude" })
+    : `${JSON.stringify(process.execPath)} ${JSON.stringify(hookForwarder("session-boot"))}`;
+  settings.$generatedBy = "alp init";
+  settings.hooks ??= {};
+  settings.hooks.SessionStart ??= [];
+  const groups = settings.hooks.SessionStart as Array<{ hooks?: Array<Record<string, unknown>> }>;
+  let owned = groups.flatMap((group) => group.hooks ?? []).find(isAlpBootHook);
+  if (!owned) {
+    owned = { type: "command", command: hook };
+    groups.push({ hooks: [owned] });
+  } else {
+    owned.type = "command";
+    owned.command = hook;
+  }
+  await writeFile(file, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
   await excludeLocally(project);
 }
 
@@ -157,7 +208,11 @@ export async function initializeProject(
   const store = dependencies.store ?? new ProjectRegistryStore();
   const registered = Object.freeze({ path: project });
   await store.register(registered);
-  if (input.repoRoot) await writeProjectSettings(project, input.repoRoot);
+  if (input.repoRoot || input.stableCommand) await writeProjectSettings(project, input.stableCommand);
+  if (input.assetRoot) {
+    await installSkillLinks(project, input.assetRoot);
+    await excludeLocally(project);
+  }
   return registered;
 }
 

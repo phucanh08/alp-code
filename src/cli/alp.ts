@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { spawnSync } from "node:child_process";
-import { accessSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { accessSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { RuntimeId } from "../agents/types";
 import { MODE_IDS, MODE_PROFILES, parseMode, type ModeId } from "../agents/modes";
@@ -24,7 +22,12 @@ import { ensurePrincipalProfile, runPrincipalCommand, type PrincipalCommandInput
 import { runMainSession, type RunMainInput } from "./commands/run-main";
 import { runModeCommand, type ModeCommandInput } from "./commands/mode";
 import { agentsDirectory, executionsDirectory, memoryRoot } from "../state-paths";
-import { checkForUpdate, FileUpdateCheckStore } from "./update-check";
+import { checkForUpdate, FileUpdateCheckStore, spawnNativeBackgroundUpdateCheck } from "./update-check";
+import type { InstallLayout } from "../install-layout";
+import { BUILD_VERSION } from "../build-info";
+import { renderDoctor } from "../install/doctor";
+import { updateInstallation } from "../install/update";
+import { uninstallInstallation } from "../install/uninstall";
 
 export type AlpCommand =
   | { readonly command: "run-main"; readonly mode?: ModeId }
@@ -157,18 +160,15 @@ function findRepoRoot(start: string): string {
   }
 }
 
-function readVersion(repoRoot: string): string {
-  try {
-    const parsed = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
-    return typeof parsed?.version === "string" ? parsed.version : "0.0.0";
-  } catch {
-    return "0.0.0";
-  }
+function projectAssetRoot(layout: InstallLayout): string {
+  return layout.channel === "binary"
+    ? join(dirname(dirname(layout.installRoot)), "current")
+    : layout.assetRoot;
 }
 
-function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDependencies {
-  const repoRoot = process.env.ALP_REPO_ROOT || findRepoRoot(__dirname);
-  const version = readVersion(repoRoot);
+function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?: InstallLayout): AlpDependencies {
+  const repoRoot = layout?.installRoot ?? process.env.ALP_REPO_ROOT ?? findRepoRoot(__dirname);
+  const version = layout?.version ?? BUILD_VERSION;
   const policy = new PolicyEngine({ registry: agentRegistry });
   const memory = new MemoryService({
     store: new MarkdownFileStore({ root: memoryRoot() }),
@@ -183,14 +183,22 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
     store: new FileExecutionStore({ root: executionsDirectory() }),
   });
   const adapters = new Map<RuntimeId, ClaudeRuntimeAdapter | CodexRuntimeAdapter>([
-    ["claude", new ClaudeRuntimeAdapter({ hooksDirectory: join(repoRoot, "hooks") })],
+    ["claude", new ClaudeRuntimeAdapter({
+      hooksDirectory: join(repoRoot, "hooks"),
+      ...(layout ? { stableCommand: layout.stableCommand, assetRoot: layout.assetRoot } : {}),
+    })],
     // Previously left to default to `ALP_REPO_ROOT` (set by `scripts/alp.cjs`) the way
     // Claude's constructor already falls back too. That implicit path was fine carrying two
     // hooks; wiring two more onto it (PreCompact/PostCompact) turns a coincidence into a
     // real dependency, so it is passed explicitly here like Claude's.
-    ["codex", new CodexRuntimeAdapter({ hooksDirectory: join(repoRoot, "hooks") })],
+    ["codex", new CodexRuntimeAdapter({
+      hooksDirectory: join(repoRoot, "hooks"),
+      ...(layout ? { stableCommand: layout.stableCommand, assetRoot: layout.assetRoot, windowsPathCommand: "alp" } : {}),
+    })],
   ]);
-  const backend = new LocalProcessBackend();
+  const backend = new LocalProcessBackend(layout && layout.channel !== "dev" ? {
+    supervisorInvocation: { executable: layout.selfExecutable, args: ["__internal", "supervisor"] },
+  } : {});
   const selector = new ModeSelector({ output: stdout });
   const projectRegistry = new ProjectRegistryStore();
   return {
@@ -201,7 +209,14 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
     async checkForUpdate() {
       if (process.env.ALP_SKIP_UPDATE_CHECK === "1") return null;
       try {
-        return await checkForUpdate({ repoRoot, store: new FileUpdateCheckStore(), currentVersion: version });
+        return await checkForUpdate({
+          repoRoot,
+          store: new FileUpdateCheckStore(),
+          currentVersion: version,
+          ...(layout && layout.channel !== "dev" ? {
+            triggerBackgroundRefresh: () => spawnNativeBackgroundUpdateCheck(layout.selfExecutable, cwd),
+          } : {}),
+        });
       } catch {
         return null;
       }
@@ -226,7 +241,11 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
       return 0;
     },
     async initProject(input) {
-      const registered = await initializeProject({ ...input, repoRoot }, { store: projectRegistry });
+      const registered = await initializeProject({
+        ...input,
+        repoRoot,
+        ...(layout ? { stableCommand: layout.stableCommand, assetRoot: projectAssetRoot(layout) } : {}),
+      }, { store: projectRegistry });
       // Asked before the identity sync below, because the answers are rendered into every
       // `.alp/agents/<role>.md` this install writes.
       await ensurePrincipalProfile(
@@ -239,7 +258,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
       stdout.write(`READY    ${registered.path}\n`);
     },
     async deinitProject(input) {
-      await deinitializeProject({ ...input, repoRoot }, { store: projectRegistry });
+      await deinitializeProject({ ...input, repoRoot: layout ? projectAssetRoot(layout) : repoRoot }, { store: projectRegistry });
       stdout.write(`REMOVED  ${resolve(input.project)}\n`);
     },
     async syncIdentity() {
@@ -257,7 +276,14 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
     async delegateCommand(args) {
       const lifecycle = args[0] === "__lifecycle";
       const actual = lifecycle ? args.slice(1) : args;
-      const composition = await createDefaultDelegationComposition(repoRoot, process.env);
+      const composition = await createDefaultDelegationComposition(layout ?? {
+        channel: "dev",
+        version,
+        selfExecutable: process.execPath,
+        stableCommand: join(repoRoot, "scripts", "alp.cjs"),
+        installRoot: repoRoot,
+        assetRoot: repoRoot,
+      }, process.env);
       const value = lifecycle
         ? await runDelegationLifecycleCommand(actual, composition.service)
         : await runDelegateCommand(actual, { cwd, env: process.env, service: composition.service });
@@ -273,36 +299,35 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo): AlpDepe
     },
     async maintenanceCommand(input) {
       if (input.action === "doctor") {
-        const checked = spawnSync(process.execPath, [join(repoRoot, "scripts", "doctor.cjs"), ...input.args], {
-          cwd,
-          env: process.env,
-          stdio: "inherit",
-        });
-        if (checked.error) throw checked.error;
-        return checked.status ?? 2;
+        const report = await renderDoctor(layout ?? {
+          channel: "dev", version, selfExecutable: process.execPath,
+          stableCommand: join(repoRoot, "scripts", "alp.cjs"), installRoot: repoRoot, assetRoot: repoRoot,
+        }, process.env, input.args.includes("--quiet"));
+        stdout.write(report.output);
+        return report.exitCode;
       }
       if (input.action === "update") {
-        const updater = createRequire(__filename)(join(repoRoot, "scripts", "lib", "update.cjs")) as {
-          updateInstallation(root: string, options: { env: NodeJS.ProcessEnv; stdio: "inherit"; log(level: string, message: string): void }): Promise<{ ok: boolean; message?: string }>;
-        };
-        const result = await updater.updateInstallation(repoRoot, {
-          env: process.env,
-          stdio: "inherit",
-          log(level, message) { stdout.write(`${level.padEnd(9)}${message}\n`); },
-        });
-        if (!result.ok) stderr.write(`ERROR     ${result.message ?? "update failed"}\n`);
-        return result.ok ? 0 : 1;
+        if (!layout) throw new Error("native update requires an explicit installation layout");
+        try {
+          const result = await updateInstallation({ layout, env: process.env });
+          stdout.write(result.unchanged
+            ? `OK        alp-code v${result.to} is already current\n`
+            : `UPDATED   alp-code v${result.from} → v${result.to}; ~/.alp preserved\n`);
+          return 0;
+        } catch (error) {
+          stderr.write(`ERROR     ${(error as Error).message}\n`);
+          return 1;
+        }
       }
-      const uninstall = createRequire(__filename)(join(repoRoot, "scripts", "lib", "uninstall.cjs")) as {
-        uninstall(root: string, options: { cwd: string; purgeMemory: boolean; force: boolean }): { log: readonly { level: string; text: string }[]; memoryBackup: string | null };
-      };
-      const result = uninstall.uninstall(repoRoot, {
+      if (!layout) throw new Error("native uninstall requires an explicit installation layout");
+      const result = uninstallInstallation(layout, {
         cwd,
+        env: process.env,
         purgeMemory: input.args.includes("--purge-memory"),
-        force: input.args.includes("--force"),
       });
-      for (const entry of result.log) stdout.write(`${entry.level.padEnd(8)} ${entry.text}\n`);
       if (result.memoryBackup) stdout.write(`RESTORE  ${result.memoryBackup}\n`);
+      for (const leftover of result.leftovers) stdout.write(`CLEANUP  ${leftover}\n`);
+      stdout.write("REMOVED  native alp-code installation\n");
       return 0;
     },
   };
@@ -323,7 +348,7 @@ function helpText(): string {
     "  alp context pin <decision|constraint|open-item|next-action> -- <text>",
     "  alp context unpin <pin-id>",
     "  alp doctor",
-    "  alp update [--verbose]",
+    "  alp update",
     "  alp uninstall [--purge-memory] [--force]",
     "  alp --version",
     "",
@@ -336,11 +361,15 @@ function helpText(): string {
   ].join("\n") + "\n";
 }
 
-export async function main(argv: readonly string[] = process.argv.slice(2), injected?: AlpDependencies): Promise<number> {
+export async function main(
+  argv: readonly string[] = process.argv.slice(2),
+  injected?: AlpDependencies,
+  layout?: InstallLayout,
+): Promise<number> {
   const cwd = injected?.cwd ?? process.cwd();
   const stdout = injected?.stdout ?? process.stdout;
   const stderr = injected?.stderr ?? process.stderr;
-  const dependencies = injected ?? defaultDependencies(cwd, stdout, stderr);
+  const dependencies = injected ?? defaultDependencies(cwd, stdout, stderr, layout);
   const command = parseAlpArgs(argv);
   const notice = await dependencies.checkForUpdate().catch(() => null);
   if (notice) stdout.write(notice);
