@@ -86,6 +86,15 @@ function sha256(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 }
 
+function tarOwnershipArgs() {
+  const version = spawnSync("tar", ["--version"], { encoding: "utf8" }).stdout || "";
+  // GNU tar (Linux) rejects the BSD-tar-only --uid/--gid/--uname/--gname flags; it needs
+  // --owner=name:uid instead. bsdtar (macOS, Windows' built-in tar.exe) takes the reverse.
+  return /GNU tar/i.test(version)
+    ? ["--owner=root:0", "--group=root:0"]
+    : ["--uid", "0", "--gid", "0", "--uname", "root", "--gname", "root"];
+}
+
 function buildTarget(bun, target, outDir) {
   const staging = path.join(outDir, `.stage-${target.id}-${process.pid}`);
   fs.rmSync(staging, { recursive: true, force: true });
@@ -114,7 +123,7 @@ function buildTarget(bun, target, outDir) {
   fs.rmSync(archive, { force: true });
   fs.rmSync(tarball, { force: true });
   try {
-    run("tar", ["-cf", tarball, "--format", "ustar", "--uid", "0", "--gid", "0", "--uname", "root", "--gname", "root", "-C", staging, "."]);
+    run("tar", ["-cf", tarball, "--format", "ustar", ...tarOwnershipArgs(), "-C", staging, "."]);
     fs.writeFileSync(archive, zlib.gzipSync(fs.readFileSync(tarball), { level: 9, mtime: 0 }));
   } finally {
     fs.rmSync(tarball, { force: true });
