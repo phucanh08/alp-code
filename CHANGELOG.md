@@ -8,6 +8,15 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Sửa
+
+- `alp update` từ bản cài npm cũ hơn 0.10.0 không còn crash `MODULE_NOT_FOUND` trên
+  `scripts/ensure-state.cjs`. Package npm cũ (trước v0.10.0) tự mở một tiến trình node mới nhắm
+  đúng đường dẫn đó sau khi `npm install -g` xong; từ v0.10.0 npm package chỉ còn là wrapper
+  mỏng và không còn cây `scripts/` thật, nên mọi lượt update từ bản cũ đều vỡ ngay sau khi gói
+  mới đã cài xong. Thêm một shim tại đúng đường dẫn đó, chỉ để bản cũ gọi trúng — nó định vị
+  native payload của phiên bản vừa cài rồi nhờ payload dựng state qua `__internal ensure-state`.
+
 ## [0.10.0] - 2026-09-09
 
 ### Thêm

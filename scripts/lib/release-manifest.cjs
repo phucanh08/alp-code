@@ -38,8 +38,20 @@ const NPM_WRAPPER_REQUIRED = [
   "lib/resolve-target.cjs",
   "lib/install-payload.cjs",
   "lib/binary-targets.json",
+  // Shim cho `alp update` của npm package cũ hơn 0.10.0 — xem comment trong chính file đó.
+  // Không phải một phần kiến trúc wrapper mỏng; đây là NGOẠI LỆ DUY NHẤT của scripts/.
+  "scripts/ensure-state.cjs",
 ];
-const NPM_WRAPPER_FORBIDDEN = [/^dist\//, /^src\//, /^scripts\//, /^hooks\//, /^skills\//, /^scaffold\//, /^node_modules\//];
+const NPM_WRAPPER_FORBIDDEN = [
+  /^dist\//,
+  /^src\//,
+  // scripts/ nói chung vẫn cấm — trừ đúng shim tương thích ngược ở trên.
+  /^scripts\/(?!ensure-state\.cjs$)/,
+  /^hooks\//,
+  /^skills\//,
+  /^scaffold\//,
+  /^node_modules\//,
+];
 
 /** @returns {{missing: string[], leaked: string[]}} */
 function verifyEntries(entries) {

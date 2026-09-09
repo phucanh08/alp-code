@@ -77,4 +77,48 @@ async function main() {
   assert.match(launched.stdout, new RegExp(`npm\\|${wrapperVersion}`));
   assert(fs.existsSync(path.join(launcherCache, "bin", process.platform === "win32" ? "alp.cmd" : "alp")));
   console.log("PASS             npm wrapper exact-version cached payload");
+
+  // `alp update` của npm package cũ hơn 0.10.0 chạy `node <root>/scripts/ensure-state.cjs
+  // --quiet` bằng CODE CŨ, sau khi `npm install -g` đã thay ruột thư mục cài bằng wrapper mới.
+  // Đây là kịch bản đúng bug đã vỡ ở người dùng thật: file này phải còn tồn tại và phải dựng
+  // được state qua native payload, không được crash MODULE_NOT_FOUND.
+  const legacyRoot = path.join(root, "legacy-install");
+  fs.cpSync(path.join(__dirname, "..", "npm-wrapper", "lib"), path.join(legacyRoot, "lib"), { recursive: true });
+  // pack-release.cjs copies this in at publish time (see scripts/pack-release.cjs); the dev
+  // tree's npm-wrapper/lib doesn't carry it, so a packed install must be simulated by hand.
+  fs.copyFileSync(
+    path.join(__dirname, "..", "src", "install", "binary-targets.json"),
+    path.join(legacyRoot, "lib", "binary-targets.json"),
+  );
+  fs.mkdirSync(path.join(legacyRoot, "scripts"), { recursive: true });
+  fs.cpSync(
+    path.join(__dirname, "..", "npm-wrapper", "scripts", "ensure-state.cjs"),
+    path.join(legacyRoot, "scripts", "ensure-state.cjs"),
+  );
+  const legacyVersion = "9.9.8";
+  fs.writeFileSync(path.join(legacyRoot, "package.json"), JSON.stringify({ name: "alp-code", version: legacyVersion }));
+
+  const legacyCache = path.join(root, "legacy-cache");
+  const legacyPayloadRoot = path.join(legacyCache, "versions", legacyVersion, target.id);
+  fs.mkdirSync(path.join(legacyPayloadRoot, "bin"), { recursive: true });
+  fs.mkdirSync(path.join(legacyPayloadRoot, "skills"));
+  fs.mkdirSync(path.join(legacyPayloadRoot, "scaffold"));
+  const marker = path.join(root, "ensure-state.marker");
+  const legacyPayloadExecutable = path.join(legacyPayloadRoot, "bin", target.executable);
+  fs.writeFileSync(legacyPayloadExecutable, process.platform === "win32"
+    ? `@echo off\r\nif "%1"=="--version" (echo alp ${legacyVersion}& exit /b 0)\r\nif "%1"=="__internal" if "%2"=="ensure-state" (echo. > "%MARKER_FILE%"& exit /b 0)\r\nexit /b 9\r\n`
+    : `#!/bin/sh\nif [ "$1" = "--version" ]; then echo 'alp ${legacyVersion}'; exit 0; fi\nif [ "$1" = "__internal" ] && [ "$2" = "ensure-state" ]; then touch "$MARKER_FILE"; exit 0; fi\nexit 9\n`,
+    { mode: 0o755 });
+  fs.writeFileSync(path.join(legacyPayloadRoot, "install-manifest.json"), JSON.stringify({
+    schemaVersion: 1, app: "alp-code", version: legacyVersion, target: target.id,
+    compiler: { name: "bun", version: "1.4.2" },
+  }));
+
+  const legacyRun = spawnSync(process.execPath, [path.join(legacyRoot, "scripts", "ensure-state.cjs"), "--quiet"], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: root, ALP_NPM_CACHE: legacyCache, MARKER_FILE: marker },
+  });
+  assert.equal(legacyRun.status, 0, `${legacyRun.stdout}\n${legacyRun.stderr}`);
+  assert(fs.existsSync(marker), "legacy ensure-state shim never reached the native payload");
+  console.log("PASS             legacy (<0.10.0) `alp update` ensure-state shim reaches native payload");
 }

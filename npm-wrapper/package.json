@@ -6,7 +6,7 @@
   "license": "MIT",
   "author": "Phúc Anh (https://github.com/phucanh08)",
   "bin": { "alp": "bin/alp.cjs" },
-  "files": ["bin", "lib", "install.cjs", "LICENSE"],
+  "files": ["bin", "lib", "scripts", "install.cjs", "LICENSE"],
   "scripts": { "postinstall": "node install.cjs" },
   "engines": { "node": ">=18" },
   "repository": { "type": "git", "url": "git+https://github.com/phucanh08/alp-code.git" }
