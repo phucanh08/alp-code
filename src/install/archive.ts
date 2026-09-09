@@ -5,6 +5,10 @@ import { gunzipSync } from "node:zlib";
 
 const MAX_DOWNLOAD_BYTES = 256 * 1024 * 1024;
 const MAX_EXTRACTED_BYTES = 1024 * 1024 * 1024;
+// Native archives run 25-40MB today (cap MAX_DOWNLOAD_BYTES above). The same signal aborts the
+// body read, not just the initial response, so it has to cover the whole transfer — 15s only
+// works above ~2.5MB/s and aborted real updates on ordinary connections.
+const DOWNLOAD_TIMEOUT_MS = 120_000;
 
 export function parseChecksums(text: string): Map<string, string> {
   const result = new Map<string, string>();
@@ -116,7 +120,7 @@ export function extractTarGz(bytes: Uint8Array, destination: string): readonly s
 }
 
 export async function downloadBytes(url: string, fetcher: typeof fetch = fetch): Promise<Buffer> {
-  const response = await fetcher(url, { redirect: "follow", signal: AbortSignal.timeout(15_000) });
+  const response = await fetcher(url, { redirect: "follow", signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
   if (!response.ok) throw new Error(`download failed (${response.status}) for ${url}`);
   const length = Number(response.headers.get("content-length") || 0);
   if (length > MAX_DOWNLOAD_BYTES) throw new Error(`download exceeds size limit: ${url}`);

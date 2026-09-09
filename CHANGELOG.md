@@ -8,6 +8,13 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Sửa
+
+- Tải native archive (npm postinstall, `alp update` mọi channel) không còn bị abort giữa chừng
+  trên mạng chậm. `AbortSignal.timeout(15_000)` bọc cả việc đọc body chứ không chỉ chờ response
+  đầu tiên, mà archive hiện tại nặng 25-40MB — dưới ~2.5MB/s là chắc chắn timeout giữa chừng,
+  đúng lỗi `The operation was aborted due to timeout` người dùng gặp phải. Tăng lên 120s.
+
 ## [0.10.1] - 2026-09-09
 
 ### Sửa

@@ -9,6 +9,10 @@ const { archiveName, resolveTarget } = require("./resolve-target.cjs");
 
 const MAX_DOWNLOAD = 256 * 1024 * 1024;
 const MAX_EXTRACTED = 1024 * 1024 * 1024;
+// Native archives run 25-40MB today (cap MAX_DOWNLOAD above). The same signal aborts the body
+// read, not just the initial response, so it has to cover the whole transfer — 15s only works
+// above ~2.5MB/s and aborted real installs/updates on ordinary connections.
+const DOWNLOAD_TIMEOUT_MS = 120_000;
 
 function parseChecksums(text) {
   const values = new Map();
@@ -23,7 +27,7 @@ function parseChecksums(text) {
 
 async function download(url, fetcher) {
   let response;
-  try { response = await fetcher(url, { redirect: "follow", signal: AbortSignal.timeout(15_000) }); }
+  try { response = await fetcher(url, { redirect: "follow", signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) }); }
   catch (error) { throw new Error(`cannot download ${url}: ${error.message}`); }
   if (!response.ok) throw new Error(`cannot download ${url}: HTTP ${response.status}`);
   const declared = Number(response.headers.get("content-length") || 0);
