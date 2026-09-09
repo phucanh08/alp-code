@@ -131,6 +131,10 @@ function testAlpFacadePreservesCallerWorkspace() {
     env: {
       ...process.env,
       PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+      // `alp.cjs` tự dựng `~/.alp` ở lần chạy đầu. Không ghim state home thì test ghi đè
+      // install record THẬT của máy đang chạy: hook forwarder của mọi project quay sang trỏ
+      // vào clone này, và người dùng chỉ phát hiện khi phiên `claude` nạp nhầm bản cài.
+      ALP_STATE_HOME: path.join(dir, ".alp-state"),
       ALP_DELEGATION_STATE_DIR: stateDir,
       ALP_TEST_RUNTIME_CAPTURE: capture,
       ALP_SKIP_UPDATE_CHECK: "1",

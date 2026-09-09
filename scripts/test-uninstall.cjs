@@ -260,7 +260,9 @@ function testCliWiring() {
   const r = spawnSync(process.execPath, [path.join(repoRoot, "scripts", "alp.cjs"), "help"], {
     cwd: repoRoot,
     encoding: "utf8",
-    env: { ...process.env, ALP_SKIP_UPDATE_CHECK: "1" },
+    // ALP_STATE_HOME: `alp.cjs` dựng state ở lần chạy đầu, và không ghim thì nó ghi đè
+    // install record thật của máy đang chạy test — xem ghi chú trong test-delegation.cjs.
+    env: { ...process.env, ALP_SKIP_UPDATE_CHECK: "1", ALP_STATE_HOME: path.join(sandbox, "cli-wiring-state") },
   });
   check("alp help công bố code-native maintenance commands", () => {
     assert.strictEqual(r.status, 0, (r.stdout || "") + (r.stderr || ""));

@@ -55,6 +55,10 @@ try {
     ...process.env,
     ALP_EXECUTION_ROOT: root,
     ALP_MEMORY_ROOT: path.join(root, "memory"),
+    // Từ v0.9.0 hook đọc identity ở `~/.alp/agents`, không phải `<thư mục cài>/.alp/agents`.
+    // Không ghim state home thì test đọc trúng `~/.alp/agents` thật của máy đang chạy: fixture
+    // bị bỏ qua, và ca fail-open bên dưới im lặng đi qua vì máy nào cũng có sẵn `oracle.md`.
+    ALP_STATE_HOME: path.join(root, ".alp"),
   };
 
   // --- SessionStart: identity reaches the agent before its first turn -----------------
