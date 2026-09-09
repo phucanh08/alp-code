@@ -1,11 +1,18 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const dns = require("node:dns");
 const fs = require("node:fs");
 const path = require("node:path");
 const zlib = require("node:zlib");
 const { spawnSync } = require("node:child_process");
 const { archiveName, resolveTarget } = require("./resolve-target.cjs");
+
+// Node's default DNS result order can hand fetch() a working-but-degraded IPv6 route (measured
+// 4-5x slower than IPv4 on one real report) instead of racing both like curl's Happy Eyeballs —
+// large archives then eat enough of the download timeout that ordinary network variance tips
+// them over it. IPv6-only hosts are unaffected: this only reorders results when both exist.
+try { dns.setDefaultResultOrder("ipv4first"); } catch {}
 
 const MAX_DOWNLOAD = 256 * 1024 * 1024;
 const MAX_EXTRACTED = 1024 * 1024 * 1024;

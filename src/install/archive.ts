@@ -1,7 +1,14 @@
 import { createHash } from "node:crypto";
+import { setDefaultResultOrder } from "node:dns";
 import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
+
+// Node's default DNS result order can hand fetch() a working-but-degraded IPv6 route (measured
+// 4-5x slower than IPv4 on one real report) instead of racing both like curl's Happy Eyeballs —
+// large archives then eat enough of the download timeout that ordinary network variance tips
+// them over it. IPv6-only hosts are unaffected: this only reorders results when both exist.
+try { setDefaultResultOrder("ipv4first"); } catch { /* not supported on this runtime */ }
 
 const MAX_DOWNLOAD_BYTES = 256 * 1024 * 1024;
 const MAX_EXTRACTED_BYTES = 1024 * 1024 * 1024;

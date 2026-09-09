@@ -3,6 +3,7 @@
 
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
+const dns = require("node:dns");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -15,6 +16,12 @@ const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "alp-npm-wra
 main().finally(() => fs.rmSync(root, { recursive: true, force: true }));
 
 async function main() {
+  // Requiring install-payload.cjs must have already pinned IPv4-first DNS ordering — a
+  // working-but-degraded IPv6 route is what caused real `alp update` downloads to time out.
+  if (typeof dns.getDefaultResultOrder === "function") {
+    assert.equal(dns.getDefaultResultOrder(), "ipv4first");
+  }
+
   assert.deepEqual(definitions().map((target) => target.id), [
     "darwin-arm64", "darwin-x64", "linux-x64-gnu", "linux-arm64-gnu", "windows-x64",
   ]);

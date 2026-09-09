@@ -126,12 +126,28 @@ chặn registry. Một tarball vẫn bắt `npm install` sau khi giải nén th�
 ```bash
 git push origin main --tags
 npm publish build/alp-code-X.Y.Z.tgz
-gh release create vX.Y.Z --generate-notes
+
+# Release notes = đúng mục CHANGELOG.md của bản này, không phải "Full Changelog: ..." tự sinh —
+# principal đọc release muốn thấy đổi gì, không phải đi bấm vào link compare.
+awk -v ver="X.Y.Z" '
+  $0 ~ "^## \\[" ver "\\]" { on=1; next }
+  on && /^## \[/ { exit }
+  on { print }
+' CHANGELOG.md > /tmp/release-notes-X.Y.Z.md
+prev_tag=$(git describe --tags --abbrev=0 vX.Y.Z^)
+printf '\n**Full Changelog**: https://github.com/phucanh08/alp-code/compare/%s...vX.Y.Z\n' "$prev_tag" \
+  >> /tmp/release-notes-X.Y.Z.md
+
+gh release create vX.Y.Z --notes-file /tmp/release-notes-X.Y.Z.md
 gh release upload vX.Y.Z build/alp-code-vX.Y.Z-bundle.tar.gz
 ```
 
 Push commit và tag **cùng lúc**: tag trỏ vào commit mà `origin/main` chưa có thì release trỏ
 vào lịch sử mà người khác chưa fetch được.
+
+Đọc lại `/tmp/release-notes-X.Y.Z.md` trước khi chạy `gh release create` — gõ sai `ver` (không
+khớp header CHANGELOG vừa đóng) cho ra file rỗng, và đây là thông báo công khai nên phải đúng
+ngay từ lần đầu, không sửa lại sau khi đã publish.
 
 Thứ tự trên là có ý: tag lên trước, rồi npm, rồi release + asset. `install.sh` ở channel
 tarball resolve `releases/latest` rồi tải asset theo tên — release có mặt mà thiếu asset nghĩa
@@ -209,7 +225,9 @@ Máy đang chạy `alp` chỉ thấy thông báo sau khi cache `~/.alp/update-ch
 - Không release từ nhánh khác `main`, không release khi test đỏ.
 - Không `npm publish` khi principal mới chỉ duyệt tag/GitHub Release — đó là hai lần ra ngoài
   máy khác nhau, hỏi riêng từng lần.
-- Không tự viết release notes đè lên auto-generated notes trừ khi principal yêu cầu.
+- Release notes lấy từ đúng mục CHANGELOG.md của bản này (bước 4), không dùng
+  `--generate-notes` mặc định — nội dung để principal đọc là gì đã đổi, không phải link
+  compare. Không tự ý viết thêm ngoài CHANGELOG hoặc sửa lại notes sau khi đã publish.
 - Không thêm lại GitHub Actions cho release trong lúc đang cắt release — đó là thay đổi thiết
   kế, cần bàn riêng (xem mục "Vì sao không dùng GitHub Actions").
 - Không commit `dist/`, `memory/` (xem skill `git` — chúng phải nằm ngoài mọi commit).

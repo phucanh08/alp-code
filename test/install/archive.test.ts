@@ -1,8 +1,15 @@
 import { createHash } from "node:crypto";
+import { getDefaultResultOrder } from "node:dns";
 import { describe, expect, it } from "vitest";
 import { parseChecksums, verifyArchiveChecksum, validateArchivePath } from "../../src/install/archive";
 
 describe("binary archive validation", () => {
+  it("prefers IPv4 DNS results so large downloads don't ride a degraded IPv6 route", () => {
+    if (typeof getDefaultResultOrder !== "function") return;
+    expect(getDefaultResultOrder()).toBe("ipv4first");
+  });
+
+
   it("parses exact checksum records and verifies bytes", () => {
     const bytes = Buffer.from("archive");
     const digest = createHash("sha256").update(bytes).digest("hex");

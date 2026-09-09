@@ -8,6 +8,14 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Sửa
+
+- `alp update` (kênh npm) và tải native archive nói chung không còn ưu tiên nhầm một tuyến IPv6
+  chạy được nhưng chậm hơn IPv4 tới 4-5 lần trên một số mạng — `fetch()` của Node dùng thứ tự
+  DNS mặc định, không tự đua song song IPv4/IPv6 như `curl`, nên archive 25-40MB có thể vượt cả
+  timeout 120s vừa tăng ở v0.10.2 khi gặp biến động mạng bình thường. Ép `dns` ưu tiên IPv4 khi
+  cả hai cùng tồn tại; máy chỉ có IPv6 không bị ảnh hưởng.
+
 ## [0.10.2] - 2026-09-09
 
 ### Sửa
