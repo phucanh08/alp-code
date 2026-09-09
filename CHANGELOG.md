@@ -8,6 +8,8 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+## [0.10.4] - 2026-09-09
+
 ### Sửa
 
 - Trang npm của `alp-code` không còn thiếu README. `pack-release.cjs` dựng gói npm từ
@@ -811,7 +813,8 @@ Bản release đánh số đầu tiên. Trước mốc này alp-code chưa có v
 - `alp init`/`alp deinit`, `alp delegate`, `alp doctor`, `alp uninstall`, installer một dòng
   cho macOS/Linux/WSL và Windows.
 
-[Chưa phát hành]: https://github.com/phucanh08/alp-code/compare/v0.10.3...HEAD
+[Chưa phát hành]: https://github.com/phucanh08/alp-code/compare/v0.10.4...HEAD
+[0.10.4]: https://github.com/phucanh08/alp-code/compare/v0.10.3...v0.10.4
 [0.10.3]: https://github.com/phucanh08/alp-code/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/phucanh08/alp-code/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/phucanh08/alp-code/compare/v0.10.0...v0.10.1
