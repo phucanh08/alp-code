@@ -1,0 +1,13 @@
+{
+  "name": "alp-code",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Native ALP launcher and exact-version payload installer",
+  "license": "MIT",
+  "author": "Phúc Anh (https://github.com/phucanh08)",
+  "bin": { "alp": "bin/alp.cjs" },
+  "files": ["bin", "lib", "install.cjs", "LICENSE"],
+  "scripts": { "postinstall": "node install.cjs" },
+  "engines": { "node": ">=18" },
+  "repository": { "type": "git", "url": "git+https://github.com/phucanh08/alp-code.git" }
+}

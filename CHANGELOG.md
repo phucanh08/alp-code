@@ -8,6 +8,27 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thêm
+
+- Native Bun executable cho macOS arm64/x64, Linux glibc x64/arm64 và Windows x64; archive
+  phát hành mang theo `skills/`, `scaffold/`, legacy hooks, license, manifest và checksum.
+- Installer binary không cần Node, validate archive/checksum/target/smoke trước khi atomically
+  đổi `current`; self-update giữ previous version và rollback khi state bootstrap thất bại.
+- npm chuyển thành wrapper-only package, tải payload đúng bằng version package vào cache
+  per-user; first run vẫn hoạt động khi npm được cài với `--ignore-scripts`.
+- Public hook subcommands (`alp hook session-boot|session-end|compact-record`) và internal
+  supervisor/state/update-check subcommands trong cùng static binary.
+- Native black-box, migration, installer, performance và năm-target CI runtime matrix.
+
+### Thay đổi
+
+- `alp init` ghi hook qua stable command, tự repair project v0.9 và link packaged skills qua
+  asset root sống qua `current` switch. `session-boot` rẽ nhánh trước full registry/memory.
+- `alp --version` dùng build-time version, không đọc `package.json`, không network và không
+  khởi tạo state; p95 gate của direct darwin-arm64 binary là dưới 40 ms.
+- Root package là development-only/private để không thể vô tình publish full source package;
+  `scripts/pack-release.cjs` chỉ pack npm wrapper và native release artifacts.
+
 ## [0.9.0] - 2026-09-07
 
 ### Thêm

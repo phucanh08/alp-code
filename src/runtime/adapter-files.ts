@@ -141,10 +141,11 @@ export function compactBridgeEnabled(env: NodeJS.ProcessEnv): boolean {
   return env.ALP_COMPACT_BRIDGE === "1";
 }
 
-export function runtimeSkillRoots(env: NodeJS.ProcessEnv): string {
+export function runtimeSkillRoots(env: NodeJS.ProcessEnv, assetRoot?: string): string {
   const home = env.HOME ?? env.USERPROFILE;
   const roots = [
     ...(env.ALP_SKILL_ROOTS ?? "").split(delimiter),
+    assetRoot ? join(assetRoot, "skills") : "",
     env.ALP_REPO_ROOT ? join(env.ALP_REPO_ROOT, "skills") : "",
     home ? join(home, ".agents", "skills") : "",
     env.CODEX_HOME ? join(env.CODEX_HOME, "skills") : home ? join(home, ".codex", "skills") : "",

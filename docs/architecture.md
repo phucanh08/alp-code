@@ -423,12 +423,12 @@ registry, không có `--backend`, không có fallback (2026-09-03).
 Store có hai bản: `InMemoryDelegationExecutionStore` (test) và `FileDelegationExecutionStore`
 (atomic write, versioned document).
 
-### 4.8 `hooks/` + `src/hooks/execution-bridge.ts` — enforcement tại runtime
+### 4.8 `alp hook` + `src/hooks/execution-bridge.ts` — enforcement tại runtime
 
 Chỉ còn hai hook, và **không hook nào chặn tool call**. ACL đã chuyển sang khai báo trong
 config của chính runtime (`src/runtime/permission-rules.ts`) — xem bảng ở §4.6.
 
-**`session-boot.cjs`** (SessionStart) — kênh **duy nhất** đưa session context vào view của model,
+**`alp hook session-boot`** (SessionStart) — kênh **duy nhất** đưa session context vào view của model,
 cho cả hai runtime. Đọc theo thứ tự ưu tiên:
 
 1. `ALP_SESSION_CONTEXT` — `session-context.md` của chính execution này, do adapter ghi. Mọi phiên
@@ -436,9 +436,9 @@ cho cả hai runtime. Đọc theo thứ tự ưu tiên:
 2. `.alp/agents/<role>.md` — tài liệu role tĩnh, cho đường native khi principal gõ thẳng
    `claude`/`codex` và không adapter nào tham gia.
 
-Rồi ghi `hookSpecificOutput.additionalContext`. Cố tình **không** `require()` gì từ `dist/`: đó là
-lý do nó tồn tại. Đường thay thế (trỏ agent tới file và bảo nó tự Read) tốn một lượt gọi tool trước
-khi làm bất cứ việc gì.
+Rồi ghi `hookSpecificOutput.additionalContext`. Lightweight entry rẽ nhánh trước
+`defaultDependencies()` và execution bridge chỉ dynamic-import cho `session-end`; SessionStart
+không evaluate registry/memory. Legacy `.cjs` còn nằm trong archive v0.10 chỉ cho compatibility.
 
 Hook **fail-open**: lỗi thì session vẫn mở, `additionalContext` rỗng và cảnh báo hiện ở
 `systemMessage`. Managed launch fail-closed ở tầng khác và sớm hơn — adapter ghi file *trước* khi
@@ -578,23 +578,16 @@ node scripts/probe-compact-hooks.cjs --runtime claude --output ~/alp-probe/claud
 node scripts/probe-compact-hooks.cjs --runtime codex  --output ~/alp-probe/codex
 ```
 
-## 5. Ranh giới TypeScript / CommonJS
+## 5. Ranh giới runtime / release tooling
 
-Repo có hai thế giới, cố ý:
+Toàn bộ runtime closure — config, state, doctor, update/uninstall, hooks, policy, execution và
+backend — nằm trong TypeScript được Bun compile thành executable. Không còn `createRequire`
+động từ binary sang `scripts/`. `src/cli/entry.ts` route `--version`, `hook` và `__internal`
+trước full CLI; `session-boot` không evaluate registry/memory/execution bridge.
 
-| | `src/**.ts` → `dist/` | `scripts/**.cjs` |
-|---|---|---|
-| Chứa | policy, identity, memory, execution, runtime, delegation core, backend | installer, doctor, state `~/.alp`, update/uninstall, đóng gói release, config loader, command runner |
-| Vì sao | type safety, test được, là nguồn sự thật | phải chạy được *trước khi* build tồn tại, và trên máy chỉ có Node |
-
-Cầu nối duy nhất là `createRequire` trong `cli/commands/delegate.ts`: TS load
-`scripts/lib/delegation/config.cjs` để lấy state dir. Chiều ngược lại, `hooks/*.cjs` require
-`dist/src/hooks/execution-bridge.js`. `CjsExecutionBackendAdapter` — lớp bọc backend CJS
-thành `ExecutionBackend` — đã bị gỡ cùng Paseo ngày 2026-09-03; không còn backend nào sống
-bên phía CJS.
-
-`scripts/run-role.cjs` và `scripts/delegate.cjs` là compatibility wrapper vào cùng service —
-không có logic policy riêng.
+CommonJS chỉ còn ở build/release tooling, dev compatibility wrappers và npm wrapper (npm user
+đã có Node). Legacy `hooks/*.cjs` vẫn được mang trong v0.10 để migration có một chu kỳ lùi,
+nhưng adapter mới ghi public contract `alp hook …`.
 
 ## 6. Trạng thái trên đĩa
 
@@ -628,8 +621,16 @@ dùng còn nằm trong đó đều là dữ liệu hẹn ngày mất.
     logs/ · results/ · specs/    transcript, exit status và spec cho supervisor
     execution-snapshots/
 
-<install>/                     ARTIFACT — xoá và dựng lại lúc nào cũng được
-  dist/ scripts/ hooks/ skills/ scaffold/ alp.config.yaml
+~/.alp-code/                   BINARY INSTALL — versioned, thay được
+  versions/vX.Y.Z/
+    bin/alp                    native executable (`alp.exe` trên Windows)
+    install-manifest.json
+    skills/ scaffold/ hooks/ LICENSE
+  current -> versions/vX.Y.Z
+  bin/alp -> ../current/bin/alp       (POSIX stable command)
+
+~/.alp-code/npm/              npm-wrapper payload cache, versioned theo package
+  versions/X.Y.Z/<target>/    cùng artifact contract ở trên
 ```
 
 Mọi file state ghi bằng pattern **temp file → atomic rename → chmod**, và mọi directory tạo
@@ -637,29 +638,26 @@ với mode `0700`.
 
 ### 6.1 Ba channel cài
 
-`install-paths.cjs::detectChannel` nhận diện channel từ chính vị trí thư mục cài — nội dung
-hai channel phát hành giống hệt nhau nên không phân biệt được bằng file:
+`InstallLayout` là boundary duy nhất cho path runtime: channel, build-time version,
+selfExecutable, stableCommand, installRoot và assetRoot. npm wrapper truyền metadata explicit;
+native code kiểm executable nằm trong payload và wrapper/payload cùng version.
 
 | Channel | Nhận ra bằng | Thư mục cài | `alp update` |
 |---|---|---|---|
-| `npm` | nằm dưới một `node_modules/` | npm sở hữu | `npm install -g alp-code@<version>` |
-| `tarball` | còn lại | `~/.alp-code/versions/<tag>`, `current` là symlink/junction | tải bundle → `versions/<tag>` → đổi `current` |
+| `binary` | executable dưới `versions/vX.Y.Z` + manifest | `~/.alp-code` | checksum → staging/smoke → atomic `current` |
+| `npm` | wrapper metadata + exact payload manifest | npm sở hữu wrapper; cache per-user | `npm install -g alp-code@<version>` |
 | `dev` | có `.git` **và** `src/` | clone của người phát triển | checkout tag rồi build tại chỗ |
 
-Đường tarball không bao giờ sửa tại chỗ: tải về file tạm, giải nén sang thư mục staging, kiểm
-`scripts/alp.cjs` tồn tại, rename vào `versions/<tag>`, rồi mới trỏ lại `current`. Tải hỏng
-giữa chừng để lại một thư mục rác chứ không để lại một bản cài dở.
+Binary không bao giờ sửa tại chỗ: archive và `SHA256SUMS` được tải có size cap; tar path/link,
+manifest target/version, asset và staged `--version` được kiểm trước rename. Pointer chỉ đổi
+sau khi version đầy đủ; failure sau cutover tự lùi về previous và chỉ prune sau state bootstrap.
 
 ### 6.2 Hook forwarder
 
-`alp init` ghi `<project>/.claude/settings.local.json` trỏ vào `~/.alp/hooks/session-boot.cjs`,
-không trỏ thẳng vào thư mục cài. File settings đó nằm trong repo của người dùng và sống lâu hơn
-mọi bản cài; không có bước nào đi sửa lại nó khi ALP đổi version hay đổi channel. Forwarder đọc
-`~/.alp/install.json` để biết bản cài hiện hành rồi require hook thật. `ensureState` ghi lại
-forwarder mỗi lần chạy và sửa luôn những project đã init từ trước v0.9.0.
-
-`scripts/ensure-state.cjs` tồn tại vì việc này phải chạy trong một **tiến trình mới**: sau khi
-update thay xong thư mục cài, tiến trình `alp` đang chạy vẫn giữ code cũ trong RAM.
+`alp init` ghi `<project>/.claude/settings.local.json` bằng merge có ownership marker và command
+`<stable-command> hook session-boot`. `ensureState` đọc project registry để repair entry
+`session-boot.cjs` v0.9 mà không đụng hook/field khác. Packaged skill được link vào hai runtime
+qua stable `current` asset root; npm transition repair link từ payload cũ sang payload mới.
 
 ## 7. Mô hình mối đe doạ
 
@@ -715,8 +713,8 @@ Quy tắc chung: thêm implementation ở composition root, không thêm nhánh 
 
 | Lệnh | Việc |
 |---|---|
-| `alp doctor [--quiet]` | `AGENT-REGISTRY`, `RUNTIME-CLAUDE/CODEX`, `MEMORY-ADAPTER`, `EXECUTION-STATE`, `ORPHAN-EXECUTION`, `BUILD-DRIFT`. Exit `0` healthy · `1` có finding · `2` doctor lỗi |
-| `alp update` | cập nhật theo channel (npm / tarball / dev clone); `~/.alp` không bị đụng |
+| `alp doctor [--quiet]` | artifact/target/current/stable command, registry, memory/execution/delegation state. Exit `0` healthy · `1` có finding · `2` doctor lỗi |
+| `alp update` | cập nhật theo channel (binary / npm / dev clone); `~/.alp` không bị đụng |
 | `alp uninstall [--purge-memory] [--force]` | gỡ bản cài theo channel; backup memory; trong `~/.alp` chỉ xoá thứ của alp-code |
 | `alp delegation health [backend]` | health check backend |
 | `alp delegation list` | execution record đang theo dõi |
@@ -724,7 +722,7 @@ Quy tắc chung: thêm implementation ở composition root, không thêm nhánh 
 | `alp context pin\|unpin` | chốt hoặc gỡ một decision/constraint/open-item/next-action |
 | `scripts/bootstrap.cjs [--no-path]` | build (chỉ dev clone) → `ensureState` → validate registry + adapter → doctor → link CLI |
 | `scripts/ensure-state.cjs [--quiet]` | dựng `~/.alp`, ghi lại hook forwarder và install record |
-| `scripts/pack-release.cjs [--out …]` | dựng artifact npm + bundle GitHub Release, dừng trước khi đẩy đi |
+| `scripts/pack-release.cjs [--out …]` | dựng wrapper npm + native archives/checksums, dừng trước publish/upload |
 
 ## 11. Câu hỏi còn mở
 

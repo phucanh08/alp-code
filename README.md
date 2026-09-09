@@ -28,14 +28,9 @@ workspace access và tool request.
 
 ## Cài đặt
 
-```bash
-npm i -g alp-code
-```
-
-Cần Node.js >= 18. Không cần Git, không cần build: bản phát hành đã mang sẵn `dist/`, máy bạn
-chỉ giải nén và chạy.
-
-Máy không có npm, hoặc registry bị chặn — installer tải thẳng bundle của GitHub Release:
+Direct binary là channel mặc định; không cần Node, Bun, npm, Git hay bước build nào trên máy
+người dùng. Installer nhận diện OS/CPU/libc, tải đúng archive và `SHA256SUMS`, kiểm digest +
+manifest + staged smoke trước khi đổi `current`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/phucanh08/alp-code/main/install.sh | bash
@@ -45,26 +40,35 @@ curl -fsSL https://raw.githubusercontent.com/phucanh08/alp-code/main/install.sh 
 irm https://raw.githubusercontent.com/phucanh08/alp-code/main/install.ps1 | iex
 ```
 
-Installer tự chọn channel: có `npm` thì cài qua npm; không thì tải
-`alp-code-<tag>-bundle.tar.gz` về `~/.alp-code/versions/<tag>` và trỏ symlink
-`~/.alp-code/current` vào đó. Hai channel cho ra cùng một cây file — khác nhau chỉ ở ai sở hữu
-thư mục cài. Sau đó nó gọi `scripts/bootstrap.cjs` để:
+Archive chứa binary, `skills/`, `scaffold/`, legacy hooks và license. Các version nằm bất biến
+ở `~/.alp-code/versions/vX.Y.Z`; `current` được thay atomically và lệnh ổn định nằm ở
+`~/.alp-code/bin/alp` (Windows dùng `current\bin\alp.exe`). `~/.alp` là user state riêng,
+không nằm trong vùng installer/update thay thế.
 
-1. dựng `~/.alp` (memory, hook forwarder, install record) mà không ghi đè dữ liệu sẵn có;
-2. validate `AgentRegistry` và hai runtime adapter;
-3. chạy doctor;
-4. cài lệnh `alp` vào PATH — bản npm bỏ qua bước này vì npm đã làm rồi.
+npm vẫn được hỗ trợ như một wrapper channel cho môi trường đã có Node >=18:
+
+```bash
+npm i -g alp-code
+```
+
+Package npm chỉ chứa downloader/launcher nhỏ. Lần cài hoặc lần chạy đầu tải archive đúng bằng
+version của package vào cache per-user; không dùng `/latest`. Vì launcher tự bảo đảm payload,
+`npm i -g alp-code --ignore-scripts` cũng hoạt động.
 
 | Tuỳ chọn | bash | PowerShell |
 |---|---|---|
-| Ép channel | `bash -s -- --channel tarball` hoặc `ALP_CHANNEL=…` | `$env:ALP_CHANNEL = "tarball"` |
-| Ghim một phiên bản | `bash -s -- --version v0.9.0` hoặc `ALP_VERSION=…` | `$env:ALP_VERSION = "v0.9.0"` |
-| Đổi vị trí cài (tarball) | `bash -s -- --home ~/dev/alp` hoặc `ALP_HOME=…` | `$env:ALP_HOME = "D:\alp-code"` |
+| Ép channel | `bash -s -- --channel binary|npm|dev` hoặc `ALP_CHANNEL=…` | `$env:ALP_CHANNEL = "binary"` |
+| Ghim một phiên bản | `bash -s -- --version v0.10.0` hoặc `ALP_VERSION=…` | `$env:ALP_VERSION = "v0.10.0"` |
+| Đổi vị trí cài | `bash -s -- --home ~/dev/alp` hoặc `ALP_HOME=…` | `$env:ALP_HOME = "D:\alp-code"` |
 | Không sửa PATH | `bash -s -- --no-path` hoặc `ALP_NO_PATH=1` | `$env:ALP_NO_PATH = "1"` |
 | Dev clone theo nhánh | `bash -s -- --branch dev` hoặc `ALP_BRANCH=…` | `$env:ALP_BRANCH = "dev"` |
 
-`--branch` là channel thứ ba: clone repo và build tại chỗ. Đó là đường duy nhất còn build trên
-máy người dùng, và chỉ dành cho người phát triển chính ALP.
+`--branch` chọn dev clone và là đường duy nhất còn build tại máy.
+
+Build matrix tạo archive cho macOS arm64/x64, Linux glibc x64/arm64 và Windows x64. Chỉ target
+đã chạy xanh trên host đúng kiến trúc trong workflow release mới được quảng bá stable; evidence
+local hiện có cho darwin-arm64, các target còn lại chờ CI. Linux musl, Windows arm64 và
+notarization chưa thuộc v0.10.
 
 ### Cập nhật
 
@@ -72,8 +76,8 @@ máy người dùng, và chỉ dành cho người phát triển chính ALP.
 
 | Channel | Cách nhận diện | `alp update` làm gì |
 |---|---|---|
-| `npm` | thư mục cài nằm dưới một `node_modules/` | `npm install -g alp-code@<version>` |
-| `tarball` | còn lại, thường `~/.alp-code/versions/<tag>` | tải bundle mới, giải nén sang `versions/<tag>` rồi mới đổi `current` |
+| `binary` | manifest trong `~/.alp-code/versions/<tag>` | tải archive + checksum, smoke, rồi atomically đổi `current` |
+| `npm` | wrapper truyền metadata đã khóa version | `npm install -g alp-code@<version>`; wrapper lấy payload cùng version |
 | `dev` | có `.git` và `src/` | checkout tag release mới nhất rồi build lại |
 
 Không còn bước backup/restore dữ liệu nào trong update. Từ v0.9.0 mọi thứ thuộc về bạn — memory,
@@ -83,10 +87,11 @@ thay được nguyên khối. Bản cài cũ hơn được di trú tự động 
 Riêng dev clone vẫn dừng khi có staged/tracked change chưa commit: ALP không merge hay clobber
 source của bạn.
 
-Mỗi lần chạy `alp` (bất kỳ lệnh nào), ALP kiểm tra ngầm xem có bản release mới không, dùng
+Các lệnh đầy đủ kiểm tra ngầm xem có bản release mới không, dùng
 cache tại `~/.alp/update-check.json` với TTL 24h — việc kiểm tra không bao giờ chặn lệnh hiện
 tại. Nếu có bản mới, ALP chỉ in một dòng gợi ý `alp update`; nó không tự cập nhật hay hỏi lại.
 Đặt `ALP_SKIP_UPDATE_CHECK=1` để tắt hẳn (hữu ích cho môi trường test/CI cô lập).
+`alp --version` và `alp hook …` rẽ nhánh trước state/registry/update check.
 
 ## Bắt đầu một project
 
@@ -107,7 +112,10 @@ chạy toàn Codex. Xem bảng model từng nấc ở `docs/architecture.md` §4
 identity trong `.alp/agents/`, rồi ghi
 `<project>/.claude/settings.local.json` chỉ chứa hook `SessionStart`. Hook đó nạp identity
 của vai vào context ngay turn đầu — mở `claude` bằng tay trong project cũng có identity mà
-không tốn một lượt gọi tool. `alp deinit` xoá lại đúng file đó (nhận diện qua marker
+không tốn một lượt gọi tool. Command bền vững là `alp hook session-boot`; state migration sửa
+entry `hooks/session-boot.cjs` cũ trong project. `alp init` cũng link từng packaged skill vào
+`.claude/skills` và `.agents/skills` qua asset root ổn định, nên đổi `current` không làm link
+chết. `alp deinit` xoá lại đúng phần ALP sở hữu (nhận diện qua marker
 `alp init`) và phục hồi backup nếu bạn đã có file riêng.
 
 File đó được ghi vào `.git/info/exclude` của chính clone — per-clone, không commit — nên
@@ -214,9 +222,9 @@ pin đọc lại được bằng `cat` và reinject thẳng vào context window 
 
 | Lệnh | Việc |
 |---|---|
-| `alp doctor [--quiet]` | registry, runtimes, memory, execution state, stale legacy, build drift |
-| `alp update` | cập nhật theo channel (npm / tarball / dev clone); dữ liệu ở `~/.alp` không bị đụng |
-| `alp --version` | in phiên bản đang cài (đọc `package.json`) |
+| `alp doctor [--quiet]` | manifest/target/current/stable command, registry, runtime CLIs, memory và execution state |
+| `alp update` | cập nhật theo channel (binary / npm / dev); dữ liệu ở `~/.alp` không bị đụng |
+| `alp --version` | in build-time version, không network hay dựng state |
 | `alp uninstall [--purge-memory] [--force]` | gỡ bản cài theo channel; backup memory mặc định; trong `~/.alp` chỉ xoá thứ của alp-code |
 | `scripts/bootstrap.cjs [--no-path]` | dựng state, validate, doctor, link CLI (build chỉ với dev clone) |
 | `scripts/ensure-state.cjs [--quiet]` | dựng lại `~/.alp` và hook forwarder cho bản cài hiện hành |
@@ -232,14 +240,11 @@ artifact của bản ALP cũ (`identity/`, `CHARTER.md`, compiled ACL); doctor s
    đóng mục CHANGELOG theo ngày, tạo commit `chore(release): vX.Y.Z` và tag. Thêm
    `--dry-run` để xem trước. Script cố ý dừng trước push.
 3. `git push origin main --tags`.
-4. `node scripts/pack-release.cjs` — dựng hai artifact vào `build/`: `.tgz` cho npm và
-   `alp-code-vX.Y.Z-bundle.tar.gz` (kèm sẵn dependency runtime) cho GitHub Release. Script
-   kiểm nội dung artifact rồi cố ý dừng trước khi đẩy đi.
+4. `node scripts/pack-release.cjs` — dựng wrapper-only `.tgz`, năm native archive và
+   `SHA256SUMS` vào `build/release/`. Script kiểm nội dung rồi cố ý dừng trước khi đẩy đi.
 5. `npm publish build/alp-code-X.Y.Z.tgz`.
-6. `gh release create vX.Y.Z --generate-notes` rồi
-   `gh release upload vX.Y.Z build/alp-code-vX.Y.Z-bundle.tar.gz` — publish từ máy, biết kết
-   quả ngay. Repo cố ý không dùng GitHub Actions cho việc này; lý do ghi trong
-   `.claude/skills/release/SKILL.md`.
+6. Sau khi target matrix xanh, tạo GitHub Release và upload năm archive cùng `SHA256SUMS`.
+   Publish/upload luôn là bước riêng cần principal duyệt; workflow build/test không tự phát hành.
 7. Từ đây `npm i -g alp-code`, installer và `alp update` trên máy khác đều thấy `vX.Y.Z`.
 
 ## Cấu trúc

@@ -5,11 +5,15 @@ import { memoryRoot as resolveMemoryRoot } from "../state-paths";
 import { atomicRuntimeFile, baseRuntimeEnvironment, compactBridgeEnabled, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
 import { codexMcpOverrides, codexSandboxLines, tomlString } from "./permission-rules";
 import type { PrepareRuntimeInput, RuntimeAdapter, RuntimeHealth, RuntimeLaunchSpec } from "./runtime-adapter";
+import { hookInvocation, renderHookCommand } from "./hook-command";
 
 export interface CodexRuntimeAdapterOptions {
   readonly platform?: NodeJS.Platform;
   readonly env?: NodeJS.ProcessEnv;
   readonly hooksDirectory?: string;
+  readonly stableCommand?: string;
+  readonly assetRoot?: string;
+  readonly windowsPathCommand?: string;
 }
 
 export class CodexRuntimeAdapter implements RuntimeAdapter {
@@ -34,11 +38,17 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
   private readonly platform: NodeJS.Platform;
   private readonly env: NodeJS.ProcessEnv;
   private readonly hooksDirectory: string;
+  private readonly stableCommand?: string;
+  private readonly assetRoot?: string;
+  private readonly windowsPathCommand?: string;
 
   constructor(options: CodexRuntimeAdapterOptions = {}) {
     this.platform = options.platform ?? process.platform;
     this.env = options.env ?? process.env;
     this.hooksDirectory = options.hooksDirectory ?? join(this.env.ALP_REPO_ROOT ?? process.cwd(), "hooks");
+    this.stableCommand = options.stableCommand;
+    this.assetRoot = options.assetRoot;
+    this.windowsPathCommand = options.windowsPathCommand;
   }
 
   private memoryRoot(): string {
@@ -64,11 +74,16 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
    * already depends on. Claude Code must NOT get this treatment: it spawns via
    * `cmd /d /s /c "<command>"`, where the quoted form is what works today.
    */
-  private hookCommand(script: string): string {
-    const path = join(this.hooksDirectory, script);
-    if (this.platform !== "win32") return hookCommand(path);
+  private hookCommand(script: "session-boot" | "session-end" | "compact-record", args: readonly string[] = []): string {
+    if (this.stableCommand) return renderHookCommand(hookInvocation(this.stableCommand, script, args), {
+      platform: this.platform,
+      runtime: "codex",
+      ...(this.windowsPathCommand ? { windowsPathCommand: this.windowsPathCommand } : {}),
+    });
+    const path = join(this.hooksDirectory, `${script}.cjs`);
+    if (this.platform !== "win32") return `${hookCommand(path)}${args.length ? ` ${args.join(" ")}` : ""}`;
     const node = process.execPath.includes(" ") ? "node" : process.execPath;
-    return `${node} "${path}"`;
+    return `${node} "${path}"${args.length ? ` ${args.join(" ")}` : ""}`;
   }
 
   async probe(): Promise<RuntimeHealth> {
@@ -86,17 +101,17 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
       `${JSON.stringify(capsule, null, 2)}\n`,
     );
     const contextFiles = await writeRuntimeContextFiles(input.execution, input.interactive);
-    const skillRoots = runtimeSkillRoots(this.env);
-    const bootCommand = this.hookCommand("session-boot.cjs");
-    const stopCommand = this.hookCommand("session-end.cjs");
+    const skillRoots = runtimeSkillRoots(this.env, this.assetRoot);
+    const bootCommand = this.hookCommand("session-boot");
+    const stopCommand = this.hookCommand("session-end");
     const bootHooks = `[{ hooks = [{ type = "command", command = ${tomlString(bootCommand)}, timeout = 30 }] }]`;
     const stopHooks = `[{ hooks = [{ type = "command", command = ${tomlString(stopCommand)}, timeout = 30 }] }]`;
     // Gated on the flag (§10), same as Claude — only the two events CB-0 measured as firing
     // on this runtime. `manual` and `auto` were measured identical apart from `trigger`
     // (plan §Runtime capability), so one registration covers both.
     const bridgeEnabled = compactBridgeEnabled(this.env);
-    const preCompactCommand = `${this.hookCommand("compact-record.cjs")} pre codex`;
-    const postCompactCommand = `${this.hookCommand("compact-record.cjs")} post codex`;
+    const preCompactCommand = this.hookCommand("compact-record", ["pre", "codex"]);
+    const postCompactCommand = this.hookCommand("compact-record", ["post", "codex"]);
     const preCompactHooks = `[{ hooks = [{ type = "command", command = ${tomlString(preCompactCommand)}, timeout = 30 }] }]`;
     const postCompactHooks = `[{ hooks = [{ type = "command", command = ${tomlString(postCompactCommand)}, timeout = 30 }] }]`;
     const configFile = await atomicRuntimeFile(

@@ -1,205 +1,199 @@
-# install.ps1 — cài alp-code bằng một dòng (Windows PowerShell).
-#
-#   irm https://raw.githubusercontent.com/phucanh08/alp-code/main/install.ps1 | iex
-#
-# `iex` không nhận tham số dòng lệnh, nên tuỳ chọn đi qua biến môi trường:
-#
-#   $env:ALP_CHANNEL = "tarball"; irm …/install.ps1 | iex
-#   $env:ALP_VERSION = "v0.9.0";  irm …/install.ps1 | iex
-#   $env:ALP_HOME = "D:\alp-code"; irm …/install.ps1 | iex
-#   $env:ALP_NO_PATH = "1";       irm …/install.ps1 | iex
-#
-# Biến: ALP_CHANNEL (auto|npm|tarball) · ALP_VERSION (tag cụ thể) · ALP_HOME (mặc định
-#       ~\.alp-code, chỉ dùng cho tarball/dev) · ALP_BRANCH (dev) · ALP_REPO · ALP_NO_PATH
-#
-# KHÔNG BUILD GÌ TRÊN MÁY NÀY — bản phát hành đã compile sẵn. Bản song sinh của install.sh và
-# cũng cố ý mỏng: lấy artifact về đúng chỗ rồi giao cho scripts/bootstrap.cjs, implementation
-# thật dùng chung cho cả ba OS.
-#
-# Chạy lại lệnh này = cập nhật code. Memory và preferences nằm ở `~\.alp`, ngoài thư mục cài.
-
-# Chạy trong child scope để function/biến và ErrorActionPreference không rò vào terminal
-# đang gọi `iex`. Biến môi trường PATH vẫn thuộc process nên thay đổi bên dưới có hiệu lực
-# ngay trong chính terminal đó.
+# Native alp-code installer for Windows x64. The binary channel does not require Node.
 & {
   $ErrorActionPreference = 'Stop'
+  function Say([string]$Message) { Write-Host $Message }
+  function Die([string]$Message) { throw "ERROR     $Message" }
+  function Have([string]$Command) { [bool](Get-Command $Command -ErrorAction SilentlyContinue) }
 
-  function Say([string]$m) { Write-Host $m }
-  # Không dùng `exit`: qua `irm | iex`, exit sẽ đóng luôn PowerShell của người dùng.
-  function Die([string]$m) { throw "ERROR    $m" }
-  function Have([string]$c) { [bool](Get-Command $c -ErrorAction SilentlyContinue) }
-
-  $package  = 'alp-code'
+  $package = 'alp-code'
   $repoSlug = if ($env:ALP_REPO_SLUG) { $env:ALP_REPO_SLUG } else { 'phucanh08/alp-code' }
-  $repo     = if ($env:ALP_REPO)      { $env:ALP_REPO }      else { "https://github.com/$repoSlug.git" }
-  $channel  = if ($env:ALP_CHANNEL)   { $env:ALP_CHANNEL }   else { 'auto' }
-  $branch   = if ($env:ALP_BRANCH)    { $env:ALP_BRANCH }    else { '' }
-  $version  = if ($env:ALP_VERSION)   { $env:ALP_VERSION }   else { '' }
-  $target   = if ($env:ALP_HOME)      { $env:ALP_HOME }      else { Join-Path $HOME '.alp-code' }
-  $nodeMin  = 18
+  $repo = if ($env:ALP_REPO) { $env:ALP_REPO } else { "https://github.com/$repoSlug.git" }
+  $channel = if ($env:ALP_CHANNEL) { $env:ALP_CHANNEL } else { 'auto' }
+  $version = if ($env:ALP_VERSION) { $env:ALP_VERSION } else { '' }
+  $branch = if ($env:ALP_BRANCH) { $env:ALP_BRANCH } else { '' }
+  $target = if ($env:ALP_HOME) { $env:ALP_HOME } else { Join-Path $HOME '.alp-code' }
+  $noPath = ($env:ALP_NO_PATH -eq '1')
   if ($branch) { $channel = 'dev' }
-  if (@('auto', 'npm', 'tarball', 'dev') -notcontains $channel) { Die "ALP_CHANNEL không hợp lệ: $channel (auto|npm|tarball)" }
+  if ($channel -eq 'auto' -or $channel -eq 'tarball') { $channel = 'binary' }
+  if (@('binary', 'npm', 'dev') -notcontains $channel) { Die "unsupported ALP_CHANNEL: $channel" }
 
-  # ---------------------------------------------------------------- preflight
-  if (-not (Have 'node')) { Die "thiếu ``node``. Cần Node >= v$nodeMin — https://nodejs.org" }
-
-  # Windows PowerShell 5.1 làm mất quote lồng nhau khi truyền biểu thức `node -p` cho
-  # native process. Đọc `node --version` rồi parse ở PowerShell để chạy giống nhau trên
-  # powershell.exe 5.1 và pwsh 7+.
-  $nodeVersion = ''
-  $nodeMajor = 0
-  try {
+  function Require-Node {
+    if (-not (Have 'node')) { Die "Node >=18 is required only for the $channel channel" }
     $nodeVersion = (& node --version).Trim()
-    $nodeMajor = [int]($nodeVersion.TrimStart('v').Split('.')[0])
+    if ([int]($nodeVersion.TrimStart('v').Split('.')[0]) -lt 18) { Die "Node $nodeVersion is too old; $channel requires >=18" }
   }
-  catch {
-    Die "không đọc được phiên bản Node — alp-code cần >= v$nodeMin"
-  }
-  if ($nodeMajor -lt $nodeMin) { Die "Node $nodeVersion quá cũ — alp-code cần >= v$nodeMin" }
 
-  $auto = ($channel -eq 'auto')
-  if ($auto) { $channel = if (Have 'npm') { 'npm' } else { 'tarball' } }
-
-  # ---------------------------------------------------------------- channel npm
   function Install-Npm {
+    Require-Node
+    if (-not (Have 'npm')) { Die 'npm is required for the npm channel' }
     $spec = if ($version) { "$package@$($version.TrimStart('v'))" } else { $package }
-    Say "NPM      npm install -g $spec"
+    Say "NPM       npm install -g $spec"
     & npm install --global $spec
-    if ($LASTEXITCODE -ne 0) { return $null }
-    $globalRoot = (& npm root -g | Select-Object -Last 1).Trim()
-    $root = Join-Path $globalRoot $package
-    if (-not (Test-Path (Join-Path $root 'scripts\bootstrap.cjs'))) {
-      Die "npm báo thành công nhưng không thấy $root — kiểm tra ``npm root -g``"
-    }
-    return $root
+    if ($LASTEXITCODE -ne 0) { Die "npm install -g $spec failed" }
+    & alp __internal ensure-state
+    if ($LASTEXITCODE -ne 0) { Die 'npm wrapper installed but state initialization failed' }
   }
 
-  # ------------------------------------------------------------ channel tarball
-  # Giải nén sang thư mục MỚI rồi mới trỏ `current` sang đó: tải hỏng giữa chừng thì bản đang
-  # dùng vẫn còn nguyên. Đúng cách `alp update` làm, để hai đường không lệch nhau.
-  function Install-Tarball {
+  function Install-Dev {
+    Require-Node
+    if (-not (Have 'git')) { Die 'git is required for the dev channel' }
+    if (-not $branch) { $branch = 'main' }
+    if (Test-Path (Join-Path $target '.git')) {
+      & git -C $target fetch origin $branch
+      if ($LASTEXITCODE -ne 0) { Die 'git fetch failed' }
+      & git -C $target checkout $branch
+      if ($LASTEXITCODE -ne 0) { Die 'git checkout failed' }
+      & git -C $target pull --ff-only
+      if ($LASTEXITCODE -ne 0) { Die 'git pull --ff-only failed' }
+    } elseif (Test-Path $target) {
+      Die "$target exists and is not a git clone"
+    } else {
+      New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
+      & git clone --branch $branch $repo $target
+      if ($LASTEXITCODE -ne 0) { Die 'git clone failed' }
+    }
+    $bootstrap = Join-Path $target 'scripts\bootstrap.cjs'
+    if (-not (Test-Path $bootstrap)) { Die "$target is missing scripts\bootstrap.cjs" }
+    if ($noPath) { & node $bootstrap --no-path } else { & node $bootstrap }
+    if ($LASTEXITCODE -ne 0) { Die "bootstrap failed (exit $LASTEXITCODE)" }
+  }
+
+  function Get-ReleaseVersion {
     $tag = $version
     if (-not $tag) {
-      Say "RESOLVE  tag release mới nhất của $repoSlug"
-      try {
-        $tag = (Invoke-RestMethod -UseBasicParsing "https://api.github.com/repos/$repoSlug/releases/latest").tag_name
-      }
-      catch { Die "không hỏi được GitHub Releases ($($_.Exception.Message)) — thử lại, hoặc đặt `$env:ALP_VERSION" }
+      Say "RESOLVE   latest release for $repoSlug"
+      $tag = (Invoke-RestMethod -UseBasicParsing "https://api.github.com/repos/$repoSlug/releases/latest").tag_name
     }
     if (-not $tag.StartsWith('v')) { $tag = "v$tag" }
+    if ($tag -notmatch '^v\d+\.\d+\.\d+$') { Die "invalid release version: $tag" }
+    return $tag
+  }
 
-    $url      = "https://github.com/$repoSlug/releases/download/$tag/$package-$tag-bundle.tar.gz"
-    $versions = Join-Path $target 'versions'
-    $dest     = Join-Path $versions $tag
-    $staging  = Join-Path $versions ".incoming-$tag-$PID"
-    $archive  = Join-Path $versions ".$tag-$PID.tar.gz"
+  function Assert-SafeArchive([string]$Archive) {
+    $entries = @(& tar -tzf $Archive)
+    if ($LASTEXITCODE -ne 0) { Die 'release archive is not readable' }
+    foreach ($raw in $entries) {
+      $entry = $raw -replace '^\./', ''
+      if (-not $entry -or $entry -eq '.') { continue }
+      if ($entry.StartsWith('/') -or $entry.StartsWith('\') -or $entry.Contains('\') -or $entry -match '^[A-Za-z]:' -or ($entry -split '/') -contains '..') {
+        Die "unsafe archive entry: $raw"
+      }
+    }
+    foreach ($line in @(& tar -tvzf $Archive)) {
+      if ($line -match '^[lh]') { Die 'release archive contains a link entry; refusing extraction' }
+    }
+  }
 
-    # tar.exe có sẵn từ Windows 10 1803. Máy cũ hơn thì nói thẳng thay vì gãy giữa chừng.
-    if (-not (Have 'tar')) { Die "thiếu ``tar`` (Windows 10 1803 trở lên mới có sẵn) — dùng kênh npm thay thế" }
-    New-Item -ItemType Directory -Path $versions -Force | Out-Null
-    if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
-    New-Item -ItemType Directory -Path $staging -Force | Out-Null
-
+  function Replace-Current([string]$Home, [string]$Destination) {
+    $current = Join-Path $Home 'current'
+    $temporary = Join-Path $Home ".current.$PID.$([DateTime]::UtcNow.Ticks)"
+    New-Item -ItemType Junction -Path $temporary -Target $Destination | Out-Null
     try {
-      Say "DOWNLOAD $url"
-      try { Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $archive }
-      catch { Die "không tải được $url`n         Kiểm tra tag và asset bundle: https://github.com/$repoSlug/releases" }
-
-      & tar -xzf $archive -C $staging
-      if ($LASTEXITCODE -ne 0) { Die "bundle hỏng — giải nén thất bại" }
-      if (-not (Test-Path (Join-Path $staging 'scripts\alp.cjs'))) { Die "bundle $tag không đúng cấu trúc — thiếu scripts\alp.cjs" }
-
-      if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
-      Move-Item $staging $dest
-    }
-    finally {
-      if (Test-Path $archive) { Remove-Item -Force $archive }
-      if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
-    }
-
-    # Junction chứ không phải symlink: symlink thư mục trên Windows cần quyền admin hoặc
-    # Developer Mode, junction thì không cần gì cả.
-    $link = Join-Path $target 'current'
-    if (Test-Path $link) {
-      $item = Get-Item $link -Force
-      if (-not $item.LinkType) { Die "$link đang là thư mục thật, không phải junction — dọn thủ công rồi chạy lại" }
-      Remove-Item -Force -Recurse $link
-    }
-    New-Item -ItemType Junction -Path $link -Target $dest | Out-Null
-    Say "INSTALL  $tag -> $dest (current -> $tag)"
-    return $link
-  }
-
-  # ---------------------------------------------------------------- channel dev
-  function Install-Dev {
-    if (-not (Have 'git')) { Die "thiếu ``git`` — https://git-scm.com/download/win" }
-    if (Test-Path (Join-Path $target '.git')) {
-      Say "PULL     $target (nhánh $branch)"
-      # --ff-only: nhánh nội bộ đã rẽ thì DỪNG. Không tự merge/stash hộ người dùng.
-      & git -C $target fetch origin $branch
-      $ok = ($LASTEXITCODE -eq 0)
-      if ($ok) { & git -C $target checkout $branch; $ok = ($LASTEXITCODE -eq 0) }
-      if ($ok) { & git -C $target pull --ff-only; $ok = ($LASTEXITCODE -eq 0) }
-      if (-not $ok) {
-        Die "$target không cập nhật được nhánh ``$branch`` — nhánh nội bộ đã rẽ hoặc đang dở việc.`n         Tự xử lý (git -C `"$target`" status) rồi chạy lại lệnh cài."
+      if (Test-Path $current) {
+        $item = Get-Item $current -Force
+        if (-not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { Die "$current is not a junction; refusing to replace it" }
+        # Rename-over-junction is attempted without pre-unlink. If this host rejects that
+        # operation the old current remains live and the installer reports the exact failure.
+        Move-Item -LiteralPath $temporary -Destination $current -Force
+      } else {
+        Move-Item -LiteralPath $temporary -Destination $current
       }
+    } finally {
+      if (Test-Path $temporary) { Remove-Item -LiteralPath $temporary -Recurse -Force }
     }
-    elseif (Test-Path $target) {
-      Die "$target đã tồn tại nhưng không phải git repo — installer không đụng vào.`n         Dọn thủ công, hoặc clone chỗ khác: `$env:ALP_HOME = `"D:\alp-code`""
-    }
-    else {
-      $parent = Split-Path -Parent $target
-      if ($parent -and -not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
-      Say "CLONE    $repo (nhánh $branch) -> $target"
-      & git clone --branch $branch $repo $target
-      if ($LASTEXITCODE -ne 0) { Die "git clone thất bại" }
-    }
-    return $target
   }
 
-  # ---------------------------------------------------------------- lấy code
-  $root = $null
-  switch ($channel) {
-    'npm' {
-      $root = Install-Npm
-      if (-not $root) {
-        if (-not $auto) { Die "``npm install -g $package`` thất bại — xem log ở trên" }
-        # Registry bị chặn hay npm global không ghi được là chuyện thường trên máy công ty.
-        # Đó chính là lý do có channel thứ hai, nên tự chuyển thay vì bắt người dùng đọc lại.
-        Say "FALLBACK npm không cài được — chuyển sang bundle của GitHub Release"
-        $channel = 'tarball'
-        $root = Install-Tarball
-      }
-    }
-    'tarball' { $root = Install-Tarball }
-    'dev'     { $root = Install-Dev }
-  }
-
-  $bootstrap = Join-Path $root 'scripts\bootstrap.cjs'
-  if (-not (Test-Path $bootstrap)) { Die "$root thiếu scripts\bootstrap.cjs — bản cài hỏng hoặc quá cũ" }
-
-  # ---------------------------------------------------------------- bàn giao
-  & node $bootstrap
-  $bootstrapExit = $LASTEXITCODE
-  if ($bootstrapExit -ne 0) { Die "bootstrap thất bại (exit $bootstrapExit)" }
-
-  # bootstrap cập nhật User PATH cho terminal mở sau. Vì installer chạy bằng `iex` trong
-  # terminal hiện tại, bổ sung luôn process PATH để `alp init` dùng được ngay, không cần mở
-  # cửa sổ mới. ALP_NO_PATH vẫn giữ đúng nghĩa: không sửa cả User PATH lẫn process PATH.
-  #
-  # Bản npm không đi qua đây: lệnh `alp` ở đó do npm tạo trong global bin dir của chính nó,
-  # thư mục vốn đã nằm sẵn trong PATH.
-  if ($channel -ne 'npm' -and -not $env:ALP_NO_PATH) {
+  function Add-Command([string]$Executable) {
+    if ($noPath) { return }
     $localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $HOME 'AppData\Local' }
     $binDir = Join-Path $localAppData 'alp\bin'
-    $alpShim = Join-Path $binDir 'alp.cmd'
-    if (-not (Test-Path $alpShim)) { Die "bootstrap báo thành công nhưng thiếu $alpShim" }
-
-    $normalizedBin = $binDir.TrimEnd('\')
-    $pathParts = @($env:Path -split ';' | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\') })
-    if ($pathParts -notcontains $normalizedBin) {
-      $env:Path = if ($env:Path) { "$binDir;$env:Path" } else { $binDir }
+    $shim = Join-Path $binDir 'alp.cmd'
+    $body = "@rem alp-code native shim`r`n@echo off`r`n`"$Executable`" %*`r`n"
+    New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+    if (Test-Path $shim) {
+      $existing = [IO.File]::ReadAllText($shim)
+      if (-not $existing.StartsWith('@rem alp-code native shim')) { Die "$shim exists and is not owned by alp-code" }
     }
-    Say "ACTIVE   alp dùng được ngay trong terminal này — thử: alp init"
+    [IO.File]::WriteAllText($shim, $body, [Text.Encoding]::ASCII)
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $parts = @($userPath -split ';' | Where-Object { $_ })
+    if ($parts -notcontains $binDir) {
+      [Environment]::SetEnvironmentVariable('Path', (($parts + $binDir) -join ';'), 'User')
+    }
+    if (@($env:Path -split ';') -notcontains $binDir) { $env:Path = "$binDir;$env:Path" }
+  }
+
+  function Install-Binary {
+    $architecture = $env:PROCESSOR_ARCHITEW6432
+    if (-not $architecture) { $architecture = $env:PROCESSOR_ARCHITECTURE }
+    if ($architecture -notmatch '^(AMD64|x86_64)$') { Die "unsupported Windows architecture: $architecture (only x64 is published)" }
+    if (-not (Have 'tar')) { Die 'tar.exe is required (Windows 10 1803 or newer)' }
+    $tag = Get-ReleaseVersion
+    $number = $tag.TrimStart('v')
+    $targetId = 'windows-x64'
+    $filename = "$package-$tag-$targetId.tar.gz"
+    $base = "https://github.com/$repoSlug/releases/download/$tag"
+    $staging = Join-Path $target ".staging-$tag-$PID"
+    $archive = Join-Path $target ".$filename.$PID"
+    $checksums = Join-Path $target ".SHA256SUMS.$PID"
+    $destination = Join-Path $target "versions\$tag"
+    New-Item -ItemType Directory -Path (Join-Path $target 'versions') -Force | Out-Null
+    try {
+      Say "DOWNLOAD  $filename"
+      Invoke-WebRequest -UseBasicParsing -Uri "$base/SHA256SUMS" -OutFile $checksums
+      Invoke-WebRequest -UseBasicParsing -Uri "$base/$filename" -OutFile $archive
+      $line = Get-Content -LiteralPath $checksums | Where-Object { $_ -match "^[0-9a-fA-F]{64}\s+\*?$([regex]::Escape($filename))$" } | Select-Object -First 1
+      if (-not $line) { Die "checksum entry missing for $filename" }
+      $expected = ($line -split '\s+')[0].ToLowerInvariant()
+      $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
+      if ($actual -ne $expected) { Die "checksum mismatch for $filename" }
+      Assert-SafeArchive $archive
+      New-Item -ItemType Directory -Path $staging -Force | Out-Null
+      & tar -xzf $archive -C $staging
+      if ($LASTEXITCODE -ne 0) { Die 'release archive extraction failed' }
+      $manifest = Get-Content -LiteralPath (Join-Path $staging 'install-manifest.json') -Raw | ConvertFrom-Json
+      if ($manifest.app -ne 'alp-code' -or $manifest.version -ne $number -or $manifest.target -ne $targetId) { Die 'install manifest does not match version/target' }
+      $stagedExe = Join-Path $staging 'bin\alp.exe'
+      $reported = (& $stagedExe --version | Out-String).Trim()
+      if ($LASTEXITCODE -ne 0 -or $reported -ne "alp $number") { Die 'staged binary version smoke failed' }
+      if (Test-Path $destination) {
+        $existing = (& (Join-Path $destination 'bin\alp.exe') --version | Out-String).Trim()
+        if ($existing -ne "alp $number") { Die "$destination exists but is incomplete" }
+        Remove-Item -LiteralPath $staging -Recurse -Force
+      } else { Move-Item -LiteralPath $staging -Destination $destination }
+      $current = Join-Path $target 'current'
+      $previous = $null
+      if (Test-Path $current) {
+        $previous = (Get-Item $current -Force).Target
+        if ($previous -is [array]) { $previous = $previous[0] }
+      }
+      Replace-Current $target $destination
+      $stable = Join-Path $target 'current\bin\alp.exe'
+      & $stable __internal ensure-state
+      if ($LASTEXITCODE -ne 0) {
+        if ($previous) { Replace-Current $target $previous }
+        elseif (Test-Path $current) { Remove-Item -LiteralPath $current -Recurse -Force }
+        Die 'state initialization failed; previous current pointer restored'
+      }
+      Add-Command $stable
+      Say "READY     alp-code $tag ($targetId) at $target"
+    } finally {
+      foreach ($item in @($staging, $archive, $checksums)) { if (Test-Path $item) { Remove-Item -LiteralPath $item -Recurse -Force } }
+    }
+  }
+
+  function Install-Tarball { Install-Binary }
+
+  switch ($channel) {
+    'binary' { Install-Binary }
+    'npm' { Install-Npm }
+    'dev' { Install-Dev }
+  }
+
+  # Keep the current iex terminal usable after the dev bootstrap creates its shim.
+  if ($channel -eq 'dev' -and -not $noPath) {
+    $localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $HOME 'AppData\Local' }
+    $binDir = Join-Path $localAppData 'alp\bin'
+    if (@($env:Path -split ';') -notcontains $binDir) { $env:Path = "$binDir;$env:Path" }
   }
 }
