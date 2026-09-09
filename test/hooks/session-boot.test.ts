@@ -60,6 +60,10 @@ describe("session-boot hook", () => {
       ALP_SESSION_CONTEXT: "",
       ALP_ROLE: "search",
       ALP_REPO_ROOT: root,
+      // `loadSessionContext` reads `<state home>/agents/<role>.md` first, not the repo-root
+      // legacy path the fixture writes to — pin the state home to this fixture's `.alp` or
+      // the hook finds this machine's real `~/.alp/agents/search.md` instead.
+      ALP_STATE_HOME: join(root, ".alp"),
     });
 
     // The native path: the principal ran `claude`/`codex` directly, so no adapter wrote a
