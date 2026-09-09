@@ -1,6 +1,7 @@
 {
   "name": "alp-code",
-  "version": "0.9.0",
+  "version": "0.10.0",
+  "private": true,
   "description": "Code-native agent layer for Claude Code and Codex CLI",
   "license": "MIT",
   "author": "Phúc Anh (https://github.com/phucanh08)",
@@ -35,6 +36,9 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:binary": "node scripts/test-bun-compat.cjs && node scripts/test-binary-build.cjs && node scripts/test-binary.cjs && node scripts/test-binary-migration.cjs && node scripts/test-binary-performance.cjs && node scripts/test-installer.cjs && node scripts/test-windows-installer.cjs && node scripts/test-npm-wrapper.cjs && node scripts/test-pack-release.cjs",
+    "build:binary": "node scripts/build-binary.cjs --all",
+    "pack:release": "node scripts/pack-release.cjs",
     "prepack": "npm run build"
   },
   "dependencies": {
