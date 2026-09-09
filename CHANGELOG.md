@@ -8,6 +8,13 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Sửa
+
+- Trang npm của `alp-code` không còn thiếu README. `pack-release.cjs` dựng gói npm từ
+  `npm-wrapper/` và có copy `LICENSE` vào, nhưng quên copy `README.md` — `npm pack` chỉ tự
+  gộp README khi file đó có sẵn ngay trong thư mục được đóng gói, nên mọi bản đã publish trước
+  đây đều không có readme trên npmjs.com.
+
 ## [0.10.3] - 2026-09-09
 
 ### Sửa

@@ -25,6 +25,7 @@ const staging = fs.mkdtempSync(path.join(os.tmpdir(), "alp-npm-wrapper-"));
 try {
   fs.cpSync(path.join(repoRoot, "npm-wrapper"), staging, { recursive: true });
   fs.copyFileSync(path.join(repoRoot, "LICENSE"), path.join(staging, "LICENSE"));
+  fs.copyFileSync(path.join(repoRoot, "README.md"), path.join(staging, "README.md"));
   fs.copyFileSync(path.join(repoRoot, "src", "install", "binary-targets.json"), path.join(staging, "lib", "binary-targets.json"));
   const wrapper = JSON.parse(fs.readFileSync(path.join(staging, "package.json"), "utf8"));
   Object.assign(wrapper, {

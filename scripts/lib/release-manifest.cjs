@@ -33,6 +33,7 @@ const FORBIDDEN = [/^src\//, /^test\//, /^dist\/test\//, /^memory\//, /^\.git\//
 const NPM_WRAPPER_REQUIRED = [
   "package.json",
   "LICENSE",
+  "README.md",
   "install.cjs",
   "bin/alp.cjs",
   "lib/resolve-target.cjs",
