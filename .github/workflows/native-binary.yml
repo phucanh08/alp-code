@@ -1,0 +1,71 @@
+name: Native binary matrix
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  node-regression:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: node scripts/test-pack-release.cjs
+      - run: node scripts/test-npm-wrapper.cjs
+
+  native-runtime:
+    name: ${{ matrix.target }} runtime
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: darwin-arm64
+          - runner: macos-15-intel
+            target: darwin-x64
+          - runner: ubuntu-24.04
+            target: linux-x64-gnu
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64-gnu
+          - runner: windows-2025
+            target: windows-x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: npm ci
+      - run: node scripts/test-binary-build.cjs --contracts-only
+      - run: node scripts/test-binary.cjs
+      - run: node scripts/build-binary.cjs --target ${{ matrix.target }} --out build/native
+        env:
+          ALP_SKIP_GIT_CHECK: '1'
+      - if: runner.os != 'Windows'
+        run: node scripts/test-installer.cjs
+      - if: runner.os == 'Windows'
+        run: node scripts/test-windows-installer.cjs
+      - if: matrix.target == 'darwin-arm64'
+        run: node scripts/test-binary-performance.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alp-code-${{ matrix.target }}
+          path: |
+            build/native/*.tar.gz
+            build/native/SHA256SUMS
+          if-no-files-found: error
