@@ -15,13 +15,19 @@ const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
+const repoRoot = path.resolve(__dirname, "..");
+const installer = path.join(repoRoot, "install.ps1");
+const source = fs.readFileSync(installer, "utf8");
+for (const marker of ["Install-Binary", "windows-x64", "SHA256SUMS", "Get-FileHash", "Assert-SafeArchive", "__internal ensure-state", "ItemType Junction"])
+  assert(source.includes(marker), `install.ps1 thiếu native contract: ${marker}`);
+assert(source.indexOf("function Require-Node") < source.indexOf("function Install-Npm"), "Node preflight phải nằm trong npm/dev channel");
+
 if (process.platform !== "win32") {
-  console.log("SKIP             Windows installer: cần Windows");
+  console.log("PASS             Windows installer static native contract");
+  console.log("SKIP             Windows installer runtime: cần Windows");
   process.exit(0);
 }
 
-const repoRoot = path.resolve(__dirname, "..");
-const installer = path.join(repoRoot, "install.ps1");
 const engines = ["powershell.exe", "pwsh.exe"].filter(commandExists);
 assert(engines.length > 0, "không tìm thấy powershell.exe hoặc pwsh.exe");
 
@@ -61,14 +67,9 @@ function runEngine(engine) {
       assert(output.includes("NODE_VERSION_MODE::dash-dash-version"), output);
       assert(!output.includes("NODE_VERSION_MODE::node-p"), output);
     });
-    check(`${engine}: mọi channel đều bàn giao cho bootstrap.cjs`, () => {
-      const source = fs.readFileSync(installer, "utf8");
-      assert(source.includes("scripts\\bootstrap.cjs"));
-      // Ba channel phải cùng tồn tại trong wrapper: thiếu một cái là Windows mất đường cài
-      // mà không ai phát hiện, vì đường đó chỉ chạy trên máy không có npm.
-      for (const marker of ["Install-Npm", "Install-Tarball", "Install-Dev", "ItemType Junction"])
+    check(`${engine}: có đủ native/npm/dev channel`, () => {
+      for (const marker of ["Install-Npm", "Install-Binary", "Install-Dev", "ItemType Junction"])
         assert(source.includes(marker), `install.ps1 thiếu ${marker}`);
-      // Không được build trên máy người dùng nữa — đó là toàn bộ điểm của v0.9.0.
       assert(!/npm (ci|run build)/.test(source), "install.ps1 vẫn build trên máy người dùng");
     });
     check(`${engine}: alp dùng được ngay trong terminal hiện tại`, () => {

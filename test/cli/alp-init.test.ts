@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, readdir, realpath, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -62,6 +62,29 @@ describe("alp init", () => {
 
     await deinitializeProject({ project, repoRoot }, { store });
     await expect(stat(join(project, ".claude", "settings.local.json"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("links packaged skills through the stable current asset root", async () => {
+    const { root, project, home } = await gitProject();
+    const installHome = join(root, "alp-code");
+    const first = join(installHome, "versions", "v1");
+    const second = join(installHome, "versions", "v2");
+    await mkdir(join(first, "skills", "owned"), { recursive: true });
+    await mkdir(join(second, "skills", "owned"), { recursive: true });
+    await writeFile(join(first, "skills", "owned", "SKILL.md"), "v1\n");
+    await writeFile(join(second, "skills", "owned", "SKILL.md"), "v2\n");
+    await symlink(join("versions", "v1"), join(installHome, "current"));
+    const store = new ProjectRegistryStore({ file: join(home, ".alp", "projects.json") });
+
+    await initializeProject({ project, stableCommand: join(installHome, "bin", "alp"), assetRoot: join(installHome, "current") }, { store });
+    expect(await readFile(join(project, ".claude", "skills", "owned", "SKILL.md"), "utf8")).toBe("v1\n");
+    const next = join(installHome, ".current.next");
+    await symlink(join("versions", "v2"), next);
+    await rename(next, join(installHome, "current"));
+    expect(await readFile(join(project, ".claude", "skills", "owned", "SKILL.md"), "utf8")).toBe("v2\n");
+
+    await deinitializeProject({ project, repoRoot: join(installHome, "current") }, { store });
+    await expect(stat(join(project, ".claude", "skills", "owned"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("deinit removes owned legacy runtime artifacts, restores backups, preserves foreign files, and is idempotent", async () => {

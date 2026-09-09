@@ -169,6 +169,26 @@ describe("LocalProcessBackend", () => {
     });
   });
 
+  it("self-invokes the native internal supervisor without treating the binary as Node", async () => {
+    const stateDir = await temporaryRoot();
+    const child = new FakeChild(process.pid);
+    const calls: Array<{ command: string; args: readonly string[] }> = [];
+    const backend = new LocalProcessBackend({
+      stateDir,
+      spawnProcess(command, args) { calls.push({ command, args }); return child; },
+      supervisorInvocation: { executable: "/versions/v0.10.0/bin/alp", args: ["__internal", "supervisor"] },
+    });
+    await backend.spawn({
+      executionId: "exec_native_bg",
+      launchSpec: launchSpec(),
+      lifecycle: { requestId: "req", parentExecutionId: null, background: true, interactive: false, timeoutMs: null },
+    });
+    expect(calls[0]).toEqual({
+      command: "/versions/v0.10.0/bin/alp",
+      args: ["__internal", "supervisor", join(stateDir, "specs", "exec_native_bg.json")],
+    });
+  });
+
   it("stops an attached run when its wait times out", async () => {
     const child = new FakeChild();
     const backend = new LocalProcessBackend({ stdio: "inherit", spawnProcess: () => child });
