@@ -8,6 +8,8 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+## [0.10.2] - 2026-09-09
+
 ### Sửa
 
 - Tải native archive (npm postinstall, `alp update` mọi channel) không còn bị abort giữa chừng
@@ -792,7 +794,8 @@ Bản release đánh số đầu tiên. Trước mốc này alp-code chưa có v
 - `alp init`/`alp deinit`, `alp delegate`, `alp doctor`, `alp uninstall`, installer một dòng
   cho macOS/Linux/WSL và Windows.
 
-[Chưa phát hành]: https://github.com/phucanh08/alp-code/compare/v0.10.1...HEAD
+[Chưa phát hành]: https://github.com/phucanh08/alp-code/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/phucanh08/alp-code/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/phucanh08/alp-code/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/phucanh08/alp-code/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/phucanh08/alp-code/compare/v0.8.0...v0.9.0
