@@ -34,7 +34,7 @@ function agent(
           id === "main" ? ["/workspace/active", "/workspace/other"] : [],
       },
     },
-    instructions: () => `${id} instructions`,
+    instructions: { role: id, purpose: `${id} instructions`, rules: [] },
     workflow: {
       id: `${id}-workflow`,
       initial: "REPORT",

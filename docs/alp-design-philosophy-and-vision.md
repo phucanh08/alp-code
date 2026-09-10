@@ -449,6 +449,12 @@ Ràng buộc bắt buộc:
   closure. Lý do rất cụ thể: `canonicalize` (`src/execution/execution-policy.ts:18`) hash hàm bằng
   `.toString()`. Mọi custom agent dùng chung một closure sẽ cho **cùng một chuỗi hàm** — hash mất
   khả năng phân biệt. Lưu spec thành dữ liệu thì `definitionHash` phủ đúng nội dung prompt.
+  **2026-09-10: đã làm.** `instructions` trên definition nay là `InstructionSpec` (`role`,
+  `purpose`, `rules[]`, `audience?`); tám vai built-in khai dữ liệu, `renderInstructions(spec)`
+  dựng chuỗi lúc cần. Đo trước khi sửa: hai definition chỉ khác nội dung prompt, dựng qua cùng
+  một closure, cho **cùng một `definitionHash`** — nghĩa là §5.6 không chỉ mất khả năng phân
+  biệt mà còn tệ hơn: một hash đã trust sẽ nghiệm đúng cho một prompt khác. Test ghim ở
+  `test/execution/identity-capsule.test.ts`.
 
 ### 5.4. Output contract không cho phép code
 

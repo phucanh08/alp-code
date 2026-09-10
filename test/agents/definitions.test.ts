@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { agentRegistry } from "../../src/agents/registry";
+import { renderInstructions } from "../../src/agents/shared/voice";
 import type { AgentId, ToolId } from "../../src/agents/types";
 
 const ROLE_IDS = [
@@ -120,12 +121,12 @@ describe("code-native role definitions", () => {
   });
 
   it.each(ROLE_IDS)("renders static, task-free role instructions for %s", (id) => {
-    const instructions = agentRegistry.get(id).instructions();
+    const instructions = renderInstructions(agentRegistry.get(id).instructions);
     expect(instructions.length).toBeGreaterThan(80);
     // Instructions must stay identical across executions — they are rendered once into
     // `.alp/agents/<role>.md` and injected by the SessionStart hook, so nothing
     // execution-specific may leak in.
-    expect(instructions).toBe(agentRegistry.get(id).instructions());
+    expect(instructions).toBe(renderInstructions(agentRegistry.get(id).instructions));
   });
 
   it("returns frozen definitions and grants", () => {

@@ -2,6 +2,7 @@ import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { agentRegistry } from "../../src/agents/registry";
+import { renderInstructions } from "../../src/agents/shared/voice";
 import { CODE_NATIVE_HOUSE_RULES } from "../../src/agents/shared/house-rules";
 import type { AgentId } from "../../src/agents/types";
 import { PolicyEngine } from "../../src/policy/policy-engine";
@@ -174,7 +175,7 @@ describe("agent test tier 2 — dry-run prepare", () => {
     expect(CODE_NATIVE_HOUSE_RULES.join("\n")).not.toContain("in-process agents");
 
     for (const role of ROLE_IDS) {
-      const instructions = agentRegistry.get(role).instructions();
+      const instructions = renderInstructions(agentRegistry.get(role).instructions);
       if (!instructions.includes(CODE_NATIVE_HOUSE_RULES[0])) continue;
       expect(instructions, `${role} carries the house rules`).toContain(subagentRule);
     }

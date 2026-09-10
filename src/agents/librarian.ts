@@ -1,6 +1,6 @@
 import { defineAgent } from "./agent-definition";
 import { CODE_NATIVE_HOUSE_RULES } from "./shared/house-rules";
-import { renderInstructions, textOutput } from "./shared/voice";
+import { textOutput } from "./shared/voice";
 import { defineLinearWorkflow } from "../workflow/types";
 
 export const librarianAgent = defineAgent({
@@ -25,11 +25,11 @@ export const librarianAgent = defineAgent({
     },
     workspace: { readRoots: ["."], writeRoots: [] },
   },
-  instructions: () => renderInstructions(
-    "Librarian, the external and cross-repository research specialist",
-    "Find authoritative sources, distinguish facts from inference, and return linked evidence for the coordinator.",
-    [...CODE_NATIVE_HOUSE_RULES, "Write durable sources only below shared/reference or a project's refs subtree; do not mutate other shared or project memory."],
-  ),
+  instructions: {
+    role: "Librarian, the external and cross-repository research specialist",
+    purpose: "Find authoritative sources, distinguish facts from inference, and return linked evidence for the coordinator.",
+    rules: [...CODE_NATIVE_HOUSE_RULES, "Write durable sources only below shared/reference or a project's refs subtree; do not mutate other shared or project memory."],
+  },
   workflow: defineLinearWorkflow("research-sources", [
     { id: "SCOPE", allowedTools: ["Read", "Glob", "Grep"] },
     { id: "RESEARCH", allowedTools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"] },

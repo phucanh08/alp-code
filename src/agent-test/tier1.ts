@@ -3,6 +3,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import type { CapabilityCatalog } from "../agents/capability-catalog";
 import { memoryGrantCovers } from "../agents/memory-grant";
 import { MODEL_CONTEXT_WINDOWS, MODEL_RUNTIMES } from "../agents/model-context";
+import { renderInstructions } from "../agents/shared/voice";
 import type { AgentDefinition, AgentRegistry, MemoryScopeGrant } from "../agents/types";
 import { RUNTIME_IDS, TOOL_CATALOG } from "../agents/types";
 import type { AgentTestCheck } from "./types";
@@ -232,13 +233,23 @@ export function runTier1(input: Tier1Input): readonly AgentTestCheck[] {
     relationIssues.join("; ") || `reports to ${definition.reportsTo} · delegates to ${definition.delegatesTo.join(", ") || "nobody"}`,
   );
 
-  const instructions = definition.instructions();
+  const spec = definition.instructions;
+  const instructions = renderInstructions(spec);
+  const longestRule = spec.rules.reduce((longest, rule) => Math.max(longest, rule.length), 0);
+  const specIssues: string[] = [];
+  if (!spec.role.trim()) specIssues.push("no role");
+  if (!spec.purpose.trim()) specIssues.push("no purpose");
+  if (spec.rules.some((rule) => !rule.trim())) specIssues.push("an empty rule");
   add(
     "instructions",
-    instructions.trim().length > 0,
-    instructions.trim().length > 0
-      ? `${instructions.length} chars, ${instructions.split("\n").length} lines`
-      : "renders empty — the role would boot with no identity",
+    specIssues.length === 0 && instructions.trim().length > 0,
+    specIssues.length > 0
+      ? `instruction spec has ${specIssues.join(", ")}`
+      // Rendered size and rule shape, printed rather than capped: §5.3 budgets 20 rules of
+      // 240 chars for a *custom* agent, and that ceiling belongs to the loader that reads
+      // one. Here the numbers are the disclosure — context is finite (§4.9), and a definition
+      // should not be able to eat a share of it without anyone seeing the figure.
+      : `${spec.rules.length} rules, longest ${longestRule} chars → ${instructions.length} chars rendered`,
   );
 
   const empty = definition.output.validate("");

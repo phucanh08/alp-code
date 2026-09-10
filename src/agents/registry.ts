@@ -207,6 +207,27 @@ function assertDefinitionInvariants(
       );
     }
   }
+  // Identity is data (`InstructionSpec`), so the registry checks it the way it checks every
+  // other declared field. A definition whose prompt renders to a bare template is an agent
+  // with no purpose, and it would still hash, load and launch.
+  assertNonEmpty(definition.instructions.role, "instruction role", definition.id);
+  assertNonEmpty(definition.instructions.purpose, "instruction purpose", definition.id);
+  for (const rule of definition.instructions.rules) {
+    if (!rule.trim()) {
+      throw new AgentRegistryError(
+        "INVALID_AGENT",
+        `agent \`${definition.id}\` has an empty instruction rule`,
+      );
+    }
+  }
+  const audience = definition.instructions.audience;
+  if (audience !== undefined && audience !== "principal" && audience !== "machine") {
+    throw new AgentRegistryError(
+      "INVALID_AGENT",
+      `agent \`${definition.id}\` has unknown instruction audience \`${String(audience)}\``,
+    );
+  }
+
   assertNonEmpty(definition.workflow.id, "workflow id", definition.id);
   assertNonEmpty(definition.output.name, "output contract name", definition.id);
 

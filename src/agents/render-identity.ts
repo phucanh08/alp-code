@@ -1,3 +1,4 @@
+import { renderInstructions } from "./shared/voice";
 import type { AgentDefinition } from "./types";
 
 /**
@@ -17,7 +18,7 @@ export function renderIdentityDocument(definition: AgentDefinition<unknown>): st
   return [
     `# ${definition.displayName} — \`${definition.id}\``,
     "",
-    definition.instructions(),
+    renderInstructions(definition.instructions),
     "",
     "## Authority",
     "",

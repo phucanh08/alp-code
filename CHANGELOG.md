@@ -21,9 +21,21 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   chối". Chạy tầng rẻ trước và dừng ở tầng đỏ đầu tiên; exit 0 sạch, 1 khi có finding — cùng quy
   ước với `alp doctor`.
 
+### Sửa
+
+- `definitionHash` giờ phủ đúng nội dung prompt. `instructions` trên `AgentDefinition` chuyển từ
+  closure `() => string` sang dữ liệu (`InstructionSpec`: `role`, `purpose`, `rules[]`,
+  `audience?`), và `renderInstructions(spec)` dựng chuỗi lúc cần. Trước đó `canonicalize` hash
+  hàm bằng `.toString()`, nên hai definition chỉ khác nội dung prompt mà dựng qua cùng một
+  closure — đúng thứ loader `agent.yaml` (§5.3) sẽ sinh ra — cho **cùng một hash**. Với trust
+  bằng hash ở §5.6 thì đó không chỉ là mất khả năng phân biệt: một hash principal đã duyệt cho
+  một prompt sẽ nghiệm đúng cho một prompt khác. Đo được trên code trước bản sửa; test ghim ở
+  `test/execution/identity-capsule.test.ts`. Registry cũng từ chối spec rỗng role/purpose hoặc
+  có rule rỗng.
+
 ### Đổi
 
-- Bộ dựng dry-run của tầng 2 chuyển từ `test/support/` sang `src/agents/agent-test/`, để lệnh CLI
+- Bộ dựng dry-run của tầng 2 chuyển từ `test/support/` sang `src/agent-test/`, để lệnh CLI
   và test suite chạy đúng một đường chứ không hai.
 
 ## [0.10.4] - 2026-09-09

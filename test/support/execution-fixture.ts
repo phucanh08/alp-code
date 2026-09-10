@@ -40,7 +40,7 @@ export function probeDefinition(
       memory: { read: ["shared"], write: [] },
       workspace: { readRoots: ["/workspace"], writeRoots: [] },
     },
-    instructions: () => "Probe instructions",
+    instructions: { role: "Probe", purpose: "Probe instructions", rules: [] },
     workflow: {
       id: "probe-workflow",
       initial: "REPORT",

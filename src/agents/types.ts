@@ -67,6 +67,29 @@ export interface OutputContract<TOutput> {
   readonly validate: (value: unknown) => OutputValidation<TOutput>;
 }
 
+/**
+ * Identity as data, not as a closure.
+ *
+ * `hashAgentDefinition` canonicalizes a function by its source text, so identity used to
+ * reach the hash only because each built-in spelled its own literal. A loader building
+ * definitions from `.alp/agents/<id>/agent.yaml` (§5.3) would hand every custom agent the
+ * *same* closure over different data — and every one of them would hash identically, which
+ * means a hash trusted for one prompt would validate any other. Storing the three fields
+ * makes `definitionHash` cover what the model is actually told.
+ */
+export interface InstructionSpec {
+  /** Who the role is: `"Search, the local code retrieval specialist"`. */
+  readonly role: string;
+  /** What one execution of it is for. */
+  readonly purpose: string;
+  readonly rules: readonly string[];
+  /**
+   * `principal` (the default) adds the address-and-language line and the report-first rule;
+   * `machine` adds neither, for a role whose output is read by another program.
+   */
+  readonly audience?: "principal" | "machine";
+}
+
 export interface AgentDefinition<TOutput> {
   readonly id: AgentId;
   readonly displayName: string;
@@ -93,8 +116,8 @@ export interface AgentDefinition<TOutput> {
    * publishes no bounds for `model_auto_compact_token_limit` and shares it.
    */
   readonly autoCompactTokens?: RuntimeTokenBudgetMap;
-  /** Static identity text — no per-execution context. See `renderInstructions`. */
-  readonly instructions: () => string;
+  /** Static identity — no per-execution context. Rendered by `renderInstructions`. */
+  readonly instructions: InstructionSpec;
   readonly workflow: WorkflowDefinition;
   readonly output: OutputContract<TOutput>;
 }

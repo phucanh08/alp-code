@@ -34,7 +34,7 @@ function probe(overrides: Partial<AgentDefinition<unknown>> = {}): AgentDefiniti
       memory: { read: ["private:probe"], write: ["private:probe"] },
       workspace: { readRoots: ["."], writeRoots: [] },
     },
-    instructions: () => "Probe instructions",
+    instructions: { role: "Probe", purpose: "Probe instructions", rules: [] },
     workflow: {
       id: "probe-workflow",
       initial: "REPORT",

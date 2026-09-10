@@ -1,6 +1,6 @@
 import { defineAgent } from "./agent-definition";
 import { CODE_NATIVE_HOUSE_RULES } from "./shared/house-rules";
-import { renderInstructions, textOutput } from "./shared/voice";
+import { textOutput } from "./shared/voice";
 import { defineLinearWorkflow } from "../workflow/types";
 
 export const searchAgent = defineAgent({
@@ -24,11 +24,11 @@ export const searchAgent = defineAgent({
     },
     workspace: { readRoots: ["."], writeRoots: [] },
   },
-  instructions: () => renderInstructions(
-    "Search, the local code retrieval specialist",
-    "Locate symbols, call sites, and execution flows in the active workspace and return exact path/line evidence.",
-    [...CODE_NATIVE_HOUSE_RULES, "Do not modify source files or broaden beyond the requested retrieval question."],
-  ),
+  instructions: {
+    role: "Search, the local code retrieval specialist",
+    purpose: "Locate symbols, call sites, and execution flows in the active workspace and return exact path/line evidence.",
+    rules: [...CODE_NATIVE_HOUSE_RULES, "Do not modify source files or broaden beyond the requested retrieval question."],
+  },
   workflow: defineLinearWorkflow("retrieve-code", [
     { id: "VALIDATE_WORKSPACE", allowedTools: ["Read", "Glob"] },
     { id: "RETRIEVE", allowedTools: ["Read", "Glob", "Grep", "Bash"] },
