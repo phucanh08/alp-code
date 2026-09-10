@@ -39,9 +39,10 @@ export function renderAgentTestReport(report: AgentTestReport): string {
       lines.push(`  ${check.status.toUpperCase().padEnd(STATUS_WIDTH)}${check.id.padEnd(ID_WIDTH)}${check.detail}`);
     }
     if (tier === 2 && report.disclosure) {
-      const { authority, egress, cost, launch } = report.disclosure;
+      const { authority, enforcement, egress, cost, launch } = report.disclosure;
       lines.push(
         ...section("Authority", authority),
+        ...section("Enforced by", enforcement.map((line) => `- ${line}`)),
         ...section("Egress", egress.map((line) => `- ${line}`)),
         ...section("Cost", cost.map((line) => `- ${line}`)),
         ...section("Launch", RUNTIME_IDS.map((runtime) => {

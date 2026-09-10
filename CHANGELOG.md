@@ -33,6 +33,15 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   trùng, từ chối multi-document, cap 32 KiB trước khi parse và từ chối key lạ thay vì bỏ qua.
   Thêm dependency runtime `yaml` (thuần JS, không dependency con).
 
+- Tầng 2 của `alp agent test` (và `alp agent add`) in thêm khối **Enforced by**: runtime nào cưỡng
+  chế phần nào của bảng Authority. Lý do đo được, không phải suy đoán — một vai chỉ có
+  `Read, Glob, Grep, Skill` đã chạy `/bin/zsh -lc "… node -e …"` trên Codex và thành công, vì shell
+  của Codex là built-in và `--sandbox` chỉ chọn *lệnh đụng được gì*. Cùng phép đo: sandbox read-only
+  cho **đọc mọi path** (nên `workspace.readRoots` là ràng buộc mức prompt ở đó) nhưng chặn thật
+  việc ghi và egress mạng. Trên Claude cả hai đều là ACL thật. Hành vi không đổi; thứ đổi là bảng
+  Authority không còn nói quá về nửa mà Codex không giữ được — principal duyệt trust đọc được điều
+  đó ngay tại màn hình duyệt.
+
 - **Stop hook lại hoàn tất được execution.** Hai lỗi trong `execution-bridge.loadExecution`, cùng
   bị lộ ở lần chạy live đầu tiên: (1) nó tái dựng `ExecutionPolicy` để kiểm snapshot có bị sửa
   không, nhưng **bỏ quên `mode`** nên luôn giả định `medium` — mọi execution chạy ở nấc khác đều

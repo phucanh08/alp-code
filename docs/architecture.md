@@ -379,8 +379,20 @@ phiên interactive không sinh `task.md`: không có gì để adapter lỡ tay 
 | ACL | `permissions.{additionalDirectories,allow,deny}` | `[sandbox_workspace_write]` + `[[rules]]` |
 | Skill/subagent/MCP grant | `allow: Skill(<tên>)`, `Agent(<tên>)`, `mcp__<server>`; `--mcp-config` + `--strict-mcp-config`; `--agents <json>` | `-c mcp_servers.<tên>={…}`; không có subagent in-process |
 | Read-only | `sandbox.filesystem.denyWrite` + `--permission-mode plan` | `-s read-only` |
+| Tool grant | mọi tool ngoài grant vào `permissions.deny` theo tên — runtime từ chối lúc gọi | **không cưỡng chế được**: shell của Codex là built-in, `--sandbox` chỉ chọn lệnh đụng được gì |
+| Read root | `additionalDirectories` — đọc ngoài đó bị từ chối | **không cưỡng chế được**: sandbox read-only cho đọc mọi path |
+| Ghi / egress mạng | `denyWrite` + không có tool mạng | sandbox từ chối cả hai ✓ |
 | Interactive | `--dangerously-skip-permissions` · **không positional prompt** | `--dangerously-bypass-approvals-and-sandbox` · **không positional prompt** |
 | Headless | positional trỏ tới `task.md` | `exec --skip-git-repo-check` + positional trỏ tới `task.md` |
+
+Ba dòng cuối bảng đo được ngày 2026-09-10, không phải suy từ tài liệu: một vai chỉ có
+`Read, Glob, Grep, Skill` đã chạy `/bin/zsh -lc "… node -e …"` trên Codex và thành công (log
+`exec_42c6500fcbe74dfea28b`), còn `codex sandbox -c sandbox_mode='"read-only"' -- cat <path ngoài
+workspace>` in ra nội dung file. Cùng phép đo cho thấy ghi bị `Operation not permitted` và `curl`
+không nối được mạng. Nghĩa là **trên Codex, `Bash` và `workspace.readRoots` là ràng buộc mức
+prompt**; ghi và egress thì sandbox giữ thật. `enforcementNotes` trong `permission-rules.ts` in
+đúng điều này ra trong bảng của `alp agent test` và `alp agent add`, để principal duyệt trust
+không đọc bảng Authority như một lời hứa mà nó chỉ giữ được một nửa.
 
 **Phiên interactive chạy không guardrail, và đó là quyết định có ý thức.** `alp` (`run-main`) là
 phiên duy nhất đặt `interactive: true`; `alp delegate` luôn `false`. Principal ngồi ngay đó và tự

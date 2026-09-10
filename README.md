@@ -179,6 +179,25 @@ Mọi thứ tầng 2 ghi ra nằm trong một thư mục tạm và bị xoá sau
 cấu hình runtime. Không có tiến trình runtime nào được phóng. Exit `0` khi sạch, `1` khi có
 finding — cùng quy ước với `alp doctor`.
 
+Tầng 2 in kèm khối **Enforced by**, vì bảng Authority đọc như một lời hứa mà thực ra là hai:
+
+```
+  Enforced by
+    - claude: the tool grant, the skill names and the read roots are ACL rules the runtime
+              refuses at call time
+    - codex: the shell is built in and cannot be withheld — this role holds no `Bash`, and a
+             command can still run
+    - codex: the read-only sandbox permits reading any path, so `workspace.readRoots` is
+             instruction-level here
+    - codex: writes outside the writable roots and network egress are refused by the sandbox
+```
+
+Đo được ngày 2026-09-10, không phải suy từ tài liệu: một vai chỉ có `Read, Glob, Grep, Skill`
+đã chạy `/bin/zsh -lc "… node -e …"` trên Codex và thành công. Đây là giới hạn của Codex chứ
+không phải lỗi cấu hình — `--sandbox` chọn *lệnh đụng được gì*, không chọn *có shell hay không*.
+Trên Claude thì cả hai đều là ACL thật. `alp agent add` in đúng khối này trước khi hỏi, nên
+principal duyệt trust nhìn thấy sự bất đối xứng ngay tại chỗ.
+
 Dừng ở tầng đỏ đầu tiên là có chủ ý: một definition hỏng ở tầng 1 sẽ làm snapshot tầng 2 mô tả
 trung thực một thứ đã sai, còn tầng 3 từ chối đúng vì lý do sai.
 

@@ -37,6 +37,14 @@ export interface AgentTestLaunchFacts {
 export interface AgentTestDisclosure {
   /** The Authority table exactly as the role will read it in its session context. */
   readonly authority: readonly string[];
+  /**
+   * Which runtime honours which half of that table.
+   *
+   * The table alone reads as one promise, and it is two: Claude refuses an ungranted tool at
+   * call time, Codex cannot withhold its shell and reads any path. A principal approving an
+   * agent is entitled to that distinction on the same screen as the grants.
+   */
+  readonly enforcement: readonly string[];
   readonly egress: readonly string[];
   readonly cost: readonly string[];
   readonly launch: Readonly<Record<RuntimeId, AgentTestLaunchFacts>>;

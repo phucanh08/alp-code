@@ -4,6 +4,7 @@ import type { AgentDefinition, RuntimeId } from "../agents/types";
 import { RUNTIME_IDS } from "../agents/types";
 import { modelForMode, reasoningEffortForMode, runtimeForMode, type ModeId } from "../agents/modes";
 import { defaultAutoCompactTokens } from "../agents/model-context";
+import { enforcementNotes } from "../runtime/permission-rules";
 import type { AgentDryRun } from "./dry-run";
 import type { AgentTestCheck, AgentTestDisclosure, AgentTestLaunchFacts } from "./types";
 
@@ -170,6 +171,7 @@ export async function runTier2(input: Tier2Input): Promise<{
   const webTools = definition.capabilities.tools.filter((tool) => tool === "WebFetch" || tool === "WebSearch");
   const disclosure: AgentTestDisclosure = {
     authority: authorityTable(run.sessionContext),
+    enforcement: enforcementNotes(policy),
     egress: [
       webTools.length > 0 ? `tools reaching the network: ${webTools.join(", ")}` : "no network tool granted",
       policy.mcpServers.length > 0
