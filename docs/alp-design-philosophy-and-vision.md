@@ -1,6 +1,7 @@
 # ALP Code — Triết lý thiết kế & Tầm nhìn kiến trúc
 
-> **Status:** Draft · **Ngày:** 2026-08-27 · cập nhật 2026-09-04 (§0, §4.6, §10.3) · **Owner:** anhlp
+> **Status:** Draft · **Ngày:** 2026-08-27 · cập nhật 2026-09-04 (§0, §4.6, §10.3), 2026-09-10
+> (§5.8, §8, §11 — đối chứng Amp) · **Owner:** anhlp
 > **Quan hệ với các doc khác:** `docs/architecture.md` mô tả hệ thống **đang là**. Doc này mô tả
 > hệ thống **nên trở thành** và các nguyên tắc để quyết định từng bước đi. Khi hai doc mâu thuẫn,
 > `architecture.md` đúng về hiện trạng, doc này đúng về hướng.
@@ -623,6 +624,13 @@ khác trong repo.
 thứ đối đầu với §4.9 và §5.3: một prompt không giới hạn, không review được, không đo được, chảy
 thẳng vào context. Dữ liệu thuần buộc mọi thứ vào các trường có ngân sách và có thể diff.
 
+Đối chứng bổ sung (2026-09-10): Amp — hệ ALP mượn ý tưởng **nấc** — cũng **không** dùng markdown
+tự do cho identity. Nó không có file agent declarative nào cả; custom agent của nó là code
+TypeScript bên trong plugin (`amp.createAgent`). Hai hệ loại bỏ cùng một thứ là "prompt tự do
+không ngân sách", rồi rẽ về hai phía: ALP chọn dữ liệu, Amp chọn code. Vì sao ALP không đi được
+phía code — và ba điểm lệch cấu trúc đằng sau — ở
+[`amp-parity-custom-agent-and-plugin.md`](./amp-parity-custom-agent-and-plugin.md).
+
 Đây là khuyến nghị, không phải kết luận — xem §11.
 
 ### 5.9. `orchestrator` — role built-in thứ 9
@@ -753,7 +761,8 @@ tới khi có nhu cầu thật, vì mỗi thứ đều tự biện minh được
 
 | Hoãn | Điều kiện mở khoá |
 |---|---|
-| Plugin system / registry | Có ≥ 3 extension bên thứ ba thật, **và** có mô hình signing + sandbox |
+| Plugin **bundle dữ liệu** (nhiều `agent.yaml` + `skills/` + tên catalog entry, không code) | §5 xong, **và** có ≥ 2 gói thật muốn dùng lại giữa các project |
+| Plugin **có code** / registry | Có ≥ 3 extension bên thứ ba thật, **và** có mô hình signing + sandbox |
 | Workflow DSL / engine tổng quát | Có ≥ 2 workflow không diễn đạt được bằng linear workflow |
 | Custom agent được delegate | Có use case thật cần cây sâu 2 tầng (built-in `orchestrator` ở §5.9 là đường khác, không phải cái này) |
 | `orchestrator` (§5.9) | §4.10 xong: budget, cancellation, trace parent→child |
@@ -765,6 +774,12 @@ tới khi có nhu cầu thật, vì mỗi thứ đều tự biện minh được
 Đặc biệt: **plugin system không được xây trước mô hình tin cậy.** Một plugin đóng gói hook và MCP
 config là arbitrary code execution. Trong một hệ tự nhận fail-closed, thêm plugin trước khi có
 signing/provenance/sandbox là mâu thuẫn tự thân, không phải tính năng.
+
+Amp đi thẳng đường ngược lại — plugin của nó chạy full quyền trong process Amp, không signing,
+không sandbox — và với Amp đó là lựa chọn nhất quán. Sao chép nó vào ALP thì không: phần đắt của
+plugin có code không phải cái host chạy nó, mà là câu "plugin này được đọc gì, ghi gì, gọi ra mạng
+chỗ nào" — tức là dựng lại `AgentCapabilities` cho một chủ thể mới. Chi tiết ở
+[`amp-parity-custom-agent-and-plugin.md`](./amp-parity-custom-agent-and-plugin.md) §5.
 
 ---
 
@@ -901,6 +916,11 @@ phương án ngang nhau về giá trị — nới ra sau rẻ hơn thu lại.
 | 9 | **Agent ≠ subagent** (§0). Thành viên agents team luôn là Agent có identity đầy đủ — mục đích riêng cộng tool, skill, subagent, MCP, memory, workspace của riêng nó | Một từ dùng cho hai thứ ở hai tầng enforcement khác nhau: cái đi qua `PolicyEngine` từng lần, và cái chỉ được cấp một lần lúc prepare. Bản nháp §4.6 trộn đúng hai cái đó |
 | 10 | **Subagent là in-process của runtime**, khai trong definition ngang hàng skill và MCP — không phải một execution con do ALP spawn | Execution con đã có tên: đó là delegation. Thêm loại execution con thứ hai không identity sẽ đẻ ra hai đường làm cùng một việc, và đường thứ hai không trace được (§4.10) |
 | 11 | **`alp agent test` (§10.3) chặn trước §5** — không mở custom agent khi chưa có tầng 1–3 | Custom agent là identity do principal viết, chạy với quyền thật. Không có deny-path test thì trần capability ở §5.5 chỉ là lời hứa trong doc |
+
+Quyết định **12–15** (khai đầy đủ thay vì `extends`; plugin v1 là bundle dữ liệu; hook bridge là
+event surface duy nhất; `ai.ask`/UI prompt nằm ngoài phạm vi custom agent) nằm ở
+[`amp-parity-custom-agent-and-plugin.md`](./amp-parity-custom-agent-and-plugin.md) §6, cùng bằng
+chứng từ Amp dẫn tới chúng.
 
 Ba hệ quả của các quyết định trên cần ghi nhận vì chúng tạo ma sát thật:
 
