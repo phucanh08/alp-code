@@ -42,6 +42,7 @@ function prepared(executionId: string, target = "search"): PreparedExecution {
       workspaceAccess: "granted",
       allowedTools: ["Read"],
       skills: [],
+      skillRoots: [],
       subagents: [],
       mcpServers: [],
       autoCompactTokens: { claude: null, codex: null },

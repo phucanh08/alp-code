@@ -10,11 +10,102 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ### Thêm
 
+- `alp agent test <role|--all> [--tier 1|2|3] [--mode <nấc>] [--json]` — ba tầng đầu của công cụ
+  test agent (vision §10.3) chạy được từ CLI thay vì chỉ trong `npm test`. Tầng 1 kiểm định nghĩa
+  tĩnh (grant, workflow reachable + terminal, skill có thật trên đĩa và không symlink ra ngoài
+  skill root, model có runtime, ngưỡng auto-compact so với cửa sổ context). Tầng 2 chạy
+  `ExecutionService.prepare` thật rồi dừng trước spawn, in **quyền** (bảng Authority đúng như vai
+  sẽ đọc), **egress** (tool ra mạng, MCP server và lệnh của nó) và **chi phí** (nấc chọn runtime
+  nào, model, ngưỡng nén, số byte SKILL.md vào context), kèm launch spec của cả hai runtime để
+  diff cạnh nhau. Tầng 3 thăm dò từng trần capability và đòi **đúng mã lỗi**, không chỉ "bị từ
+  chối". Chạy tầng rẻ trước và dừng ở tầng đỏ đầu tiên; exit 0 sạch, 1 khi có finding — cùng quy
+  ước với `alp doctor`.
+
+- Custom agent declarative: `<project>/.alp/agents/<id>/agent.yaml` được đọc, cưỡng chế trần
+  capability (§5.5) rồi dựng thành `AgentDefinition` bình thường qua đúng `createAgentRegistry`
+  đang có — nên nó thừa hưởng mọi invariant sẵn có chứ không phải một primitive mới. `reportsTo`
+  ép `main`, `delegatesTo` ép rỗng, `memory.write` chỉ `private:<id>`, `workspace.writeRoots`
+  phải rỗng, `skills`/`subagents`/`mcpServers` khai bằng tên trong catalog, `rules` ≤ 20 × 240
+  ký tự, `output` chỉ `text`. Bỏ trống `houseRules` nhận `code-native`, không phải `none`.
+  `alp agent test <id> --project <path>` chạy được ba tầng trên chúng; agent chưa trust **không**
+  vào `main.delegatesTo` thật, nên `alp delegate` chưa gọi tới được — bản in nói rõ đây là
+  candidate. Parser chạy trên input untrusted nên tắt anchor/alias (chặn YAML bomb), từ chối key
+  trùng, từ chối multi-document, cap 32 KiB trước khi parse và từ chối key lạ thay vì bỏ qua.
+  Thêm dependency runtime `yaml` (thuần JS, không dependency con).
+
+- Tầng 2 của `alp agent test` (và `alp agent add`) in thêm khối **Enforced by**: runtime nào cưỡng
+  chế phần nào của bảng Authority. Lý do đo được, không phải suy đoán — một vai chỉ có
+  `Read, Glob, Grep, Skill` đã chạy `/bin/zsh -lc "… node -e …"` trên Codex và thành công, vì shell
+  của Codex là built-in và `--sandbox` chỉ chọn *lệnh đụng được gì*. Cùng phép đo: sandbox read-only
+  cho **đọc mọi path** (nên `workspace.readRoots` là ràng buộc mức prompt ở đó) nhưng chặn thật
+  việc ghi và egress mạng. Trên Claude cả hai đều là ACL thật. Hành vi không đổi; thứ đổi là bảng
+  Authority không còn nói quá về nửa mà Codex không giữ được — principal duyệt trust đọc được điều
+  đó ngay tại màn hình duyệt.
+
+- **Stop hook lại hoàn tất được execution.** Hai lỗi trong `execution-bridge.loadExecution`, cùng
+  bị lộ ở lần chạy live đầu tiên: (1) nó tái dựng `ExecutionPolicy` để kiểm snapshot có bị sửa
+  không, nhưng **bỏ quên `mode`** nên luôn giả định `medium` — mọi execution chạy ở nấc khác đều
+  trượt phép kiểm, và hook (vốn báo lỗi bằng một dòng note) lặng lẽ để execution ở `prepared` với
+  output contract không được cưỡng chế; điều này đúng cho cả 8 vai built-in, không riêng custom
+  agent. (2) nó resolve vai qua `agentRegistry` nên không thấy custom agent, vốn chỉ tồn tại
+  trong project của nó — giờ resolve **theo hash** từ `.alp/agents/`, vì trust có thể bị thu hồi
+  giữa lúc chạy còn execution đang kết thúc thì đã chạy với definition nó đã chạy.
+  Hệ quả nhìn thấy được: `alp delegate` trên Codex từng trả về nguyên transcript CLI (banner,
+  warning, "tokens used") thay vì câu trả lời — đó chỉ là fallback khi hook không ghi được output.
+  Tầng 1–3 dừng trước spawn nên không tầng nào bắt được lỗi này.
+
+- Dòng deny khi hash lệch nói rõ **vì sao**: quyền đổi (kèm diff) hay chỉ prompt/workflow đổi.
+  `definitionHash` phủ cả house rule mà house rule đi theo ALP, nên `alp update` có thể làm lệch
+  hash của mọi custom agent dù file không ai đụng — hành vi đúng, nhưng thông báo cũ ám chỉ nhầm
+  là principal đã sửa file.
+
+- `alp init` tạo sẵn `.alp/agents/` và `.alp/skills/` (rỗng). `.alp/` là thứ duy nhất `alp init`
+  chạm mà principal được commit, nên nó không nằm trong `.git/info/exclude`; tạo rỗng để git
+  không có gì để báo, và `alp agent list` giải thích layout khi chưa có agent nào. `alp deinit`
+  không đụng tới `.alp/` (§5.7.4).
+
+- Skill theo project (§5.7): `.alp/skills/` dùng chung, `.alp/agents/<id>/skills/` cho từng agent,
+  ba dạng entry — thư mục thật, symlink, và file `.skillref` một dòng cho Windows/checkout không
+  giữ symlink. **Thư mục là danh sách grant**; `capabilities.skills` trong `agent.yaml` giờ chỉ
+  khai skill **built-in** theo tên catalog, vì cây built-in nằm dưới `~/.alp-code/versions/<tag>/`
+  mà `alp update` thay nguyên khối — không link tương đối tới được. Cùng một tên ở cả hai chỗ là
+  lỗi. Luật escape cưỡng chế lúc load: đích phải nằm trong `.alp/skills/` hoặc cây built-in, theo
+  link đúng một cấp, vượt ra ngoài thì deny cả agent; trần 20 skill mỗi agent.
+  `ExecutionPolicy.skillRoots` pin root của từng execution và cả hai adapter đặt nó lên đầu, nên
+  skill của project che skill built-in cùng tên cho đúng vai đó. Vai built-in nhận skill của
+  project qua overlay (`.alp/agents/<builtin>/skills/`, không có `agent.yaml`) — overlay phải
+  trust riêng, chưa trust thì vai đó vẫn chạy với skill shipped. Thêm `alp agent show <id>` in
+  thứ tự resolve đã tính.
+
+- Trust cho custom agent (§5.6): `alp agent add <id>` chạy đủ ba tầng, in quyền · egress · chi
+  phí cộng diff capability nếu file từng được trust khác nội dung, rồi hỏi — và chỉ terminal trả
+  lời được, **không có `--yes`**. Hash nằm ở `~/.alp/trusted-agents.json` (0600), khoá theo cả
+  project lẫn id. Agent đã trust tự vào `main.delegatesTo`, nên `alp` và `alp delegate` gọi tới
+  được; agent chưa trust hoặc đã bị sửa sau khi trust thì **deny**, không phải cảnh báo, kèm một
+  dòng nói rõ vì sao. Thêm `alp agent list` và `alp agent untrust <id>`.
+
 - `docs/user/` là source of truth cho site tại <https://alp.anhlp.com/docs/>. Repo `alp-docs`
   không còn giữ bản sao content nào; workflow bên đó kéo thư mục này từ `main` rồi build.
   Sửa tài liệu người dùng ở repo này, cùng commit với thay đổi code sinh ra nó.
 - `docs/user/sidebar.json` giữ thứ tự và nhãn navigation, nằm cạnh content để thêm một trang
   là một commit ở một repo.
+
+### Sửa
+
+- `definitionHash` giờ phủ đúng nội dung prompt. `instructions` trên `AgentDefinition` chuyển từ
+  closure `() => string` sang dữ liệu (`InstructionSpec`: `role`, `purpose`, `rules[]`,
+  `audience?`), và `renderInstructions(spec)` dựng chuỗi lúc cần. Trước đó `canonicalize` hash
+  hàm bằng `.toString()`, nên hai definition chỉ khác nội dung prompt mà dựng qua cùng một
+  closure — đúng thứ loader `agent.yaml` (§5.3) sẽ sinh ra — cho **cùng một hash**. Với trust
+  bằng hash ở §5.6 thì đó không chỉ là mất khả năng phân biệt: một hash principal đã duyệt cho
+  một prompt sẽ nghiệm đúng cho một prompt khác. Đo được trên code trước bản sửa; test ghim ở
+  `test/execution/identity-capsule.test.ts`. Registry cũng từ chối spec rỗng role/purpose hoặc
+  có rule rỗng.
+
+### Đổi
+
+- Bộ dựng dry-run của tầng 2 chuyển từ `test/support/` sang `src/agent-test/`, để lệnh CLI
+  và test suite chạy đúng một đường chứ không hai.
 
 ## [0.10.4] - 2026-09-09
 

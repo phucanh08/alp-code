@@ -1,6 +1,6 @@
 import { defineAgent } from "./agent-definition";
 import { CODE_CRAFT_RULES, CODE_NATIVE_HOUSE_RULES } from "./shared/house-rules";
-import { renderInstructions, textOutput } from "./shared/voice";
+import { textOutput } from "./shared/voice";
 import { defineLinearWorkflow } from "../workflow/types";
 
 export const oracleAgent = defineAgent({
@@ -23,11 +23,11 @@ export const oracleAgent = defineAgent({
     },
     workspace: { readRoots: ["."], writeRoots: [] },
   },
-  instructions: () => renderInstructions(
-    "Oracle, the senior reasoning and architecture advisor",
-    "Provide an independent second opinion, challenge assumptions, and expose trade-offs for high-risk decisions or debugging.",
-    [...CODE_NATIVE_HOUSE_RULES, ...CODE_CRAFT_RULES, "Return recommendations only; do not implement changes or present assumptions as verified facts."],
-  ),
+  instructions: {
+    role: "Oracle, the senior reasoning and architecture advisor",
+    purpose: "Provide an independent second opinion, challenge assumptions, and expose trade-offs for high-risk decisions or debugging.",
+    rules: [...CODE_NATIVE_HOUSE_RULES, ...CODE_CRAFT_RULES, "Return recommendations only; do not implement changes or present assumptions as verified facts."],
+  },
   workflow: defineLinearWorkflow("advise", [
     { id: "FRAME", allowedTools: ["Read", "Glob", "Grep"] },
     { id: "CHALLENGE", allowedTools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"] },

@@ -38,6 +38,20 @@ export interface WorkspaceGrants {
   readonly writeRoots: readonly string[];
 }
 
+/**
+ * Where one granted skill actually lives.
+ *
+ * Pinned on the definition, so `definitionHash` covers the resolved path and not only the
+ * name: §5.7.5 draws the trust boundary at "skill names and resolved realpaths", and a
+ * symlink repointed under a name that did not change is exactly the edit a name-only hash
+ * would miss.
+ */
+export interface SkillBinding {
+  readonly name: SkillName;
+  readonly kind: "directory" | "symlink" | "skillref";
+  readonly path: string;
+}
+
 export interface AgentCapabilities {
   readonly tools: readonly ToolId[];
   /**
@@ -46,6 +60,17 @@ export interface AgentCapabilities {
    * have, and a name without the tool is a grant nothing can reach.
    */
   readonly skills: readonly SkillName[];
+  /**
+   * Project-scoped skill grants, resolved. Absent for a built-in, whose skills are catalog
+   * names resolved from the shipped `skills/` tree.
+   */
+  readonly skillBindings?: readonly SkillBinding[];
+  /**
+   * Directories this role resolves `Skill(<name>)` from before the machine-wide roots — one
+   * per project-scoped grant set, so a name here shadows a built-in of the same name for
+   * this role only (§5.7.1).
+   */
+  readonly skillRoots?: readonly string[];
   /**
    * In-process subagents, by name. A subagent is a grant like any other — not a seat on the
    * team, and never a way around this role's own limits (§0, §4.6). Empty for every built-in.
@@ -65,6 +90,29 @@ export interface OutputContract<TOutput> {
   readonly name: string;
   readonly schema: Readonly<Record<string, unknown>>;
   readonly validate: (value: unknown) => OutputValidation<TOutput>;
+}
+
+/**
+ * Identity as data, not as a closure.
+ *
+ * `hashAgentDefinition` canonicalizes a function by its source text, so identity used to
+ * reach the hash only because each built-in spelled its own literal. A loader building
+ * definitions from `.alp/agents/<id>/agent.yaml` (§5.3) would hand every custom agent the
+ * *same* closure over different data — and every one of them would hash identically, which
+ * means a hash trusted for one prompt would validate any other. Storing the three fields
+ * makes `definitionHash` cover what the model is actually told.
+ */
+export interface InstructionSpec {
+  /** Who the role is: `"Search, the local code retrieval specialist"`. */
+  readonly role: string;
+  /** What one execution of it is for. */
+  readonly purpose: string;
+  readonly rules: readonly string[];
+  /**
+   * `principal` (the default) adds the address-and-language line and the report-first rule;
+   * `machine` adds neither, for a role whose output is read by another program.
+   */
+  readonly audience?: "principal" | "machine";
 }
 
 export interface AgentDefinition<TOutput> {
@@ -93,8 +141,8 @@ export interface AgentDefinition<TOutput> {
    * publishes no bounds for `model_auto_compact_token_limit` and shares it.
    */
   readonly autoCompactTokens?: RuntimeTokenBudgetMap;
-  /** Static identity text — no per-execution context. See `renderInstructions`. */
-  readonly instructions: () => string;
+  /** Static identity — no per-execution context. Rendered by `renderInstructions`. */
+  readonly instructions: InstructionSpec;
   readonly workflow: WorkflowDefinition;
   readonly output: OutputContract<TOutput>;
 }

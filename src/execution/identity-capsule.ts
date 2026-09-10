@@ -1,4 +1,5 @@
 import { memoryGrantCovers } from "../agents/memory-grant";
+import { renderInstructions } from "../agents/shared/voice";
 import type { AgentDefinition, MemoryScopeGrant, ToolId } from "../agents/types";
 import type { BuiltMemoryContext, MemoryEntry } from "../memory/types";
 import type { WorkflowExecutionState } from "../workflow/types";
@@ -76,7 +77,7 @@ export function createIdentityCapsule(
     policyHash: input.policy.policyHash,
     role: input.definition.id,
     displayName: input.definition.displayName,
-    instructions: input.definition.instructions(),
+    instructions: renderInstructions(input.definition.instructions),
     task: input.task,
     activeWorkspace: input.policy.workspace,
     memoryContext: {

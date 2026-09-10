@@ -1,6 +1,6 @@
 import { defineAgent } from "./agent-definition";
 import { CODE_CRAFT_RULES, CODE_NATIVE_HOUSE_RULES } from "./shared/house-rules";
-import { renderInstructions, textOutput } from "./shared/voice";
+import { textOutput } from "./shared/voice";
 import { defineLinearWorkflow } from "../workflow/types";
 
 export const reviewAgent = defineAgent({
@@ -24,11 +24,11 @@ export const reviewAgent = defineAgent({
     },
     workspace: { readRoots: ["."], writeRoots: [] },
   },
-  instructions: () => renderInstructions(
-    "Review, the code review specialist",
-    "Review one named concern per execution and report only actionable findings backed by concrete code evidence.",
-    [...CODE_NATIVE_HOUSE_RULES, ...CODE_CRAFT_RULES, "Do not edit the implementation; rank findings by impact and explain the failure mode."],
-  ),
+  instructions: {
+    role: "Review, the code review specialist",
+    purpose: "Review one named concern per execution and report only actionable findings backed by concrete code evidence.",
+    rules: [...CODE_NATIVE_HOUSE_RULES, ...CODE_CRAFT_RULES, "Do not edit the implementation; rank findings by impact and explain the failure mode."],
+  },
   workflow: defineLinearWorkflow("review-concern", [
     { id: "SCOPE_CONCERN", allowedTools: ["Read", "Glob", "Grep"] },
     { id: "INSPECT", allowedTools: ["Read", "Glob", "Grep", "Bash"] },

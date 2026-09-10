@@ -35,12 +35,13 @@ export function probeDefinition(
     capabilities: {
       tools: ["Read"],
       skills: [],
+      skillRoots: [],
       subagents: [],
       mcpServers: [],
       memory: { read: ["shared"], write: [] },
       workspace: { readRoots: ["/workspace"], writeRoots: [] },
     },
-    instructions: () => "Probe instructions",
+    instructions: { role: "Probe", purpose: "Probe instructions", rules: [] },
     workflow: {
       id: "probe-workflow",
       initial: "REPORT",
@@ -61,6 +62,7 @@ export function policyFixture(overrides: Partial<ExecutionPolicy> = {}): Executi
     workspaceAccess: "granted",
     allowedTools: ["Read", "Skill"],
     skills: ["git"],
+    skillRoots: [],
     subagents: [],
     mcpServers: [],
     autoCompactTokens: { claude: null, codex: null },

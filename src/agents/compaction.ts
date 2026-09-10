@@ -1,6 +1,6 @@
 import { defineAgent } from "./agent-definition";
 import { CODE_NATIVE_HOUSE_RULES } from "./shared/house-rules";
-import { renderInstructions, textOutput } from "./shared/voice";
+import { textOutput } from "./shared/voice";
 import { defineLinearWorkflow } from "../workflow/types";
 
 export const compactionAgent = defineAgent({
@@ -23,12 +23,12 @@ export const compactionAgent = defineAgent({
     },
     workspace: { readRoots: [], writeRoots: [] },
   },
-  instructions: () => renderInstructions(
-    "Compaction, the continuation-context specialist",
-    "Produce a continuation-ready handoff preserving objectives, constraints, decisions, state, open items, next actions, and exact anchors.",
-    [...CODE_NATIVE_HOUSE_RULES, "Do not continue the underlying task, research missing facts, or communicate directly with the principal."],
-    { audience: "machine" },
-  ),
+  instructions: {
+    role: "Compaction, the continuation-context specialist",
+    purpose: "Produce a continuation-ready handoff preserving objectives, constraints, decisions, state, open items, next actions, and exact anchors.",
+    rules: [...CODE_NATIVE_HOUSE_RULES, "Do not continue the underlying task, research missing facts, or communicate directly with the principal."],
+    audience: "machine",
+  },
   workflow: defineLinearWorkflow("compact-context", [
     { id: "EXTRACT", allowedTools: ["Read", "Glob", "Grep"] },
     { id: "SEPARATE_FACTS", allowedTools: ["Read", "Glob", "Grep"] },

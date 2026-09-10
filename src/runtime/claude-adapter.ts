@@ -84,7 +84,7 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
       `${JSON.stringify(capsule, null, 2)}\n`,
     );
     const contextFiles = await writeRuntimeContextFiles(input.execution, input.interactive);
-    const skillRoots = runtimeSkillRoots(this.env, this.assetRoot);
+    const skillRoots = runtimeSkillRoots(this.env, this.assetRoot, policy.skillRoots);
     const autoCompactTokens = policy.autoCompactTokens[this.name] ?? defaultAutoCompactTokens(input.model);
     const settingsFile = await atomicRuntimeFile(
       join(artifacts.runtimeDirectory, "claude-settings.json"),

@@ -61,8 +61,8 @@ export function normalizePrincipalProfile(input: {
 }
 
 /**
- * Synchronous on purpose: `AgentDefinition.instructions()` is sync and is called while
- * rendering identity documents and identity capsules. The file is a few dozen bytes and is
+ * Synchronous on purpose: `renderInstructions(spec)` is sync and is called while rendering
+ * identity documents and identity capsules. The file is a few dozen bytes and is
  * read at most once per role render, so there is no cache to go stale after `alp init`
  * writes the profile in the same process.
  */

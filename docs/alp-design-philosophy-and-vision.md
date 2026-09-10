@@ -1,6 +1,7 @@
 # ALP Code — Triết lý thiết kế & Tầm nhìn kiến trúc
 
-> **Status:** Draft · **Ngày:** 2026-08-27 · cập nhật 2026-09-04 (§0, §4.6, §10.3) · **Owner:** anhlp
+> **Status:** Draft · **Ngày:** 2026-08-27 · cập nhật 2026-09-04 (§0, §4.6, §10.3), 2026-09-10
+> (§5.8, §8, §11 — đối chứng Amp) · **Owner:** anhlp
 > **Quan hệ với các doc khác:** `docs/architecture.md` mô tả hệ thống **đang là**. Doc này mô tả
 > hệ thống **nên trở thành** và các nguyên tắc để quyết định từng bước đi. Khi hai doc mâu thuẫn,
 > `architecture.md` đúng về hiện trạng, doc này đúng về hướng.
@@ -448,6 +449,12 @@ Ràng buộc bắt buộc:
   closure. Lý do rất cụ thể: `canonicalize` (`src/execution/execution-policy.ts:18`) hash hàm bằng
   `.toString()`. Mọi custom agent dùng chung một closure sẽ cho **cùng một chuỗi hàm** — hash mất
   khả năng phân biệt. Lưu spec thành dữ liệu thì `definitionHash` phủ đúng nội dung prompt.
+  **2026-09-10: đã làm.** `instructions` trên definition nay là `InstructionSpec` (`role`,
+  `purpose`, `rules[]`, `audience?`); tám vai built-in khai dữ liệu, `renderInstructions(spec)`
+  dựng chuỗi lúc cần. Đo trước khi sửa: hai definition chỉ khác nội dung prompt, dựng qua cùng
+  một closure, cho **cùng một `definitionHash`** — nghĩa là §5.6 không chỉ mất khả năng phân
+  biệt mà còn tệ hơn: một hash đã trust sẽ nghiệm đúng cho một prompt khác. Test ghim ở
+  `test/execution/identity-capsule.test.ts`.
 
 ### 5.4. Output contract không cho phép code
 
@@ -483,6 +490,15 @@ Cưỡng chế lúc load, trước `createAgentRegistry`:
 `delegatesTo: []` ở v1 là có chủ ý: cho custom agent delegate sẽ đẻ ra cycle mới, depth mới, budget
 mới, và một cây quan hệ mà principal không viết ra. Mở sau, khi có nhu cầu thật.
 
+**2026-09-10: trần này đã được cưỡng chế** (`src/agents/loader/ceiling.ts`), cộng ba ràng buộc
+bảng trên chưa nói ra vì chúng chỉ lộ khi viết loader thật:
+
+| Trường | Trần thêm | Vì sao |
+|---|---|---|
+| `workspace.readRoots` | phải là đường dẫn tương đối, không `..`, không tuyệt đối | `readRoots: ["/"]` là quyền đọc trên máy chứ không phải trên project; `"."` vẫn resolve theo workspace của chính execution |
+| `houseRules` bỏ trống | nhận `code-native`, không phải `none` | im lặng trong một definition không phải lời xin bỏ invariant của hệ thống |
+| `id` | phải trùng tên thư mục chứa nó | `.alp/agents/migrator/agent.yaml` khai `id: review` sẽ làm hai nguồn sự thật cãi nhau, và cái thắng là cái principal không nhìn thấy |
+
 ### 5.6. Trust: hash pin, fail-closed
 
 Agent file nằm trong repo. Repo có thể được clone về từ nơi khác. Nên:
@@ -496,6 +512,25 @@ Agent file nằm trong repo. Repo có thể được clone về từ nơi khác.
 
 Đây là cùng một triết lý fail-closed đang áp cho tool và path, mở rộng cho identity.
 
+**2026-09-10: đã làm** (`src/trust/`, `alp agent add|list|untrust`). Ba điều chỉnh so với bản
+phác trên:
+
+1. **Trust khoá theo cả project lẫn id**, không chỉ id — hệ quả trực tiếp của quyết định 2
+   (agent là project-scoped). Hai repo cùng có `migrator` là hai quyết định khác nhau.
+2. **Record giữ một snapshot authority**, không chỉ hash. Hash trả lời "có đổi không" và không
+   bao giờ trả lời "đổi cái gì"; bước 1 của mục này đòi in diff lúc trust lại, mà diff cần
+   authority cũ chứ không phải dấu vân tay của nó.
+3. **`alp agent add` chạy đủ ba tầng trước khi hỏi.** Một agent không qua nổi deny-path test của
+   chính nó là agent mà trần capability chỉ là lời hứa — đúng thứ quyết định 11 đặt ra thứ tự cho.
+
+Một hệ quả vận hành phải ghi nhận, đo được sau khi làm xong: `definitionHash` phủ **cả house
+rule**, mà house rule ship cùng ALP. `alp update` đổi một house rule sẽ làm hash của **mọi**
+custom agent lệch đi dù file không ai đụng, và chúng bị deny cho tới khi trust lại. Đúng về mặt
+fail-closed — prompt đã đổi thật — nhưng thông báo phải nói ra nguyên nhân, nếu không nó đang ám
+chỉ principal đã sửa thứ họ không sửa. Notice vì thế phân biệt hai trường hợp bằng
+`diffAuthority`: quyền đổi (in diff) hay chỉ prompt/workflow đổi (nói thẳng rằng một bản cập nhật
+ALP làm được điều này).
+
 ### 5.7. `.alp/` — không gian mở rộng của project
 
 `alp init` tạo `.alp/` trong project. Đây là nơi principal thêm agent và skill riêng cho project đó.
@@ -504,6 +539,14 @@ Agent file nằm trong repo. Repo có thể được clone về từ nơi khác.
 file phẳng `.alp/agents/<role>.md` (0600), còn layout dưới đây đặt custom agent vào thư mục
 `.alp/agents/<id>/` cùng cấp. Loader phải phân biệt **file `.md` = identity, thư mục = định nghĩa**;
 luật "`id` không đụng id built-in" ở §5.5 vì thế là điều kiện đúng đắn, không phải phép lịch sự.
+
+**2026-09-10 — hết va chạm:** identity document đã chuyển sang `~/.alp/agents/<role>.md`
+(`state-paths.agentsDirectory`), nên `<project>/.alp/agents/` giờ hoàn toàn thuộc về principal.
+Loader vẫn chỉ đọc thư mục và bỏ qua file, nhưng đó là phòng xa chứ không còn là điều kiện.
+`alp init` tạo `.alp/agents/` và `.alp/skills/` **rỗng**: `.alp/` là thứ duy nhất init chạm mà
+principal được commit nên không thể nằm trong `.git/info/exclude`, và một file bất kỳ ghi vào đây
+sẽ làm bẩn `git status` từ một lệnh hứa không làm thế. Git không track thư mục rỗng, nên không
+gian tồn tại mà không nói gì; `alp agent list` giải thích layout đúng lúc có người hỏi.
 
 ```text
 <project>/.alp/
@@ -536,6 +579,21 @@ tảng, nên nó xứng đáng có mặt từ v1.
 `skills/` của nó, không phải toàn bộ `.alp/skills/`. Không có trường `skills: [...]` trong
 `agent.yaml` — một nguồn sự thật, không phải hai thứ để lệch nhau.
 
+**2026-09-10 — sửa lại: có `skills:`, nhưng nó khai một thứ khác.** Câu trên không sống sót qua
+chỗ skill built-in thật sự nằm. Bản cài native giữ chúng ở `~/.alp-code/versions/<tag>/skills`,
+và `alp update` thay nguyên khối thư mục đó. Một symlink hay `.skillref` **tương đối** trỏ tới
+`git` vì thế trỏ vào một đường dẫn sẽ biến mất ở lần cập nhật kế tiếp — file commit vào repo
+không thể trỏ tới một chỗ di chuyển được. Nên hai grant được tách theo **thứ chúng diễn đạt nổi**:
+
+| Grant | Khai ở đâu | Cho cây nào |
+|---|---|---|
+| Skill built-in | `capabilities.skills: [git]` — tên trong `SKILL_CATALOG` | Cây ALP sở hữu và thay khi update |
+| Skill của project | Một entry trong `.alp/agents/<id>/skills/` | Cây project sở hữu, đi cùng repo qua git |
+
+Không cái nào nói được điều cái kia nói: một tên catalog không trỏ được vào project, một entry
+thư mục không trỏ bền vững vào cây built-in. Loader từ chối khi cùng một tên xuất hiện ở cả hai
+chỗ, nên nỗi lo "hai nguồn sự thật cho một quyết định" ở câu gốc vẫn được giữ.
+
 #### 5.7.1. Thứ tự resolve và trùng tên
 
 Skill root của một execution được dựng theo thứ tự, first-match-wins:
@@ -554,6 +612,10 @@ không âm thầm.
 
 Quan trọng: đây **không phải** một danh sách chung nữa. Mỗi execution nhận tập root của riêng nó,
 pin trong `ExecutionPolicy` — §4.4.
+
+**2026-09-10: đã làm.** `ExecutionPolicy.skillRoots` mang root của chính vai đó và cả hai adapter
+đặt nó lên **đầu** danh sách, nên "cụ thể thắng chung" là hành vi thật chứ không phải mô tả.
+`alp agent show <id>` in thứ tự đã tính, kèm từng binding và nơi nó resolve tới.
 
 #### 5.7.2. Symlink escape phải bị deny
 
@@ -612,6 +674,13 @@ thêm skill, và:
   sửa capability, model, workflow hay output contract của agent built-in.
 - Overlay vẫn phải trust như custom agent (§5.6) — nó thay đổi prompt của một agent đã trusted.
 
+**2026-09-10: đã làm.** Overlay đi qua đúng cùng một cơ chế — loader dựng ra definition của vai
+built-in kèm skill của project, definition đó được hash và trust như mọi thứ khác. Hai điều chỉnh:
+overlay chưa trust **không** deny vai built-in (vai đó chạy với skill shipped của nó, cộng một
+dòng notice) — deny cả `review` vì một file bên cạnh chưa được duyệt là hạ cả team vì một phần
+thêm chưa ai đọc; và một overlay đặt lên vai **không có tool `Skill`** bị từ chối, vì cấp tool là
+sửa capability, đúng thứ mục này cấm.
+
 Giới hạn cần nói thẳng: **hash pin ranh giới, không pin nội dung.** Nó phủ tên skill và realpath đã
 resolve, không phủ nội dung `SKILL.md` — skill được sửa liên tục là chuyện bình thường, hash lại
 mỗi lần sẽ biến trust thành nhiễu. Nội dung skill là trách nhiệm của code review, đúng như mọi file
@@ -622,6 +691,13 @@ khác trong repo.
 `AGENT.md` (frontmatter + thân markdown tự do) quen thuộc hơn, nhưng thân markdown tự do chính là
 thứ đối đầu với §4.9 và §5.3: một prompt không giới hạn, không review được, không đo được, chảy
 thẳng vào context. Dữ liệu thuần buộc mọi thứ vào các trường có ngân sách và có thể diff.
+
+Đối chứng bổ sung (2026-09-10): Amp — hệ ALP mượn ý tưởng **nấc** — cũng **không** dùng markdown
+tự do cho identity. Nó không có file agent declarative nào cả; custom agent của nó là code
+TypeScript bên trong plugin (`amp.createAgent`). Hai hệ loại bỏ cùng một thứ là "prompt tự do
+không ngân sách", rồi rẽ về hai phía: ALP chọn dữ liệu, Amp chọn code. Vì sao ALP không đi được
+phía code — và ba điểm lệch cấu trúc đằng sau — ở
+[`amp-parity-custom-agent-and-plugin.md`](./amp-parity-custom-agent-and-plugin.md).
 
 Đây là khuyến nghị, không phải kết luận — xem §11.
 
@@ -753,7 +829,8 @@ tới khi có nhu cầu thật, vì mỗi thứ đều tự biện minh được
 
 | Hoãn | Điều kiện mở khoá |
 |---|---|
-| Plugin system / registry | Có ≥ 3 extension bên thứ ba thật, **và** có mô hình signing + sandbox |
+| Plugin **bundle dữ liệu** (nhiều `agent.yaml` + `skills/` + tên catalog entry, không code) | §5 xong, **và** có ≥ 2 gói thật muốn dùng lại giữa các project |
+| Plugin **có code** / registry | Có ≥ 3 extension bên thứ ba thật, **và** có mô hình signing + sandbox |
 | Workflow DSL / engine tổng quát | Có ≥ 2 workflow không diễn đạt được bằng linear workflow |
 | Custom agent được delegate | Có use case thật cần cây sâu 2 tầng (built-in `orchestrator` ở §5.9 là đường khác, không phải cái này) |
 | `orchestrator` (§5.9) | §4.10 xong: budget, cancellation, trace parent→child |
@@ -765,6 +842,12 @@ tới khi có nhu cầu thật, vì mỗi thứ đều tự biện minh được
 Đặc biệt: **plugin system không được xây trước mô hình tin cậy.** Một plugin đóng gói hook và MCP
 config là arbitrary code execution. Trong một hệ tự nhận fail-closed, thêm plugin trước khi có
 signing/provenance/sandbox là mâu thuẫn tự thân, không phải tính năng.
+
+Amp đi thẳng đường ngược lại — plugin của nó chạy full quyền trong process Amp, không signing,
+không sandbox — và với Amp đó là lựa chọn nhất quán. Sao chép nó vào ALP thì không: phần đắt của
+plugin có code không phải cái host chạy nó, mà là câu "plugin này được đọc gì, ghi gì, gọi ra mạng
+chỗ nào" — tức là dựng lại `AgentCapabilities` cho một chủ thể mới. Chi tiết ở
+[`amp-parity-custom-agent-and-plugin.md`](./amp-parity-custom-agent-and-plugin.md) §5.
 
 ---
 
@@ -781,8 +864,10 @@ alp-code/
 ├── src/
 │   ├── agents/
 │   │   ├── shared/            # house rules, voice, principal
-│   │   ├── loader/            # ← MỚI: custom agent (§5)
+│   │   ├── loader/            # custom agent (§5) — có từ 2026-09-10
 │   │   └── registry.ts
+│   ├── agent-test/            # tầng 1–3 của §10.3; đứng trên agents/policy/execution/runtime
+│   │                          # nên không nằm trong agents/ (§4.1)
 │   ├── skills/                # ← MỚI: skill engine (§4.4)
 │   ├── capability/            # ← MỚI, khi trả nợ §4.5
 │   ├── policy/
@@ -837,6 +922,9 @@ Doc này chỉ được coi là đang thành hiện thực khi các mốc sau đ
 - **M0 — Công cụ test agent.** `alp agent test <id>` chạy được tầng 1–3 của §10.3 trên cả 8 agent
   built-in. *Bằng chứng: cho nó chạy trên commit trước bản vá 2026-09-04 thì đỏ ở đúng hai lỗi
   chặn đã tìm ra, chạy trên commit sau thì xanh.*
+  **2026-09-10: lệnh đã tồn tại** (`src/agent-test/`, `alp agent test <role|--all>`) và xanh trên
+  cả 8 vai (`test/agent-test/command.test.ts`). Phần bằng chứng lịch sử — chạy lại trên commit
+  trước bản vá — chưa làm, nên M0 tính là **đạt một nửa**: công cụ có, phép thử ngược chưa chạy.
 - **M1 — Portability thật.** Cùng một agent `review` chạy qua Claude và qua Codex, sinh output khớp
   cùng một `OutputContract`, và hai policy trace so sánh được cạnh nhau. *Bằng chứng: một test so
   sánh hai trace.*
@@ -845,6 +933,14 @@ Doc này chỉ được coi là đang thành hiện thực khi các mốc sau đ
   Skill riêng của agent và skill được symlink từ `.alp/skills/` đều resolve đúng thứ tự, còn symlink
   trỏ ra ngoài thì deny cả agent. *Bằng chứng: test cho đường allow, đường vượt trần, và đường
   symlink escape.*
+  **2026-09-10: xong nửa đầu.** Loader + trần capability có thật, và một `agent.yaml` đi hết ba
+  tầng của `alp agent test` trên cả hai runtime (`test/agents/loader.test.ts`,
+  `test/agent-test/command.test.ts`), và trust bằng hash cộng nối vào `main.delegatesTo` cũng
+  xong (`src/trust/`, `test/trust/trust.test.ts`) — một agent đã trust chạy việc được qua `alp`
+  và `alp delegate`. `.alp/skills/`, skill riêng của agent, `.skillref`, luật escape và overlay
+  cho vai built-in cũng xong (`src/agents/loader/skills.ts`, `test/agents/skills.test.ts`).
+  **M2 coi như đạt**, trừ tầng 4: bằng chứng live trên cả hai runtime vẫn là bước tốn tiền
+  chưa chạy.
 - **M3 — Approval.** `require_approval` được PolicyEngine phát ra, phiên tương tác hỏi được, và
   `--background` deny. *Bằng chứng: test cho `supportsApproval: false` ⇒ deny.*
 - **M4 — Nợ capability đã trả.** `TOOL_CATALOG` không còn là từ vựng của core;
@@ -901,6 +997,11 @@ phương án ngang nhau về giá trị — nới ra sau rẻ hơn thu lại.
 | 9 | **Agent ≠ subagent** (§0). Thành viên agents team luôn là Agent có identity đầy đủ — mục đích riêng cộng tool, skill, subagent, MCP, memory, workspace của riêng nó | Một từ dùng cho hai thứ ở hai tầng enforcement khác nhau: cái đi qua `PolicyEngine` từng lần, và cái chỉ được cấp một lần lúc prepare. Bản nháp §4.6 trộn đúng hai cái đó |
 | 10 | **Subagent là in-process của runtime**, khai trong definition ngang hàng skill và MCP — không phải một execution con do ALP spawn | Execution con đã có tên: đó là delegation. Thêm loại execution con thứ hai không identity sẽ đẻ ra hai đường làm cùng một việc, và đường thứ hai không trace được (§4.10) |
 | 11 | **`alp agent test` (§10.3) chặn trước §5** — không mở custom agent khi chưa có tầng 1–3 | Custom agent là identity do principal viết, chạy với quyền thật. Không có deny-path test thì trần capability ở §5.5 chỉ là lời hứa trong doc |
+
+Quyết định **12–15** (khai đầy đủ thay vì `extends`; plugin v1 là bundle dữ liệu; hook bridge là
+event surface duy nhất; `ai.ask`/UI prompt nằm ngoài phạm vi custom agent) nằm ở
+[`amp-parity-custom-agent-and-plugin.md`](./amp-parity-custom-agent-and-plugin.md) §6, cùng bằng
+chứng từ Amp dẫn tới chúng.
 
 Ba hệ quả của các quyết định trên cần ghi nhận vì chúng tạo ma sát thật:
 

@@ -100,9 +100,13 @@ function assertCapabilityGrants(
   assertNoDuplicates(definition.id, "subagent", subagents);
   assertNoDuplicates(definition.id, "mcp server", mcpServers);
 
+  // A project-scoped grant carries its own resolved path, so the catalog — which describes
+  // the shipped tree — is the wrong question for it. Everything else still has to be a name
+  // the machine can resolve.
+  const bound = new Set((definition.capabilities.skillBindings ?? []).map((binding) => binding.name));
   const known = new Set(catalog.skills);
   for (const skill of skills) {
-    if (!known.has(skill)) {
+    if (!known.has(skill) && !bound.has(skill)) {
       throw new AgentRegistryError(
         "UNKNOWN_SKILL",
         `agent \`${definition.id}\` has unknown skill \`${skill}\``,
@@ -138,6 +142,25 @@ function assertCapabilityGrants(
         );
       }
     }
+  }
+
+  // Names are what policy answers with; bindings are where those names resolve. A binding
+  // for a name the role does not hold would be a grant no rule mentions, and a root with no
+  // binding is a directory whose contents nobody enumerated.
+  const bindings = definition.capabilities.skillBindings ?? [];
+  for (const binding of bindings) {
+    if (!skills.includes(binding.name)) {
+      throw new AgentRegistryError(
+        "INVALID_SKILL_GRANT",
+        `agent \`${definition.id}\` binds skill \`${binding.name}\` without naming it`,
+      );
+    }
+  }
+  if (bindings.length > 0 && (definition.capabilities.skillRoots ?? []).length === 0) {
+    throw new AgentRegistryError(
+      "INVALID_SKILL_GRANT",
+      `agent \`${definition.id}\` binds skills but declares no skill root`,
+    );
   }
 
   const holdsSkillTool = tools.includes("Skill");
@@ -207,6 +230,27 @@ function assertDefinitionInvariants(
       );
     }
   }
+  // Identity is data (`InstructionSpec`), so the registry checks it the way it checks every
+  // other declared field. A definition whose prompt renders to a bare template is an agent
+  // with no purpose, and it would still hash, load and launch.
+  assertNonEmpty(definition.instructions.role, "instruction role", definition.id);
+  assertNonEmpty(definition.instructions.purpose, "instruction purpose", definition.id);
+  for (const rule of definition.instructions.rules) {
+    if (!rule.trim()) {
+      throw new AgentRegistryError(
+        "INVALID_AGENT",
+        `agent \`${definition.id}\` has an empty instruction rule`,
+      );
+    }
+  }
+  const audience = definition.instructions.audience;
+  if (audience !== undefined && audience !== "principal" && audience !== "machine") {
+    throw new AgentRegistryError(
+      "INVALID_AGENT",
+      `agent \`${definition.id}\` has unknown instruction audience \`${String(audience)}\``,
+    );
+  }
+
   assertNonEmpty(definition.workflow.id, "workflow id", definition.id);
   assertNonEmpty(definition.output.name, "output contract name", definition.id);
 

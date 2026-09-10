@@ -22,7 +22,7 @@ function probe(
       memory: { read: ["shared"], write: [] },
       workspace: { readRoots: ["/workspace"], writeRoots: [] },
     },
-    instructions: () => "Probe instructions",
+    instructions: { role: "Probe", purpose: "Probe instructions", rules: [] },
     workflow: {
       id: "probe-workflow",
       initial: "REPORT",
@@ -36,6 +36,14 @@ function probe(
 }
 
 describe("createAgentRegistry", () => {
+  it.each([
+    ["an empty instruction role", { role: "", purpose: "Do the thing.", rules: [] }, /empty instruction role/],
+    ["an empty instruction purpose", { role: "Probe", purpose: "  ", rules: [] }, /empty instruction purpose/],
+    ["a blank rule", { role: "Probe", purpose: "Do the thing.", rules: [""] }, /empty instruction rule/],
+  ])("rejects %s", (_label, instructions, message) => {
+    expect(() => createAgentRegistry([defineAgent(probe({ instructions }))])).toThrowError(message);
+  });
+
   it("rejects duplicate role IDs", () => {
     expect(() =>
       createAgentRegistry([

@@ -26,6 +26,38 @@ async function gitProject(): Promise<{ root: string; project: string; home: stri
 }
 
 describe("alp init", () => {
+  /**
+   * §5.7: `alp init` creates the project's extension space — and creates it **empty**, because
+   * `.alp/` is the one thing it writes that the principal is meant to commit, so it cannot be
+   * hidden in `.git/info/exclude`. Git does not track empty directories, so the promise that
+   * `alp init` leaves `git status` alone survives.
+   */
+  it("creates `.alp/` without saying anything to git", async () => {
+    const { project, home } = await gitProject();
+    const store = new ProjectRegistryStore({ file: join(home, ".alp", "projects.json") });
+    const before = execFileSync("git", ["status", "--porcelain"], { cwd: project, encoding: "utf8" });
+
+    await initializeProject({ project, repoRoot: process.cwd() }, { store });
+
+    expect((await stat(join(project, ".alp", "skills"))).isDirectory()).toBe(true);
+    expect((await stat(join(project, ".alp", "agents"))).isDirectory()).toBe(true);
+    expect(await readdir(join(project, ".alp"))).toEqual(["agents", "skills"]);
+    expect(execFileSync("git", ["status", "--porcelain"], { cwd: project, encoding: "utf8" })).toBe(before);
+  });
+
+  /** §5.7.4: unregistering a project is not a reason to delete the agents it holds. */
+  it("leaves `.alp/` alone on deinit", async () => {
+    const { project, home } = await gitProject();
+    const store = new ProjectRegistryStore({ file: join(home, ".alp", "projects.json") });
+    await initializeProject({ project, repoRoot: process.cwd() }, { store });
+    await mkdir(join(project, ".alp", "agents", "migrator"), { recursive: true });
+    await writeFile(join(project, ".alp", "agents", "migrator", "agent.yaml"), "schemaVersion: 1\n", "utf8");
+
+    await deinitializeProject({ project, repoRoot: process.cwd() }, { store });
+
+    expect(await readFile(join(project, ".alp", "agents", "migrator", "agent.yaml"), "utf8")).toContain("schemaVersion");
+  });
+
   it("registers the workspace outside the project and leaves git/runtime config clean", async () => {
     const { project, home } = await gitProject();
     const store = new ProjectRegistryStore({ file: join(home, ".alp", "projects.json") });
@@ -35,7 +67,9 @@ describe("alp init", () => {
     await initializeProject({ project }, { store });
 
     expect(execFileSync("git", ["status", "--porcelain"], { cwd: project, encoding: "utf8" })).toBe(before);
-    await expect(readdir(project)).resolves.toEqual([".git", "README.md"]);
+    // `.alp/` is the project's own space and is created empty; nothing else appears, and git
+    // has nothing to report about any of it.
+    await expect(readdir(project)).resolves.toEqual([".alp", ".git", "README.md"]);
     expect(JSON.parse(await readFile(join(home, ".alp", "projects.json"), "utf8"))).toEqual({
       version: 1,
       projects: [{ path: await realpath(project) }],

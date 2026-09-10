@@ -16,6 +16,7 @@ function stubDependencies(overrides: Record<string, unknown> = {}) {
     initProject: async () => undefined,
     deinitProject: async () => undefined,
     syncIdentity: async () => undefined,
+    agentCommand: async () => 0,
     principalCommand: async () => 0,
     delegateCommand: async () => 0,
     contextCommand: async () => 0,

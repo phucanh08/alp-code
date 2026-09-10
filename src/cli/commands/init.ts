@@ -198,6 +198,22 @@ async function writeProjectSettings(project: string, stableCommand?: string): Pr
   await excludeLocally(project);
 }
 
+/**
+ * `.alp/` — the project's own extension space (§5.7), created empty.
+ *
+ * Two directories and no file, on purpose. `.alp/` is the one thing `alp init` touches that
+ * the principal is meant to **commit**, so it cannot be hidden in `.git/info/exclude` the way
+ * the generated runtime config is — and any file written here would therefore show up as an
+ * untracked change from a command that promises to leave `git status` alone. Git does not
+ * track empty directories, so the space can exist without saying anything to git. What the
+ * layout means is explained by `alp agent list` at the moment someone asks.
+ */
+async function createProjectSpace(project: string): Promise<void> {
+  const space = join(project, ".alp");
+  await mkdir(join(space, "skills"), { recursive: true });
+  await mkdir(join(space, "agents"), { recursive: true });
+}
+
 export async function initializeProject(
   input: InitializeProjectInput,
   dependencies: InitializeProjectDependencies = {},
@@ -208,6 +224,7 @@ export async function initializeProject(
   const store = dependencies.store ?? new ProjectRegistryStore();
   const registered = Object.freeze({ path: project });
   await store.register(registered);
+  await createProjectSpace(project);
   if (input.repoRoot || input.stableCommand) await writeProjectSettings(project, input.stableCommand);
   if (input.assetRoot) {
     await installSkillLinks(project, input.assetRoot);
@@ -261,6 +278,8 @@ export async function deinitializeProject(
   dependencies: InitializeProjectDependencies = {},
 ): Promise<void> {
   const project = await realpath(input.project);
+  // `.alp/` is deliberately untouched (§5.7.4): it is content the principal wrote, and
+  // unregistering a project is not a reason to delete their agents.
   await removeOwnedSkillLinks(project, input.repoRoot);
   await cleanupGeneratedConfig(join(project, ".claude", "settings.local.json"));
   await cleanupGeneratedConfig(join(project, ".codex", "config.toml"));

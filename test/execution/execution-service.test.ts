@@ -47,10 +47,7 @@ function role(
         writeRoots: id === "main" ? ["/workspace"] : [],
       },
     },
-    instructions: () => {
-      events.push("capsule");
-      return `${id} instructions`;
-    },
+    instructions: { role: id, purpose: `${id} instructions`, rules: [] },
     workflow: {
       id: `${id}-workflow`,
       initial: "WORK",
@@ -178,8 +175,11 @@ describe("ExecutionService", () => {
       "authorize:workspace",
       "memory",
       "workflow",
-      "capsule",
     ]);
+    // Identity is data now, so building the capsule no longer calls back into the
+    // definition and there is nothing left to observe in `events`. What the capsule was
+    // built from is asserted directly instead.
+    expect(prepared.capsule.instructions).toContain("search instructions");
     expect(prepared.policy).toMatchObject({
       executionId: "exec_immutable",
       role: "search",

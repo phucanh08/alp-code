@@ -101,7 +101,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
       `${JSON.stringify(capsule, null, 2)}\n`,
     );
     const contextFiles = await writeRuntimeContextFiles(input.execution, input.interactive);
-    const skillRoots = runtimeSkillRoots(this.env, this.assetRoot);
+    const skillRoots = runtimeSkillRoots(this.env, this.assetRoot, policy.skillRoots);
     const bootCommand = this.hookCommand("session-boot");
     const stopCommand = this.hookCommand("session-end");
     const bootHooks = `[{ hooks = [{ type = "command", command = ${tomlString(bootCommand)}, timeout = 30 }] }]`;

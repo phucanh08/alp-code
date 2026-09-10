@@ -108,6 +108,7 @@ export function createExecutionPolicy(
       : "none" as const,
     allowedTools: [...capabilities.tools],
     skills: [...capabilities.skills],
+    skillRoots: [...(capabilities.skillRoots ?? [])],
     subagents: resolve("subagent", capabilities.subagents, catalog.subagents),
     mcpServers: resolve("mcp server", capabilities.mcpServers, catalog.mcpServers),
     autoCompactTokens: declaredAutoCompactTokens(input.definition),

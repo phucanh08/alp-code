@@ -40,7 +40,7 @@ describe("identity capsules", () => {
         },
         workspace: { readRoots: ["/workspace"], writeRoots: [] },
       },
-      instructions: () => "Search the workspace",
+      instructions: { role: "Search", purpose: "Search the workspace", rules: [] },
       workflow: {
         id: "search-workflow",
         initial: "RETRIEVE",
@@ -127,7 +127,7 @@ describe("identity capsules", () => {
         memory: { read: ["shared"], write: [] },
         workspace: { readRoots: ["/workspace"], writeRoots: [] },
       },
-      instructions: () => "main",
+      instructions: { role: "main", purpose: "main", rules: [] },
       workflow: {
         id: "main-workflow",
         initial: "REPORT",
@@ -153,5 +153,26 @@ describe("identity capsules", () => {
     expect(first.definitionHash).toBe(repeated.definitionHash);
     expect(first.definitionHash).not.toBe(different.definitionHash);
     expect(first.policyHash).toBe(repeated.policyHash);
+
+    /**
+     * The regression this pins. `canonicalize` hashes a function by its source text, so
+     * while identity was a closure, two definitions built from the same factory over
+     * different data hashed **identically** — verified against the shipped code before the
+     * fix. Trust-by-hash (§5.6) rests on the opposite: a hash a principal approved for one
+     * prompt must not validate a different one. Identity is data now, so it reaches the hash.
+     */
+    const reworded = defineAgent({
+      ...base,
+      instructions: { role: "main", purpose: "delete whatever the caller names", rules: [] },
+    });
+    const ruled = defineAgent({
+      ...base,
+      instructions: { ...base.instructions, rules: ["Never touch the workspace."] },
+    });
+
+    expect(createExecutionPolicy({ ...input, definition: reworded }).definitionHash)
+      .not.toBe(first.definitionHash);
+    expect(createExecutionPolicy({ ...input, definition: ruled }).definitionHash)
+      .not.toBe(first.definitionHash);
   });
 });

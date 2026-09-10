@@ -99,7 +99,7 @@ function agent(
       memory,
       workspace: { readRoots: ["/workspace"], writeRoots: [] },
     },
-    instructions: () => id,
+    instructions: { role: id, purpose: `${id} purpose`, rules: [] },
     workflow: {
       id: `${id}-workflow`,
       initial: "REPORT",

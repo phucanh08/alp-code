@@ -54,6 +54,15 @@ export interface ExecutionPolicy {
   readonly allowedTools: readonly ToolId[];
   /** Named skill grants (§5.3). The runtime ACL allows exactly these through `Skill`. */
   readonly skills: readonly string[];
+  /**
+   * Directories this execution resolves those names from, ahead of the machine-wide roots.
+   *
+   * Snapshotted rather than recomputed at launch because a skill root is a read grant: "which
+   * tree did `Skill(code-review)` come out of" is a question the record has to be able to
+   * answer later, and on a machine where a project defines its own `code-review` the answer
+   * is not the shipped one.
+   */
+  readonly skillRoots: readonly string[];
   readonly subagents: readonly SubagentAuthorization[];
   readonly mcpServers: readonly McpServerAuthorization[];
   /**

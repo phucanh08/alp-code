@@ -128,7 +128,7 @@ sự tồn tại của backend cho một request đã bị policy từ chối.
 { id, displayName, model: {claude, codex}, reasoningEffort: {claude, codex},
   reportsTo, delegatesTo, autoCompactTokens?: {claude?, codex?},
   capabilities: {tools, skills, subagents, mcpServers, memory, workspace},
-  instructions(), workflow, output }
+  instructions: {role, purpose, rules, audience?}, workflow, output }
 ```
 
 `defineAgent()` deep-clone rồi `Object.freeze` đệ quy — definition không thể bị mutate sau khi
@@ -253,8 +253,11 @@ khuôn prompt thống nhất), `principal.ts` (một dòng "phục vụ ai, xưn
 `src/principal/principal-profile-store.ts`. `alp init` hỏi ba câu (tên, agent gọi principal
 là gì, agent tự xưng là gì) lần đầu trên TTY và ghi profile 0600; không có profile thì mọi
 vai nhận bản trung tính `Serve the principal.` — không chặn phiên, không đoán tên. Đọc bằng
-`readFileSync` vì `instructions()` là hàm sync và được gọi ở đúng hai chỗ:
+`readFileSync` vì `renderInstructions(spec)` là hàm sync và được gọi ở đúng hai chỗ:
 `renderIdentityDocument` (lúc `alp init`/`identity sync`) và `createIdentityCapsule`.
+
+Từ 2026-09-10, `instructions` trên definition là **dữ liệu** (`InstructionSpec`: `role`,
+`purpose`, `rules[]`, `audience?`) chứ không còn là closure. Lý do nằm ở hash — xem §4.4.
 
 ### 4.2 `src/policy/` — authorization fail-closed
 
@@ -323,8 +326,12 @@ root sau `join`, và `realpath` cả parent lẫn target để bắt symlink.
 Đây là trung tâm của mô hình bảo mật. Ba artifact được sinh cho mỗi lượt chạy:
 
 **`ExecutionPolicy`** — snapshot quyền tại thời điểm prepare, kèm hai hash:
-- `definitionHash` = SHA-256 của definition đã canonicalize (bao gồm cả *source của hàm*
-  `instructions` và `validate` — sửa logic prompt sẽ đổi hash).
+- `definitionHash` = SHA-256 của definition đã canonicalize. `instructions` là dữ liệu nên
+  vào hash theo đúng nội dung; hàm còn lại (`validate`) vẫn vào hash bằng *source của hàm*.
+  Điều này quan trọng cho §5.6: khi loader dựng custom agent từ `agent.yaml`, mọi agent sẽ
+  dùng **chung một** closure render — nếu identity còn là hàm thì hai agent có prompt hoàn
+  toàn khác nhau vẫn hash giống hệt, và một hash principal đã trust sẽ nghiệm đúng cho một
+  prompt khác. Đã kiểm chứng trên code trước bản sửa.
 - `policyHash` = SHA-256 của chính snapshot.
 
 **`IdentityCapsule`** — bundle gửi cho runtime: instructions đã render, task, workspace,
@@ -372,8 +379,20 @@ phiên interactive không sinh `task.md`: không có gì để adapter lỡ tay 
 | ACL | `permissions.{additionalDirectories,allow,deny}` | `[sandbox_workspace_write]` + `[[rules]]` |
 | Skill/subagent/MCP grant | `allow: Skill(<tên>)`, `Agent(<tên>)`, `mcp__<server>`; `--mcp-config` + `--strict-mcp-config`; `--agents <json>` | `-c mcp_servers.<tên>={…}`; không có subagent in-process |
 | Read-only | `sandbox.filesystem.denyWrite` + `--permission-mode plan` | `-s read-only` |
+| Tool grant | mọi tool ngoài grant vào `permissions.deny` theo tên — runtime từ chối lúc gọi | **không cưỡng chế được**: shell của Codex là built-in, `--sandbox` chỉ chọn lệnh đụng được gì |
+| Read root | `additionalDirectories` — đọc ngoài đó bị từ chối | **không cưỡng chế được**: sandbox read-only cho đọc mọi path |
+| Ghi / egress mạng | `denyWrite` + không có tool mạng | sandbox từ chối cả hai ✓ |
 | Interactive | `--dangerously-skip-permissions` · **không positional prompt** | `--dangerously-bypass-approvals-and-sandbox` · **không positional prompt** |
 | Headless | positional trỏ tới `task.md` | `exec --skip-git-repo-check` + positional trỏ tới `task.md` |
+
+Ba dòng cuối bảng đo được ngày 2026-09-10, không phải suy từ tài liệu: một vai chỉ có
+`Read, Glob, Grep, Skill` đã chạy `/bin/zsh -lc "… node -e …"` trên Codex và thành công (log
+`exec_42c6500fcbe74dfea28b`), còn `codex sandbox -c sandbox_mode='"read-only"' -- cat <path ngoài
+workspace>` in ra nội dung file. Cùng phép đo cho thấy ghi bị `Operation not permitted` và `curl`
+không nối được mạng. Nghĩa là **trên Codex, `Bash` và `workspace.readRoots` là ràng buộc mức
+prompt**; ghi và egress thì sandbox giữ thật. `enforcementNotes` trong `permission-rules.ts` in
+đúng điều này ra trong bảng của `alp agent test` và `alp agent add`, để principal duyệt trust
+không đọc bảng Authority như một lời hứa mà nó chỉ giữ được một nửa.
 
 **Phiên interactive chạy không guardrail, và đó là quyết định có ý thức.** `alp` (`run-main`) là
 phiên duy nhất đặt `interactive: true`; `alp delegate` luôn `false`. Principal ngồi ngay đó và tự

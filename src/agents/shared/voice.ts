@@ -1,4 +1,4 @@
-import type { OutputContract } from "../types";
+import type { InstructionSpec, OutputContract } from "../types";
 import { principalInstruction } from "./principal";
 
 /**
@@ -8,36 +8,17 @@ import { principalInstruction } from "./principal";
  * Per-execution facts (workspace, invariants, policy) belong to `renderSessionContext`;
  * the task and its memory belong to `renderTaskInput`.
  */
-export interface InstructionOptions {
-  /**
-   * Who reads the answer.
-   *
-   * `principal` (the default) gets the address-and-language rule and the report-first line —
-   * right for every role whose output is prose someone reads. `machine` gets neither: titling
-   * returns a bare title in the thread's own language, which the language rule contradicts
-   * outright, and compaction writes a handoff for the next session. Both are told in their own
-   * rules not to address the principal at all, so the lines were instructions to do the one
-   * thing the same prompt forbids.
-   */
-  readonly audience?: "principal" | "machine";
-}
-
-export function renderInstructions(
-  role: string,
-  purpose: string,
-  rules: readonly string[],
-  options: InstructionOptions = {},
-): string {
-  const principalFacing = (options.audience ?? "principal") === "principal";
+export function renderInstructions(spec: InstructionSpec): string {
+  const principalFacing = (spec.audience ?? "principal") === "principal";
   return [
-    `You are ${role}. ${purpose}`,
+    `You are ${spec.role}. ${spec.purpose}`,
     ...(principalFacing
       ? [
         principalInstruction(),
         "State status or conclusion first. Be concise, direct, and explicit about evidence and uncertainty.",
       ]
       : []),
-    ...rules.map((rule) => `- ${rule}`),
+    ...spec.rules.map((rule) => `- ${rule}`),
   ].join("\n");
 }
 

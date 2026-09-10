@@ -1,7 +1,7 @@
 import { parseMode } from "../../agents/modes";
 import { join } from "node:path";
 import { agentRegistry } from "../../agents/registry";
-import type { RuntimeId } from "../../agents/types";
+import type { AgentRegistry, RuntimeId } from "../../agents/types";
 import { LocalProcessBackend } from "../../backend/local-process-backend";
 import { DelegationService, FileDelegationExecutionStore } from "../../delegation/delegation-service";
 import type { DelegationResult } from "../../delegation/types";
@@ -22,6 +22,20 @@ export interface RunDelegateDependencies {
   readonly cwd: string;
   readonly env: NodeJS.ProcessEnv;
   readonly service: Pick<DelegationService, "delegate" | "wait" | "status" | "cancel" | "cleanup" | "listExecutions">;
+}
+
+/**
+ * The two spellings of "which project". Named once because two readers need them: the parse
+ * loop below, and the caller that has to build the project's registry *before* the service
+ * exists — an agent trusted in that project is only reachable if the registry knows it.
+ */
+export const WORKSPACE_FLAGS = Object.freeze(["--workspace", "--project"]);
+
+export function workspaceFromArgs(argv: readonly string[], cwd: string): string {
+  for (let index = 0; index < argv.length; index += 1) {
+    if (WORKSPACE_FLAGS.includes(argv[index])) return argv[index + 1] ?? cwd;
+  }
+  return cwd;
 }
 
 function required(args: readonly string[], index: number, message: string): string {
@@ -50,7 +64,7 @@ export async function runDelegateCommand(
     else if (value === "--timeout-ms") {
       timeoutMs = Number(required(argv, ++index, "--timeout-ms requires a number"));
       if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("--timeout-ms must be positive");
-    } else if (value === "--workspace" || value === "--project") {
+    } else if (WORKSPACE_FLAGS.includes(value)) {
       workspace = required(argv, ++index, `${value} requires a path`);
     } else if (value === "--parent-role" || value === "--role" || value === "--kind") {
       throw new Error(`unsupported identity-aware raw-runtime shortcut \`${value}\``);
@@ -102,6 +116,8 @@ export interface DefaultDelegationComposition {
 export async function createDefaultDelegationComposition(
   layout: InstallLayout,
   env: NodeJS.ProcessEnv = process.env,
+  /** The project's registry — built-ins plus its trusted agents. Defaults to built-ins only. */
+  registry: AgentRegistry = agentRegistry,
 ): Promise<DefaultDelegationComposition> {
   const config = loadDelegationConfig(layout.installRoot, env, layout.channel);
   // The one backend. It spawns the runtime as a child process, so it needs no daemon and
@@ -116,21 +132,21 @@ export async function createDefaultDelegationComposition(
       supervisorInvocation: { executable: layout.selfExecutable, args: ["__internal", "supervisor"] },
     }),
   });
-  const policy = new PolicyEngine({ registry: agentRegistry });
+  const policy = new PolicyEngine({ registry });
   const memory = new MemoryService({
     store: new MarkdownFileStore({ root: memoryRoot(env) }),
     policy,
     audit: { record() {} },
   });
   const executionService = new ExecutionService({
-    registry: agentRegistry,
+    registry,
     policy,
     memory,
     workflowRunner: new WorkflowRunner(),
     store: new FileExecutionStore({ root: join(config.stateDir, "execution-snapshots") }),
   });
   const service = new DelegationService({
-    registry: agentRegistry,
+    registry,
     policy,
     memory,
     executionService,
