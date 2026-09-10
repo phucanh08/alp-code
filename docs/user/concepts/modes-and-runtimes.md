@@ -5,7 +5,7 @@ description: Chọn độ khó bằng mode và hiểu cách ALP định tuyến 
 
 Mode là lựa chọn hiệu năng duy nhất khi mở phiên. Bạn trả lời “việc này khó cỡ nào”; ALP chọn model cho từng role, rồi model quyết định Claude Code hay Codex CLI.
 
-Tài liệu này phản ánh checkout `alp-code` tại commit `7833490` sau tag `v0.10.4`. Model mapping có thể đổi ở release sau; `alp --help` trên máy luôn phản ánh bản đang cài.
+Tài liệu này phản ánh stable `v0.11.0`. Model mapping có thể đổi ở release sau; `alp --help` trên máy luôn phản ánh bản đang cài.
 
 ## Năm mode
 

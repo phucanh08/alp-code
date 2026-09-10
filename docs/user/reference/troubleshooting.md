@@ -3,14 +3,14 @@ title: Xử lý sự cố
 description: Chẩn đoán các lỗi thường gặp khi chạy ALP, delegation, custom agent và continuity.
 ---
 
-Các hướng dẫn dưới đây phản ánh checkout `alp-code` tại commit `7833490`, sau stable `v0.10.4`. Các mục custom agent áp dụng cho source preview; các command stable còn lại kiểm theo bản đang cài bằng `alp --help`.
+Các hướng dẫn dưới đây phản ánh stable `v0.11.0`. Command trên máy luôn kiểm theo bản đang cài bằng `alp --help`.
 
 ```bash
 alp --version
 alp doctor
 ```
 
-Nguồn kiểm chứng chính: [`src/cli/`](https://github.com/phucanh08/alp-code/tree/7833490e6c6aa5420310beb1e0d08ce8a4c2d591/src/cli), [`src/agents/loader/`](https://github.com/phucanh08/alp-code/tree/7833490e6c6aa5420310beb1e0d08ce8a4c2d591/src/agents/loader) và [`src/policy/`](https://github.com/phucanh08/alp-code/tree/7833490e6c6aa5420310beb1e0d08ce8a4c2d591/src/policy).
+Nguồn kiểm chứng chính: [`src/cli/`](https://github.com/phucanh08/alp-code/tree/v0.11.0/src/cli), [`src/agents/loader/`](https://github.com/phucanh08/alp-code/tree/v0.11.0/src/agents/loader) và [`src/policy/`](https://github.com/phucanh08/alp-code/tree/v0.11.0/src/policy).
 
 ## `main` chỉ đọc được project
 

@@ -5,10 +5,6 @@ description: Đăng ký, đồng bộ identity và phân biệt project source v
 
 `alp init` đăng ký một project để phiên `main` được làm việc với quyền write. Lệnh có thể chạy trong project hoặc nhận một path.
 
-:::note[Preview sau `v0.10.4`]
-Việc tạo `.alp/agents/` và `.alp/skills/` rỗng là thay đổi trên source sau stable `v0.10.4`. Registration và runtime wiring đã có ở stable; extension space cần bản phát triển cho tới release kế tiếp.
-:::
-
 ```bash
 alp init
 alp init ~/code/my-app

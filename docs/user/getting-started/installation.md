@@ -5,10 +5,6 @@ description: Cài ALP qua binary hoặc npm, kiểm môi trường và cập nh�
 
 Direct binary là channel mặc định. Máy người dùng không cần Node, Bun, npm hay Git; installer tải archive đúng OS/CPU, kiểm checksum và manifest trước khi đổi version hiện hành.
 
-:::note[Stable và source đang phát triển]
-Installer hiện lấy stable `v0.10.4`. Bộ docs này cũng mô tả custom agent, project skills và nhóm lệnh `alp agent …` từ checkout sau tag đó; các trang liên quan được đánh dấu **preview** và chưa có trong stable binary.
-:::
-
 ## Cài direct binary
 
 macOS hoặc Linux:
@@ -27,18 +23,18 @@ irm https://raw.githubusercontent.com/phucanh08/alp-code/main/install.ps1 | iex
 Hai lệnh trên tải code rồi chạy ngay với quyền của tài khoản hiện tại. Nếu cần kiểm soát supply chain chặt hơn, hãy tải script về để đọc trước hoặc pin release cụ thể thay vì lấy mặc định.
 :::
 
-Ví dụ pin version đang được bộ docs này mô tả (`v0.10.4`):
+Ví dụ pin version đang được bộ docs này mô tả (`v0.11.0`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/phucanh08/alp-code/main/install.sh | bash -s -- --version v0.10.4
+curl -fsSL https://raw.githubusercontent.com/phucanh08/alp-code/main/install.sh | bash -s -- --version v0.11.0
 ```
 
 ```powershell
-$env:ALP_VERSION = "v0.10.4"
+$env:ALP_VERSION = "v0.11.0"
 irm https://raw.githubusercontent.com/phucanh08/alp-code/main/install.ps1 | iex
 ```
 
-Binary channel hiện phát hành cho macOS arm64/x64, Linux glibc x64/arm64 và Windows x64. Linux musl, Windows arm64 và notarization chưa thuộc phạm vi `v0.10.x`.
+Binary channel hiện phát hành cho macOS arm64/x64, Linux glibc x64/arm64 và Windows x64. Linux musl, Windows arm64 và notarization chưa thuộc phạm vi `v0.11.x`.
 
 ## Cài qua npm
 

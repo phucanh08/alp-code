@@ -3,10 +3,6 @@ title: Custom agent
 description: Khai báo, kiểm tra và trust một specialist riêng cho project.
 ---
 
-:::caution[Preview, chưa có trong stable `v0.10.4`]
-Custom agent và nhóm lệnh `alp agent …` ở trang này thuộc checkout sau tag `v0.10.4` (commit `7833490`). Stable binary hiện chưa có command này.
-:::
-
 Custom agent là definition dạng dữ liệu trong project. Nó chỉ chạy sau khi vượt capability ceiling, ba tầng kiểm tra và trust gate tương tác.
 
 ## 1. Tạo definition

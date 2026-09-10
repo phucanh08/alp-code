@@ -3,7 +3,7 @@ title: CLI reference
 description: Public command và option của stable ALP cùng source preview hiện tại.
 ---
 
-Reference này phản ánh checkout tại commit `7833490`, sau stable `v0.10.4`. Nguồn kiểm chứng: [`src/cli/alp.ts`](https://github.com/phucanh08/alp-code/blob/7833490e6c6aa5420310beb1e0d08ce8a4c2d591/src/cli/alp.ts) và [`src/cli/commands/`](https://github.com/phucanh08/alp-code/tree/7833490e6c6aa5420310beb1e0d08ce8a4c2d591/src/cli/commands).
+Reference này phản ánh stable `v0.11.0`. Nguồn kiểm chứng: [`src/cli/alp.ts`](https://github.com/phucanh08/alp-code/blob/v0.11.0/src/cli/alp.ts) và [`src/cli/commands/`](https://github.com/phucanh08/alp-code/tree/v0.11.0/src/cli/commands).
 
 Internal hook/supervisor dispatch không thuộc public API và không được liệt kê ở đây.
 
@@ -33,10 +33,6 @@ alp principal set
 - `identity sync` sinh lại machine-local identity cache từ built-in registry.
 
 ## Agent
-
-:::caution[Preview]
-Nhóm `alp agent …` chưa có trong stable binary `v0.10.4`; nó thuộc source sau tag này.
-:::
 
 ```text
 alp agent test <role...> [--project <path>] [--tier 1|2|3] [--mode <mode>] [--json]

@@ -32,7 +32,7 @@ Nếu role, tool, path hoặc memory scope không được khai báo, ALP từ c
 - Chưa có ALP? [Cài đặt và kiểm tra môi trường](./getting-started/installation/).
 - Muốn mở phiên đầu tiên? Làm theo [Bắt đầu nhanh](./getting-started/quickstart/).
 - Đã dùng ALP? Tra [CLI reference](./reference/cli/) hoặc [xử lý sự cố](./reference/troubleshooting/).
-- Muốn thử phần đang phát triển? Xem [Custom agent](./guides/custom-agents/) và [skill của project](./guides/project-skills/) trên source sau `v0.10.4`.
+- Muốn mở rộng cho project riêng? Xem [Custom agent](./guides/custom-agents/) và [skill của project](./guides/project-skills/).
 
 ## Ranh giới quan trọng
 

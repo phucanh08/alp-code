@@ -24,7 +24,7 @@ alp init
 Khi thành công, ALP in `READY` cùng đường dẫn canonical của project. `alp init` cũng:
 
 - đăng ký project trong machine-local state;
-- trên source preview sau `v0.10.4`, tạo không gian `.alp/agents/` và `.alp/skills/` cho project;
+- tạo không gian `.alp/agents/` và `.alp/skills/` cho project;
 - cài SessionStart wiring và link packaged skills mà không thêm chúng vào commit;
 - hỏi tên và cách xưng hô ở lần đầu nếu đang chạy trong terminal tương tác.
 

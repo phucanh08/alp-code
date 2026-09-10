@@ -3,10 +3,6 @@ title: Skill của project
 description: Cấp skill dùng chung hoặc riêng cho agent mà không thoát khỏi project roots.
 ---
 
-:::caution[Preview, chưa có trong stable `v0.10.4`]
-Project skill binding và built-in overlay ở trang này thuộc checkout sau tag `v0.10.4` (commit `7833490`).
-:::
-
 Skill là knowledge/workflow package có `SKILL.md`, không phải agent và không tự chạy. Directory của agent là danh sách grant: đặt hoặc trỏ skill vào đúng `<agent>/skills/` để role đó thấy.
 
 ## Layout
