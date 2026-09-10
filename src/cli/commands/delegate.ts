@@ -1,4 +1,4 @@
-import { parseMode } from "../../agents/modes";
+import { parseMode, type ModeProfiles } from "../../agents/modes";
 import { join } from "node:path";
 import { agentRegistry } from "../../agents/registry";
 import type { AgentRegistry, RuntimeId } from "../../agents/types";
@@ -22,6 +22,8 @@ export interface RunDelegateDependencies {
   readonly cwd: string;
   readonly env: NodeJS.ProcessEnv;
   readonly service: Pick<DelegationService, "delegate" | "wait" | "status" | "cancel" | "cleanup" | "listExecutions">;
+  /** The project's registry — built-ins plus its trusted agents. Used to read the target's declared write roots. */
+  readonly registry?: Pick<AgentRegistry, "get" | "has">;
 }
 
 /**
@@ -36,6 +38,17 @@ export function workspaceFromArgs(argv: readonly string[], cwd: string): string 
     if (WORKSPACE_FLAGS.includes(argv[index])) return argv[index + 1] ?? cwd;
   }
   return cwd;
+}
+
+/**
+ * Vai đích có khai write root nào không.
+ *
+ * Một tên không có trong registry vẫn đi tiếp với `read-only`: câu trả lời "vai này không tồn
+ * tại" thuộc về `ExecutionService`, nơi nó được nói bằng đúng mã lỗi, chứ không phải một
+ * exception bật ra ở chỗ đang tính quyền workspace.
+ */
+function writesWorkspace(registry: Pick<AgentRegistry, "get" | "has">, role: string): boolean {
+  return registry.has(role) && registry.get(role).capabilities.workspace.writeRoots.length > 0;
 }
 
 function required(args: readonly string[], index: number, message: string): string {
@@ -78,15 +91,19 @@ export async function runDelegateCommand(
   }
   if (!task.join(" ").trim()) throw new Error("delegate requires a task");
   const parentRole = dependencies.env.ALP_DELEGATED_ROLE || dependencies.env.ALP_ROLE || "main";
+  const registry = dependencies.registry ?? agentRegistry;
   const spawned = await dependencies.service.delegate({
     parentRole,
     parentExecutionId: dependencies.env.ALP_DELEGATION_EXECUTION_ID || null,
     targetRole,
     task: task.join(" "),
     workspace,
-    workspaceMode: parentRole === "principal" && targetRole === "main"
-      ? "workspace-write"
-      : "read-only",
+    // Ai hỏi không còn quyết định được ghi hay không — vai đích quyết định. Từ 2026-09-10
+    // `main` không khai write root nào nữa, nên luật cũ ("principal giao cho main thì được
+    // ghi") vừa cấp một quyền `main` không cầm nổi, vừa bỏ đói `worker` — vai duy nhất còn
+    // cầm bút. Hỏi đúng definition thì cả hai chuyện đó tự hết, và PolicyEngine vẫn là chốt
+    // cuối: một vai không khai write root mà xin ghi thì bị chặn ở đó chứ không ở đây.
+    workspaceMode: writesWorkspace(registry, targetRole) ? "workspace-write" : "read-only",
     metadata: {},
     executionOptions: { background, interactive: false, timeoutMs },
   });
@@ -118,6 +135,8 @@ export async function createDefaultDelegationComposition(
   env: NodeJS.ProcessEnv = process.env,
   /** The project's registry — built-ins plus its trusted agents. Defaults to built-ins only. */
   registry: AgentRegistry = agentRegistry,
+  /** Loadout đã ghép settings của máy/project. Bỏ trống thì chạy đúng bản built-in. */
+  modeProfiles?: ModeProfiles,
 ): Promise<DefaultDelegationComposition> {
   const config = loadDelegationConfig(layout.installRoot, env, layout.channel);
   // The one backend. It spawns the runtime as a child process, so it needs no daemon and
@@ -158,7 +177,10 @@ export async function createDefaultDelegationComposition(
     executionStore: new FileDelegationExecutionStore({ file: join(config.stateDir, "code-native-executions.json") }),
     // Con kế thừa nấc của cha: một phiên `ultra` mà subagent lặng lẽ tụt về `medium` thì
     // nấc chỉ còn đúng ở ghế ngoài cùng.
-    config: env.ALP_MODE ? { mode: parseMode(env.ALP_MODE) } : {},
+    config: {
+      ...(env.ALP_MODE ? { mode: parseMode(env.ALP_MODE) } : {}),
+      ...(modeProfiles ? { modeProfiles } : {}),
+    },
   });
   return { service, config: { stateDir: config.stateDir } };
 }

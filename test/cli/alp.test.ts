@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { main, parseAlpArgs } from "../../src/cli/alp";
 import { runMainSession } from "../../src/cli/commands/run-main";
+import { applyModeSettings, parseModeSettings } from "../../src/agents/mode-settings";
+import { DEFAULT_MODE, MODE_PROFILES, modelForMode, reasoningEffortForMode, runtimeForMode } from "../../src/agents/modes";
+import type { AgentDefinition } from "../../src/agents/types";
+import type { PrepareExecutionInput } from "../../src/execution/types";
 import { runDelegateCommand } from "../../src/cli/commands/delegate";
 
 /** Mọi lệnh chỉ khác nhau ở nấc, nên phần còn lại của dependency giống hệt nhau. */
@@ -130,12 +134,31 @@ const MAIN_DEFINITION = {
   reportsTo: "principal",
   model: { claude: "claude-main", codex: "codex-main" },
   reasoningEffort: { claude: "high", codex: "xhigh" },
+  // `main` thôi cầm bút từ 2026-09-10: không write root nào, nên phiên của nó là read-only
+  // dù project đã đăng ký.
+  capabilities: { workspace: { readRoots: ["."], writeRoots: [] } },
 } as never;
+
+/**
+ * `ExecutionService.prepare` giả. Loadout phải tự chốt từ nấc + settings đúng như bản thật,
+ * vì `runMainSession` giờ phóng theo snapshot — không tra lại bảng nấc lần thứ hai.
+ */
+function preparedMain(input: PrepareExecutionInput, executionId = "exec-main") {
+  const mode = input.mode ?? DEFAULT_MODE;
+  const definition = MAIN_DEFINITION as unknown as AgentDefinition<unknown>;
+  return {
+    capsule: { executionId },
+    policy: {
+      model: modelForMode(definition, mode, input.modeProfiles),
+      reasoningEffort: reasoningEffortForMode(definition, mode, input.modeProfiles),
+      runtime: runtimeForMode(definition, mode, input.modeProfiles),
+    },
+  } as never;
+}
 
 describe("runMainSession", () => {
   it("uses remembered selection, code-native main definition, adapter launch spec, and local lifecycle", async () => {
     const events: string[] = [];
-    const prepared = { capsule: { executionId: "exec-main" } } as never;
     const launchSpec = { command: "fake", args: [], cwd: "/project", env: {}, temporaryFiles: [] };
     const result = await runMainSession({ cwd: "/project" }, {
       registry: {
@@ -148,12 +171,12 @@ describe("runMainSession", () => {
         async select(input) { events.push(`select:${input.requestedMode ?? "remembered"}`); return { ok: true, mode: "medium", source: "persisted" }; },
       },
       executionService: {
-        async prepare(input) { events.push(`prepare:${input.parent}->${input.target}:${input.workspace}:${input.workspaceMode}`); return prepared; },
+        async prepare(input) { events.push(`prepare:${input.parent}->${input.target}:${input.workspace}:${input.workspaceMode}`); return preparedMain(input); },
       },
-      adapters: new Map([["codex", {
-        name: "codex",
+      adapters: new Map([["claude", {
+        name: "claude",
         compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
-        async probe() { events.push("probe:codex"); return { ok: true, runtime: "codex", message: "ok" }; },
+        async probe() { events.push("probe:claude"); return { ok: true, runtime: "claude", message: "ok" }; },
         async prepare(input) { events.push(`adapter:${input.model}:${input.reasoningEffort}`); return launchSpec; },
       }]]),
       backend: {
@@ -171,12 +194,15 @@ describe("runMainSession", () => {
     });
 
     expect(result).toMatchObject({ status: "completed" });
+    // `workspace-write` là thứ project đã đăng ký cho phép, nhưng `main` không khai write
+    // root nào — nên nó bị hạ xuống `read-only` ở đây, chứ không bị `ExecutionService` từ
+    // chối sau khi principal đã ngồi vào phiên.
     expect(events).toEqual([
       "registry:main",
       "select:remembered",
-      "prepare:principal->main:/project:workspace-write",
-      "probe:codex",
-      "adapter:gpt-5.6-sol:high",
+      "prepare:principal->main:/project:read-only",
+      "probe:claude",
+      "adapter:claude-opus-5:high",
       "spawn:/project",
       "wait",
     ]);
@@ -195,7 +221,7 @@ describe("runMainSession", () => {
       registry: { get: () => MAIN_DEFINITION },
       selector: { async select() { return { ok: true, mode: "ultra", source: "explicit" }; } },
       executionService: {
-        async prepare(input) { preparedMode = input.mode; return { capsule: { executionId: "exec-main" } } as never; },
+        async prepare(input) { preparedMode = input.mode; return preparedMain(input); },
       },
       adapters: new Map([["claude", {
         name: "claude",
@@ -220,13 +246,51 @@ describe("runMainSession", () => {
     expect(preparedMode).toBe("ultra");
   });
 
+  /**
+   * Settings của máy/project thắng loadout ship sẵn — và vì model quyết định CLI, ghi đè một
+   * dòng model cũng đổi luôn tiến trình được phóng. Đây là chỗ chứng minh nó đi hết đường:
+   * từ file cấu hình tới đúng adapter, không dừng ở một bảng trong bộ nhớ.
+   */
+  it("runs the loadout settings pinned, on the runtime that model implies", async () => {
+    const events: string[] = [];
+    const profiles = applyModeSettings(MODE_PROFILES, [{
+      file: "/project/.alp/settings.local.json",
+      settings: parseModeSettings({ modes: { ultra: { main: { model: "gpt-5.6-terra", reasoningEffort: "low" } } } }, "/project/.alp/settings.local.json"),
+    }]);
+    await runMainSession({ cwd: "/project", mode: "ultra" }, {
+      registry: { get: () => MAIN_DEFINITION },
+      selector: { async select() { return { ok: true, mode: "ultra", source: "explicit" }; } },
+      executionService: { async prepare(input) { return preparedMain(input); } },
+      adapters: new Map([["codex", {
+        name: "codex",
+        compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
+        async probe() { return { ok: true, runtime: "codex", message: "ok" }; },
+        async prepare(input) { events.push(`adapter:${input.model}:${input.reasoningEffort}`); return { command: "fake", args: [], cwd: "/project", env: {}, temporaryFiles: [] }; },
+      }]]),
+      backend: {
+        name: "local",
+        async healthCheck() { return { ok: true, message: "ok" }; },
+        async spawn(input) { return { executionId: input.executionId, status: "running" }; },
+        async status(executionId) { return { executionId, status: "running" }; },
+        async wait(executionId) { return { executionId, status: "completed" }; },
+        async cancel(executionId) { return { executionId, status: "cancelled" }; },
+        async cleanup() {},
+      },
+      executionId: () => "exec-main",
+      interactive: false,
+      modeProfiles: profiles,
+    });
+
+    expect(events).toEqual(["adapter:gpt-5.6-terra:low"]);
+  });
+
   /** `puck` là nấc duy nhất không có Claude ở bất kỳ vai nào — kể cả `main`. */
   it("keeps the puck session entirely on Codex", async () => {
     const events: string[] = [];
     await runMainSession({ cwd: "/project", mode: "puck" }, {
       registry: { get: () => MAIN_DEFINITION },
       selector: { async select() { return { ok: true, mode: "puck", source: "explicit" }; } },
-      executionService: { async prepare() { return { capsule: { executionId: "exec-main" } } as never; } },
+      executionService: { async prepare(input) { return preparedMain(input); } },
       adapters: new Map([["codex", {
         name: "codex",
         compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
@@ -254,8 +318,8 @@ describe("runMainSession", () => {
     await runMainSession({ cwd: "/unknown" }, {
       registry: { get: () => MAIN_DEFINITION },
       selector: { async select() { return { ok: true, mode: "medium", source: "default" }; } },
-      executionService: { async prepare(input) { workspaceMode = input.workspaceMode; return { capsule: { executionId: "exec" } } as never; } },
-      adapters: new Map([["codex", { name: "codex", compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true }, async probe() { return { ok: true, runtime: "codex", message: "ok" }; }, async prepare() { return { command: "fake", args: [], cwd: "/unknown", env: {}, temporaryFiles: [] }; } }]]),
+      executionService: { async prepare(input) { workspaceMode = input.workspaceMode; return preparedMain(input, "exec"); } },
+      adapters: new Map([["claude", { name: "claude", compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true }, async probe() { return { ok: true, runtime: "claude", message: "ok" }; }, async prepare() { return { command: "fake", args: [], cwd: "/unknown", env: {}, temporaryFiles: [] }; } }]]),
       backend: {
         name: "local",
         async healthCheck() { return { ok: true, message: "ok" }; },
@@ -300,6 +364,56 @@ describe("alp delegate", () => {
       executionOptions: { background: true },
     });
     expect(calls[0]).not.toHaveProperty("executionOptions.runtime");
+  });
+
+  /**
+   * Quyền ghi workspace đi theo **vai đích**, không theo ai gọi.
+   *
+   * Luật cũ là "principal giao cho `main` thì được ghi". Từ 2026-09-10 `main` không khai
+   * write root nào, nên luật đó vừa cấp một quyền `main` không cầm nổi, vừa bỏ đói `worker`
+   * — ghế duy nhất còn cầm bút, và nó luôn được `main` gọi chứ không phải principal.
+   */
+  it.each([
+    ["worker", "workspace-write"],
+    ["search", "read-only"],
+    ["main", "read-only"],
+  ])("asks for the workspace mode %s can actually hold", async (targetRole, expected) => {
+    const calls: { workspaceMode?: string }[] = [];
+    await runDelegateCommand([targetRole, "--", "do", "the", "thing"], {
+      cwd: "/caller/project",
+      env: { ALP_ROLE: "main" },
+      service: {
+        async delegate(input) { calls.push(input); return { executionId: "exec-child", requestId: "req", status: "completed", metadata: { backend: "local", runtime: "codex" } }; },
+        async wait() { throw new Error("unused"); },
+        async status() { throw new Error("unused"); },
+        async cancel() { throw new Error("unused"); },
+        async cleanup() { throw new Error("unused"); },
+        listExecutions() { return []; },
+      },
+    });
+
+    expect(calls[0]?.workspaceMode).toBe(expected);
+  });
+
+  /** Tên không có trong registry vẫn đi tiếp: "vai này không tồn tại" là câu của
+   * `ExecutionService`, nói bằng đúng mã lỗi, chứ không phải một exception bật ra ở chỗ đang
+   * tính quyền workspace. */
+  it("falls back to read-only for a role the registry does not know", async () => {
+    const calls: { workspaceMode?: string }[] = [];
+    await runDelegateCommand(["migrator", "--", "migrate"], {
+      cwd: "/caller/project",
+      env: {},
+      service: {
+        async delegate(input) { calls.push(input); return { executionId: "exec-child", requestId: "req", status: "completed", metadata: { backend: "local", runtime: "codex" } }; },
+        async wait() { throw new Error("unused"); },
+        async status() { throw new Error("unused"); },
+        async cancel() { throw new Error("unused"); },
+        async cleanup() { throw new Error("unused"); },
+        listExecutions() { return []; },
+      },
+    });
+
+    expect(calls[0]?.workspaceMode).toBe("read-only");
   });
 
   /** Một `--runtime` còn sót lại chọn sai CLI cho model của nấc, nên nó dừng chứ không bị bỏ qua. */

@@ -395,6 +395,7 @@ export function createAgentRegistry(
 }
 
 import { mainAgent } from "./main";
+import { workerAgent } from "./worker";
 import { searchAgent } from "./search";
 import { librarianAgent } from "./librarian";
 import { readThreadAgent } from "./read-thread";
@@ -405,6 +406,7 @@ import { titlingAgent } from "./titling";
 
 export const AGENT_DEFINITIONS = Object.freeze([
   mainAgent,
+  workerAgent,
   searchAgent,
   librarianAgent,
   readThreadAgent,

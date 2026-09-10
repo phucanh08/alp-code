@@ -181,7 +181,7 @@ Tiếp số của §11 trong vision doc.
 Theo thứ tự phụ thuộc, không phải theo giá trị:
 
 1. `alp agent test <id>` — CLI cho tầng 1–3. Tầng 2–3 đã có dưới dạng vitest
-   (`test/agents/agent-test-tiers.test.ts`, phủ 8 vai built-in), nhưng principal không chạy được
+   (`test/agents/agent-test-tiers.test.ts`, phủ 9 vai built-in), nhưng principal không chạy được
    trên agent của chính mình. Đây là điều kiện chặn theo §11 quyết định 11.
 2. Loader `src/agents/loader/` — đọc `agent.yaml`, normalize, enforce trần §5.5, dựng
    `AgentDefinition` rồi đưa qua đúng `createAgentRegistry` hiện có.

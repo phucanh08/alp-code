@@ -19,6 +19,25 @@ alp delegation list
 
 `scripts/run-role.*` remains a compatibility facade and calls the same service.
 
+## Which role
+
+`worker` is the generic one, and the only role that can write to the workspace: every file
+change goes through it. `main` holds no `Write`/`Edit` and no write root, so "small enough to
+just do myself" is not a question it can answer any more.
+
+| Target | For |
+|---|---|
+| `worker` | any work that changes files — implement, fix, refactor, add tests |
+| `search` | finding code, call sites, and impact in the local repo |
+| `librarian` | external docs or another repository |
+| `read-thread` | decisions and facts already in memory |
+| `review` | one named review concern, with evidence |
+| `oracle` | a second opinion on a hard or high-stakes call |
+
+A `worker` task is one cut of work, stated so that it can be checked: what is in scope, what
+the result should be, and how it will be verified. `worker` delegates to nobody — if it would
+have to go ask `search` halfway through, the cut was wrong, not its grants.
+
 Do not invoke runtime-specific delegation tools directly. In particular, do not call
 `paseo`, `create_agent`, or `spawn_agent` to delegate ALP work.
 

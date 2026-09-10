@@ -450,7 +450,7 @@ Ràng buộc bắt buộc:
   `.toString()`. Mọi custom agent dùng chung một closure sẽ cho **cùng một chuỗi hàm** — hash mất
   khả năng phân biệt. Lưu spec thành dữ liệu thì `definitionHash` phủ đúng nội dung prompt.
   **2026-09-10: đã làm.** `instructions` trên definition nay là `InstructionSpec` (`role`,
-  `purpose`, `rules[]`, `audience?`); tám vai built-in khai dữ liệu, `renderInstructions(spec)`
+  `purpose`, `rules[]`, `audience?`); chín vai built-in khai dữ liệu, `renderInstructions(spec)`
   dựng chuỗi lúc cần. Đo trước khi sửa: hai definition chỉ khác nội dung prompt, dựng qua cùng
   một closure, cho **cùng một `definitionHash`** — nghĩa là §5.6 không chỉ mất khả năng phân
   biệt mà còn tệ hơn: một hash đã trust sẽ nghiệm đúng cho một prompt khác. Test ghim ở
@@ -481,7 +481,7 @@ Cưỡng chế lúc load, trước `createAgentRegistry`:
 | `subagents` | ⊆ `SUBAGENT_CATALOG`, **rỗng ở v1** nên mọi grant đều bị từ chối. Tool của subagent phải ⊆ tool của agent cấp nó. Catalog mở sau khi `alp agent test` tầng 2–3 tồn tại (§10.3 — nay đã có ở `test/agents/agent-test-tiers.test.ts`) |
 | `mcpServers` | ⊆ `MCP_SERVER_CATALOG` (rỗng ở v1). `egress` là trường bắt buộc của mỗi entry, đi vào policy snapshot và in trong bảng Authority; `alp agent add` sẽ in nó khi có (§5.6) |
 | `autoCompactTokens` | Map theo runtime (`{ claude?, codex? }`), cùng khuôn với `model` và `reasoningEffort` — ngân sách đi theo model chứ không theo vai một mình. Mỗi phía: 100 000–1 000 000 token nguyên **và** không vượt cửa sổ context của chính model phía đó (`MODEL_CONTEXT_WINDOWS`); vượt là `INVALID_AUTO_COMPACT_LIMIT` lúc load, vì một ngưỡng transcript không bao giờ chạm tới chỉ làm runtime rơi về chốt cứng của nó trong im lặng. Phía bỏ trống nhận **90% cửa sổ của model phía đó**, do ALP tự tính chứ không nhường cho runtime, vì hai runtime nén ở hai chỗ khác nhau. Biên chung là biên Claude công bố cho `autoCompactWindow`; Codex không công bố biên nào cho `model_auto_compact_token_limit` |
-| `model` / `reasoningEffort` | Bắt buộc khai đủ hai phía, nhưng với tám vai built-in phần khai đó chỉ còn là chỗ dựa: **nấc** (`low`/`medium`/`high`/`ultra`/`puck`, §4.1 architecture) ghim đúng **một** model cho mỗi vai và ghi đè lúc phóng. Vì mỗi vai chỉ còn một model, **model quyết định runtime** — không còn ai chọn CLI, nên custom agent phải khai model mà `MODEL_RUNTIMES` biết. Cùng một definition chạy năm model khác nhau, nên `ExecutionPolicy.mode` phải ghi lại nấc đã chạy — không thì `policy.json` mô tả một execution mà nó không mô tả nổi. Nấc gõ sai dừng ngay chứ không rơi về mặc định |
+| `model` / `reasoningEffort` | Bắt buộc khai đủ hai phía, nhưng với chín vai built-in phần khai đó chỉ còn là chỗ dựa: **nấc** (`low`/`medium`/`high`/`ultra`/`puck`, §4.1 architecture) ghim đúng **một** model cho mỗi vai và ghi đè lúc phóng. Vì mỗi vai chỉ còn một model, **model quyết định runtime** — không còn ai chọn CLI, nên custom agent phải khai model mà `MODEL_RUNTIMES` biết. Cùng một definition chạy năm model khác nhau, nên `ExecutionPolicy.mode` phải ghi lại nấc đã chạy — không thì `policy.json` mô tả một execution mà nó không mô tả nổi. Nấc gõ sai dừng ngay chứ không rơi về mặc định |
 | `memory.write` | Chỉ `private:<id>` |
 | `memory.read` | `shared`, `shared:*`, `project:*`, `private:<id>` |
 | `workspace.writeRoots` | Rỗng, **trừ khi** principal approve — §6 |
@@ -923,7 +923,7 @@ Doc này chỉ được coi là đang thành hiện thực khi các mốc sau đ
   built-in. *Bằng chứng: cho nó chạy trên commit trước bản vá 2026-09-04 thì đỏ ở đúng hai lỗi
   chặn đã tìm ra, chạy trên commit sau thì xanh.*
   **2026-09-10: lệnh đã tồn tại** (`src/agent-test/`, `alp agent test <role|--all>`) và xanh trên
-  cả 8 vai (`test/agent-test/command.test.ts`). Phần bằng chứng lịch sử — chạy lại trên commit
+  cả 9 vai (`test/agent-test/command.test.ts`). Phần bằng chứng lịch sử — chạy lại trên commit
   trước bản vá — chưa làm, nên M0 tính là **đạt một nửa**: công cụ có, phép thử ngược chưa chạy.
 - **M1 — Portability thật.** Cùng một agent `review` chạy qua Claude và qua Codex, sinh output khớp
   cùng một `OutputContract`, và hai policy trace so sánh được cạnh nhau. *Bằng chứng: một test so

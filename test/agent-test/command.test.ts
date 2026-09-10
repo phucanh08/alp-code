@@ -196,7 +196,7 @@ describe("tier 3 probes every ceiling a role has", () => {
   });
 
   it("skips the write probe for a role that declares a write root", async () => {
-    const report = await testAgent({ role: "main", registry: agentRegistry, tiers: [3], ...ENVIRONMENT });
+    const report = await testAgent({ role: "worker", registry: agentRegistry, tiers: [3], ...ENVIRONMENT });
 
     expect(report.checks.map((check) => check.id)).not.toContain("workspace-write-not-granted");
     expect(report.checks.find((check) => check.id === "delegation-not-allowed")?.detail)
@@ -260,7 +260,7 @@ describe("runAgentCommand — test", () => {
 
   it("names the roles that exist when given one that does not", async () => {
     await expect(run({ project: REPO_ROOT, roles: ["migrator"] }))
-      .rejects.toThrowError(/unknown agent `migrator`; known: main, search/);
+      .rejects.toThrowError(/unknown agent `migrator`; known: main, worker, search/);
   });
 
   it("emits one JSON object for one role", async () => {

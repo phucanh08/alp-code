@@ -41,7 +41,7 @@ khai tốn một phase.
 - Chỗ nào đáng cache, và cache mất hiệu lực khi nào.
 - Tài nguyên: bộ nhớ, CPU, mạng.
 
-**Quy mô thật của alp-code là 8 vai và một principal.** Thiết kế cho hàng trăm agent là
+**Quy mô thật của alp-code là 9 vai và một principal.** Thiết kế cho hàng trăm agent là
 over-engineering ở đây. Dùng `alp-predict` hoặc kỹ thuật quy mô của `problem-solving` để
 kiểm cả chiều nhỏ, không chỉ chiều lớn.
 

@@ -1,5 +1,5 @@
 import { capabilityCatalog, type CapabilityCatalog } from "../agents/capability-catalog";
-import { DEFAULT_MODE, type ModeId } from "../agents/modes";
+import { DEFAULT_MODE, type ModeId, type ModeProfiles } from "../agents/modes";
 import type { AgentId, AgentRegistry } from "../agents/types";
 import { dryRunAgent, removeDryRun } from "./dry-run";
 import { runTier1 } from "./tier1";
@@ -18,6 +18,8 @@ export interface AgentTestOptions {
   readonly env?: NodeJS.ProcessEnv;
   readonly catalog?: CapabilityCatalog;
   readonly mode?: ModeId;
+  /** Loadout đã ghép settings của máy/project; bỏ trống thì báo cáo theo bản built-in. */
+  readonly modeProfiles?: ModeProfiles;
   /** Defaults to every tier. Tier 4 (live) is not run from here — it costs a model call. */
   readonly tiers?: readonly AgentTestTier[];
 }
@@ -64,7 +66,13 @@ export async function testAgent(options: AgentTestOptions): Promise<AgentTestRep
         ...(options.env ? { env: options.env } : {}),
       });
       root = run.root;
-      const tier2 = await runTier2({ definition, run, mode, skillsRoot: options.skillsRoot });
+      const tier2 = await runTier2({
+        definition,
+        run,
+        mode,
+        ...(options.modeProfiles ? { modeProfiles: options.modeProfiles } : {}),
+        skillsRoot: options.skillsRoot,
+      });
       checks.push(...tier2.checks);
       disclosure = tier2.disclosure;
     } catch (error) {

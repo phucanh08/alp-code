@@ -57,7 +57,7 @@ Thử **nhỏ lại** hay bị bỏ qua, mà nó lộ ra over-engineering:
 - Nếu chỉ có 10 phần tử thì tối ưu kia có sớm quá không?
 - Nếu phản hồi tức thì thì cái gì trở thành không cần?
 
-Với alp-code, chiều nhỏ là chiều đúng để thử: hệ này có **8 vai và một principal**. Đề xuất
+Với alp-code, chiều nhỏ là chiều đúng để thử: hệ này có **9 vai và một principal**. Đề xuất
 nào chỉ có nghĩa ở quy mô hàng trăm agent thì là over-engineering ở đây — và YAGNI là luật
 thành văn của repo.
 

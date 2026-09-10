@@ -2,6 +2,10 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
+> **Status 2026-09-10:** superseded in part. The settings/loadout half shipped with a different
+> file naming and layering than described here; the `~/.alp/app` install move did not ship. Read
+> “What shipped” in `2026-09-05-layered-settings-design.md` before following any task below.
+
 **Goal:** Add layered global/project JSON settings for mode-to-agent model routing and move the default application checkout from `~/.alp-code` to `~/.alp/app` with safe migration.
 
 **Architecture:** Keep the shipped mode profiles as immutable compiled defaults, then parse and deep-merge `~/.alp/setting.json` with the nearest project `.alp/setting.local.json`. Resolve one immutable launch profile before policy preparation, snapshot its model/effort/runtime into `policy.json`, and make adapters consume that snapshot. Installer/bootstrap code owns initial generation and legacy migration; user values are never overwritten.

@@ -13,10 +13,12 @@ Internal hook/supervisor dispatch không thuộc public API và không được 
 |---|---|
 | `alp` | Mở phiên `main`, dùng mode theo precedence |
 | `alp --mode <low\|medium\|high\|ultra\|puck>` | Override mode cho phiên này |
-| `alp mode show` | Xem mode đã lưu |
+| `alp mode show` | Xem mode đã lưu, kèm file settings và role bị ghi đè |
 | `alp mode set <mode>` | Lưu mode cho phiên sau |
 
 Chỉ được chọn một mode. Option lạ và mode sai đều fail thay vì fallback.
+
+Loadout của mode (model + reasoning effort của từng role) ghi đè được bằng `~/.alp/settings.json`, `<project>/.alp/settings.json` và `<project>/.alp/settings.local.json` — đọc theo đúng thứ tự đó, file sau thắng. Xem [Nấc và runtime](../../concepts/modes-and-runtimes/#đổi-model-của-một-role-settingsjson).
 
 ## Project và identity
 

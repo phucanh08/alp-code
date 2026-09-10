@@ -1,4 +1,4 @@
-import { DEFAULT_MODE, modelForMode, reasoningEffortForMode, runtimeForMode, type ModeId } from "../agents/modes";
+import type { ModeId, ModeProfiles } from "../agents/modes";
 import { randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -23,6 +23,11 @@ import {
 export interface DelegationServiceConfig {
   /** Nấc công suất kế thừa từ phiên cha (`ALP_MODE`); bỏ trống thì `DEFAULT_MODE`. */
   mode?: ModeId;
+  /**
+   * Loadout đã ghép `settings.json` của máy và của project. Bỏ trống thì chạy bản built-in —
+   * nấc nói gì thì vai chạy đúng thế.
+   */
+  modeProfiles?: ModeProfiles;
 }
 
 export interface DelegationExecutionPreparer {
@@ -210,6 +215,7 @@ export class DelegationService {
       workspace: request.workspace,
       workspaceMode: request.workspaceMode,
       ...(this.config.mode === undefined ? {} : { mode: this.config.mode }),
+      ...(this.config.modeProfiles === undefined ? {} : { modeProfiles: this.config.modeProfiles }),
       memoryQueries: [],
       characterBudget: 0,
       invariantContext: "ALP execution policy is authoritative and fails closed.",
@@ -218,19 +224,19 @@ export class DelegationService {
     void this.policy;
     void this.memory;
 
-    const definition = this.registry.get(request.targetRole);
-    const mode = this.config.mode ?? DEFAULT_MODE;
     // Nấc ghim một model cho vai đích, và model quyết định CLI — không còn ai chọn runtime
     // rồi mới tra model, nên một nấc có thể phóng hai CLI khác nhau cho hai vai khác nhau.
-    const runtime = runtimeForMode(definition, mode);
+    // Cả ba giá trị đọc thẳng từ snapshot: `policy.json` đã chốt chúng và đã băm chúng, nên
+    // tra lại bảng ở đây chỉ tạo thêm một cơ hội để hai bên nói khác nhau.
+    const runtime = execution.policy.runtime;
     const adapter = this.runtimeAdapters.get(runtime);
     if (!adapter) {
       throw new DelegationError("RUNTIME_UNAVAILABLE", `runtime \`${runtime}\` is not registered`);
     }
     const launchSpec = await adapter.prepare({
       execution,
-      model: modelForMode(definition, mode),
-      reasoningEffort: reasoningEffortForMode(definition, mode),
+      model: execution.policy.model,
+      reasoningEffort: execution.policy.reasoningEffort,
       interactive: request.executionOptions.interactive,
     });
     return Object.freeze({ request, executionId, execution, runtime, launchSpec, backend: this.backend });

@@ -23,7 +23,8 @@ từ `main` về. Sửa docs là sửa ở đây, cùng commit với thay đổi
 
 | Role | Trách nhiệm |
 |---|---|
-| `main` | điều phối, thực thi trong project đã đăng ký, tổng hợp kết quả |
+| `main` | nói chuyện với principal, nghĩ cùng họ, cắt việc và kiểm chứng kết quả — **không sửa file** |
+| `worker` | thực thi một task đã được giao: vai duy nhất ghi được vào workspace |
 | `search` | local code retrieval |
 | `librarian` | external/cross-repo research |
 | `read-thread` | tìm kiếm trong memory |
@@ -167,11 +168,30 @@ alp mode set high
 
 Thứ tự quyết định: `--mode` → `ALP_MODE` → `alp mode set` → menu trên TTY → `medium`.
 
+Nội dung một nấc — vai nào chạy model nào, ở mức nghĩ nào — sửa được bằng ba file settings,
+đọc theo thứ tự thắng dần: `~/.alp/settings.json` (máy) → `<project>/.alp/settings.json`
+(project, commit được) → `<project>/.alp/settings.local.json` (riêng bạn):
+
+```json
+{
+  "modes": {
+    "*":    { "titling": { "model": "gpt-5.6-luna" } },
+    "high": { "worker": { "model": "claude-opus-5", "reasoningEffort": "max" } }
+  }
+}
+```
+
+`"*"` áp cho mọi nấc và thua nấc gọi đích danh; khai một trường thì trường kia giữ nguyên bản
+built-in. Đổi model là đổi luôn CLI, vì runtime là hệ quả của model. File chỉ ghim **model và
+effort** — tool, workspace, memory và quyền delegate vẫn nằm ở registry code-native. Nấc lạ,
+khoá lạ, model không có runtime hay effort không hợp lệ đều dừng phiên và báo tên file. Xem cái
+đang thật sự chạy bằng `alp mode show`.
+
 ## Kiểm tra một agent
 
 ```bash
 alp agent test review                 # ba tầng, dừng ở tầng đỏ đầu tiên
-alp agent test --all                  # cả 8 vai built-in + custom agent của project
+alp agent test --all                  # cả 9 vai built-in + custom agent của project
 alp agent test main --tier 2 --mode high
 alp agent test migrator --project ~/code/app
 alp agent test search --json          # cùng nội dung, cho script đọc
