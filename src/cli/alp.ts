@@ -318,6 +318,18 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
         ? { registry: agentRegistry, notices: [] as readonly string[] }
         : await trustedRegistryFor(resolve(cwd, workspaceFromArgs(actual.slice(1), cwd)));
       for (const notice of project.notices) stderr.write(`${notice}\n`);
+      // Without this, a target the principal can see in `.alp/agents/` comes back as
+      // "unknown agent": true — an unapproved agent never enters the registry — but it reads
+      // as a typo when the real answer is that nobody approved it yet.
+      const target = actual[0];
+      const blocked = "decisions" in project
+        ? project.decisions.find((decision) => decision.agent.id === target && decision.status !== "trusted")
+        : undefined;
+      if (blocked) {
+        throw new Error(blocked.status === "changed"
+          ? `\`${target}\` changed after it was trusted; run \`alp agent add ${target}\` to review and approve it again`
+          : `\`${target}\` is not approved; run \`alp agent add ${target}\` to review it`);
+      }
       const composition = await createDefaultDelegationComposition(layout ?? {
         channel: "dev",
         version,
