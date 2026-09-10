@@ -63,6 +63,26 @@ e47242f586d5772379933ca6a2e6403f2330f2822010b91b1e79097e556163b2  alp-code-v0.10
 - Linux musl, Windows arm64, macOS signing/notarization, Homebrew and size optimization are
   explicitly deferred.
 
+## Addendum 2026-09-10 — dependency `yaml` on the native channel
+
+Scope: only whether the second runtime dependency (`yaml@2.9`, added on `feat/agent-test` for
+the `.alp/agents/<id>/agent.yaml` loader) still leaves the binary channel whole. The v0.10.0
+record above is unchanged; nothing here promotes a target.
+
+| Gate | Command | Result |
+|---|---|---|
+| Bun compatibility | `node scripts/test-bun-compat.cjs` | pass |
+| Reproducible host build | `node scripts/test-binary-build.cjs` | pass |
+| Full script matrix | `npm run test:binary` | pass; Windows runtime skipped off-Windows |
+| Cross-build | `node scripts/build-binary.cjs` | five archives + SHA256SUMS produced |
+| `yaml` actually bundled | `darwin-arm64.metafile.json` | present |
+| Loader inside the artifact | `env -i HOME=<tmp> PATH=/usr/bin:/bin alp agent test migrator --project <tmp>` | 36 checks pass, exit 0 |
+
+The last row is the one that matters: a `yaml` resolved at build time but missing at run time
+would look identical to a healthy build until someone with no Node on PATH opened an agent
+file. Bun `1.4.2`, matching `.bun-version`; host Apple M1, Darwin 25.5.0. Non-host targets are
+still cross-build-only, exactly as above.
+
 ## Publish boundary
 
 No tag, GitHub Release, asset upload, or npm publish was performed. After review, the required
