@@ -142,26 +142,50 @@ Script tự chặn: tree bẩn, tag đã tồn tại, version không tăng, mụ
 node scripts/pack-release.cjs
 ```
 
-Ra hai file trong `build/`, cho hai channel cài:
+Ra **7 file** trong `build/release/`, cho hai channel cài:
 
 | File | Đi đâu | Là gì |
 |---|---|---|
-| `alp-code-X.Y.Z.tgz` | `npm publish` | đúng cây file `npm pack` sinh ra (chạy `prepack` → `tsc`) |
-| `alp-code-vX.Y.Z-bundle.tar.gz` | asset của GitHub Release | cùng cây file đó, kèm sẵn `node_modules` chỉ có dependency runtime |
+| `alp-code-X.Y.Z.tgz` | `npm publish` | wrapper **mỏng** — 9 file, không có `dist/` |
+| `alp-code-vX.Y.Z-<target>.tar.gz` × 5 | asset của GitHub Release | native binary + `skills/` `scaffold/` `hooks/` |
+| `SHA256SUMS` | asset của GitHub Release | checksum của 5 archive trên |
 
-Script kiểm artifact trước khi dừng: đủ file bắt buộc, không lọt `src/`/`test/`/`memory/`, và
-load thật registry + hai adapter từ một thư mục ngoài repo để bắt lỗi thiếu dependency runtime
-— thứ ở trong repo luôn chạy được và chỉ hỏng ở máy người dùng. Nó **dừng trước** `npm publish`
-và `gh release upload`, giống `cut-release.cjs` dừng trước `git push`.
+Năm target lấy từ `src/install/binary-targets.json`: `darwin-arm64`, `darwin-x64`,
+`linux-x64-gnu`, `linux-arm64-gnu`, `windows-x64`.
 
-Bundle mang sẵn dependency vì đó là toàn bộ lý do có channel thứ hai: máy không có npm hoặc bị
-chặn registry. Một tarball vẫn bắt `npm install` sau khi giải nén thì không giải quyết gì.
+**Gói npm không chứa code.** Nó chỉ có `install.cjs`, `bin/alp.cjs`, `lib/resolve-target.cjs`,
+`lib/install-payload.cjs`, `lib/binary-targets.json`, `scripts/ensure-state.cjs` (shim cho
+`alp update` của bản npm < 0.10.0), README và LICENSE; postinstall resolve OS/CPU rồi tải đúng
+native archive từ GitHub Release. Nên **`npm publish` mà release chưa có asset là hỏng cả hai
+channel**, không riêng channel tarball — xem thứ tự ở bước 5.
+
+Native archive là thứ chứa sản phẩm thật: binary do `bun build --compile --minify` sinh ra từ
+`src/cli/entry.ts`, kèm `skills/`, `scaffold/`, `hooks/`, `LICENSE` và `install-manifest.json`.
+Máy người dùng không cần Node, Bun, npm hay Git.
+
+Script kiểm trước khi dừng: gói npm phải đủ `NPM_WRAPPER_REQUIRED` và không lọt
+`NPM_WRAPPER_FORBIDDEN` (`dist/`, `src/`, `scripts/` trừ đúng shim, `hooks/`, `skills/`,
+`scaffold/`, `node_modules/`) — cả hai danh sách ở `scripts/lib/release-manifest.cjs`, vì
+`files` trong `package.json` sai thì `npm pack` vẫn xanh; version của Bun phải khớp
+`.bun-version`; và `validateArchiveEntries` từ chối mọi entry path tuyệt đối hoặc có `..`.
+Archive dựng reproducible: mtime epoch, uid/gid 0, gzip mtime 0. Nó **dừng trước**
+`npm publish` và `gh release upload`, giống `cut-release.cjs` dừng trước `git push`.
+
+`--npm-only` (alias `--skip-bundle`) bỏ qua phần native, `--out <dir>` đổi thư mục ra. Cả hai
+là để thử tại chỗ; release thật chạy không cờ.
+
+**`build-binary.cjs` đòi `git status --porcelain` rỗng — kể cả file untracked.** Một thư mục
+`.idea/` hay bất kỳ rác IDE nào cũng đủ chặn, dù `cut-release.cjs` đã cho qua (nó chỉ nhìn
+staged + tracked). Loại nó ở `.git/info/exclude` (machine-local, không cần commit thêm sau khi
+đã tag) rồi chạy lại. **Không** `ALP_SKIP_GIT_CHECK=1` cho release thật — biến đó có để chạy
+test. Nó không chặn `sourceCommit` được ghi vào `install-manifest.json`; nó làm giá trị đó nói
+dối, vì binary khi ấy build từ cây file không khớp commit mà manifest trích.
 
 ### 5. Push và publish — hỏi principal trước
 
 ```bash
 git push origin main --tags
-npm publish build/alp-code-X.Y.Z.tgz
+npm publish build/release/alp-code-X.Y.Z.tgz   # 2FA: xem ghi chú dưới
 
 # Release notes = đúng mục CHANGELOG.md của bản này, không phải "Full Changelog: ..." tự sinh —
 # principal đọc release muốn thấy đổi gì, không phải đi bấm vào link compare.
@@ -174,8 +198,14 @@ prev_tag=$(git describe --tags --abbrev=0 vX.Y.Z^)
 printf '\n**Full Changelog**: https://github.com/phucanh08/alp-code/compare/%s...vX.Y.Z\n' "$prev_tag" \
   >> /tmp/release-notes-X.Y.Z.md
 
-gh release create vX.Y.Z --notes-file /tmp/release-notes-X.Y.Z.md
-gh release upload vX.Y.Z build/alp-code-vX.Y.Z-bundle.tar.gz
+gh release create vX.Y.Z --title vX.Y.Z --notes-file /tmp/release-notes-X.Y.Z.md
+(cd build/release && gh release upload vX.Y.Z \
+  alp-code-vX.Y.Z-darwin-arm64.tar.gz \
+  alp-code-vX.Y.Z-darwin-x64.tar.gz \
+  alp-code-vX.Y.Z-linux-arm64-gnu.tar.gz \
+  alp-code-vX.Y.Z-linux-x64-gnu.tar.gz \
+  alp-code-vX.Y.Z-windows-x64.tar.gz \
+  SHA256SUMS)
 ```
 
 Push commit và tag **cùng lúc**: tag trỏ vào commit mà `origin/main` chưa có thì release trỏ
@@ -185,12 +215,18 @@ vào lịch sử mà người khác chưa fetch được.
 khớp header CHANGELOG vừa đóng) cho ra file rỗng, và đây là thông báo công khai nên phải đúng
 ngay từ lần đầu, không sửa lại sau khi đã publish.
 
-Thứ tự trên là có ý: tag lên trước, rồi npm, rồi release + asset. `install.sh` ở channel
-tarball resolve `releases/latest` rồi tải asset theo tên — release có mặt mà thiếu asset nghĩa
-là mọi lần cài tarball trong khoảng đó đều 404.
+Thứ tự trên là có ý: tag lên trước, rồi npm, rồi release + asset. `install.sh` resolve
+`releases/latest`, tải archive theo tên **và tải `SHA256SUMS`** để kiểm trước khi cài — thiếu
+một trong hai thì mọi lần cài trong khoảng đó đều fail. Gói npm cũng tải chính những asset ấy
+ở postinstall, nên khoảng trống giữa `npm publish` và `gh release upload` là khoảng cả hai
+channel cùng hỏng. Đẩy asset ngay sau khi tạo release, đừng để sang việc khác.
 
 Cả `npm publish` lẫn `gh release` đều chạy tại máy nên biết kết quả ngay. Không có bước async
 nào để phải đi moi log.
+
+`npm publish` có thể dừng ở `EOTP` — tài khoản bật 2FA thì npm đòi one-time password hoặc xác
+thực qua browser, và agent không làm hộ được. Đưa lệnh cho principal chạy trong terminal của họ
+(`--otp=<mã>` nếu dùng authenticator app). Artifact đã dựng rồi; không cắt lại version.
 
 Nếu bước 2 có sửa `docs/user/`, đẩy site luôn sau khi push — cùng lý do: biết kết quả ngay
 thay vì đợi cron mỗi giờ của `alp-docs`.
@@ -207,12 +243,14 @@ một repo public, đắt hơn nhiều so với vài chục phút độ trễ m�
 ```bash
 gh release view vX.Y.Z --json tagName,isDraft,url
 gh api repos/phucanh08/alp-code/releases/latest --jq .tag_name   # đúng cái alp update đọc
-gh release view vX.Y.Z --json assets --jq '.assets[].name'       # phải có bundle .tar.gz
+gh release view vX.Y.Z --json assets --jq '.assets[].name'       # 5 archive + SHA256SUMS
 npm view alp-code version                                        # phải là X.Y.Z
 ```
 
 Release phải tồn tại, không phải draft, `releases/latest` phải trả đúng tag vừa cắt — đây mới
-là thứ `resolveLatestReleaseTag` dựa vào — và asset bundle phải có mặt cho channel tarball.
+là thứ `resolveLatestReleaseTag` dựa vào — và phải đủ **6 asset**: 5 native archive cộng
+`SHA256SUMS`. Thiếu một target nghĩa là OS/CPU đó không cài được ở cả hai channel; thiếu
+`SHA256SUMS` thì không máy nào cài được.
 
 ## Mẫu báo cáo về principal
 
@@ -222,7 +260,7 @@ là thứ `resolveLatestReleaseTag` dựa vào — và asset bundle phải có m
 ✓ changelog: [0.2.0] - 2026-08-27
 ✓ docs:      docs/user/ sạch (xoá 2 banner preview, repin 1 commit)
 ✓ commit:    <hash> chore(release): v0.2.0
-✓ artifact:  build/alp-code-0.2.0.tgz + build/alp-code-v0.2.0-bundle.tar.gz
+✓ artifact:  build/release/ — alp-code-0.2.0.tgz + 5 native archive + SHA256SUMS
 ✗ tag/push:  CHƯA — chờ principal duyệt
 ✗ npm/release: CHƯA — chờ principal duyệt
 ✗ docs site:  CHƯA — build alp-docs sau khi push
@@ -241,6 +279,8 @@ có nghĩa là đã đẩy đi. Đã publish thì dán link release và dòng `n
 | `gh auth status` đỏ | `gh auth login` rồi chạy lại; không tự đổi credential của principal |
 | push bị từ chối | `origin/main` đã tiến — DỪNG, báo principal, không force |
 | lỡ tag nhầm commit, **chưa push** | `git tag -d vX.Y.Z && git reset --hard HEAD~1` rồi chạy lại script; chỉ an toàn khi chưa push |
+| `pack-release` báo "requires a clean working tree" | file untracked (`.idea/`, rác IDE) — loại ở `.git/info/exclude`, **không** `ALP_SKIP_GIT_CHECK=1` |
+| `npm publish` báo `EOTP` | tài khoản bật 2FA — đưa lệnh cho principal chạy trong terminal của họ, đừng cắt lại version |
 | `check-docs-drift` báo PIN | commit được trích chưa lên `main` — trỏ lại commit có thật, không release docs trỏ vào nhánh feature |
 | `check-docs-drift` báo PREVIEW | tự đọc `git log <tag-cũ>..HEAD`: đã vào stable thì **xoá** banner, chưa thì đổi số |
 | repo chưa có tag nào | bình thường cho bản đầu; `resolveLatestReleaseTag` sẽ fail cho tới khi có tag đầu tiên |
@@ -265,7 +305,7 @@ nhớ: push `release.yml` lên `main` thành **một cú push riêng trước**,
 ## Sau khi release
 
 `alp update` cập nhật theo channel của bản cài: bản npm gọi `npm install -g alp-code@X.Y.Z`,
-bản tarball tải asset bundle của tag mới nhất, dev clone checkout tag rồi build. Cả ba đều
+bản binary tải native archive đúng OS/CPU của tag mới nhất, dev clone checkout tag rồi build. Cả ba đều
 resolve tag mới nhất qua GitHub API (fallback `git ls-remote --tags`).
 Máy đang chạy `alp` chỉ thấy thông báo sau khi cache `~/.alp/update-check.json` hết TTL 24h —
 đây là hành vi đúng, không phải lỗi. Muốn kiểm tra ngay thì xoá file cache đó rồi chạy lại `alp`.
