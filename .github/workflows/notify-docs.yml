@@ -1,0 +1,48 @@
+name: Notify alp-docs
+
+# docs/user/ là content của https://alp.anhlp.com/docs/. alp-docs không giữ bản sao nào —
+# nó fetch thư mục này mỗi lần build — nên site chỉ đổi khi alp-docs build lại.
+#
+# Không có workflow này site vẫn đúng: alp-docs có cron mỗi giờ tự hỏi. Workflow chỉ rút
+# độ trễ từ "≤60 phút" xuống "~1 phút", nên nó cố ý KHÔNG fail khi thiếu secret: thiếu
+# đường đi nhanh không phải là hỏng, và làm đỏ CI vì một tối ưu độ trễ thì lần sau không
+# ai đọc CI đỏ nữa.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/user/**'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Báo alp-docs build lại
+        env:
+          # PAT (fine-grained) có quyền Contents: write trên phucanh08/alp-docs.
+          # github.token không dùng được: nó chỉ có phạm vi trong repo này.
+          TOKEN: ${{ secrets.ALP_DOCS_DISPATCH_TOKEN }}
+        run: |
+          set -uo pipefail
+          if [ -z "${TOKEN}" ]; then
+            echo "Chưa có secret \`ALP_DOCS_DISPATCH_TOKEN\` — bỏ qua." >> "$GITHUB_STEP_SUMMARY"
+            echo "Site vẫn cập nhật trong vòng một giờ qua cron của alp-docs." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          code=$(curl -sS -o /tmp/dispatch.json -w '%{http_code}' -X POST \
+            -H "authorization: Bearer ${TOKEN}" \
+            -H "accept: application/vnd.github+json" \
+            https://api.github.com/repos/phucanh08/alp-docs/dispatches \
+            -d "{\"event_type\":\"docs-updated\",\"client_payload\":{\"sha\":\"${GITHUB_SHA}\"}}")
+
+          if [ "$code" != "204" ]; then
+            echo "POST /dispatches trả HTTP $code:" >&2
+            cat /tmp/dispatch.json >&2
+            exit 1
+          fi
+          echo "Đã báo alp-docs build lại từ \`${GITHUB_SHA:0:7}\`." >> "$GITHUB_STEP_SUMMARY"
