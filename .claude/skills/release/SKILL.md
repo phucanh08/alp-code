@@ -85,7 +85,43 @@ chép lại `git log`.
 Mục rỗng là tín hiệu dừng, không phải chuyện nhỏ: không có gì để kể cho người dùng thì hỏi
 principal xem có thật sự cần release không.
 
-### 2. Bump version + đóng mục CHANGELOG + commit + tag
+### 2. Rà `docs/user/`
+
+`docs/user/` được xuất bản lên <https://alp.anhlp.com/docs/> và mô tả hành vi của chính repo
+này. Repo `alp-docs` không giữ bản sao nào — nó kéo thư mục này từ `main` rồi build, nên cắt
+release mà không rà là đẩy tài liệu sai ra ngoài trong vòng một giờ.
+
+```bash
+node scripts/check-docs-drift.cjs --version X.Y.Z
+```
+
+Script chỉ đo và chỉ chỗ, không tự sửa. Ba nhóm nó báo:
+
+| Nhóm | Nghĩa | Cách xử lý |
+|---|---|---|
+| `VERSION` | chuỗi version ALP khác bản sắp phát hành | đổi số |
+| `PIN` | commit được trích nhưng không nằm trên nhánh hiện tại | trỏ lại commit có thật trên `main` |
+| `PREVIEW` | banner "chưa có trong stable `vX.Y.Z`" | **quyết định**, xem dưới |
+
+Banner preview là nhóm duy nhất máy không làm thay được. Nếu bản này đưa tính năng đó vào
+stable thì banner phải bị **xoá**, không phải đổi số — đổi số là biến docs từ cũ thành sai.
+Nếu tính năng vẫn chưa vào stable thì mới đổi số. Đọc `git log <tag-gần-nhất>..HEAD` rồi
+quyết từng cái một.
+
+`WARN` cho banner không nói version nào: script không đọc hộ được, tự mở file ra xem.
+
+Sửa xong thì commit riêng trước khi sang bước 3 — `cut-release.cjs` chặn tree bẩn:
+
+```bash
+git add docs/user && git commit -m "docs: rà docs/user cho vX.Y.Z"
+node scripts/check-docs-drift.cjs --version X.Y.Z   # phải xanh
+```
+
+Script này cũng chạy trong `for f in scripts/test-*.cjs` ở phần Tiền điều kiện qua
+`test-check-docs-drift.cjs`, nhưng đó chỉ kiểm logic của script — nội dung docs vẫn phải rà ở
+bước này.
+
+### 3. Bump version + đóng mục CHANGELOG + commit + tag
 
 ```bash
 node scripts/cut-release.cjs <patch|minor|major|X.Y.Z> --dry-run   # xem trước
@@ -100,7 +136,7 @@ Script tự chặn: tree bẩn, tag đã tồn tại, version không tăng, mụ
 (`--allow-empty` để vượt, chỉ dùng khi principal đồng ý). Cần tự tay commit thì thêm
 `--no-commit` — script chỉ ghi file rồi in lệnh git cần chạy.
 
-### 3. Dựng artifact
+### 4. Dựng artifact
 
 ```bash
 node scripts/pack-release.cjs
@@ -121,7 +157,7 @@ và `gh release upload`, giống `cut-release.cjs` dừng trước `git push`.
 Bundle mang sẵn dependency vì đó là toàn bộ lý do có channel thứ hai: máy không có npm hoặc bị
 chặn registry. Một tarball vẫn bắt `npm install` sau khi giải nén thì không giải quyết gì.
 
-### 4. Push và publish — hỏi principal trước
+### 5. Push và publish — hỏi principal trước
 
 ```bash
 git push origin main --tags
@@ -156,7 +192,7 @@ là mọi lần cài tarball trong khoảng đó đều 404.
 Cả `npm publish` lẫn `gh release` đều chạy tại máy nên biết kết quả ngay. Không có bước async
 nào để phải đi moi log.
 
-### 5. Xác minh
+### 6. Xác minh
 
 ```bash
 gh release view vX.Y.Z --json tagName,isDraft,url
@@ -174,6 +210,7 @@ là thứ `resolveLatestReleaseTag` dựa vào — và asset bundle phải có m
 ✓ preflight: main sạch, đồng bộ origin, test xanh
 ✓ version:   0.1.0 → 0.2.0 (MINOR: thêm `alp --version`)
 ✓ changelog: [0.2.0] - 2026-08-27
+✓ docs:      docs/user/ sạch (xoá 2 banner preview, repin 1 commit)
 ✓ commit:    <hash> chore(release): v0.2.0
 ✓ artifact:  build/alp-code-0.2.0.tgz + build/alp-code-v0.2.0-bundle.tar.gz
 ✗ tag/push:  CHƯA — chờ principal duyệt
@@ -193,6 +230,8 @@ có nghĩa là đã đẩy đi. Đã publish thì dán link release và dòng `n
 | `gh auth status` đỏ | `gh auth login` rồi chạy lại; không tự đổi credential của principal |
 | push bị từ chối | `origin/main` đã tiến — DỪNG, báo principal, không force |
 | lỡ tag nhầm commit, **chưa push** | `git tag -d vX.Y.Z && git reset --hard HEAD~1` rồi chạy lại script; chỉ an toàn khi chưa push |
+| `check-docs-drift` báo PIN | commit được trích chưa lên `main` — trỏ lại commit có thật, không release docs trỏ vào nhánh feature |
+| `check-docs-drift` báo PREVIEW | tự đọc `git log <tag-cũ>..HEAD`: đã vào stable thì **xoá** banner, chưa thì đổi số |
 | repo chưa có tag nào | bình thường cho bản đầu; `resolveLatestReleaseTag` sẽ fail cho tới khi có tag đầu tiên |
 
 ## Vì sao không dùng GitHub Actions
@@ -225,7 +264,7 @@ Máy đang chạy `alp` chỉ thấy thông báo sau khi cache `~/.alp/update-ch
 - Không release từ nhánh khác `main`, không release khi test đỏ.
 - Không `npm publish` khi principal mới chỉ duyệt tag/GitHub Release — đó là hai lần ra ngoài
   máy khác nhau, hỏi riêng từng lần.
-- Release notes lấy từ đúng mục CHANGELOG.md của bản này (bước 4), không dùng
+- Release notes lấy từ đúng mục CHANGELOG.md của bản này (bước 5), không dùng
   `--generate-notes` mặc định — nội dung để principal đọc là gì đã đổi, không phải link
   compare. Không tự ý viết thêm ngoài CHANGELOG hoặc sửa lại notes sau khi đã publish.
 - Không thêm lại GitHub Actions cho release trong lúc đang cắt release — đó là thay đổi thiết

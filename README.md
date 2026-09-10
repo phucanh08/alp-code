@@ -9,6 +9,16 @@ Phở 🍜 (`main`) là coordinator mặc định. Principal có thể chọn Cl
 main; specialist luôn đi qua `DelegationService` và chỉ nhận đúng workspace/memory/tool grant
 đã được policy duyệt.
 
+## Tài liệu
+
+Tài liệu người dùng ở <https://alp.anhlp.com/docs/>, và nguồn của nó nằm ngay trong repo này
+tại [`docs/user/`](docs/user/): `alp-docs` chỉ giữ khung site, mỗi lần build nó kéo thư mục đó
+từ `main` về. Sửa docs là sửa ở đây, cùng commit với thay đổi code mà nó mô tả — đọc
+[`docs/user/README.md`](docs/user/README.md) trước khi thêm trang mới.
+
+`docs/*.md` và `docs/plans/` là ghi chép nội bộ, không được xuất bản;
+[`docs/architecture.md`](docs/architecture.md) là bản mô tả kiến trúc đầy đủ.
+
 ## Agent hiện có
 
 | Role | Trách nhiệm |
@@ -265,6 +275,8 @@ scripts/        stable CJS wrappers, maintenance, installers và compatibility t
 hooks/          execution-policy/workflow bridges
 scaffold/       memory skeleton cho clean install
 test/           Vitest unit, contract, integration và E2E suites
+docs/user/      content của alp.anhlp.com; alp-docs fetch thư mục này khi build
+docs/           thiết kế và ghi chép nội bộ (không xuất bản)
 ```
 
 ## Kiểm thử
@@ -280,7 +292,7 @@ for f in scripts/test-*.cjs; do node "$f" || break; done
 `npm test` chạy unit, contract, integration và E2E. Năm suite E2E (`test/e2e/`) dựng fake
 runtime binaries cho `claude`/`codex` để kiểm launch contract, delegation, memory isolation,
 mode selection và compact bridge (pin → fixture compaction → reinject) mà không gọi model
-trả phí. Mười hai script `scripts/test-*.cjs` giữ phần
+trả phí. Mười chín script `scripts/test-*.cjs` giữ phần
 cross-platform: CLI link, Codex role, delegation, execution hooks, installer (POSIX và
 Windows), state `~/.alp`, nội dung artifact phát hành, update và uninstall — trong đó
 uninstall có process-level fixture để chứng minh CLI vẫn hoàn tất sau khi xoá installation
