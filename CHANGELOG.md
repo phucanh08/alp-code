@@ -8,6 +8,28 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thêm
+
+- Vai `worker` (🛠️) — vai generic mà `main` spawn cho task đã cắt sẵn, không delegate tiếp
+  (`delegatesTo: []`). Bốn nấc dial (`low`/`medium`/`high`/`ultra`) giờ xoay ghế `worker` +
+  `oracle` thay vì `main` + `oracle`.
+
+- Loadout của một nấc — model và mức nghĩ cho từng vai — sửa được qua ba file settings, đọc
+  theo thứ tự thắng dần: `~/.alp/settings.json` (máy) → `<project>/.alp/settings.json`
+  (project, commit được) → `<project>/.alp/settings.local.json` (riêng bạn, không commit).
+  Khoá `modes.<nấc|"*">.<vai>.{model,reasoningEffort}`; `"*"` áp cho mọi nấc và thua nấc gọi
+  đích danh. Đọc kỹ ở `docs/user/concepts/modes-and-runtimes.md`.
+
+- `alp mode show` in thêm `SETTINGS <file>` cho mỗi file settings đọc được và `OVERRIDE <vai>
+  <model> · <effort>` cho vai nào đang chạy khác loadout mặc định.
+
+### Thay đổi
+
+- `main` thôi cầm bút: bỏ `Write`/`Edit` và mọi write root, nên phiên của nó là read-only kể
+  cả trong project đã đăng ký. Việc của `main` còn lại là nghe principal, brainstorm, chia
+  việc — độ khó của task được trả lời ở ghế `worker`/`oracle`, không phải ở `main`, nên `main`
+  ghim `claude-opus-5` · `high` qua cả bốn nấc dial.
+
 ## [0.11.0] - 2026-09-10
 
 ### Thêm

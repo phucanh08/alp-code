@@ -23,18 +23,18 @@ irm https://raw.githubusercontent.com/phucanh08/alp-code/main/install.ps1 | iex
 Hai lệnh trên tải code rồi chạy ngay với quyền của tài khoản hiện tại. Nếu cần kiểm soát supply chain chặt hơn, hãy tải script về để đọc trước hoặc pin release cụ thể thay vì lấy mặc định.
 :::
 
-Ví dụ pin version đang được bộ docs này mô tả (`v0.11.0`):
+Ví dụ pin version đang được bộ docs này mô tả (`v0.12.0`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/phucanh08/alp-code/main/install.sh | bash -s -- --version v0.11.0
+curl -fsSL https://raw.githubusercontent.com/phucanh08/alp-code/main/install.sh | bash -s -- --version v0.12.0
 ```
 
 ```powershell
-$env:ALP_VERSION = "v0.11.0"
+$env:ALP_VERSION = "v0.12.0"
 irm https://raw.githubusercontent.com/phucanh08/alp-code/main/install.ps1 | iex
 ```
 
-Binary channel hiện phát hành cho macOS arm64/x64, Linux glibc x64/arm64 và Windows x64. Linux musl, Windows arm64 và notarization chưa thuộc phạm vi `v0.11.x`.
+Binary channel hiện phát hành cho macOS arm64/x64, Linux glibc x64/arm64 và Windows x64. Linux musl, Windows arm64 và notarization chưa thuộc phạm vi `v0.12.x`.
 
 ## Cài qua npm
 
