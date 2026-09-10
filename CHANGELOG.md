@@ -33,6 +33,11 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   trùng, từ chối multi-document, cap 32 KiB trước khi parse và từ chối key lạ thay vì bỏ qua.
   Thêm dependency runtime `yaml` (thuần JS, không dependency con).
 
+- `alp init` tạo sẵn `.alp/agents/` và `.alp/skills/` (rỗng). `.alp/` là thứ duy nhất `alp init`
+  chạm mà principal được commit, nên nó không nằm trong `.git/info/exclude`; tạo rỗng để git
+  không có gì để báo, và `alp agent list` giải thích layout khi chưa có agent nào. `alp deinit`
+  không đụng tới `.alp/` (§5.7.4).
+
 - Skill theo project (§5.7): `.alp/skills/` dùng chung, `.alp/agents/<id>/skills/` cho từng agent,
   ba dạng entry — thư mục thật, symlink, và file `.skillref` một dòng cho Windows/checkout không
   giữ symlink. **Thư mục là danh sách grant**; `capabilities.skills` trong `agent.yaml` giờ chỉ

@@ -191,7 +191,21 @@ export function runAgentList(
   }
 
   if (rows.length === 0) {
-    dependencies.write(`NONE     no agent file under ${load.agentsDirectory}\n`);
+    // The empty case is where the layout is worth explaining: `alp init` leaves the space
+    // bare so it says nothing to git, which means this is the first moment anyone asks what
+    // goes in it.
+    dependencies.write([
+      `NONE     no agent file under ${load.agentsDirectory}`,
+      "",
+      "  A custom agent is a directory with an `agent.yaml`:",
+      "    .alp/agents/<id>/agent.yaml          the definition",
+      "    .alp/agents/<id>/skills/             this agent's skills — the directory is the grant list",
+      "    .alp/skills/<name>/SKILL.md          shared by the project; link into an agent's skills/",
+      "    .alp/agents/<built-in>/skills/       adds skills to a built-in role, nothing else",
+      "",
+      "  `alp agent test <id>` checks one before it can run; `alp agent add <id>` approves it.",
+      "",
+    ].join("\n"));
     return 0;
   }
   for (const row of rows) {

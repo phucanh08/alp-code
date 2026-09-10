@@ -121,6 +121,12 @@ chết. `alp deinit` xoá lại đúng phần ALP sở hữu (nhận diện qua 
 File đó được ghi vào `.git/info/exclude` của chính clone — per-clone, không commit — nên
 `git status --porcelain` vẫn không đổi và cộng tác viên khác không thấy gì.
 
+`alp init` cũng tạo `.alp/agents/` và `.alp/skills/` — **rỗng**. `.alp/` là thứ duy nhất `alp
+init` chạm mà principal được **commit** (agent và skill của project nên review qua PR như code),
+nên nó không thể bị giấu vào `.git/info/exclude` như file cấu hình sinh ra. Git không track thư
+mục rỗng, nên không gian đó tồn tại mà vẫn không nói gì với git. Layout được giải thích ở
+`alp agent list` khi chưa có agent nào.
+
 Lần `alp init` đầu tiên trên máy, khi `~/.alp/principal.json` chưa có và đang chạy trên TTY,
 ALP hỏi ba câu: tên bạn, agent gọi bạn là gì, agent tự xưng là gì. Câu trả lời đi thẳng vào
 dòng đầu prompt của mọi vai. Không có TTY (CI, script) thì init vẫn chạy tiếp với bản trung

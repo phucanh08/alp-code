@@ -534,6 +534,14 @@ file phẳng `.alp/agents/<role>.md` (0600), còn layout dưới đây đặt cu
 `.alp/agents/<id>/` cùng cấp. Loader phải phân biệt **file `.md` = identity, thư mục = định nghĩa**;
 luật "`id` không đụng id built-in" ở §5.5 vì thế là điều kiện đúng đắn, không phải phép lịch sự.
 
+**2026-09-10 — hết va chạm:** identity document đã chuyển sang `~/.alp/agents/<role>.md`
+(`state-paths.agentsDirectory`), nên `<project>/.alp/agents/` giờ hoàn toàn thuộc về principal.
+Loader vẫn chỉ đọc thư mục và bỏ qua file, nhưng đó là phòng xa chứ không còn là điều kiện.
+`alp init` tạo `.alp/agents/` và `.alp/skills/` **rỗng**: `.alp/` là thứ duy nhất init chạm mà
+principal được commit nên không thể nằm trong `.git/info/exclude`, và một file bất kỳ ghi vào đây
+sẽ làm bẩn `git status` từ một lệnh hứa không làm thế. Git không track thư mục rỗng, nên không
+gian tồn tại mà không nói gì; `alp agent list` giải thích layout đúng lúc có người hỏi.
+
 ```text
 <project>/.alp/
 ├── README.md                   # init sinh ra: giải thích layout
