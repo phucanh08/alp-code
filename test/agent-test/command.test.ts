@@ -1,4 +1,3 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -6,10 +5,10 @@ import { defineAgent } from "../../src/agents/agent-definition";
 import { renderAgentTestReport, testAgent } from "../../src/agent-test";
 import { agentRegistry, createAgentRegistry } from "../../src/agents/registry";
 import type { AgentDefinition, AgentId } from "../../src/agents/types";
-import { parseAgentCommand, runAgentCommand, type AgentCommandInput } from "../../src/cli/commands/agent-test";
+import { parseAgentCommand, runAgentCommand, type AgentCommand } from "../../src/cli/commands/agent";
 import { parseAlpArgs } from "../../src/cli/alp";
 import { cleanupDryRuns } from "../support/agent-dry-run";
-import { removeTemporary } from "../support/temporary-root";
+import { agentProject, cleanupAgentProjects, VALID_AGENT_FILE } from "../support/agent-file";
 
 const ROLE_IDS = agentRegistry.list().map((definition) => definition.id);
 const REPO_ROOT = process.cwd();
@@ -53,43 +52,10 @@ function probe(overrides: Partial<AgentDefinition<unknown>> = {}): AgentDefiniti
   });
 }
 
-export const VALID_AGENT_FILE = `
-schemaVersion: 1
-id: migrator
-displayName: "Migrator 🔧"
-model: { claude: claude-opus-5, codex: gpt-5.6-terra }
-reasoningEffort: { claude: high, codex: medium }
-instructions:
-  role: "Migrator, the framework migration specialist"
-  purpose: "Migrate one module per execution and prove the migration with tests."
-  rules:
-    - "Never migrate more than one module per execution."
-capabilities:
-  tools: [Read, Glob, Grep, Bash]
-  memory:
-    read: [shared, "project:*", "private:migrator"]
-    write: ["private:migrator"]
-  workspace:
-    readRoots: ["."]
-workflow:
-  - { id: ASSESS, allowedTools: [Read, Glob, Grep] }
-  - { id: REPORT, allowedTools: [] }
-output:
-  kind: text
-`.trimStart();
-
-const projectRoots: string[] = [];
-
-async function customAgentProject(source: string): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "alp-agent-project-"));
-  projectRoots.push(root);
-  await mkdir(join(root, ".alp", "agents", "migrator"), { recursive: true });
-  await writeFile(join(root, ".alp", "agents", "migrator", "agent.yaml"), source, "utf8");
-  return root;
-}
+const customAgentProject = (source: string): Promise<string> => agentProject({ migrator: source });
 
 afterEach(cleanupDryRuns);
-afterEach(async () => { await Promise.all(projectRoots.splice(0).map(removeTemporary)); });
+afterEach(cleanupAgentProjects);
 
 describe("alp agent test — tiers 1–3 on the shipped roles", () => {
   /**
@@ -230,12 +196,25 @@ describe("parseAgentCommand", () => {
 
   it("defaults the project to the caller's cwd", () => {
     expect(parseAgentCommand(["test", "--all"], "/caller/project"))
-      .toMatchObject({ roles: [], all: true, project: "/caller/project" });
+      .toMatchObject({ kind: "test", roles: [], all: true, project: "/caller/project" });
   });
 
   it("accepts a project, tiers, mode and json", () => {
     expect(parseAgentCommand(["test", "review", "--project", "../app", "--tier", "1", "--mode=high", "--json"], "/caller/project"))
-      .toEqual({ roles: ["review"], all: false, project: "/caller/app", tiers: [1], mode: "high", json: true });
+      .toEqual({ kind: "test", roles: ["review"], all: false, project: "/caller/app", tiers: [1], mode: "high", json: true });
+  });
+
+  it.each([
+    ["add", "migrator"],
+    ["untrust", "migrator"],
+  ])("parses %s", (kind, id) => {
+    expect(parseAgentCommand([kind, id, "--project=/app"], "/caller/project"))
+      .toEqual({ kind, id, project: "/app" });
+  });
+
+  it("parses list", () => {
+    expect(parseAgentCommand(["list"], "/caller/project"))
+      .toEqual({ kind: "list", project: "/caller/project", json: false });
   });
 
   it.each([
@@ -244,18 +223,22 @@ describe("parseAgentCommand", () => {
     [["test", "main", "--tier", "9"], /--tier must be one of 1, 2, 3/],
     [["test", "main", "--depth"], /unknown option `--depth`/],
     [["test", "main", "--project"], /--project needs a value/],
-    [["list"], /usage: alp agent test/],
+    [["add"], /takes exactly one agent id/],
+    [["add", "a", "b"], /takes exactly one agent id/],
+    [["add", "migrator", "--tier", "1"], /takes only --project/],
+    [["list", "migrator"], /takes no agent name/],
+    [["frobnicate"], /usage: alp agent test/],
   ])("refuses %s", (args, message) => {
     expect(() => parseAgentCommand(args, "/caller/project")).toThrowError(message);
   });
 });
 
-describe("runAgentCommand", () => {
-  const run = async (input: Partial<AgentCommandInput> & { readonly project: string }) => {
+describe("runAgentCommand — test", () => {
+  const run = async (input: Partial<Extract<AgentCommand, { kind: "test" }>> & { readonly project: string }) => {
     let output = "";
     const code = await runAgentCommand(
-      { roles: [], all: false, tiers: [1], json: false, ...input },
-      { ...ENVIRONMENT, write: (text) => { output += text; } },
+      { kind: "test", roles: [], all: false, tiers: [1], json: false, ...input },
+      { ...ENVIRONMENT, interactive: false, write: (text) => { output += text; } },
     );
     return { code, output };
   };

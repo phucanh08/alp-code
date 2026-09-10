@@ -512,6 +512,19 @@ Agent file nằm trong repo. Repo có thể được clone về từ nơi khác.
 
 Đây là cùng một triết lý fail-closed đang áp cho tool và path, mở rộng cho identity.
 
+**2026-09-10: đã làm** (`src/trust/`, `alp agent add|list|untrust`). Ba điều chỉnh so với bản
+phác trên:
+
+1. **Trust khoá theo cả project lẫn id**, không chỉ id — hệ quả trực tiếp của quyết định 2
+   (agent là project-scoped). Hai repo cùng có `migrator` là hai quyết định khác nhau.
+2. **Record giữ một snapshot authority**, không chỉ hash. Hash trả lời "có đổi không" và không
+   bao giờ trả lời "đổi cái gì"; bước 1 của mục này đòi in diff lúc trust lại, mà diff cần
+   authority cũ chứ không phải dấu vân tay của nó.
+3. **`alp agent add` chạy đủ ba tầng trước khi hỏi.** Một agent không qua nổi deny-path test của
+   chính nó là agent mà trần capability chỉ là lời hứa — đúng thứ quyết định 11 đặt ra thứ tự cho.
+
+Chưa làm: `.alp/skills/`, skill riêng của agent và `.skillref` (§5.7).
+
 ### 5.7. `.alp/` — không gian mở rộng của project
 
 `alp init` tạo `.alp/` trong project. Đây là nơi principal thêm agent và skill riêng cho project đó.
@@ -882,9 +895,10 @@ Doc này chỉ được coi là đang thành hiện thực khi các mốc sau đ
   symlink escape.*
   **2026-09-10: xong nửa đầu.** Loader + trần capability có thật, và một `agent.yaml` đi hết ba
   tầng của `alp agent test` trên cả hai runtime (`test/agents/loader.test.ts`,
-  `test/agent-test/command.test.ts`). Chưa có: trust bằng hash (`alp agent add`), nối vào
-  `main.delegatesTo` thật, `.alp/skills/` + skill riêng của agent + `.skillref`. Cho tới lúc đó
-  custom agent **chạy test được nhưng chưa chạy việc được** — đúng thứ tự §11 quyết định 11 đặt ra.
+  `test/agent-test/command.test.ts`), và trust bằng hash cộng nối vào `main.delegatesTo` cũng
+  xong (`src/trust/`, `test/trust/trust.test.ts`) — một agent đã trust chạy việc được qua `alp`
+  và `alp delegate`. Chưa có: `.alp/skills/` + skill riêng của agent + `.skillref` (§5.7), và
+  bằng chứng live trên cả hai runtime (tầng 4) vẫn là bước tốn tiền chưa chạy.
 - **M3 — Approval.** `require_approval` được PolicyEngine phát ra, phiên tương tác hỏi được, và
   `--background` deny. *Bằng chứng: test cho `supportsApproval: false` ⇒ deny.*
 - **M4 — Nợ capability đã trả.** `TOOL_CATALOG` không còn là từ vựng của core;

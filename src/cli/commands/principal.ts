@@ -22,7 +22,9 @@ export interface PrincipalDependencies {
   readonly syncIdentity?: () => Promise<void>;
 }
 
-const STDIN_ENDED = "stdin ended before the principal profile was complete";
+// Generic: `openTerminalPrompt` is also what `alp agent add` asks its one question with, and
+// an aborted trust prompt reporting an unfinished principal profile names the wrong thing.
+const STDIN_ENDED = "stdin ended before the prompt was answered";
 
 /**
  * Reads answers off a line queue instead of `rl.question`.
@@ -33,7 +35,7 @@ const STDIN_ENDED = "stdin ended before the principal profile was complete";
  * hang rather than fail. Queueing lines fixes the first, and the close handler turns the
  * second into an error.
  */
-function openTerminalPrompt(): PrincipalPrompt {
+export function openTerminalPrompt(): PrincipalPrompt {
   const reader = createInterface({ input: process.stdin, output: process.stdout });
   const lines: string[] = [];
   const waiting: Array<{ resolve(value: string): void; reject(error: unknown): void }> = [];

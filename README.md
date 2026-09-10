@@ -229,13 +229,42 @@ Trần capability cưỡng chế lúc load, mỗi thứ đều fail-closed:
 | `output` | chỉ `kind: text` |
 | `id` | kebab-case, không đụng id built-in, phải trùng tên thư mục |
 
-File chưa được trust thì `alp delegate` **không** gọi tới được — mới chỉ
-`alp agent test <id>` chạy được nó, và bản in nói rõ đây là candidate chứ không phải agent đã
-trust. `alp agent add` (trust bằng hash, §5.6) và việc nối vào `main.delegatesTo` là bước sau.
-
 Parser chạy trên file untrusted nên tắt sẵn những tiện nghi cũng là lỗ hổng: không anchor/alias
 (chặn YAML bomb), key trùng bị từ chối, multi-document bị từ chối, giới hạn 32 KiB trước khi
 parse, key lạ bị từ chối chứ không bỏ qua.
+
+### Trust
+
+Một file trong repo chưa phải một agent chạy được. Nó phải được principal duyệt:
+
+```bash
+alp agent list                  # file nào có, cái nào phiên chạy tới được
+alp agent add migrator          # chạy đủ ba tầng, in quyền, rồi hỏi
+alp agent untrust migrator      # thu lại
+```
+
+`alp agent add` làm ba việc trước khi hỏi, theo đúng thứ tự đó: loader phải nhận file (vượt trần
+thì không phải quyết định trust, mà là file hỏng), cả **ba tầng phải xanh** (agent không qua nổi
+deny-path test của chính nó thì trần của nó là lời hứa chứ không phải kiểm tra), rồi in trọn
+quyền · egress · chi phí, kèm **diff capability** nếu file này từng được trust với nội dung khác.
+
+Chỉ terminal mới trả lời được — **không có `--yes`**. Một cờ duyệt quyền mà không có người đọc
+biến cả cái cổng thành thủ tục, và chỗ duy nhất người ta dùng nó (script, CI) đúng là chỗ không
+ai đọc.
+
+Duyệt xong, hash của definition nằm ở `~/.alp/trusted-agents.json` (0600), khoá theo **cả project
+lẫn id** — hai repo cùng có `migrator` là hai quyết định khác nhau. Từ lúc đó `main` delegate
+tới nó được, và tập agent đã trust đi vào `policyHash` của `main` chứ không nằm riêng một chỗ.
+
+Sửa file sau khi trust là **deny**, không phải cảnh báo:
+
+```
+CHANGED    migrator   edited since it was trusted — denied until `alp agent add` approves it again
+```
+
+Cảnh báo sẽ đẩy quyết định về cho người đang nhìn terminal lúc đó — đúng khoảnh khắc mà một file
+agent bị sửa đang trông chờ. Phiên chạy vẫn in một dòng nói rõ vì sao vai đó biến mất, vì im lặng
+thì không phân biệt được với một lỗi của ALP.
 
 ## Delegation
 
@@ -339,6 +368,7 @@ artifact của bản ALP cũ (`identity/`, `CHARTER.md`, compiled ACL); doctor s
 src/
   agents/       immutable AgentDefinition registry
   agents/loader/ đọc `.alp/agents/<id>/agent.yaml` và cưỡng chế trần capability
+  trust/        hash pin, capability diff và registry theo từng project
   agent-test/   ba tầng của `alp agent test` (static, dry-run prepare, deny path)
   policy/       delegation, tool, memory và workspace authorization
   memory/       storage-neutral service + Markdown/remote adapters

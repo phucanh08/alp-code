@@ -180,24 +180,48 @@ export async function loadProjectAgents(
 }
 
 /**
- * A registry holding the built-ins plus the candidates, with the coordinator delegating to
- * each candidate.
+ * The built-ins plus these agents, with the coordinator delegating to each of them.
  *
- * "Candidate", not "member": nothing here is trusted, and this registry is **not** the one
- * `alp delegate` uses. It exists so `alp agent test` can answer the only question worth
- * asking about an untrusted definition — what would happen if it were trusted — and the
- * grant it models is exactly the one §11 decision 3 says trust confers.
+ * Trust is a **list**, not a second config field (§11 decision 3): an agent the principal
+ * approved is reachable because it is on the list, and asking them to name it again under
+ * `delegatesTo` would be two sources of truth for one decision. The good consequence is that
+ * the set of reachable agents lands in `main`'s own `policyHash`, so a change in who it may
+ * delegate to is visible in the hash rather than only in a file.
+ */
+function registryWith(
+  agents: readonly LoadedAgent[],
+  builtins: readonly AgentDefinition<unknown>[],
+): AgentRegistry {
+  if (agents.length === 0) return createAgentRegistry(builtins);
+  const ids = agents.map((agent) => agent.id);
+  return createAgentRegistry([
+    ...builtins.map((definition) => definition.id === CUSTOM_AGENT_PARENT
+      ? defineAgent({ ...definition, delegatesTo: [...definition.delegatesTo, ...ids] })
+      : definition),
+    ...agents.map((agent) => agent.definition),
+  ]);
+}
+
+/**
+ * The registry a real session runs against: built-ins plus the agents the principal trusted.
+ */
+export function createTrustedRegistry(
+  trusted: readonly LoadedAgent[],
+  builtins: readonly AgentDefinition<unknown>[] = AGENT_DEFINITIONS,
+): AgentRegistry {
+  return registryWith(trusted, builtins);
+}
+
+/**
+ * The same shape, for agents nobody has approved yet.
+ *
+ * "Candidate", not "member". It exists so `alp agent test` and `alp agent add` can answer the
+ * only question worth asking about an untrusted definition — what would happen if it were
+ * trusted — without that answer being the thing that makes it reachable.
  */
 export function createCandidateRegistry(
   candidates: readonly LoadedAgent[],
   builtins: readonly AgentDefinition<unknown>[] = AGENT_DEFINITIONS,
 ): AgentRegistry {
-  if (candidates.length === 0) return createAgentRegistry(builtins);
-  const ids = candidates.map((candidate) => candidate.id);
-  return createAgentRegistry([
-    ...builtins.map((definition) => definition.id === CUSTOM_AGENT_PARENT
-      ? defineAgent({ ...definition, delegatesTo: [...definition.delegatesTo, ...ids] })
-      : definition),
-    ...candidates.map((candidate) => candidate.definition),
-  ]);
+  return registryWith(candidates, builtins);
 }

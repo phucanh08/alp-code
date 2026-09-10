@@ -10,34 +10,11 @@ import {
 } from "../../src/agents/loader";
 import { CODE_NATIVE_HOUSE_RULES } from "../../src/agents/shared/house-rules";
 import { renderInstructions } from "../../src/agents/shared/voice";
+import { cleanupAgentProjects, VALID_AGENT_FILE, variant } from "../support/agent-file";
 import { removeTemporary } from "../support/temporary-root";
 
-const VALID = `
-schemaVersion: 1
-id: migrator
-displayName: "Migrator 🔧"
-model: { claude: claude-opus-5, codex: gpt-5.6-terra }
-reasoningEffort: { claude: high, codex: medium }
-instructions:
-  role: "Migrator, the framework migration specialist"
-  purpose: "Migrate one module per execution and prove the migration with tests."
-  rules:
-    - "Never migrate more than one module per execution."
-capabilities:
-  tools: [Read, Glob, Grep, Bash]
-  memory:
-    read: [shared, "project:*", "private:migrator"]
-    write: ["private:migrator"]
-  workspace:
-    readRoots: ["."]
-workflow:
-  - { id: ASSESS, allowedTools: [Read, Glob, Grep] }
-  - { id: REPORT, allowedTools: [] }
-output:
-  kind: text
-`.trimStart();
-
 const roots: string[] = [];
+afterEach(cleanupAgentProjects);
 afterEach(async () => { await Promise.all(roots.splice(0).map(removeTemporary)); });
 
 async function project(files: Readonly<Record<string, string>>): Promise<string> {
@@ -51,15 +28,7 @@ async function project(files: Readonly<Record<string, string>>): Promise<string>
   return root;
 }
 
-/** The valid file with one line replaced — every ceiling test is one deviation from green. */
-function variant(replacements: Readonly<Record<string, string>>): string {
-  let source = VALID;
-  for (const [from, to] of Object.entries(replacements)) {
-    expect(source, `\`${from}\` must appear in the fixture`).toContain(from);
-    source = source.replace(from, to);
-  }
-  return source;
-}
+const VALID = VALID_AGENT_FILE;
 
 describe("parseAgentFile — the untrusted boundary", () => {
   it("refuses a YAML bomb rather than expanding it", () => {

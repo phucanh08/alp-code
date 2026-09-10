@@ -15,11 +15,11 @@ import { CodexRuntimeAdapter } from "../runtime/codex-adapter";
 import { ModeSelector } from "./mode-selector";
 import { WorkflowRunner } from "../workflow/workflow-runner";
 import { runContextCommand } from "./commands/context";
-import { createDefaultDelegationComposition, runDelegateCommand, runDelegationLifecycleCommand } from "./commands/delegate";
-import { parseAgentCommand, runAgentCommand } from "./commands/agent-test";
+import { createDefaultDelegationComposition, runDelegateCommand, runDelegationLifecycleCommand, workspaceFromArgs } from "./commands/delegate";
+import { parseAgentCommand, runAgentCommand } from "./commands/agent";
 import { syncIdentityDocuments } from "./commands/identity-sync";
 import { deinitializeProject, initializeProject, ProjectRegistryStore } from "./commands/init";
-import { ensurePrincipalProfile, runPrincipalCommand, type PrincipalCommandInput } from "./commands/principal";
+import { ensurePrincipalProfile, openTerminalPrompt, runPrincipalCommand, type PrincipalCommandInput } from "./commands/principal";
 import { runMainSession, type RunMainInput } from "./commands/run-main";
 import { runModeCommand, type ModeCommandInput } from "./commands/mode";
 import { agentsDirectory, executionsDirectory, memoryRoot } from "../state-paths";
@@ -27,6 +27,7 @@ import { checkForUpdate, FileUpdateCheckStore, spawnNativeBackgroundUpdateCheck 
 import type { InstallLayout } from "../install-layout";
 import { BUILD_VERSION } from "../build-info";
 import { renderDoctor } from "../install/doctor";
+import { trustedRegistryFor } from "../trust";
 import { updateInstallation } from "../install/update";
 import { uninstallInstallation } from "../install/uninstall";
 
@@ -173,19 +174,30 @@ function projectAssetRoot(layout: InstallLayout): string {
 function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?: InstallLayout): AlpDependencies {
   const repoRoot = layout?.installRoot ?? process.env.ALP_REPO_ROOT ?? findRepoRoot(__dirname);
   const version = layout?.version ?? BUILD_VERSION;
-  const policy = new PolicyEngine({ registry: agentRegistry });
-  const memory = new MemoryService({
-    store: new MarkdownFileStore({ root: memoryRoot() }),
-    policy,
-    audit: { record() {} },
-  });
-  const executionService = new ExecutionService({
-    registry: agentRegistry,
-    policy,
-    memory,
-    workflowRunner: new WorkflowRunner(),
-    store: new FileExecutionStore({ root: executionsDirectory() }),
-  });
+  /**
+   * Built per command rather than once per process, because which agents exist is a property
+   * of the project being worked in: `main`'s `delegatesTo` — and therefore its `policyHash` —
+   * includes the agents this project trusted.
+   */
+  const compositionFor = async (projectRoot: string) => {
+    const project = await trustedRegistryFor(projectRoot);
+    const policy = new PolicyEngine({ registry: project.registry });
+    const memory = new MemoryService({
+      store: new MarkdownFileStore({ root: memoryRoot() }),
+      policy,
+      audit: { record() {} },
+    });
+    return {
+      ...project,
+      executionService: new ExecutionService({
+        registry: project.registry,
+        policy,
+        memory,
+        workflowRunner: new WorkflowRunner(),
+        store: new FileExecutionStore({ root: executionsDirectory() }),
+      }),
+    };
+  };
   const adapters = new Map<RuntimeId, ClaudeRuntimeAdapter | CodexRuntimeAdapter>([
     ["claude", new ClaudeRuntimeAdapter({
       hooksDirectory: join(repoRoot, "hooks"),
@@ -226,10 +238,12 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
       }
     },
     async runMain(input) {
+      const project = await compositionFor(input.cwd);
+      for (const notice of project.notices) stdout.write(`${notice}\n`);
       const result = await runMainSession(input, {
-        registry: agentRegistry,
+        registry: project.registry,
         selector,
-        executionService,
+        executionService: project.executionService,
         adapters,
         backend,
         executionId: () => `exec_${randomUUID().replaceAll("-", "").slice(0, 20)}`,
@@ -280,6 +294,10 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
         ...(layout ? { stableCommand: layout.stableCommand } : {}),
         env: process.env,
         write: (text: string) => { stdout.write(text); },
+        // Trust is a decision a person makes, so `alp agent add` needs a real terminal to
+        // ask in — and refuses rather than assuming when it does not have one.
+        interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+        openPrompt: openTerminalPrompt,
       });
     },
     async principalCommand(input) {
@@ -293,6 +311,13 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
     async delegateCommand(args) {
       const lifecycle = args[0] === "__lifecycle";
       const actual = lifecycle ? args.slice(1) : args;
+      // Resolved before the service exists: an agent this project trusted is only reachable
+      // if the registry the service is built with knows about it. Lifecycle commands address
+      // an execution by id and need no project.
+      const project = lifecycle
+        ? { registry: agentRegistry, notices: [] as readonly string[] }
+        : await trustedRegistryFor(resolve(cwd, workspaceFromArgs(actual.slice(1), cwd)));
+      for (const notice of project.notices) stderr.write(`${notice}\n`);
       const composition = await createDefaultDelegationComposition(layout ?? {
         channel: "dev",
         version,
@@ -300,7 +325,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
         stableCommand: join(repoRoot, "scripts", "alp.cjs"),
         installRoot: repoRoot,
         assetRoot: repoRoot,
-      }, process.env);
+      }, process.env, project.registry);
       const value = lifecycle
         ? await runDelegationLifecycleCommand(actual, composition.service)
         : await runDelegateCommand(actual, { cwd, env: process.env, service: composition.service });
@@ -360,6 +385,8 @@ function helpText(): string {
     "  alp deinit [path]",
     "  alp identity sync",
     "  alp agent test <role|--all> [--project <path>] [--tier 1|2|3] [--mode <mode>] [--json]",
+    "  alp agent add|untrust <id> [--project <path>]",
+    "  alp agent list [--project <path>]",
     "  alp principal show|set",
     "  alp delegate <role> [options] -- <task>",
     "  alp context status|validate [execution-id]",

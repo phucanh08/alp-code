@@ -4,6 +4,7 @@ export {
   CUSTOM_AGENT_PARENT,
   DEFAULT_HOUSE_RULES,
   createCandidateRegistry,
+  createTrustedRegistry,
   loadProjectAgents,
   type AgentLoadFailure,
   type AgentLoadResult,

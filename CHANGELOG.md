@@ -33,6 +33,13 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   trùng, từ chối multi-document, cap 32 KiB trước khi parse và từ chối key lạ thay vì bỏ qua.
   Thêm dependency runtime `yaml` (thuần JS, không dependency con).
 
+- Trust cho custom agent (§5.6): `alp agent add <id>` chạy đủ ba tầng, in quyền · egress · chi
+  phí cộng diff capability nếu file từng được trust khác nội dung, rồi hỏi — và chỉ terminal trả
+  lời được, **không có `--yes`**. Hash nằm ở `~/.alp/trusted-agents.json` (0600), khoá theo cả
+  project lẫn id. Agent đã trust tự vào `main.delegatesTo`, nên `alp` và `alp delegate` gọi tới
+  được; agent chưa trust hoặc đã bị sửa sau khi trust thì **deny**, không phải cảnh báo, kèm một
+  dòng nói rõ vì sao. Thêm `alp agent list` và `alp agent untrust <id>`.
+
 ### Sửa
 
 - `definitionHash` giờ phủ đúng nội dung prompt. `instructions` trên `AgentDefinition` chuyển từ
