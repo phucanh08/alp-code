@@ -216,8 +216,29 @@ describe("trustedRegistryFor", () => {
     const result = await trustedRegistryFor(project, { trustFile: file });
 
     expect(result.registry.has("migrator")).toBe(false);
-    expect(result.notices.join("\n")).toContain("DENIED     migrator changed after it was trusted");
+    expect(result.notices.join("\n")).toContain("no longer matches the approved hash");
+    expect(result.notices.join("\n")).toContain("its authority is unchanged, so the prompt or workflow moved");
   });
+
+  /**
+   * The same denial, for the reason a principal cares about. `definitionHash` covers house
+   * rules, and house rules ship with ALP — so an update can move the hash under a file nobody
+   * touched, and the message must not point at the reader for that.
+   */
+  it("names a widened grant when that is what moved", async () => {
+    const project = await agentProject();
+    const file = await trustFile();
+    await addAgent({ project, file });
+    await writeFile(
+      join(project, ".alp", "agents", "migrator", "agent.yaml"),
+      variant({ "tools: [Read, Glob, Grep, Bash]": "tools: [Read, Glob, Grep, Bash, WebFetch]" }),
+      "utf8",
+    );
+
+    const result = await trustedRegistryFor(project, { trustFile: file });
+
+    expect(result.notices.join("\n")).toContain("authority changed: tools: +WebFetch");
+  }, 30_000);
 });
 
 describe("alp agent add", () => {

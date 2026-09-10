@@ -312,6 +312,19 @@ Sửa file sau khi trust là **deny**, không phải cảnh báo:
 CHANGED    migrator   edited since it was trusted — denied until `alp agent add` approves it again
 ```
 
+Một hệ quả phải nói thẳng: `definitionHash` phủ **cả house rule**, mà house rule đi theo ALP.
+Nên `alp update` đổi một house rule sẽ làm hash của mọi custom agent lệch đi dù file không ai
+đụng vào, và chúng bị deny cho tới khi trust lại. Đó là hành vi đúng — prompt đã đổi thật — nên
+phiên chạy nói rõ **vì sao** hash lệch thay vì ám chỉ bạn đã sửa file:
+
+```
+DENIED     migrator no longer matches the approved hash (.alp/agents/migrator/agent.yaml);
+           its authority is unchanged, so the prompt or workflow moved — an ALP update can do
+           this. Run `alp agent add migrator` to review and approve it again
+```
+
+Khi thứ đổi thật sự là quyền, cùng dòng đó in ra diff: `authority changed: tools: +WebFetch`.
+
 Cảnh báo sẽ đẩy quyết định về cho người đang nhìn terminal lúc đó — đúng khoảnh khắc mà một file
 agent bị sửa đang trông chờ. Phiên chạy vẫn in một dòng nói rõ vì sao vai đó biến mất, vì im lặng
 thì không phân biệt được với một lỗi của ALP.

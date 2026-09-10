@@ -33,6 +33,11 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   trùng, từ chối multi-document, cap 32 KiB trước khi parse và từ chối key lạ thay vì bỏ qua.
   Thêm dependency runtime `yaml` (thuần JS, không dependency con).
 
+- Dòng deny khi hash lệch nói rõ **vì sao**: quyền đổi (kèm diff) hay chỉ prompt/workflow đổi.
+  `definitionHash` phủ cả house rule mà house rule đi theo ALP, nên `alp update` có thể làm lệch
+  hash của mọi custom agent dù file không ai đụng — hành vi đúng, nhưng thông báo cũ ám chỉ nhầm
+  là principal đã sửa file.
+
 - `alp init` tạo sẵn `.alp/agents/` và `.alp/skills/` (rỗng). `.alp/` là thứ duy nhất `alp init`
   chạm mà principal được commit, nên nó không nằm trong `.git/info/exclude`; tạo rỗng để git
   không có gì để báo, và `alp agent list` giải thích layout khi chưa có agent nào. `alp deinit`

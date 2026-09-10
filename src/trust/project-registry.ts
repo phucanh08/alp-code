@@ -1,6 +1,7 @@
 import { relative } from "node:path";
 import { createTrustedRegistry, loadProjectAgents } from "../agents/loader";
 import type { AgentRegistry } from "../agents/types";
+import { authorityOf, diffAuthority } from "./authority";
 import { resolveTrust, trustedAgents, type TrustDecision } from "./resolve";
 import { readTrustedAgents } from "./trusted-agents-store";
 
@@ -38,6 +39,23 @@ export async function trustedRegistryFor(
   const overlayDecisions = resolveTrust(load.overlays, records, projectRoot);
   const where = (path: string): string => relative(projectRoot, path) || path;
 
+  /**
+   * Why the hash moved, said in the terms the reader can act on.
+   *
+   * `definitionHash` covers the whole definition, house rules included — and house rules ship
+   * with ALP. So `alp update` can change a prompt under a file nobody touched, and the plain
+   * message ("changed after it was trusted") would be pointing at the principal for something
+   * they did not do. When the authority is identical, the honest sentence is a different one.
+   */
+  const because = (decision: TrustDecision): string => {
+    const changes = decision.record === undefined
+      ? []
+      : diffAuthority(decision.record.authority, authorityOf(decision.agent.definition));
+    return changes.length === 0
+      ? "its authority is unchanged, so the prompt or workflow moved — an ALP update can do this"
+      : `authority changed: ${changes.join("; ")}`;
+  };
+
   const notices = [
     ...load.failed.map((failure) =>
       `AGENT-FILE ${failure.id} did not load (${where(failure.sourcePath)}): ${failure.issues[0]}`),
@@ -45,7 +63,7 @@ export async function trustedRegistryFor(
       if (decision.status === "trusted") return [];
       const source = where(decision.agent.sourcePath);
       return [decision.status === "changed"
-        ? `DENIED     ${decision.agent.id} changed after it was trusted (${source}); run \`alp agent add ${decision.agent.id}\` to review and approve it again`
+        ? `DENIED     ${decision.agent.id} no longer matches the approved hash (${source}); ${because(decision)}. Run \`alp agent add ${decision.agent.id}\` to review and approve it again`
         : `UNTRUSTED  ${decision.agent.id} is not approved (${source}); run \`alp agent add ${decision.agent.id}\` to review it`];
     }),
     ...overlayDecisions.flatMap((decision) => decision.status === "trusted" ? [] : [

@@ -523,7 +523,13 @@ phác trên:
 3. **`alp agent add` chạy đủ ba tầng trước khi hỏi.** Một agent không qua nổi deny-path test của
    chính nó là agent mà trần capability chỉ là lời hứa — đúng thứ quyết định 11 đặt ra thứ tự cho.
 
-Chưa làm: `.alp/skills/`, skill riêng của agent và `.skillref` (§5.7).
+Một hệ quả vận hành phải ghi nhận, đo được sau khi làm xong: `definitionHash` phủ **cả house
+rule**, mà house rule ship cùng ALP. `alp update` đổi một house rule sẽ làm hash của **mọi**
+custom agent lệch đi dù file không ai đụng, và chúng bị deny cho tới khi trust lại. Đúng về mặt
+fail-closed — prompt đã đổi thật — nhưng thông báo phải nói ra nguyên nhân, nếu không nó đang ám
+chỉ principal đã sửa thứ họ không sửa. Notice vì thế phân biệt hai trường hợp bằng
+`diffAuthority`: quyền đổi (in diff) hay chỉ prompt/workflow đổi (nói thẳng rằng một bản cập nhật
+ALP làm được điều này).
 
 ### 5.7. `.alp/` — không gian mở rộng của project
 
