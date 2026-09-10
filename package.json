@@ -1,6 +1,6 @@
 {
   "name": "alp-code",
-  "version": "0.10.4",
+  "version": "0.11.0",
   "private": true,
   "description": "Code-native agent layer for Claude Code and Codex CLI",
   "license": "MIT",
