@@ -21,6 +21,18 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   chối". Chạy tầng rẻ trước và dừng ở tầng đỏ đầu tiên; exit 0 sạch, 1 khi có finding — cùng quy
   ước với `alp doctor`.
 
+- Custom agent declarative: `<project>/.alp/agents/<id>/agent.yaml` được đọc, cưỡng chế trần
+  capability (§5.5) rồi dựng thành `AgentDefinition` bình thường qua đúng `createAgentRegistry`
+  đang có — nên nó thừa hưởng mọi invariant sẵn có chứ không phải một primitive mới. `reportsTo`
+  ép `main`, `delegatesTo` ép rỗng, `memory.write` chỉ `private:<id>`, `workspace.writeRoots`
+  phải rỗng, `skills`/`subagents`/`mcpServers` khai bằng tên trong catalog, `rules` ≤ 20 × 240
+  ký tự, `output` chỉ `text`. Bỏ trống `houseRules` nhận `code-native`, không phải `none`.
+  `alp agent test <id> --project <path>` chạy được ba tầng trên chúng; agent chưa trust **không**
+  vào `main.delegatesTo` thật, nên `alp delegate` chưa gọi tới được — bản in nói rõ đây là
+  candidate. Parser chạy trên input untrusted nên tắt anchor/alias (chặn YAML bomb), từ chối key
+  trùng, từ chối multi-document, cap 32 KiB trước khi parse và từ chối key lạ thay vì bỏ qua.
+  Thêm dependency runtime `yaml` (thuần JS, không dependency con).
+
 ### Sửa
 
 - `definitionHash` giờ phủ đúng nội dung prompt. `instructions` trên `AgentDefinition` chuyển từ

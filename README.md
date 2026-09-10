@@ -155,8 +155,9 @@ Thứ tự quyết định: `--mode` → `ALP_MODE` → `alp mode set` → menu 
 
 ```bash
 alp agent test review                 # ba tầng, dừng ở tầng đỏ đầu tiên
-alp agent test --all                  # cả 8 vai built-in
+alp agent test --all                  # cả 8 vai built-in + custom agent của project
 alp agent test main --tier 2 --mode high
+alp agent test migrator --project ~/code/app
 alp agent test search --json          # cùng nội dung, cho script đọc
 ```
 
@@ -174,6 +175,67 @@ finding — cùng quy ước với `alp doctor`.
 
 Dừng ở tầng đỏ đầu tiên là có chủ ý: một definition hỏng ở tầng 1 sẽ làm snapshot tầng 2 mô tả
 trung thực một thứ đã sai, còn tầng 3 từ chối đúng vì lý do sai.
+
+## Custom agent (đang mở dần)
+
+Principal viết thêm agent cho một project bằng dữ liệu, không phải TypeScript, ở
+`<project>/.alp/agents/<id>/agent.yaml`:
+
+```yaml
+schemaVersion: 1
+id: migrator
+displayName: "Migrator 🔧"
+
+model:           { claude: claude-opus-5, codex: gpt-5.6-terra }
+reasoningEffort: { claude: high, codex: medium }
+
+instructions:
+  role: "Migrator, the framework migration specialist"
+  purpose: "Migrate one module per execution and prove the migration with tests."
+  houseRules: code-native+craft        # none | code-native | code-native+craft
+  rules:
+    - "Never migrate more than one module per execution."
+
+capabilities:
+  tools: [Read, Glob, Grep, Bash, Skill]
+  skills: [git, problem-solving]       # tên trong catalog, không phải đường dẫn
+  memory:
+    read:  [shared, "project:*", "private:migrator"]
+    write: ["private:migrator"]
+  workspace:
+    readRoots: ["."]
+
+workflow:
+  - { id: ASSESS,  allowedTools: [Read, Glob, Grep] }
+  - { id: REPORT,  allowedTools: [] }
+
+output:
+  kind: text
+```
+
+Trần capability cưỡng chế lúc load, mỗi thứ đều fail-closed:
+
+| Trường | Trần |
+|---|---|
+| `reportsTo` / `delegatesTo` | ép `main` / ép rỗng — không khai được, custom agent là lá |
+| `tools` | ⊆ `TOOL_CATALOG` **và** ⊆ tool của `main` |
+| `skills` · `subagents` · `mcpServers` | khai bằng **tên**, phải có trong catalog. Hai catalog sau đang rỗng nên mọi grant đều bị từ chối |
+| `memory.write` | chỉ `private:<id>` |
+| `memory.read` | `shared`, `shared:*`, `project:*`, `private:<id>` |
+| `workspace.readRoots` | đường dẫn tương đối, không ra khỏi project |
+| `workspace.writeRoots` | rỗng, tới khi có approval (§6) |
+| `houseRules` | chọn từ tập dựng sẵn; bỏ trống nhận `code-native` chứ không phải `none` |
+| `rules` | ≤ 20 rule, mỗi rule ≤ 240 ký tự |
+| `output` | chỉ `kind: text` |
+| `id` | kebab-case, không đụng id built-in, phải trùng tên thư mục |
+
+File chưa được trust thì `alp delegate` **không** gọi tới được — mới chỉ
+`alp agent test <id>` chạy được nó, và bản in nói rõ đây là candidate chứ không phải agent đã
+trust. `alp agent add` (trust bằng hash, §5.6) và việc nối vào `main.delegatesTo` là bước sau.
+
+Parser chạy trên file untrusted nên tắt sẵn những tiện nghi cũng là lỗ hổng: không anchor/alias
+(chặn YAML bomb), key trùng bị từ chối, multi-document bị từ chối, giới hạn 32 KiB trước khi
+parse, key lạ bị từ chối chứ không bỏ qua.
 
 ## Delegation
 
@@ -276,6 +338,7 @@ artifact của bản ALP cũ (`identity/`, `CHARTER.md`, compiled ACL); doctor s
 ```text
 src/
   agents/       immutable AgentDefinition registry
+  agents/loader/ đọc `.alp/agents/<id>/agent.yaml` và cưỡng chế trần capability
   agent-test/   ba tầng của `alp agent test` (static, dry-run prepare, deny path)
   policy/       delegation, tool, memory và workspace authorization
   memory/       storage-neutral service + Markdown/remote adapters

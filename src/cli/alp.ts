@@ -273,8 +273,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
       // The same asset root the adapters were built with, so the skills this reports on are
       // the ones a launch would actually resolve.
       const assetRoot = layout?.assetRoot ?? repoRoot;
-      return runAgentCommand(parseAgentCommand(args, agentRegistry), {
-        registry: agentRegistry,
+      return runAgentCommand(parseAgentCommand(args, cwd), {
         hooksDirectory: join(repoRoot, "hooks"),
         skillsRoot: join(assetRoot, "skills"),
         assetRoot,
@@ -360,7 +359,7 @@ function helpText(): string {
     "  alp init [path]",
     "  alp deinit [path]",
     "  alp identity sync",
-    "  alp agent test <role|--all> [--tier 1|2|3] [--mode <mode>] [--json]",
+    "  alp agent test <role|--all> [--project <path>] [--tier 1|2|3] [--mode <mode>] [--json]",
     "  alp principal show|set",
     "  alp delegate <role> [options] -- <task>",
     "  alp context status|validate [execution-id]",

@@ -1,3 +1,4 @@
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -5,9 +6,10 @@ import { defineAgent } from "../../src/agents/agent-definition";
 import { renderAgentTestReport, testAgent } from "../../src/agent-test";
 import { agentRegistry, createAgentRegistry } from "../../src/agents/registry";
 import type { AgentDefinition, AgentId } from "../../src/agents/types";
-import { parseAgentCommand, runAgentCommand } from "../../src/cli/commands/agent-test";
+import { parseAgentCommand, runAgentCommand, type AgentCommandInput } from "../../src/cli/commands/agent-test";
 import { parseAlpArgs } from "../../src/cli/alp";
 import { cleanupDryRuns } from "../support/agent-dry-run";
+import { removeTemporary } from "../support/temporary-root";
 
 const ROLE_IDS = agentRegistry.list().map((definition) => definition.id);
 const REPO_ROOT = process.cwd();
@@ -51,7 +53,43 @@ function probe(overrides: Partial<AgentDefinition<unknown>> = {}): AgentDefiniti
   });
 }
 
+export const VALID_AGENT_FILE = `
+schemaVersion: 1
+id: migrator
+displayName: "Migrator 🔧"
+model: { claude: claude-opus-5, codex: gpt-5.6-terra }
+reasoningEffort: { claude: high, codex: medium }
+instructions:
+  role: "Migrator, the framework migration specialist"
+  purpose: "Migrate one module per execution and prove the migration with tests."
+  rules:
+    - "Never migrate more than one module per execution."
+capabilities:
+  tools: [Read, Glob, Grep, Bash]
+  memory:
+    read: [shared, "project:*", "private:migrator"]
+    write: ["private:migrator"]
+  workspace:
+    readRoots: ["."]
+workflow:
+  - { id: ASSESS, allowedTools: [Read, Glob, Grep] }
+  - { id: REPORT, allowedTools: [] }
+output:
+  kind: text
+`.trimStart();
+
+const projectRoots: string[] = [];
+
+async function customAgentProject(source: string): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "alp-agent-project-"));
+  projectRoots.push(root);
+  await mkdir(join(root, ".alp", "agents", "migrator"), { recursive: true });
+  await writeFile(join(root, ".alp", "agents", "migrator", "agent.yaml"), source, "utf8");
+  return root;
+}
+
 afterEach(cleanupDryRuns);
+afterEach(async () => { await Promise.all(projectRoots.splice(0).map(removeTemporary)); });
 
 describe("alp agent test — tiers 1–3 on the shipped roles", () => {
   /**
@@ -190,18 +228,14 @@ describe("parseAgentCommand", () => {
     expect(parseAlpArgs(["agent", "test", "main"])).toEqual({ command: "agent", args: ["test", "main"] });
   });
 
-  it("expands --all to every registered role", () => {
-    expect(parseAgentCommand(["test", "--all"], agentRegistry).roles).toEqual(ROLE_IDS);
+  it("defaults the project to the caller's cwd", () => {
+    expect(parseAgentCommand(["test", "--all"], "/caller/project"))
+      .toMatchObject({ roles: [], all: true, project: "/caller/project" });
   });
 
-  it("accepts tiers, mode and json", () => {
-    expect(parseAgentCommand(["test", "review", "--tier", "1", "--mode=high", "--json"], agentRegistry))
-      .toEqual({ roles: ["review"], tiers: [1], mode: "high", json: true });
-  });
-
-  it("names the roles that exist when given one that does not", () => {
-    expect(() => parseAgentCommand(["test", "migrator"], agentRegistry))
-      .toThrowError(/unknown agent `migrator`; known: main, search/);
+  it("accepts a project, tiers, mode and json", () => {
+    expect(parseAgentCommand(["test", "review", "--project", "../app", "--tier", "1", "--mode=high", "--json"], "/caller/project"))
+      .toEqual({ roles: ["review"], all: false, project: "/caller/app", tiers: [1], mode: "high", json: true });
   });
 
   it.each([
@@ -209,45 +243,69 @@ describe("parseAgentCommand", () => {
     [["test", "main", "--all"], /roles or --all, not both/],
     [["test", "main", "--tier", "9"], /--tier must be one of 1, 2, 3/],
     [["test", "main", "--depth"], /unknown option `--depth`/],
+    [["test", "main", "--project"], /--project needs a value/],
     [["list"], /usage: alp agent test/],
   ])("refuses %s", (args, message) => {
-    expect(() => parseAgentCommand(args, agentRegistry)).toThrowError(message);
+    expect(() => parseAgentCommand(args, "/caller/project")).toThrowError(message);
   });
 });
 
 describe("runAgentCommand", () => {
-  it("exits 1 and prints the finding when a definition is broken", async () => {
-    const registry = createAgentRegistry([probe({
-      workflow: {
-        id: "probe-workflow",
-        initial: "EXECUTE",
-        states: {
-          EXECUTE: { allowedTools: ["Bash"], transitions: ["REPORT"] },
-          REPORT: { allowedTools: [], transitions: [], terminal: true },
-        },
-      },
-    })]);
+  const run = async (input: Partial<AgentCommandInput> & { readonly project: string }) => {
     let output = "";
-
     const code = await runAgentCommand(
-      { roles: ["probe"], tiers: [1], json: false },
-      { registry, ...ENVIRONMENT, write: (text) => { output += text; } },
+      { roles: [], all: false, tiers: [1], json: false, ...input },
+      { ...ENVIRONMENT, write: (text) => { output += text; } },
     );
+    return { code, output };
+  };
 
-    expect(code).toBe(1);
-    expect(output).toContain("FAIL  workflow");
-    expect(output).toContain("allows ungranted Bash");
+  it("names the roles that exist when given one that does not", async () => {
+    await expect(run({ project: REPO_ROOT, roles: ["migrator"] }))
+      .rejects.toThrowError(/unknown agent `migrator`; known: main, search/);
   });
 
   it("emits one JSON object for one role", async () => {
-    let output = "";
-
-    const code = await runAgentCommand(
-      { roles: ["titling"], tiers: [1], json: true },
-      { registry: agentRegistry, ...ENVIRONMENT, write: (text) => { output += text; } },
-    );
+    const { code, output } = await run({ project: REPO_ROOT, roles: ["titling"], json: true });
 
     expect(code).toBe(0);
-    expect(JSON.parse(output)).toMatchObject({ role: "titling", ok: true, disclosure: null });
+    expect(JSON.parse(output)).toMatchObject({ reports: { role: "titling", ok: true }, candidates: [] });
+  });
+
+  /**
+   * The end of the path §5 opens: a definition the principal wrote, held to the ceiling,
+   * and put through the same three tiers as a built-in — without being trusted, and without
+   * `alp delegate` being able to reach it.
+   */
+  it("tests a custom agent from `.alp/agents/` and says it is not trusted", async () => {
+    const root = await customAgentProject(VALID_AGENT_FILE);
+
+    const { code, output } = await run({ project: root, roles: ["migrator"], tiers: [1, 3] });
+
+    expect(code).toBe(0);
+    expect(output).toContain("AGENT    migrator — Migrator 🔧");
+    expect(output).toContain("is a candidate from `.alp/agents/`, not a trusted agent");
+    expect(output).not.toContain("FAIL");
+  });
+
+  it("reports a definition the ceiling refused, and does not test it", async () => {
+    const root = await customAgentProject(VALID_AGENT_FILE.replace('readRoots: ["."]', 'readRoots: ["/etc"]'));
+
+    const { code, output } = await run({ project: root, roles: ["migrator"] });
+
+    expect(code).toBe(1);
+    expect(output).toContain("AGENT-FILE migrator");
+    expect(output).toContain("must stay inside the project");
+    expect(output).not.toContain("TIER 1");
+  });
+
+  it("keeps an unrelated broken file out of the exit code of a question about a built-in", async () => {
+    const root = await customAgentProject("schemaVersion: 1\nid: migrator\n");
+
+    const { code, output } = await run({ project: root, roles: ["titling"] });
+
+    expect(code).toBe(0);
+    expect(output).toContain("AGENT-FILE migrator");
+    expect(output).toContain("RESULT   ");
   });
 });

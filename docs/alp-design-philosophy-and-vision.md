@@ -490,6 +490,15 @@ Cưỡng chế lúc load, trước `createAgentRegistry`:
 `delegatesTo: []` ở v1 là có chủ ý: cho custom agent delegate sẽ đẻ ra cycle mới, depth mới, budget
 mới, và một cây quan hệ mà principal không viết ra. Mở sau, khi có nhu cầu thật.
 
+**2026-09-10: trần này đã được cưỡng chế** (`src/agents/loader/ceiling.ts`), cộng ba ràng buộc
+bảng trên chưa nói ra vì chúng chỉ lộ khi viết loader thật:
+
+| Trường | Trần thêm | Vì sao |
+|---|---|---|
+| `workspace.readRoots` | phải là đường dẫn tương đối, không `..`, không tuyệt đối | `readRoots: ["/"]` là quyền đọc trên máy chứ không phải trên project; `"."` vẫn resolve theo workspace của chính execution |
+| `houseRules` bỏ trống | nhận `code-native`, không phải `none` | im lặng trong một definition không phải lời xin bỏ invariant của hệ thống |
+| `id` | phải trùng tên thư mục chứa nó | `.alp/agents/migrator/agent.yaml` khai `id: review` sẽ làm hai nguồn sự thật cãi nhau, và cái thắng là cái principal không nhìn thấy |
+
 ### 5.6. Trust: hash pin, fail-closed
 
 Agent file nằm trong repo. Repo có thể được clone về từ nơi khác. Nên:
@@ -802,7 +811,7 @@ alp-code/
 ├── src/
 │   ├── agents/
 │   │   ├── shared/            # house rules, voice, principal
-│   │   ├── loader/            # ← MỚI: custom agent (§5)
+│   │   ├── loader/            # custom agent (§5) — có từ 2026-09-10
 │   │   └── registry.ts
 │   ├── agent-test/            # tầng 1–3 của §10.3; đứng trên agents/policy/execution/runtime
 │   │                          # nên không nằm trong agents/ (§4.1)
@@ -871,6 +880,11 @@ Doc này chỉ được coi là đang thành hiện thực khi các mốc sau đ
   Skill riêng của agent và skill được symlink từ `.alp/skills/` đều resolve đúng thứ tự, còn symlink
   trỏ ra ngoài thì deny cả agent. *Bằng chứng: test cho đường allow, đường vượt trần, và đường
   symlink escape.*
+  **2026-09-10: xong nửa đầu.** Loader + trần capability có thật, và một `agent.yaml` đi hết ba
+  tầng của `alp agent test` trên cả hai runtime (`test/agents/loader.test.ts`,
+  `test/agent-test/command.test.ts`). Chưa có: trust bằng hash (`alp agent add`), nối vào
+  `main.delegatesTo` thật, `.alp/skills/` + skill riêng của agent + `.skillref`. Cho tới lúc đó
+  custom agent **chạy test được nhưng chưa chạy việc được** — đúng thứ tự §11 quyết định 11 đặt ra.
 - **M3 — Approval.** `require_approval` được PolicyEngine phát ra, phiên tương tác hỏi được, và
   `--background` deny. *Bằng chứng: test cho `supportsApproval: false` ⇒ deny.*
 - **M4 — Nợ capability đã trả.** `TOOL_CATALOG` không còn là từ vựng của core;
