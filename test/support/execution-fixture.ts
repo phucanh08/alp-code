@@ -28,7 +28,9 @@ export function probeDefinition(
   return {
     id,
     displayName: "Probe",
-    model: { claude: "claude-probe", codex: "codex-probe" },
+    // Model thật, vì `createExecutionPolicy` giải luôn runtime từ model: một tên không có
+    // trong `MODEL_RUNTIMES` bây giờ chết ngay lúc dựng policy, không đợi tới lúc phóng.
+    model: { claude: "claude-haiku-4-5", codex: "gpt-5.6-luna" },
     reasoningEffort: { claude: "low", codex: "low" },
     reportsTo: "principal",
     delegatesTo: [],
@@ -58,6 +60,9 @@ export function policyFixture(overrides: Partial<ExecutionPolicy> = {}): Executi
     role: "probe",
     workspace: "/workspace",
     workspaceMode: "read-only",
+    model: "claude-haiku-4-5",
+    reasoningEffort: "low",
+    runtime: "claude",
     mode: "medium",
     workspaceAccess: "granted",
     allowedTools: ["Read", "Skill"],

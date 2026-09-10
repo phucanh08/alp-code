@@ -68,7 +68,7 @@ async function addAgent(options: {
 describe("authority diff", () => {
   it("names what a re-trust would grant and what it would take away", () => {
     const before = authorityOf(agentRegistry.get("search"));
-    const after = authorityOf(agentRegistry.get("main"));
+    const after = authorityOf(agentRegistry.get("worker"));
 
     const changes = diffAuthority(before, after);
 

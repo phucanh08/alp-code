@@ -128,6 +128,7 @@ export class ExecutionService {
       workspace,
       workspaceMode: input.workspaceMode,
       ...(input.mode === undefined ? {} : { mode: input.mode }),
+      ...(input.modeProfiles === undefined ? {} : { modeProfiles: input.modeProfiles }),
       createdAt,
     });
     const capsule = createIdentityCapsule({

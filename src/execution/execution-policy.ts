@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { capabilityCatalog, type CapabilityCatalog } from "../agents/capability-catalog";
-import { DEFAULT_MODE, type ModeId } from "../agents/modes";
+import { DEFAULT_MODE, modelForMode, reasoningEffortForMode, runtimeForMode, type ModeId, type ModeProfiles } from "../agents/modes";
 import type { AgentDefinition, RuntimeId } from "../agents/types";
 import { RUNTIME_IDS } from "../agents/types";
 import {
@@ -16,6 +16,11 @@ export interface CreateExecutionPolicyInput {
   readonly workspaceMode: "read-only" | "workspace-write";
   /** Nấc công suất; bỏ trống thì `DEFAULT_MODE`. */
   readonly mode?: ModeId;
+  /**
+   * Loadout của nấc sau khi ghép `settings.json` của máy và của project. Bỏ trống thì bản
+   * built-in — nấc nói gì thì vai chạy đúng thế.
+   */
+  readonly modeProfiles?: ModeProfiles;
   readonly createdAt: string;
   /** Defaults to the shipped catalog — see `capability-catalog.ts`. */
   readonly catalog?: CapabilityCatalog;
@@ -95,6 +100,11 @@ export function createExecutionPolicy(
     }
     return { name, ...entry };
   });
+  const mode = input.mode ?? DEFAULT_MODE;
+  // Giải một lần, ở đây, rồi cả launch đọc lại từ snapshot. Trước đây mỗi nơi phóng tự tra
+  // lại bảng nấc; với settings thì "tra lại" nghĩa là có thể tra ra kết quả khác cái đã ký,
+  // và `policy.json` sẽ mô tả một execution khác execution đang chạy.
+  const model = modelForMode(input.definition, mode, input.modeProfiles);
   const snapshot = {
     executionId: input.executionId,
     role: input.definition.id,
@@ -102,7 +112,10 @@ export function createExecutionPolicy(
     workspaceMode: input.workspaceMode,
     // Trong snapshot chứ không trong `definitionHash`: nấc là lựa chọn lúc phóng, không phải
     // một vai khác. Definition không đổi, execution thì có.
-    mode: input.mode ?? DEFAULT_MODE,
+    mode,
+    model,
+    reasoningEffort: reasoningEffortForMode(input.definition, mode, input.modeProfiles),
+    runtime: runtimeForMode(input.definition, mode, input.modeProfiles),
     workspaceAccess: input.definition.capabilities.workspace.readRoots.length > 0
       ? "granted" as const
       : "none" as const,

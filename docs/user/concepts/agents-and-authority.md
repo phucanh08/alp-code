@@ -9,7 +9,8 @@ Agent trong ALP là một role có definition, không phải một model process
 
 | Role | Trách nhiệm |
 |---|---|
-| `main` | Coordinator làm việc trực tiếp với principal, tổng hợp và kiểm chứng kết quả |
+| `main` | Coordinator làm việc trực tiếp với principal: brainstorm, cắt việc, kiểm chứng kết quả trả về |
+| `worker` | Thực thi một task đã được `main` giao, từ đầu tới hết |
 | `search` | Tìm code và call site trong local repository |
 | `librarian` | Nghiên cứu nguồn ngoài hoặc cross-repo |
 | `read-thread` | Truy xuất quyết định và fact trong memory |
@@ -19,6 +20,8 @@ Agent trong ALP là một role có definition, không phải một model process
 | `titling` | Sinh title ngắn |
 
 `main` có thể delegate tới các role trên. Specialist không tự có quyền delegate chỉ vì đang làm thay `main`; quan hệ phải tồn tại trong definition.
+
+`main` **không ghi được vào workspace**: nó không cầm `Write`/`Edit` và không khai write root nào. Mọi thay đổi file đi qua `worker` — vai duy nhất khai `writeRoots: ["."]`. Đây là một ranh giới kiểm được ở lớp policy, không phải một câu trong prompt: một `main` cố ghi bị `PolicyEngine` từ chối với `WORKSPACE_NOT_GRANTED`, và `alp` hạ luôn phiên `main` xuống `read-only` kể cả trong project đã đăng ký.
 
 ## Sáu nhóm capability
 

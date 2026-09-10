@@ -5,6 +5,7 @@ import type { AgentId, ToolId } from "../../src/agents/types";
 
 const ROLE_IDS = [
   "main",
+  "worker",
   "search",
   "librarian",
   "read-thread",
@@ -16,6 +17,7 @@ const ROLE_IDS = [
 
 const ROUTING = {
   main: ["claude-opus-5", "gpt-5.6-sol", "high", "xhigh"],
+  worker: ["claude-opus-5", "gpt-5.6-sol", "high", "xhigh"],
   search: ["claude-sonnet-5", "gpt-5.6-terra", "low", "low"],
   librarian: ["claude-opus-5", "gpt-5.6-sol", "high", "high"],
   "read-thread": ["claude-haiku-4-5", "gpt-5.6-luna", "low", "low"],
@@ -26,7 +28,8 @@ const ROUTING = {
 } as const;
 
 const TOOLS: Record<(typeof ROLE_IDS)[number], readonly ToolId[]> = {
-  main: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Skill"],
+  main: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Skill"],
+  worker: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Skill"],
   search: ["Read", "Glob", "Grep", "Bash", "Skill"],
   librarian: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Skill"],
   "read-thread": ["Read", "Glob", "Grep", "Skill"],
@@ -38,6 +41,7 @@ const TOOLS: Record<(typeof ROLE_IDS)[number], readonly ToolId[]> = {
 
 const OUTPUTS = {
   main: "principal-response",
+  worker: "task-result",
   search: "code-search-result",
   librarian: "research-report",
   "read-thread": "memory-retrieval-result",
@@ -48,7 +52,7 @@ const OUTPUTS = {
 } as const;
 
 describe("code-native role definitions", () => {
-  it("registers exactly the approved eight role IDs", () => {
+  it("registers exactly the approved nine role IDs", () => {
     expect(agentRegistry.list().map(({ id }) => id)).toEqual(ROLE_IDS);
   });
 
@@ -58,6 +62,27 @@ describe("code-native role definitions", () => {
 
     expect(definition.model).toEqual({ claude, codex });
     expect(definition.reasoningEffort).toEqual({ claude: claudeEffort, codex: codexEffort });
+  });
+
+  /**
+   * `main` cầm bút cho tới 2026-09-10. Bỏ `Write`/`Edit` và write root của nó là cách duy
+   * nhất làm cho "chỉ giao tiếp, nghĩ, và cắt việc" thành một điều kiểm được: chừng nào ghế
+   * ngoài cùng còn sửa được file, ranh giới đó chỉ là một câu trong prompt.
+   */
+  it("leaves the coordinating seat unable to touch the workspace", () => {
+    const main = agentRegistry.get("main");
+    expect(main.capabilities.tools).not.toContain("Write");
+    expect(main.capabilities.tools).not.toContain("Edit");
+    expect(main.capabilities.workspace.writeRoots).toEqual([]);
+    // Đọc thì vẫn phải đọc được — không đọc nổi repo thì không cắt nổi việc.
+    expect(main.capabilities.workspace.readRoots).toEqual(["."]);
+  });
+
+  /** Và cây phải có đúng một ghế cầm bút, nếu không thì việc bỏ bút của `main` chỉ đẩy chỗ. */
+  it("gives exactly one role a workspace write root", () => {
+    const writers = agentRegistry.list().filter((role) => role.capabilities.workspace.writeRoots.length > 0);
+    expect(writers.map(({ id }) => id)).toEqual(["worker"]);
+    expect(agentRegistry.get("worker").capabilities.workspace.writeRoots).toEqual(["."]);
   });
 
   it("locks the main-only delegation topology", () => {

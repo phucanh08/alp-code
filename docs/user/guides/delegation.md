@@ -56,6 +56,7 @@ Không truyền cờ để giả caller role, chọn raw backend hoặc bypass p
 
 ## Chọn đúng specialist
 
+- `worker`: mọi việc phải sửa file — vai duy nhất ghi được vào workspace. Giao một task đã cắt sẵn: phạm vi, kết quả mong đợi, và cách kiểm.
 - `search`: code local, definition, call site, impact.
 - `librarian`: tài liệu bên ngoài hoặc repo khác.
 - `read-thread`: quyết định/fact đã lưu trong memory.

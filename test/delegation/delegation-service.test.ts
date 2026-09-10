@@ -2,7 +2,8 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { modelForMode, reasoningEffortForMode } from "../../src/agents/modes";
+import { MODE_PROFILES, modelForMode, reasoningEffortForMode, runtimeForMode, type ModeProfiles } from "../../src/agents/modes";
+import { applyModeSettings, parseModeSettings } from "../../src/agents/mode-settings";
 import { agentRegistry } from "../../src/agents/registry";
 import { DelegationService, FileDelegationExecutionStore, InMemoryDelegationExecutionStore } from "../../src/delegation/delegation-service";
 import { DelegationError } from "../../src/delegation/types";
@@ -11,8 +12,14 @@ import type { PreparedExecution, PrepareExecutionInput } from "../../src/executi
 import type { RuntimeAdapter, RuntimeLaunchSpec } from "../../src/runtime/runtime-adapter";
 import { removeTemporary } from "../support/temporary-root";
 
-function prepared(executionId: string, target = "search"): PreparedExecution {
+/**
+ * Bản giả của `ExecutionService.prepare`. Loadout phải **tự suy ra** từ nấc + profiles đúng
+ * như `createExecutionPolicy` thật làm: `DelegationService` giờ đọc model/effort/runtime từ
+ * snapshot, nên một fake ghim cứng ba giá trị này sẽ biến mọi test loadout thành vô nghĩa.
+ */
+function prepared(executionId: string, target = "search", profiles: ModeProfiles = MODE_PROFILES): PreparedExecution {
   const workspace = process.cwd();
+  const definition = agentRegistry.get(target);
   return {
     capsule: {
       executionId,
@@ -39,6 +46,9 @@ function prepared(executionId: string, target = "search"): PreparedExecution {
       workspace,
       workspaceMode: "read-only",
       mode: "medium",
+      model: modelForMode(definition, "medium", profiles),
+      reasoningEffort: reasoningEffortForMode(definition, "medium", profiles),
+      runtime: runtimeForMode(definition, "medium", profiles),
       workspaceAccess: "granted",
       allowedTools: ["Read"],
       skills: [],
@@ -115,13 +125,15 @@ class FakeBackend implements ExecutionBackend {
 function serviceFixture(options: {
   prepare?: (input: PrepareExecutionInput) => Promise<PreparedExecution>;
   primary?: FakeBackend;
+  modeProfiles?: ModeProfiles;
 } = {}) {
   const runtime = new FakeRuntime();
   const primary = options.primary ?? new FakeBackend("primary");
   const store = new InMemoryDelegationExecutionStore();
   let sequence = 0;
   const executionService = {
-    prepare: options.prepare ?? (async (input: PrepareExecutionInput) => prepared(input.executionId, input.target)),
+    prepare: options.prepare ?? (async (input: PrepareExecutionInput) =>
+      prepared(input.executionId, input.target, input.modeProfiles)),
   };
   const service = new DelegationService({
     registry: agentRegistry,
@@ -131,7 +143,7 @@ function serviceFixture(options: {
     runtimeAdapters: new Map([["codex", runtime]]),
     backend: primary,
     executionStore: store,
-    config: { mode: "medium" },
+    config: { mode: "medium", ...(options.modeProfiles ? { modeProfiles: options.modeProfiles } : {}) },
     ids: {
       request: () => `req-${++sequence}`,
       execution: () => `exec-${sequence}`,
@@ -150,6 +162,26 @@ const input = {
 };
 
 describe("DelegationService", () => {
+  /**
+   * Nấc kế thừa từ phiên cha; loadout của nấc thì đọc từ settings của máy/project. Vai được
+   * giao phải chạy đúng model đã cấu hình, không phải model ALP ship sẵn cho nấc đó — nếu
+   * không thì cấu hình chỉ có tác dụng ở ghế ngoài cùng.
+   */
+  it("launches a delegated role on the model settings pinned for the mode", async () => {
+    const file = "/project/.alp/settings.json";
+    const fixture = serviceFixture({
+      modeProfiles: applyModeSettings(MODE_PROFILES, [{
+        file,
+        settings: parseModeSettings({ modes: { medium: { search: { model: "gpt-5.6-luna", reasoningEffort: "medium" } } } }, file),
+      }]),
+    });
+
+    await fixture.service.delegate(input);
+
+    expect(modelForMode(agentRegistry.get("search"), "medium")).toBe("gpt-5.6-terra");
+    expect(fixture.runtime.calls[0]).toMatchObject({ model: "gpt-5.6-luna", reasoningEffort: "medium" });
+  });
+
   it("denies before runtime preparation, spawn, or execution tracking", async () => {
     const denied = new Error("delegation authorization failed: denied");
     const fixture = serviceFixture({ prepare: async () => { throw denied; } });

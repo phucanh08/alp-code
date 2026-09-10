@@ -2,7 +2,7 @@ import { access, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentDefinition, RuntimeId } from "../agents/types";
 import { RUNTIME_IDS } from "../agents/types";
-import { modelForMode, reasoningEffortForMode, runtimeForMode, type ModeId } from "../agents/modes";
+import { MODE_PROFILES, modelForMode, reasoningEffortForMode, runtimeForMode, type ModeId, type ModeProfiles } from "../agents/modes";
 import { defaultAutoCompactTokens } from "../agents/model-context";
 import { enforcementNotes } from "../runtime/permission-rules";
 import type { AgentDryRun } from "./dry-run";
@@ -14,6 +14,8 @@ export interface Tier2Input {
   readonly definition: AgentDefinition<unknown>;
   readonly run: AgentDryRun;
   readonly mode: ModeId;
+  /** Loadout đã ghép settings; bỏ trống thì báo cáo theo bản built-in. */
+  readonly modeProfiles?: ModeProfiles;
   readonly skillsRoot: string;
 }
 
@@ -47,6 +49,7 @@ export async function runTier2(input: Tier2Input): Promise<{
   readonly disclosure: AgentTestDisclosure;
 }> {
   const { definition, run, mode, skillsRoot } = input;
+  const profiles = input.modeProfiles ?? MODE_PROFILES;
   const checks: AgentTestCheck[] = [];
   const add = (id: string, ok: boolean, detail: string): void => {
     checks.push({ tier: 2, id, status: ok ? "pass" : "fail", detail });
@@ -156,7 +159,7 @@ export async function runTier2(input: Tier2Input): Promise<{
     definition.capabilities.skills.map(async (skill) => [skill, await directoryBytes(join(skillsRoot, skill))] as const),
   );
   const totalSkillBytes = skillBytes.reduce((sum, [, bytes]) => sum + bytes, 0);
-  const selectedRuntime = runtimeForMode(definition, mode);
+  const selectedRuntime = runtimeForMode(definition, mode, profiles);
 
   const launch: Record<string, AgentTestLaunchFacts> = {};
   for (const runtime of RUNTIME_IDS) {
@@ -179,7 +182,7 @@ export async function runTier2(input: Tier2Input): Promise<{
         : "no MCP server granted; the machine's own config is excluded",
     ],
     cost: [
-      `mode \`${mode}\` runs this role on ${selectedRuntime} · ${modelForMode(definition, mode)} · ${reasoningEffortForMode(definition, mode)}`,
+      `mode \`${mode}\` runs this role on ${selectedRuntime} · ${modelForMode(definition, mode, profiles)} · ${reasoningEffortForMode(definition, mode, profiles)}`,
       ...RUNTIME_IDS.map((runtime) => {
         const declared = policy.autoCompactTokens[runtime];
         const fallback = defaultAutoCompactTokens(definition.model[runtime]);

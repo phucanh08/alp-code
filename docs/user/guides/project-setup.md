@@ -16,10 +16,14 @@ alp init ~/code/my-app
 |---|---|---|
 | `<project>/.alp/agents/` | Project | Custom agent và built-in skill overlay có thể commit |
 | `<project>/.alp/skills/` | Project | Skill dùng chung trong project có thể commit |
+| `<project>/.alp/settings.json` | Project, bạn tự viết | Ghi đè loadout mode cho cả team, commit được |
+| `<project>/.alp/settings.local.json` | Bạn, machine-local | Ghi đè loadout mode của riêng bạn |
 | `<project>/.claude/settings.local.json` | ALP, machine-local | SessionStart hook cho Claude Code |
 | `<project>/.claude/skills/`, `.agents/skills/` | ALP, machine-local | Link tới packaged built-in skills |
 | `~/.alp/projects.json` | ALP, machine-local | Registry của project đã init |
 | `~/.alp/agents/*.md` | ALP, generated | Identity cache mà SessionStart hook đọc |
+
+Hai file settings không do `alp init` tạo — viết khi cần, và xem [Nấc và runtime](../../concepts/modes-and-runtimes/#đổi-model-của-một-role-settingsjson) cho khuôn file. `settings.local.json` nên nằm trong `.gitignore` của project nếu team dùng tới nó.
 
 Generated config/link được thêm vào `.git/info/exclude` của clone, không sửa `.gitignore`. Hai thư mục `.alp/` ban đầu rỗng nên không làm dirty git; khi bạn thêm agent hoặc skill, đó là source của project và nên được review như code.
 

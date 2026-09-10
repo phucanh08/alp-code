@@ -1,7 +1,7 @@
 import { relative } from "node:path";
 import { renderAgentTestReport, testAgent, AGENT_TEST_TIERS, type AgentTestReport, type AgentTestTier } from "../../agent-test";
 import { createCandidateRegistry, type AgentLoadResult } from "../../agents/loader";
-import type { ModeId } from "../../agents/modes";
+import type { ModeId, ModeProfiles } from "../../agents/modes";
 import type { AgentId } from "../../agents/types";
 
 export interface AgentTestInput {
@@ -21,6 +21,8 @@ export interface AgentTestDependencies {
   readonly stableCommand?: string;
   readonly env: NodeJS.ProcessEnv;
   readonly write: (text: string) => void;
+  /** Loadout đã ghép settings của project được test. Bỏ trống thì báo cáo theo bản built-in. */
+  readonly modeProfiles?: ModeProfiles;
 }
 
 function renderLoadFailures(load: AgentLoadResult, project: string): string {
@@ -76,6 +78,7 @@ export async function runAgentTest(
       env: dependencies.env,
       tiers: input.tiers,
       ...(input.mode ? { mode: input.mode } : {}),
+      ...(dependencies.modeProfiles ? { modeProfiles: dependencies.modeProfiles } : {}),
       ...(dependencies.assetRoot ? { assetRoot: dependencies.assetRoot } : {}),
       ...(dependencies.stableCommand ? { stableCommand: dependencies.stableCommand } : {}),
     }));

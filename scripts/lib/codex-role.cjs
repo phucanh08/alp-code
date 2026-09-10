@@ -4,6 +4,7 @@
 // vẫn là Claude.
 const ALLOWED_ROLES = new Set([
   "main",
+  "worker",
   "search",
   "librarian",
   "read-thread",

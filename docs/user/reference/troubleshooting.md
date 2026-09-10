@@ -39,6 +39,24 @@ alp --mode high
 
 Nếu máy chỉ có Codex CLI, thử `alp --mode puck`.
 
+## Settings file bị từ chối
+
+**Triệu chứng:** Lệnh dừng ngay với một thông báo có tên file, ví dụ `/Users/me/.alp/settings.json: modes.deep is not a mode` hoặc `... unknown key \`effort\``.
+
+**Cách xử lý:** ALP đọc `~/.alp/settings.json`, `<project>/.alp/settings.json` và `<project>/.alp/settings.local.json`, và **không** lặng lẽ bỏ qua dòng sai — một loadout khác loadout bạn viết còn tệ hơn một lỗi. Kiểm trong khối `modes`:
+
+- Tên mode phải là `low`, `medium`, `high`, `ultra`, `puck` hoặc `"*"`.
+- Trong mỗi role chỉ có hai khoá: `model` và `reasoningEffort`.
+- `model` phải là model ALP biết định tuyến (`claude-*` hoặc `gpt-*` có trong bảng runtime).
+- `reasoningEffort` là một trong `low`, `medium`, `high`, `xhigh`, `max`, `ultra`.
+- Một role có mặt thì phải khai ít nhất một trong hai trường; role chưa có trong loadout built-in (custom agent) phải khai cả hai.
+
+Khoá ngoài `modes` không bị đụng tới — ALP không phải chủ duy nhất của file này.
+
+```bash
+alp mode show
+```
+
 ## Runtime không có trên máy
 
 **Triệu chứng:** Probe báo Claude Code hoặc Codex CLI không tìm thấy.

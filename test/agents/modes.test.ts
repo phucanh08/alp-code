@@ -9,7 +9,9 @@ import {
   parseMode,
   reasoningEffortForMode,
   runtimeForMode,
+  type ModeProfiles,
 } from "../../src/agents/modes";
+import { applyModeSettings, parseModeSettings } from "../../src/agents/mode-settings";
 import { agentRegistry } from "../../src/agents/registry";
 import { createExecutionPolicy } from "../../src/execution/execution-policy";
 import { probeDefinition } from "../support/execution-fixture";
@@ -23,7 +25,7 @@ import { probeDefinition } from "../support/execution-fixture";
  * toàn Codex".
  */
 
-const ROLES = ["main", "search", "librarian", "read-thread", "review", "oracle", "compaction", "titling"] as const;
+const ROLES = ["main", "worker", "search", "librarian", "read-thread", "review", "oracle", "compaction", "titling"] as const;
 
 describe("mode dial — loadout", () => {
   it("has the four levels plus puck, with medium as the default", () => {
@@ -46,36 +48,48 @@ describe("mode dial — loadout", () => {
   });
 
   it("dials the working seat up across the four levels", () => {
-    expect(MODE_PROFILES.low.roles.main.model).toBe("claude-sonnet-5");
-    expect(MODE_PROFILES.low.roles.main.reasoningEffort).toBe("high");
-    expect(MODE_PROFILES.medium.roles.main.model).toBe("gpt-5.6-sol");
-    expect(MODE_PROFILES.high.roles.main.model).toBe("claude-opus-5");
-    expect(MODE_PROFILES.high.roles.main.reasoningEffort).toBe("high");
-    expect(MODE_PROFILES.ultra.roles.main.model).toBe("claude-opus-5");
+    expect(MODE_PROFILES.low.roles.worker.model).toBe("claude-sonnet-5");
+    expect(MODE_PROFILES.low.roles.worker.reasoningEffort).toBe("high");
+    expect(MODE_PROFILES.medium.roles.worker.model).toBe("gpt-5.6-sol");
+    expect(MODE_PROFILES.high.roles.worker.model).toBe("claude-opus-5");
+    expect(MODE_PROFILES.high.roles.worker.reasoningEffort).toBe("high");
+    expect(MODE_PROFILES.ultra.roles.worker.model).toBe("claude-opus-5");
   });
 
-  /** `oracle` luôn đứng ở runtime đối diện `main` — người được hỏi khi bí phải là một cách
-   * nhìn khác, không phải cùng model tự hỏi lại chính nó. */
-  it("keeps the oracle seat on the runtime opposite main at every dial level", () => {
+  /**
+   * Ghế điều phối đứng ngoài dial từ 2026-09-10. Việc của nó — nghe principal, nghĩ cùng họ,
+   * cắt việc — không dễ đi hơn khi bài toán dễ đi; thứ đổi theo độ khó là ghế cầm bút. Nếu
+   * `main` lại trôi theo nấc thì nấc `low` sẽ hạ cả chất lượng đối thoại lẫn chất lượng nhát
+   * cắt, mà đó chính là hai thứ quyết định phần còn lại của phiên.
+   */
+  it("keeps the coordinating seat off the dial", () => {
     for (const mode of ["low", "medium", "high", "ultra"] as const) {
-      const mainRuntime = runtimeForModel(MODE_PROFILES[mode].roles.main.model);
+      expect(MODE_PROFILES[mode].roles.main, mode).toEqual({ model: "claude-opus-5", reasoningEffort: "high" });
+    }
+  });
+
+  /** `oracle` luôn đứng ở runtime đối diện `worker` — người được hỏi khi bí phải là một cách
+   * nhìn khác, không phải cùng model tự hỏi lại chính nó. */
+  it("keeps the oracle seat on the runtime opposite the working seat at every dial level", () => {
+    for (const mode of ["low", "medium", "high", "ultra"] as const) {
+      const workerRuntime = runtimeForModel(MODE_PROFILES[mode].roles.worker.model);
       const oracleRuntime = runtimeForModel(MODE_PROFILES[mode].roles.oracle.model);
-      expect(oracleRuntime, mode).not.toBe(mainRuntime);
+      expect(oracleRuntime, mode).not.toBe(workerRuntime);
     }
   });
 
   /** `high` và `ultra` cùng cầm bút bằng Opus 5; khác nhau ở oracle — `ultra` leo lên model
    * mới nhất (Astra) thay vì chỉ tăng effort. */
-  it("escalates the oracle model rather than main between high and ultra", () => {
+  it("escalates the oracle model rather than the working seat between high and ultra", () => {
     expect(MODE_PROFILES.high.roles.oracle.model).toBe("gpt-5.6-sol");
     expect(MODE_PROFILES.high.roles.oracle.reasoningEffort).toBe("xhigh");
     expect(MODE_PROFILES.ultra.roles.oracle.model).toBe("gpt-6-astra");
     expect(MODE_PROFILES.ultra.roles.oracle.reasoningEffort).toBe("high");
   });
 
-  /** Sáu vai ngoài trục độ khó không đổi qua bốn nấc dial: model của chúng là việc, không phải mức cố gắng. */
-  it("keeps the six off-dial roles identical across the four dial levels", () => {
-    const offDial = ROLES.filter((role) => role !== "main" && role !== "oracle");
+  /** Bảy vai ngoài trục độ khó không đổi qua bốn nấc dial: model của chúng là việc, không phải mức cố gắng. */
+  it("keeps the seven off-dial roles identical across the four dial levels", () => {
+    const offDial = ROLES.filter((role) => role !== "worker" && role !== "oracle");
     for (const role of offDial) {
       const baseline = MODE_PROFILES.low.roles[role];
       for (const mode of ["medium", "high", "ultra"] as const) {
@@ -100,15 +114,15 @@ describe("mode dial — loadout", () => {
 });
 
 describe("mode dial — resolution", () => {
-  const main = agentRegistry.get("main");
+  const worker = agentRegistry.get("worker");
   const search = agentRegistry.get("search");
 
   it("resolves the dialled model, effort, and the runtime that model implies", () => {
-    expect(modelForMode(main, "ultra")).toBe("claude-opus-5");
-    expect(runtimeForMode(main, "ultra")).toBe("claude");
-    expect(modelForMode(main, "low")).toBe("claude-sonnet-5");
-    expect(reasoningEffortForMode(main, "high")).toBe("high");
-    expect(runtimeForMode(main, "puck")).toBe("codex");
+    expect(modelForMode(worker, "ultra")).toBe("claude-opus-5");
+    expect(runtimeForMode(worker, "ultra")).toBe("claude");
+    expect(modelForMode(worker, "low")).toBe("claude-sonnet-5");
+    expect(reasoningEffortForMode(worker, "high")).toBe("high");
+    expect(runtimeForMode(worker, "puck")).toBe("codex");
     // Một nấc trộn hai CLI trong cùng phiên — Amp cũng vậy.
     expect(runtimeForMode(search, "ultra")).toBe("codex");
   });
@@ -139,13 +153,14 @@ describe("mode dial — resolution", () => {
 });
 
 describe("mode dial — policy snapshot", () => {
-  const policyFor = (mode: ModeArg) => createExecutionPolicy({
+  const policyFor = (mode: ModeArg, modeProfiles?: ModeProfiles) => createExecutionPolicy({
     executionId: "exec-mode",
     definition: probeDefinition(),
     workspace: "/workspace",
     workspaceMode: "read-only",
     createdAt: "2026-09-04T00:00:00.000Z",
     ...(mode === undefined ? {} : { mode }),
+    ...(modeProfiles === undefined ? {} : { modeProfiles }),
   });
   type ModeArg = (typeof MODE_IDS)[number] | undefined;
 
@@ -157,6 +172,28 @@ describe("mode dial — policy snapshot", () => {
     expect(policyFor("ultra").mode).toBe("ultra");
     expect(policyFor(undefined).mode).toBe(DEFAULT_MODE);
     expect(policyFor("ultra").policyHash).not.toBe(policyFor("puck").policyHash);
+  });
+
+  /**
+   * Từ khi settings sửa được nội dung một nấc, tên nấc một mình không còn trả lời được "lần
+   * chạy này chạy gì". Model, mức nghĩ và CLI nằm luôn trong snapshot — nên đổi một dòng
+   * settings đổi `policyHash`, đúng như đổi nấc.
+   */
+  it("records the loadout it resolved, and moves the hash when settings move it", () => {
+    const file = "/project/.alp/settings.json";
+    const profiles = applyModeSettings(MODE_PROFILES, [{
+      file,
+      settings: parseModeSettings({ modes: { high: { probe: { model: "gpt-5.6-terra", reasoningEffort: "low" } } } }, file),
+    }]);
+    const builtIn = policyFor("high");
+    const configured = policyFor("high", profiles);
+
+    expect(builtIn).toMatchObject({ model: "claude-haiku-4-5", reasoningEffort: "low", runtime: "claude" });
+    expect(configured).toMatchObject({ model: "gpt-5.6-terra", reasoningEffort: "low", runtime: "codex" });
+    expect(configured.mode).toBe("high");
+    expect(configured.policyHash).not.toBe(builtIn.policyHash);
+    // Vẫn là cùng một vai: settings ghim loadout chứ không sửa quyền, nên definition hash đứng yên.
+    expect(configured.definitionHash).toBe(builtIn.definitionHash);
   });
 
   /** Nấc là lựa chọn lúc phóng, không phải một vai khác: definition hash không đổi theo nấc. */

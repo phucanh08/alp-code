@@ -21,7 +21,8 @@ async function prepareMain(environment: E2eEnvironment, executionId: string): Pr
     target: "main",
     task: INTERACTIVE_TASK_SENTINEL,
     workspace: environment.project,
-    workspaceMode: "workspace-write",
+    // `main` giữ toàn cảnh nhưng không cầm bút — phiên của nó là read-only.
+    workspaceMode: "read-only",
     memoryQueries: [],
     characterBudget: 0,
     invariantContext: "ALP execution policy is authoritative and fails closed.",

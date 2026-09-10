@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runModeCommand } from "../../src/cli/commands/mode";
+import { applyModeSettings, parseModeSettings } from "../../src/agents/mode-settings";
+import { MODE_PROFILES } from "../../src/agents/modes";
 import { FileModePreferenceStore } from "../../src/cli/mode-preference-store";
 import { ModeSelector } from "../../src/cli/mode-selector";
 import type { TerminalKey } from "../../src/runtime/types";
@@ -104,5 +106,34 @@ describe("e2e: mode selection", () => {
     await expect(runModeCommand({ action: "set", mode: "ultra" }, { store, write })).resolves.toBe("ultra");
     await expect(runModeCommand({ action: "show" }, { store, write })).resolves.toBe("ultra");
     expect(written).toEqual(["medium\n", "ultra\n", "ultra\n"]);
+  });
+
+  /**
+   * Từ khi loadout sửa được, tên nấc một mình không còn trả lời được "nấc này ở máy này
+   * nghĩa là gì". `show` in thêm file nào đã nói và vai nào đang chạy khác mặc định — dòng
+   * đầu vẫn chỉ là tên nấc, để script nào đang đọc nó không gãy.
+   */
+  it("names the settings files and the seats they moved", async () => {
+    const file = await preferenceFile();
+    const store = new FileModePreferenceStore({ file });
+    const written: string[] = [];
+    const source = "/project/.alp/settings.local.json";
+    const profiles = applyModeSettings(MODE_PROFILES, [{
+      file: source,
+      settings: parseModeSettings({ modes: { medium: { worker: { model: "claude-opus-5", reasoningEffort: "max" } } } }, source),
+    }]);
+
+    await expect(runModeCommand({ action: "show" }, {
+      store,
+      write: (text: string) => { written.push(text); },
+      settings: { files: [source], profiles },
+    })).resolves.toBe("medium");
+
+    expect(written[0]).toBe("medium\n");
+    expect(written[1]).toBe(`SETTINGS ${source}\n`);
+    expect(written[2]).toContain("OVERRIDE worker");
+    expect(written[2]).toContain("claude-opus-5 · max");
+    expect(written[2]).toContain("built-in gpt-5.6-sol · high");
+    expect(written).toHaveLength(3);
   });
 });

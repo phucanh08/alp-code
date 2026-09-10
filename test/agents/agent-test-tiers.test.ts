@@ -9,7 +9,7 @@ import { PolicyEngine } from "../../src/policy/policy-engine";
 import { cleanupDryRuns, dryRunAgent } from "../support/agent-dry-run";
 
 /**
- * Tiers 2 and 3 of the agent test tooling (vision §10.3), for the eight built-in roles.
+ * Tiers 2 and 3 of the agent test tooling (vision §10.3), for the nine built-in roles.
  *
  * Tier 2 prepares a role for real and stops before the spawn; tier 3 asserts the exact
  * code a genuine violation is denied with. Both run against the shipped registry, which
@@ -20,6 +20,7 @@ import { cleanupDryRuns, dryRunAgent } from "../support/agent-dry-run";
 
 const ROLE_IDS = [
   "main",
+  "worker",
   "search",
   "librarian",
   "read-thread",

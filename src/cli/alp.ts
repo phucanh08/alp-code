@@ -13,6 +13,7 @@ import { PolicyEngine } from "../policy/policy-engine";
 import { ClaudeRuntimeAdapter } from "../runtime/claude-adapter";
 import { CodexRuntimeAdapter } from "../runtime/codex-adapter";
 import { ModeSelector } from "./mode-selector";
+import { loadModeProfiles } from "./settings";
 import { WorkflowRunner } from "../workflow/workflow-runner";
 import { runContextCommand } from "./commands/context";
 import { createDefaultDelegationComposition, runDelegateCommand, runDelegationLifecycleCommand, workspaceFromArgs } from "./commands/delegate";
@@ -240,8 +241,10 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
     async runMain(input) {
       const project = await compositionFor(input.cwd);
       for (const notice of project.notices) stdout.write(`${notice}\n`);
+      const { profiles } = await loadModeProfiles({ cwd: input.cwd, env: process.env });
       const result = await runMainSession(input, {
         registry: project.registry,
+        modeProfiles: profiles,
         selector,
         executionService: project.executionService,
         adapters,
@@ -255,7 +258,11 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
       return result.status === "completed" ? 0 : result.status === "cancelled" ? 130 : 1;
     },
     async modeCommand(input) {
-      await runModeCommand(input, { write: (text: string) => stdout.write(text) });
+      const settings = await loadModeProfiles({ cwd, env: process.env });
+      await runModeCommand(input, {
+        write: (text: string) => stdout.write(text),
+        ...(settings.files.length > 0 ? { settings } : {}),
+      });
       return 0;
     },
     async initProject(input) {
@@ -287,10 +294,15 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
       // The same asset root the adapters were built with, so the skills this reports on are
       // the ones a launch would actually resolve.
       const assetRoot = layout?.assetRoot ?? repoRoot;
-      return runAgentCommand(parseAgentCommand(args, cwd), {
+      const command = parseAgentCommand(args, cwd);
+      // Đọc theo project được hỏi, không theo cwd: `alp agent test --project <path>` phải
+      // báo cáo đúng loadout mà project đó sẽ chạy.
+      const { profiles } = await loadModeProfiles({ cwd: command.project, env: process.env });
+      return runAgentCommand(command, {
         hooksDirectory: join(repoRoot, "hooks"),
         skillsRoot: join(assetRoot, "skills"),
         assetRoot,
+        modeProfiles: profiles,
         ...(layout ? { stableCommand: layout.stableCommand } : {}),
         env: process.env,
         write: (text: string) => { stdout.write(text); },
@@ -314,9 +326,10 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
       // Resolved before the service exists: an agent this project trusted is only reachable
       // if the registry the service is built with knows about it. Lifecycle commands address
       // an execution by id and need no project.
+      const workspaceRoot = lifecycle ? cwd : resolve(cwd, workspaceFromArgs(actual.slice(1), cwd));
       const project = lifecycle
         ? { registry: agentRegistry, notices: [] as readonly string[] }
-        : await trustedRegistryFor(resolve(cwd, workspaceFromArgs(actual.slice(1), cwd)));
+        : await trustedRegistryFor(workspaceRoot);
       for (const notice of project.notices) stderr.write(`${notice}\n`);
       // Without this, a target the principal can see in `.alp/agents/` comes back as
       // "unknown agent": true — an unapproved agent never enters the registry — but it reads
@@ -330,6 +343,9 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
           ? `\`${target}\` changed after it was trusted; run \`alp agent add ${target}\` to review and approve it again`
           : `\`${target}\` is not approved; run \`alp agent add ${target}\` to review it`);
       }
+      // Settings đọc theo **workspace của execution**, không theo chỗ đang đứng gõ lệnh:
+      // `alp delegate --project <path>` phải chạy đúng loadout của project đó.
+      const { profiles } = await loadModeProfiles({ cwd: workspaceRoot, env: process.env });
       const composition = await createDefaultDelegationComposition(layout ?? {
         channel: "dev",
         version,
@@ -337,10 +353,10 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
         stableCommand: join(repoRoot, "scripts", "alp.cjs"),
         installRoot: repoRoot,
         assetRoot: repoRoot,
-      }, process.env, project.registry);
+      }, process.env, project.registry, profiles);
       const value = lifecycle
         ? await runDelegationLifecycleCommand(actual, composition.service)
-        : await runDelegateCommand(actual, { cwd, env: process.env, service: composition.service });
+        : await runDelegateCommand(actual, { cwd, env: process.env, service: composition.service, registry: project.registry });
       stdout.write(`${JSON.stringify(value, null, 2)}\n`);
       return typeof value === "object" && value !== null && "status" in value && value.status === "failed" ? 1 : 0;
     },
@@ -411,6 +427,8 @@ function helpText(): string {
     "",
     "Mode quyết định model của từng vai, và model quyết định CLI nào chạy vai đó.",
     "Thứ tự: --mode → ALP_MODE → `alp mode set` → hỏi trên TTY → `medium`.",
+    "Loadout sửa được ở `~/.alp/settings.json`, `<project>/.alp/settings.json`, rồi",
+    "`settings.local.json` — `alp mode show` in ra vai nào đang chạy khác mặc định.",
     "",
     ...MODE_IDS.map((mode) => `  ${mode.padEnd(7)} ${MODE_PROFILES[mode].summary}`),
     "",

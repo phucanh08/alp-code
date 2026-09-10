@@ -1,7 +1,7 @@
 # Layered ALP settings and installation layout
 
 **Date:** 2026-09-05  
-**Status:** Approved
+**Status:** Partially implemented 2026-09-10 — see “What shipped” below for the deviations.
 
 ## Context
 
@@ -228,3 +228,40 @@ Installer and maintenance fixtures cover Bash and PowerShell default paths, clea
 the non-destructive both-paths case, initial settings generation, update preservation, generated
 hook rewrites, and safe uninstall behavior. The existing TypeScript, script, and end-to-end test
 suites remain the final regression gate.
+
+---
+
+## What shipped (2026-09-10)
+
+The loadout half of this design is implemented; the installation-layout half is not. Where the
+built version differs from the text above, **the built version is authoritative**.
+
+### Shipped
+
+- Per-mode, per-agent `model` / `reasoningEffort` overrides, validated fail-closed with the file
+  named in every message (`src/agents/mode-settings.ts`, pure; `src/cli/settings.ts`, I/O).
+- The resolved `model`, `reasoningEffort` and `runtime` are recorded in `ExecutionPolicy` and
+  therefore in `policyHash`, and both launch paths (`run-main`, `DelegationService`) read the
+  snapshot instead of re-resolving the dial.
+- The invariant that the model determines the runtime, enforced at parse time: a model missing
+  from `MODEL_RUNTIMES` is rejected when the file is read, not when a process is spawned.
+- `alp mode show` discloses which files contributed and which seats moved.
+
+### Deviations from the text above
+
+| Design said | Built | Why |
+|---|---|---|
+| `setting.json` / `setting.local.json` | `settings.json` / `settings.local.json` | Plural is what Claude Code taught users, and what the request asked for. |
+| Two layers (global + project-local) | Three: `~/.alp/settings.json` → `<project>/.alp/settings.json` → `<project>/.alp/settings.local.json` | A project needs a committable layer; without it every teammate re-types the same loadout. |
+| `modes.<mode>["agent-teams"].<agent>` | `modes.<mode>.<agent>`, plus `modes["*"]` for every mode | One less level of nesting for no lost expressiveness; `"*"` covers the common “this machine never runs Opus” case. |
+| Unknown agent id is an error | Unknown agent id is accepted, but must declare both fields | Custom agents post-date this design; they legitimately have no built-in loadout to merge onto. |
+
+### Not implemented
+
+- `mode` living in the settings file, and the `mode.json` → settings migration. The mode is still
+  read from `~/.alp/mode.json` with the existing precedence.
+- Bootstrap generating a complete global settings document with the full shipped mapping. Nothing
+  is written; an absent file simply means the built-in dial.
+- The `~/.alp-code` → `~/.alp/app` install-layout move (an independent change that shares nothing
+  with the loadout work but its motivation).
+- `schemas/setting.schema.json` and the `$schema` pointer.

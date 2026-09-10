@@ -5,10 +5,11 @@ import type {
 import type {
   AgentId,
   MemoryGrants,
+  ReasoningEffort,
   RuntimeId,
   ToolId,
 } from "../agents/types";
-import type { ModeId } from "../agents/modes";
+import type { ModeId, ModeProfiles } from "../agents/modes";
 import type {
   ContextDiagnostics,
   MemoryKind,
@@ -45,6 +46,18 @@ export interface ExecutionPolicy {
    * không mô tả nổi — và hai lần chạy khác model lại có cùng `policyHash`.
    */
   readonly mode: ModeId;
+  /**
+   * Loadout đã giải xong của execution này — model, mức nghĩ, và CLI mà model đó kéo theo.
+   *
+   * Tên nấc một mình đủ để trả lời câu trên chỉ khi nấc là hằng số biên dịch sẵn. Từ khi
+   * `settings.json` sửa được loadout, hai máy cùng chạy `high` có thể chạy hai model khác
+   * nhau — và `policy.json` nói `high` thì vẫn không nói ra máy này đã chạy gì. Ba trường
+   * này là câu trả lời, và vì chúng nằm trong snapshot nên chúng nằm luôn trong `policyHash`:
+   * đổi một dòng settings là đổi hash, đúng như đổi nấc.
+   */
+  readonly model: string;
+  readonly reasoningEffort: ReasoningEffort;
+  readonly runtime: RuntimeId;
   /**
    * Whether this role holds any workspace grant at all. `none` for a role that declares no
    * root (read-thread, compaction, titling): it works from memory, the workspace is only
@@ -149,6 +162,8 @@ export interface PrepareExecutionInput {
   readonly workspaceMode: "read-only" | "workspace-write";
   /** Bỏ trống thì lấy `DEFAULT_MODE`. */
   readonly mode?: ModeId;
+  /** Loadout của nấc sau khi ghép settings; bỏ trống thì bản built-in. */
+  readonly modeProfiles?: ModeProfiles;
   readonly memoryQueries: readonly MemoryQuery[];
   readonly characterBudget: number;
   readonly invariantContext: string;

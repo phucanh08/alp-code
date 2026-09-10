@@ -1,5 +1,5 @@
 import type { AgentDefinition, AgentRegistry, RuntimeId } from "../../agents/types";
-import { modelForMode, reasoningEffortForMode, runtimeForMode, type ModeId } from "../../agents/modes";
+import { MODE_PROFILES, type ModeId, type ModeProfiles } from "../../agents/modes";
 import { readFile } from "node:fs/promises";
 import type { BackendExecutionResult, ExecutionBackend } from "../../backend/execution-backend";
 import { INTERACTIVE_TASK_SENTINEL } from "../../context/continuity";
@@ -22,6 +22,8 @@ export interface RunMainDependencies {
   readonly executionId: () => string;
   readonly interactive: boolean;
   readonly workspaceModeFor?: (cwd: string) => Promise<"read-only" | "workspace-write">;
+  /** Loadout đã ghép settings của máy/project. Bỏ trống thì chạy đúng bản built-in. */
+  readonly modeProfiles?: ModeProfiles;
 }
 
 export async function runMainSession(
@@ -36,12 +38,18 @@ export async function runMainSession(
   });
   if (!selection.ok) return { executionId: "cancelled", status: "cancelled" };
   const mode = selection.mode;
-  // Runtime là **hệ quả** của model, không phải một lựa chọn riêng: nấc ghim một model cho
-  // `main`, và model đó chỉ chạy được trên đúng một CLI.
-  const runtime = runtimeForMode(definition, mode);
+  const profiles = dependencies.modeProfiles ?? MODE_PROFILES;
   const executionId = dependencies.executionId();
-  const workspaceMode = dependencies.workspaceModeFor
+  const requestedWorkspaceMode = dependencies.workspaceModeFor
     ? await dependencies.workspaceModeFor(input.cwd)
+    : "read-only";
+  // Project đã đăng ký là **trần**, không phải một cái cấp phát. `main` thôi cầm bút từ
+  // 2026-09-10 nên nó không khai write root nào, và xin `workspace-write` ở đây sẽ bị
+  // `ExecutionService` từ chối thẳng — phiên chết trước khi principal gõ được chữ nào.
+  // Đọc definition rồi mới quyết định thì cùng một dòng này còn đúng cho vai sau, nếu ghế
+  // ngoài cùng có ngày lại cầm bút.
+  const workspaceMode = definition.capabilities.workspace.writeRoots.length > 0
+    ? requestedWorkspaceMode
     : "read-only";
   const execution = await dependencies.executionService.prepare({
     executionId,
@@ -54,21 +62,25 @@ export async function runMainSession(
     workspace: input.cwd,
     workspaceMode,
     mode,
+    modeProfiles: profiles,
     memoryQueries: [],
     characterBudget: 0,
     invariantContext: "ALP execution policy is authoritative and fails closed.",
     policyContext: "Direct raw runtime launch is unsupported; use ALP workflows.",
   });
-  const adapter = dependencies.adapters.get(runtime);
-  if (!adapter) throw new Error(`runtime \`${runtime}\` is not registered`);
+  // Runtime là **hệ quả** của model, không phải một lựa chọn riêng: nấc (đã ghép settings)
+  // ghim một model cho `main`, và model đó chỉ chạy được trên đúng một CLI. Đọc lại từ
+  // snapshot chứ không tra lại bảng: `policy.json` và tiến trình phải nói cùng một điều.
+  const adapter = dependencies.adapters.get(execution.policy.runtime);
+  if (!adapter) throw new Error(`runtime \`${execution.policy.runtime}\` is not registered`);
   const health = await adapter.probe();
   if (!health.ok) throw new Error(`${health.message}${health.remediation ? `; ${health.remediation}` : ""}`);
   const launchSpec = await adapter.prepare({
     execution,
-    // Nấc thắng khai báo của vai — cùng một `main` chạy bốn model khác nhau. Lấy từ cùng
-    // giá trị đã đi vào policy, để `policy.json` và tiến trình thật sự chạy không lệch nhau.
-    model: modelForMode(definition, mode),
-    reasoningEffort: reasoningEffortForMode(definition, mode),
+    // Nấc thắng khai báo của vai — cùng một `main` chạy bốn model khác nhau. Lấy thẳng từ
+    // policy, để `policy.json` và tiến trình thật sự chạy không thể lệch nhau.
+    model: execution.policy.model,
+    reasoningEffort: execution.policy.reasoningEffort,
     interactive: true,
   });
   // The principal is sitting in front of this one, so it must own the terminal: a backend

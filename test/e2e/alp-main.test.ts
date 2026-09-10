@@ -29,6 +29,8 @@ async function runMain(
     backend: environment.backend,
     executionId: () => `exec_main_${mode}`,
     interactive: false,
+    // Project đã đăng ký là trần, không phải cấp phát: `main` không khai write root nào
+    // nên phiên vẫn chạy read-only.
     workspaceModeFor: async () => "workspace-write",
   });
 }

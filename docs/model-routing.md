@@ -183,15 +183,21 @@ ALP không dùng Codex role profile. Runtime adapter luôn truyền model, effor
 execution snapshot; `alp doctor` kiểm compiled registry và build-source drift.
 
 **`main` chạy được trên cả hai runtime, nhưng không ai chọn runtime nữa** (2026-09-06): nấc
-ghim đúng một model cho `main`, và model quyết định CLI. `--mode medium|puck` cho `main`
-`gpt-5.6-sol` → Codex; `--mode high|ultra` cho `claude-opus-5` và `--mode low` cho
-`claude-sonnet-5` → Claude Code. Muốn tiết kiệm quota Claude thì hạ/đổi nấc, không có cờ
-runtime để bật.
+ghim đúng một model cho `main`, và model quyết định CLI. Từ 2026-09-10 `main` đứng **ngoài**
+dial — nó ghim `claude-opus-5` · high ở cả bốn nấc dial → Claude Code, và chỉ `--mode puck`
+đưa nó sang `gpt-5.6-sol` → Codex. Thứ đổi theo nấc giờ là `worker`: `medium` → `gpt-5.6-sol`
+(Codex), `high`/`ultra` → `claude-opus-5`, `low` → `claude-sonnet-5`. Muốn tiết kiệm quota
+Claude thì hạ/đổi nấc, không có cờ runtime để bật.
+
+**Loadout của nấc ghi đè được từ 2026-09-10**: `~/.alp/settings.json`,
+`<project>/.alp/settings.json` và `<project>/.alp/settings.local.json` (đọc theo thứ tự đó,
+file sau thắng) ghim model/effort cho từng vai ở từng nấc. Bảng trong file này vì thế mô tả
+bản **built-in**; `alp mode show` mới là thứ nói máy này đang chạy gì.
 
 Hai điểm khác specialist nằm trong `src/agents/main.ts`:
 
-- Sandbox là `workspace-write`, nhưng **chỉ** ở workspace đã đăng ký machine-local.
-  Ở cwd lạ main vẫn `read-only` như mọi vai khác.
+- Sandbox luôn là `read-only`, kể cả ở workspace đã đăng ký machine-local: `main` không khai
+  write root nào từ 2026-09-10. Vai duy nhất chạy `workspace-write` là `worker`.
 - Delegation: chỉ `main` có `delegatesTo` khác rỗng.
 
 Đổi lại, Codex không nạp được skill `alp:plan`/`alp:cook` (marketplace của Claude Code) —

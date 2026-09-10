@@ -152,12 +152,13 @@ Registry là **DAG**, kiểm bằng DFS 3 màu (`assertNoDelegationCycles`).
 
 Loadout hiện tại:
 
-Model **không** còn nằm trong bảng này: nấc sở hữu ghế của cả tám vai (§ dưới). Cái definition
+Model **không** còn nằm trong bảng này: nấc sở hữu ghế của cả chín vai (§ dưới). Cái definition
 còn khai — `model: {claude, codex}` — chỉ là chỗ dựa cho vai không có trong loadout nào.
 
 | Agent | Model / effort | Tools | Memory write | Workspace |
 |---|---|---|---|---|
-| `main` (Phở 🍜) | nấc | tất cả 9 | shared, project:\*, private:main | read + write |
+| `main` (Phở 🍜) | ghim | 7 (không Write/Edit) | shared, project:\*, private:main | read |
+| `worker` (Worker 🛠️) | nấc | tất cả 9 | private:worker | read + write |
 | `search` | nấc | Read Glob Grep Bash Skill | private:search | read |
 | `librarian` | nấc | + WebSearch WebFetch | shared:reference:\*, project:\*:refs:\*, private | read |
 | `read-thread` | nấc | Read Glob Grep Skill | private:read-thread | — |
@@ -166,7 +167,23 @@ còn khai — `model: {claude, codex}` — chỉ là chỗ dựa cho vai không 
 | `compaction` | nấc | Read Glob Grep | private:compaction | — |
 | `titling` | nấc | — | private:titling | — |
 
-Chỉ `main` có `delegatesTo` khác rỗng. Cây delegation phẳng: `principal → main → {7 specialist}`.
+Chỉ `main` có `delegatesTo` khác rỗng. Cây delegation phẳng: `principal → main → {8 specialist}`.
+
+Từ 2026-09-10 `main` **thôi cầm bút**: không `Write`, không `Edit`, `writeRoots: []`. Lý do là
+một ranh giới chứ không phải một mức quyền — ghế duy nhất nói chuyện với principal cũng là ghế
+duy nhất giữ toàn cảnh, và khi nó vừa giữ toàn cảnh vừa tự sửa file thì mọi việc "nhỏ đủ để tự
+làm" đều ở lại đó: không nhát cắt, không báo cáo, không bằng chứng ai đọc lại được. Bỏ hẳn bút
+thì câu hỏi "nhỏ đủ chưa" biến mất.
+
+`worker` là hệ quả: vai **generic** duy nhất ngoài `main`, và là vai duy nhất khai write root.
+Bảy vai kia hẹp theo *loại việc* (retrieval, research, review, second opinion); `worker` hẹp
+theo **phạm vi một lần giao**. `delegatesTo` của nó rỗng — nếu nó phải đi hỏi `search` giữa
+chừng thì cái sai nằm ở nhát cắt của `main`, không ở quyền của nó.
+
+Quyền ghi workspace đi theo **vai đích**, không theo ai gọi: `runDelegateCommand` xin
+`workspace-write` khi và chỉ khi definition của target khai write root, và `runMainSession` hạ
+phiên `main` xuống `read-only` kể cả trong project đã đăng ký — project đăng ký là *trần*, không
+phải một cái cấp phát.
 
 #### Dial công suất — `low` · `medium` · `high` · `ultra`, cộng `puck`
 
@@ -178,13 +195,13 @@ Một model cho mỗi vai kéo theo hệ quả lớn nhất của thiết kế n
 `claude-*` phóng Claude Code, `gpt-*` phóng Codex CLI, tra qua bảng `MODEL_RUNTIMES` viết tay
 trong `model-context.ts` (không đoán theo prefix — một tên lệch quy ước mà đoán sai thì phóng
 nhầm CLI trong im lặng). Không còn bước "chọn runtime rồi tra model": nấc là lựa chọn duy
-nhất, và một nấc trộn được hai CLI trong cùng một phiên — `medium` chạy `main` trên Codex và
+nhất, và một nấc trộn được hai CLI trong cùng một phiên — `medium` chạy `worker` trên Codex và
 `oracle` trên Claude.
 
-Bốn nấc dial xoay hai ghế mà độ khó chạm tới — `main` (người làm) và `oracle` (người được hỏi
-khi bí):
+Bốn nấc dial xoay hai ghế mà độ khó chạm tới — `worker` (người cầm bút) và `oracle` (người được
+hỏi khi bí):
 
-| Nấc | `main` | effort | `oracle` | effort |
+| Nấc | `worker` | effort | `oracle` | effort |
 |---|---|---|---|---|
 | `low` | claude-sonnet-5 | high | gpt-5.6-sol | high |
 | `medium` (mặc định) | gpt-5.6-sol | high | claude-opus-5 | high |
@@ -192,15 +209,19 @@ khi bí):
 | `ultra` | claude-opus-5 | high | gpt-6-astra | high |
 | `puck` | gpt-5.6-sol | xhigh | gpt-5.6-sol | xhigh |
 
-Sáu vai còn lại giữ nguyên qua cả bốn nấc dial — đúng chỗ Amp ghim cứng subagent — vì model
+Bảy vai còn lại giữ nguyên qua cả bốn nấc dial — đúng chỗ Amp ghim cứng subagent — vì model
 của chúng là **một phần công việc** (`search` cần retrieval nhanh, `titling` viết một dòng)
-chứ không phải một mức cố gắng. `oracle` luôn đứng ở runtime **đối diện** `main`: người được
-hỏi khi bí phải là một cách nhìn khác, không phải cùng model tự hỏi lại chính nó. `high` và
-`ultra` cùng cầm bút bằng Opus 5 — khác nhau ở oracle, nơi `ultra` leo lên model mới nhất
-(Astra) thay vì chỉ cộng thêm effort.
+chứ không phải một mức cố gắng. `main` nằm trong nhóm đó từ 2026-09-10, khi nó thôi cầm bút:
+nghe principal, nghĩ cùng họ, cắt việc ra — không việc nào trong ba việc đó dễ đi hơn khi bài
+toán dễ đi, và nó là mặt tiền của cả phiên; nên nó đứng yên ở Opus 5 · high, còn độ khó được
+trả lời ở chỗ nó thật sự được trả lời: ghế làm việc. `oracle` luôn đứng ở runtime **đối diện**
+`worker`: người được hỏi khi bí phải là một cách nhìn khác, không phải cùng model tự hỏi lại
+chính nó. `high` và `ultra` cùng cầm bút bằng Opus 5 — khác nhau ở oracle, nơi `ultra` leo lên
+model mới nhất (Astra) thay vì chỉ cộng thêm effort.
 
 | Vai | `low`/`medium`/`high`/`ultra` | `puck` |
 |---|---|---|
+| `main` | claude-opus-5 · high | gpt-5.6-sol · xhigh |
 | `search` | gpt-5.6-terra · low | gpt-5.6-terra · low |
 | `librarian` | gpt-5.6-sol · high | gpt-5.6-sol · high |
 | `read-thread` | claude-haiku-4-5 · low | gpt-5.6-luna · low |
@@ -214,12 +235,59 @@ không có Claude ở bất kỳ vai nào.
 
 Chọn nấc: `alp --mode <nấc>` → `ALP_MODE` → `alp mode set` (`~/.alp/mode.json`) → menu ↑/↓ trên
 TTY → `DEFAULT_MODE` (`medium`). Nấc gõ sai dừng ngay chứ không rơi về mặc định. Nấc đi vào
-`ExecutionPolicy.mode` nên nó nằm trong `policy.json` và trong `policyHash` — hai lần chạy khác
-model không thể có cùng hash; `definitionHash` **không** đổi theo nấc, vì nấc là lựa chọn lúc
+`ExecutionPolicy.mode`, và **loadout đã chốt** đi cùng nó: `model`, `reasoningEffort`, `runtime`
+cũng nằm trong `policy.json` và trong `policyHash` — từ khi settings sửa được nội dung một nấc,
+tên nấc một mình không còn trả lời nổi "lần chạy này chạy gì", nên hai lần chạy khác model
+không thể có cùng hash dù cùng tên nấc; `definitionHash` **không** đổi theo nấc, vì nấc là lựa chọn lúc
 phóng chứ không phải một vai khác. Adapter export `ALP_MODE`, nên execution delegated kế thừa
 nấc của phiên cha. Mọi model trong loadout phải có mặt trong cả `MODEL_RUNTIMES` lẫn
 `MODEL_CONTEXT_WINDOWS` (test giữ): thiếu bảng đầu thì không biết phóng CLI nào, thiếu bảng sau
 thì ngưỡng compact mặc định biến mất đúng ở nấc đó.
+
+#### Loadout sửa được — `settings.json` (2026-09-10)
+
+Bảng trên là bản **built-in**, không phải bản đang chạy. Một máy hoặc một project ghi đè được
+model và mức nghĩ của từng vai ở từng nấc, qua ba file đọc theo thứ tự thắng dần:
+
+| File | Của ai | Commit? |
+|---|---|---|
+| `~/.alp/settings.json` | máy — hạn mức, CLI đã cài, sở thích một người | không |
+| `<project>/.alp/settings.json` | project, đi cùng repo | có |
+| `<project>/.alp/settings.local.json` | người này trên project này | không |
+
+Đúng ba tầng Claude Code đã dạy người dùng, đặt trong `.alp/` mà `alp init` đã tạo — không có
+chỗ mới nào phải học. Gốc project tìm bằng cách đi ngược lên tới thư mục cha gần nhất có
+`.alp/`, nên gõ `alp` từ thư mục con vẫn đúng file.
+
+```json
+{
+  "modes": {
+    "*":    { "titling": { "model": "gpt-5.6-luna" } },
+    "high": { "worker": { "model": "claude-opus-5", "reasoningEffort": "max" } }
+  }
+}
+```
+
+`"*"` áp cho mọi nấc và **thua** nấc gọi đích danh; giữa các file thì file sau đè file trước.
+Khai một nửa thì nửa kia mượn từ built-in — sửa mức nghĩ không bắt chép lại tên model. Vai
+**chưa có ghế** trong loadout nào (custom agent) không có nửa nào để mượn, nên phải khai đủ
+hai trường.
+
+Fail-closed, và luôn nói tên file: nấc lạ, khoá lạ **bên trong** một override, model không có
+trong `MODEL_RUNTIMES`, effort không có trong `REASONING_EFFORTS`, hoặc override rỗng — tất cả
+đều dừng phiên. Khoá gốc ngoài `modes` thì bỏ qua, vì ALP không phải chủ duy nhất của
+`settings.json`. Một dòng sai bị lờ đi trong im lặng nghĩa là chạy khác loadout người ta viết
+ra, và đó là thứ tệ hơn một lỗi.
+
+Giới hạn cố ý: file này ghim **model và effort**, không hơn. Không có đường nào từ đây đi tới
+tool, memory, workspace hay `delegatesTo` — quyền vẫn chỉ ở registry code-native, nơi review
+được qua PR.
+
+`src/agents/mode-settings.ts` thuần (parse + merge, không I/O); `src/cli/settings.ts` biết ba
+đường dẫn và đọc đĩa. Bản đã ghép đi vào tham số `profiles` của `modelForMode` /
+`reasoningEffortForMode` / `runtimeForMode` / `homeRuntimeForMode` — mặc định là built-in, nên
+chỗ nào chưa nạp settings vẫn chạy y như trước. `alp mode show` in thêm `SETTINGS <file>` và
+một dòng `OVERRIDE` cho mỗi ghế đã dịch (dòng đầu vẫn chỉ là tên nấc, để script cũ không gãy).
 
 **`--runtime` đã bị bỏ** (2026-09-04). Runtime là hệ quả của model, không phải một lựa chọn
 song song — giữ cả hai thì một `--runtime claude` cộng nấc `medium` sẽ hỏi Claude Code chạy
@@ -232,13 +300,13 @@ khai **theo runtime** vì nó là ngân sách của model chứ không của vai
 Adapter lấy `policy.autoCompactTokens[runtime] ?? defaultAutoCompactTokens(model)`, tức 90%
 cửa sổ khi vai bỏ trống phía đó. Registry chặn ngưỡng vượt cửa sổ ngay lúc load. Model không
 có trong bảng thì không có mặc định và adapter bỏ hẳn khoá đó, để runtime giữ cửa sổ của nó.
-Test giữ bảng phủ hết model tám vai built-in route tới.
+Test giữ bảng phủ hết model chín vai built-in route tới.
 
-Ngân sách tám vai (— là bỏ trống, tức 90% cửa sổ):
+Ngân sách chín vai (— là bỏ trống, tức 90% cửa sổ):
 
 | Vai | claude | codex | Thực nén ở (claude / codex) |
 |---|---:|---:|---|
-| `main` · `oracle` | — | — | 900 000 / 244 800 |
+| `main` · `worker` · `oracle` | — | — | 900 000 / 244 800 |
 | `librarian` · `review` | 300 000 | — | 300 000 / 244 800 |
 | `read-thread` | — | 200 000 | 180 000 / 200 000 |
 | `search` · `compaction` | 150 000 | 150 000 | 150 000 / 150 000 |
@@ -246,7 +314,7 @@ Ngân sách tám vai (— là bỏ trống, tức 90% cửa sổ):
 
 `shared/` chứa phần dùng chung: `house-rules.ts` (`CODE_NATIVE_HOUSE_RULES` — 4 quy tắc
 code-native cho mọi vai; `CODE_CRAFT_RULES` — 4 quy tắc tay nghề chỉ spread vào `main`,
-`review`, `oracle` là các vai viết hoặc phán xét code), `voice.ts` (`renderInstructions` —
+`worker`, `review`, `oracle` là các vai viết, chỉ đạo hoặc phán xét code), `voice.ts` (`renderInstructions` —
 khuôn prompt thống nhất), `principal.ts` (một dòng "phục vụ ai, xưng hô thế nào").
 
 `principal.ts` **không** chứa tên ai cả: nó đọc `~/.alp/principal.json` qua
@@ -346,8 +414,9 @@ chối nếu execution ID đã tồn tại hoặc chứa separator.
 ### 4.5 `src/workflow/` — state machine + output contract
 
 Mỗi agent có một workflow tuyến tính (`defineLinearWorkflow`) với tool set thu hẹp dần theo
-state. Ví dụ `main`: `ASSESS` (chỉ đọc) → `EXECUTE` (đầy đủ) → `VERIFY` (đọc + Bash) →
-`REPORT` (không tool).
+state. Ví dụ `main`: `ASSESS` (chỉ đọc) → `PLAN` (đọc + web + Skill) → `DELEGATE` (thêm Bash)
+→ `VERIFY` (đọc + Bash) → `REPORT` (không tool). Còn `worker`: `ASSESS` → `IMPLEMENT` (đủ 9
+tool) → `VERIFY` → `REPORT`.
 
 `WorkflowRunner` quản `running → awaiting-output → completed | repairing → failed`, kèm
 `cancelled`. `MAX_OUTPUT_REPAIR_ATTEMPTS = 1` — thiếu output được sửa đúng một lần rồi fail.
@@ -480,7 +549,7 @@ cơ chế ép agent nói JSON.
 **Đã mất khi bỏ `acl-guard.cjs`** (không có tương đương khai báo, ghi ở đây để đừng tưởng vẫn còn):
 
 - `hasIndirectCommand` — chặn `$(...)`, backtick, `eval`, `bash -c`, `xargs`, `base64`.
-- Tool gating theo workflow state (tool cho phép ở `EXECUTE` nhưng không ở `REPORT`).
+- Tool gating theo workflow state (tool cho phép ở `IMPLEMENT` nhưng không ở `REPORT`).
 - Trên **Codex**: sandbox chỉ chặn **ghi**, không chặn **đọc**. Cách ly private memory theo
   đường đọc chỉ còn ở mức instruction. Claude vẫn cưỡng chế được qua `deny Read(...)`.
 
@@ -620,6 +689,7 @@ dùng còn nằm trong đó đều là dữ liệu hẹn ngày mất.
   install.json               bản cài hiện hành: root, channel, version   (0600)
   projects.json              danh sách project đã init + backend         (0600)
   mode.json                  nấc đã ghi nhớ                              (0600)
+  settings.json              ghi đè loadout ở mức MÁY — người dùng tự viết
   principal.json             tên + xưng hô của principal                 (0600)
   update-check.json          cache kiểm bản mới, TTL 24h                 (0600)
   memory/                    scaffold từ `scaffold/memory/`, không theo Git
@@ -651,6 +721,18 @@ dùng còn nằm trong đó đều là dữ liệu hẹn ngày mất.
 ~/.alp-code/npm/              npm-wrapper payload cache, versioned theo package
   versions/X.Y.Z/<target>/    cùng artifact contract ở trên
 ```
+
+Trong project, `alp init` đã tạo `.alp/`; hai file settings sống ở đó:
+
+```text
+<project>/.alp/
+  settings.json              ghi đè loadout của PROJECT — commit được
+  settings.local.json        ghi đè của riêng người này — không commit
+  agents/ · skills/          agent và skill của project
+```
+
+Cả ba file settings đều do người dùng viết tay, đều tuỳ chọn, và đều không bị lệnh nào của ALP
+ghi đè.
 
 Mọi file state ghi bằng pattern **temp file → atomic rename → chmod**, và mọi directory tạo
 với mode `0700`.

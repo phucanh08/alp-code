@@ -19,7 +19,8 @@ export type RuntimeModelMap = Readonly<Record<RuntimeId, string>>;
  * Partial: a side left out takes 90% of its own model's context window.
  */
 export type RuntimeTokenBudgetMap = Readonly<Partial<Record<RuntimeId, number>>>;
-export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+export const REASONING_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 export type RuntimeReasoningMap = Readonly<Record<RuntimeId, ReasoningEffort>>;
 
 export type MemoryScopeGrant =
