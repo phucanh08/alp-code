@@ -16,6 +16,7 @@ import { ModeSelector } from "./mode-selector";
 import { WorkflowRunner } from "../workflow/workflow-runner";
 import { runContextCommand } from "./commands/context";
 import { createDefaultDelegationComposition, runDelegateCommand, runDelegationLifecycleCommand } from "./commands/delegate";
+import { parseAgentCommand, runAgentCommand } from "./commands/agent-test";
 import { syncIdentityDocuments } from "./commands/identity-sync";
 import { deinitializeProject, initializeProject, ProjectRegistryStore } from "./commands/init";
 import { ensurePrincipalProfile, runPrincipalCommand, type PrincipalCommandInput } from "./commands/principal";
@@ -35,6 +36,7 @@ export type AlpCommand =
   | { readonly command: "init"; readonly project?: string }
   | { readonly command: "deinit"; readonly project?: string }
   | { readonly command: "identity"; readonly action: "sync" }
+  | { readonly command: "agent"; readonly args: readonly string[] }
   | { readonly command: "principal"; readonly action: "show" | "set" }
   | { readonly command: "delegate"; readonly args: readonly string[] }
   | { readonly command: "delegation"; readonly args: readonly string[] }
@@ -108,6 +110,7 @@ export function parseAlpArgs(argv: readonly string[]): AlpCommand {
     }
     throw new Error("usage: alp principal show | alp principal set");
   }
+  if (argv[0] === "agent") return { command: "agent", args: Object.freeze(argv.slice(1)) };
   if (argv[0] === "delegate") return { command: "delegate", args: Object.freeze(argv.slice(1)) };
   if (argv[0] === "delegation") return { command: "delegation", args: Object.freeze(argv.slice(1)) };
   if (argv[0] === "context") return { command: "context", args: Object.freeze(argv.slice(1)) };
@@ -144,6 +147,7 @@ export interface AlpDependencies {
   readonly initProject: (input: { readonly project: string }) => Promise<void>;
   readonly deinitProject: (input: { readonly project: string }) => Promise<void>;
   readonly syncIdentity: () => Promise<void>;
+  readonly agentCommand: (args: readonly string[]) => Promise<number>;
   readonly principalCommand: (input: PrincipalCommandInput) => Promise<number>;
   readonly delegateCommand: (args: readonly string[]) => Promise<number>;
   readonly contextCommand: (args: readonly string[]) => Promise<number>;
@@ -265,6 +269,20 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
       const written = await syncIdentityDocuments({ directory: agentsDirectory() }, { registry: agentRegistry });
       for (const file of written) stdout.write(`IDENTITY ${file}\n`);
     },
+    async agentCommand(args) {
+      // The same asset root the adapters were built with, so the skills this reports on are
+      // the ones a launch would actually resolve.
+      const assetRoot = layout?.assetRoot ?? repoRoot;
+      return runAgentCommand(parseAgentCommand(args, agentRegistry), {
+        registry: agentRegistry,
+        hooksDirectory: join(repoRoot, "hooks"),
+        skillsRoot: join(assetRoot, "skills"),
+        assetRoot,
+        ...(layout ? { stableCommand: layout.stableCommand } : {}),
+        env: process.env,
+        write: (text: string) => { stdout.write(text); },
+      });
+    },
     async principalCommand(input) {
       return runPrincipalCommand(input, {
         write: (text) => stdout.write(text),
@@ -342,6 +360,7 @@ function helpText(): string {
     "  alp init [path]",
     "  alp deinit [path]",
     "  alp identity sync",
+    "  alp agent test <role|--all> [--tier 1|2|3] [--mode <mode>] [--json]",
     "  alp principal show|set",
     "  alp delegate <role> [options] -- <task>",
     "  alp context status|validate [execution-id]",
@@ -385,6 +404,7 @@ export async function main(
   if (command.command === "deinit") { await dependencies.deinitProject({ project: resolve(cwd, command.project ?? ".") }); return 0; }
   if (command.command === "identity") { await dependencies.syncIdentity(); return 0; }
   if (command.command === "principal") return dependencies.principalCommand({ action: command.action });
+  if (command.command === "agent") return dependencies.agentCommand(command.args);
   if (command.command === "delegate") return dependencies.delegateCommand(command.args);
   if (command.command === "delegation") return dependencies.delegateCommand(Object.freeze(["__lifecycle", ...command.args]));
   if (command.command === "context") return dependencies.contextCommand(command.args);

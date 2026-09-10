@@ -151,6 +151,30 @@ alp mode set high
 
 Thứ tự quyết định: `--mode` → `ALP_MODE` → `alp mode set` → menu trên TTY → `medium`.
 
+## Kiểm tra một agent
+
+```bash
+alp agent test review                 # ba tầng, dừng ở tầng đỏ đầu tiên
+alp agent test --all                  # cả 8 vai built-in
+alp agent test main --tier 2 --mode high
+alp agent test search --json          # cùng nội dung, cho script đọc
+```
+
+Ba tầng, rẻ trước đắt sau, không tầng nào gọi model:
+
+| Tầng | Kiểm gì |
+|---|---|
+| 1 · static | grant so với catalog, workflow reachable + có trạng thái kết thúc, skill có thật trên đĩa và không symlink ra ngoài skill root, model có runtime, ngưỡng auto-compact so với cửa sổ context |
+| 2 · dry-run prepare | chạy `ExecutionService.prepare` thật rồi dừng **trước** spawn; in quyền (bảng Authority đúng như vai sẽ đọc), egress (tool ra mạng, MCP server và lệnh của nó) và chi phí (nấc chọn runtime nào, model, ngưỡng nén, byte SKILL.md vào context), kèm launch spec của cả hai runtime để diff cạnh nhau |
+| 3 · deny path | từng trần capability phải từ chối bằng **đúng mã lỗi** — `TOOL_NOT_GRANTED`, `WORKSPACE_SCOPE_MISMATCH`, `PRIVATE_MEMORY_DENIED`… — chứ không chỉ "thất bại" |
+
+Mọi thứ tầng 2 ghi ra nằm trong một thư mục tạm và bị xoá sau đó: memory, execution state, file
+cấu hình runtime. Không có tiến trình runtime nào được phóng. Exit `0` khi sạch, `1` khi có
+finding — cùng quy ước với `alp doctor`.
+
+Dừng ở tầng đỏ đầu tiên là có chủ ý: một definition hỏng ở tầng 1 sẽ làm snapshot tầng 2 mô tả
+trung thực một thứ đã sai, còn tầng 3 từ chối đúng vì lý do sai.
+
 ## Delegation
 
 ```bash
@@ -252,6 +276,7 @@ artifact của bản ALP cũ (`identity/`, `CHARTER.md`, compiled ACL); doctor s
 ```text
 src/
   agents/       immutable AgentDefinition registry
+  agent-test/   ba tầng của `alp agent test` (static, dry-run prepare, deny path)
   policy/       delegation, tool, memory và workspace authorization
   memory/       storage-neutral service + Markdown/remote adapters
   execution/    identity capsules, policy snapshots, execution state

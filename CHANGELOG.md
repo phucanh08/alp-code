@@ -8,6 +8,24 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thêm
+
+- `alp agent test <role|--all> [--tier 1|2|3] [--mode <nấc>] [--json]` — ba tầng đầu của công cụ
+  test agent (vision §10.3) chạy được từ CLI thay vì chỉ trong `npm test`. Tầng 1 kiểm định nghĩa
+  tĩnh (grant, workflow reachable + terminal, skill có thật trên đĩa và không symlink ra ngoài
+  skill root, model có runtime, ngưỡng auto-compact so với cửa sổ context). Tầng 2 chạy
+  `ExecutionService.prepare` thật rồi dừng trước spawn, in **quyền** (bảng Authority đúng như vai
+  sẽ đọc), **egress** (tool ra mạng, MCP server và lệnh của nó) và **chi phí** (nấc chọn runtime
+  nào, model, ngưỡng nén, số byte SKILL.md vào context), kèm launch spec của cả hai runtime để
+  diff cạnh nhau. Tầng 3 thăm dò từng trần capability và đòi **đúng mã lỗi**, không chỉ "bị từ
+  chối". Chạy tầng rẻ trước và dừng ở tầng đỏ đầu tiên; exit 0 sạch, 1 khi có finding — cùng quy
+  ước với `alp doctor`.
+
+### Đổi
+
+- Bộ dựng dry-run của tầng 2 chuyển từ `test/support/` sang `src/agents/agent-test/`, để lệnh CLI
+  và test suite chạy đúng một đường chứ không hai.
+
 ## [0.10.4] - 2026-09-09
 
 ### Sửa

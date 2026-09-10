@@ -798,6 +798,8 @@ alp-code/
 │   │   ├── shared/            # house rules, voice, principal
 │   │   ├── loader/            # ← MỚI: custom agent (§5)
 │   │   └── registry.ts
+│   ├── agent-test/            # tầng 1–3 của §10.3; đứng trên agents/policy/execution/runtime
+│   │                          # nên không nằm trong agents/ (§4.1)
 │   ├── skills/                # ← MỚI: skill engine (§4.4)
 │   ├── capability/            # ← MỚI, khi trả nợ §4.5
 │   ├── policy/
@@ -852,6 +854,9 @@ Doc này chỉ được coi là đang thành hiện thực khi các mốc sau đ
 - **M0 — Công cụ test agent.** `alp agent test <id>` chạy được tầng 1–3 của §10.3 trên cả 8 agent
   built-in. *Bằng chứng: cho nó chạy trên commit trước bản vá 2026-09-04 thì đỏ ở đúng hai lỗi
   chặn đã tìm ra, chạy trên commit sau thì xanh.*
+  **2026-09-10: lệnh đã tồn tại** (`src/agent-test/`, `alp agent test <role|--all>`) và xanh trên
+  cả 8 vai (`test/agent-test/command.test.ts`). Phần bằng chứng lịch sử — chạy lại trên commit
+  trước bản vá — chưa làm, nên M0 tính là **đạt một nửa**: công cụ có, phép thử ngược chưa chạy.
 - **M1 — Portability thật.** Cùng một agent `review` chạy qua Claude và qua Codex, sinh output khớp
   cùng một `OutputContract`, và hai policy trace so sánh được cạnh nhau. *Bằng chứng: một test so
   sánh hai trace.*
