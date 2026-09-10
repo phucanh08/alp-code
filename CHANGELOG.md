@@ -8,6 +8,14 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thêm
+
+- `docs/user/` là source of truth cho site tại <https://alp.anhlp.com/docs/>. Repo `alp-docs`
+  không còn giữ bản sao content nào; workflow bên đó kéo thư mục này từ `main` rồi build.
+  Sửa tài liệu người dùng ở repo này, cùng commit với thay đổi code sinh ra nó.
+- `docs/user/sidebar.json` giữ thứ tự và nhãn navigation, nằm cạnh content để thêm một trang
+  là một commit ở một repo.
+
 ## [0.10.4] - 2026-09-09
 
 ### Sửa

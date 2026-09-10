@@ -1,0 +1,38 @@
+{
+  "$comment": "Thứ tự và nhãn của sidebar trên alp.anhlp.com. Nằm cạnh content để thêm một trang là một commit ở repo này, không phải hai commit ở hai repo. `path` là đường dẫn tương đối trong docs/user/, bỏ đuôi .md; chuỗi rỗng là trang index.",
+  "groups": [
+    {
+      "label": "Bắt đầu",
+      "items": [
+        { "label": "Giới thiệu", "path": "" },
+        { "label": "Cài đặt", "path": "getting-started/installation" },
+        { "label": "Bắt đầu nhanh", "path": "getting-started/quickstart" }
+      ]
+    },
+    {
+      "label": "Khái niệm",
+      "items": [
+        { "label": "ALP hoạt động thế nào", "path": "concepts/how-alp-works" },
+        { "label": "Nấc và runtime", "path": "concepts/modes-and-runtimes" },
+        { "label": "Agent và quyền", "path": "concepts/agents-and-authority" }
+      ]
+    },
+    {
+      "label": "Hướng dẫn",
+      "items": [
+        { "label": "Thiết lập project", "path": "guides/project-setup" },
+        { "label": "Giao việc", "path": "guides/delegation" },
+        { "label": "Memory và continuity", "path": "guides/memory-and-continuity" },
+        { "label": "Custom agent (preview)", "path": "guides/custom-agents" },
+        { "label": "Skill của project (preview)", "path": "guides/project-skills" }
+      ]
+    },
+    {
+      "label": "Tham chiếu",
+      "items": [
+        { "label": "CLI", "path": "reference/cli" },
+        { "label": "Xử lý sự cố", "path": "reference/troubleshooting" }
+      ]
+    }
+  ]
+}
