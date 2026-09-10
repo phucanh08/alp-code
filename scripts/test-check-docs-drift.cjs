@@ -73,6 +73,9 @@ function testPreviewBanner() {
     "a.md": ":::caution[Preview, chưa có trong stable `v0.3.0`]\nnội dung\n:::",
     "b.md": ":::caution[Preview, chưa có trong stable `v0.4.0`]\nnội dung\n:::",
     "c.md": ":::note[Preview]\nnội dung\n:::",
+    // Version ở thân aside, không ở tiêu đề — cách viết có thật trong reference/cli.md.
+    "e.md": ":::caution[Preview]\nNhóm `alp agent …` chưa có trong stable binary `v0.3.0`.\n:::",
+    "f.md": ":::caution[Preview]\nChưa có trong stable binary `v0.4.0`.\n:::",
     "d.md": "Chạy `alp context pin next-action -- \"chạy production preview\"` để ghim.",
   });
   const run = check_(repo, []);
@@ -83,6 +86,8 @@ function testPreviewBanner() {
     assert(!blockOf(run.stdout, "PREVIEW").includes("c.md"), run.stdout);
   });
   check("chữ preview trong câu văn thường → không báo", () => assert(!run.stdout.includes("d.md"), run.stdout));
+  check("version ở thân aside, nói bản cũ → báo", () => assert.match(blockOf(run.stdout, "PREVIEW"), /e\.md:1 — banner nói v0\.3\.0/));
+  check("version ở thân aside, nói đúng bản → im", () => assert(!run.stdout.includes("f.md"), run.stdout));
 }
 
 function testReadmeIsNotAPage() {

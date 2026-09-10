@@ -59,7 +59,7 @@ for (const file of markdownFiles(docsRoot)) {
     const at = { file: rel, line: index + 1, text: line.trim().slice(0, 110) };
     checkVersions(line, at);
     checkPins(line, at);
-    checkPreview(line, at);
+    checkPreview(line, at, lines, index);
   });
 }
 
@@ -92,19 +92,32 @@ function checkPins(line, at) {
   }
 }
 
-function checkPreview(line, at) {
+function checkPreview(line, at, lines, index) {
   // Chỉ dòng mở một aside của Starlight. Chữ "preview" trong câu văn bình thường không
   // phải banner, và bắt cả hai thì report đầy tiếng ồn rồi không ai đọc nữa.
   const aside = line.match(/^:::[a-z]+\[([^\]]*)\]/i);
   if (!aside || !/preview|chưa có trong stable/i.test(aside[1])) return;
 
-  const version = aside[1].match(/v?(\d+\.\d+\.\d+)/);
+  // Version nằm ở tiêu đề (`[Preview, chưa có trong stable v0.10.4]`) hoặc ở thân aside
+  // (`:::caution[Preview]` rồi câu sau mới nói version). Cả hai đều là cách viết đang có
+  // trong docs, nên đọc cả hai — không thì mỗi lần release lại phải bỏ qua một WARN cố định.
+  const version = aside[1].match(/v?(\d+\.\d+\.\d+)/) || asideBody(lines, index).match(/v?(\d+\.\d+\.\d+)/);
   if (!version) {
     warnings.push({ kind: "PREVIEW", ...at, detail: "banner không nói version nào — tự đọc rồi quyết" });
     return;
   }
   if (version[1] === target) return;
   findings.push({ kind: "PREVIEW", ...at, detail: `banner nói v${version[1]}, đang phát hành v${target}` });
+}
+
+/** Thân của aside mở tại `index`, tới dòng `:::` đóng. */
+function asideBody(lines, index) {
+  const body = [];
+  for (let i = index + 1; i < lines.length; i += 1) {
+    if (lines[i].trim() === ":::") break;
+    body.push(lines[i]);
+  }
+  return body.join("\n");
 }
 
 // --------------------------------------------------------------------- tiện ích
