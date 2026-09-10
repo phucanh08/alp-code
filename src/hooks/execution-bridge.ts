@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { chmod, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { loadProjectAgents } from "../agents/loader";
 import { agentRegistry } from "../agents/registry";
 import type { AgentDefinition } from "../agents/types";
-import { createExecutionPolicy } from "../execution/execution-policy";
+import { createExecutionPolicy, hashAgentDefinition } from "../execution/execution-policy";
 import type { ExecutionPolicy, StoredExecutionState } from "../execution/types";
 import { WorkflowRunner } from "../workflow/workflow-runner";
 import type { WorkflowExecutionState } from "../workflow/types";
@@ -32,8 +33,33 @@ function assertExecutionId(id: string): void {
   if (!/^exec_[a-zA-Z0-9_-]+$/.test(id)) throw new Error("missing or invalid execution ID");
 }
 
+/**
+ * The definition this execution actually ran with.
+ *
+ * The shipped registry is not enough any more: a custom agent's role exists only in its
+ * project, so `agentRegistry.get("echo")` threw and the Stop hook — which catches everything
+ * and reports it as a note — left the execution at `prepared` with its output contract never
+ * enforced. Found by the first live run; tiers 1–3 stop before the spawn, so no amount of them
+ * could have caught it.
+ *
+ * Resolved **by hash**, not by trust: trust can be revoked between launch and Stop, and the
+ * execution that is finishing ran with the definition it ran with. A hash that no longer
+ * matches anything on disk is a definition that changed mid-flight, which is worth failing on.
+ */
+async function definitionFor(policy: ExecutionPolicy): Promise<AgentDefinition<unknown>> {
+  if (agentRegistry.has(policy.role)) return agentRegistry.get(policy.role);
+  const load = await loadProjectAgents({ projectRoot: policy.workspace });
+  const match = [...load.loaded, ...load.overlays].find((agent) =>
+    agent.id === policy.role && hashAgentDefinition(agent.definition) === policy.definitionHash);
+  if (match === undefined) {
+    throw new Error(`no definition for \`${policy.role}\` matching the hash this execution ran with`);
+  }
+  return match.definition;
+}
+
 async function loadExecution(input: HookExecutionInput): Promise<{
   policy: ExecutionPolicy;
+  definition: AgentDefinition<unknown>;
   state: StoredExecutionState;
 }> {
   assertExecutionId(input.executionId);
@@ -44,16 +70,20 @@ async function loadExecution(input: HookExecutionInput): Promise<{
   ]);
   if (policy.executionId !== input.executionId || state.executionId !== input.executionId) throw new Error("execution ID mismatch");
   if (state.policyHash !== policy.policyHash) throw new Error("execution state policy hash mismatch");
-  const definition = agentRegistry.get(policy.role);
+  const definition = await definitionFor(policy);
   const expected = createExecutionPolicy({
     executionId: policy.executionId,
     definition,
     workspace: policy.workspace,
     workspaceMode: policy.workspaceMode,
+    // Carried, not defaulted. Left out, this re-derivation always assumed `medium`, so every
+    // execution launched on any other nấc failed the tamper check and its Stop hook quietly
+    // gave up — the eight built-in roles included. Found by the first live run.
+    mode: policy.mode,
     createdAt: policy.createdAt,
   });
   if (JSON.stringify(expected) !== JSON.stringify(policy)) throw new Error("execution policy snapshot is invalid or stale");
-  return { policy, state };
+  return { policy, definition, state };
 }
 
 /** Walk a still-running workflow forward to its terminal state so output can be submitted. */
@@ -80,8 +110,7 @@ async function persistState(input: HookExecutionInput, state: StoredExecutionSta
 }
 
 export async function finalizeExecution(input: FinalizeExecutionInput): Promise<{ ok: boolean; status: string; issues: readonly string[] }> {
-  const { policy, state } = await loadExecution(input);
-  const definition = agentRegistry.get(policy.role);
+  const { policy, definition, state } = await loadExecution(input);
   if (state.workflow.status === "completed") return { ok: true, status: "completed", issues: [] };
   if (state.workflow.status === "failed") return { ok: false, status: "failed", issues: ["output repair budget exhausted"] };
   const runner = new WorkflowRunner();

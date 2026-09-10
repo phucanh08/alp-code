@@ -33,6 +33,18 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   trùng, từ chối multi-document, cap 32 KiB trước khi parse và từ chối key lạ thay vì bỏ qua.
   Thêm dependency runtime `yaml` (thuần JS, không dependency con).
 
+- **Stop hook lại hoàn tất được execution.** Hai lỗi trong `execution-bridge.loadExecution`, cùng
+  bị lộ ở lần chạy live đầu tiên: (1) nó tái dựng `ExecutionPolicy` để kiểm snapshot có bị sửa
+  không, nhưng **bỏ quên `mode`** nên luôn giả định `medium` — mọi execution chạy ở nấc khác đều
+  trượt phép kiểm, và hook (vốn báo lỗi bằng một dòng note) lặng lẽ để execution ở `prepared` với
+  output contract không được cưỡng chế; điều này đúng cho cả 8 vai built-in, không riêng custom
+  agent. (2) nó resolve vai qua `agentRegistry` nên không thấy custom agent, vốn chỉ tồn tại
+  trong project của nó — giờ resolve **theo hash** từ `.alp/agents/`, vì trust có thể bị thu hồi
+  giữa lúc chạy còn execution đang kết thúc thì đã chạy với definition nó đã chạy.
+  Hệ quả nhìn thấy được: `alp delegate` trên Codex từng trả về nguyên transcript CLI (banner,
+  warning, "tokens used") thay vì câu trả lời — đó chỉ là fallback khi hook không ghi được output.
+  Tầng 1–3 dừng trước spawn nên không tầng nào bắt được lỗi này.
+
 - Dòng deny khi hash lệch nói rõ **vì sao**: quyền đổi (kèm diff) hay chỉ prompt/workflow đổi.
   `definitionHash` phủ cả house rule mà house rule đi theo ALP, nên `alp update` có thể làm lệch
   hash của mọi custom agent dù file không ai đụng — hành vi đúng, nhưng thông báo cũ ám chỉ nhầm
