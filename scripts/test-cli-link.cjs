@@ -304,7 +304,7 @@ function testBootstrapWiring() {
   });
   check("bootstrap dựng state, validate registry/runtime, chạy doctor và link CLI", () => {
     assert.strictEqual(run.status, 0, (run.stdout || "") + (run.stderr || ""));
-    assert.match(run.stdout, /AgentRegistry 8 agents; runtime adapters claude,codex/);
+    assert.match(run.stdout, /AgentRegistry 9 agents; runtime adapters claude,codex/);
     assert.match(run.stdout, /ARTIFACT\s+bản cài tarball/);
     assert(fs.existsSync(path.join(home, ".alp", "executions")));
     assert(fs.existsSync(path.join(home, ".alp", "hooks", "session-boot.cjs")));
