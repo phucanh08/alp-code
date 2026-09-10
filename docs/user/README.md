@@ -37,3 +37,23 @@ Viết `./<tên-trang>/` sẽ trỏ vào chính thư mục của trang đang đ�
 Nhiều trang mô tả tính năng chưa có trong stable binary và đánh dấu bằng aside
 `:::caution[Preview, chưa có trong stable vX.Y.Z]`. Khi một release đưa tính năng đó
 vào stable, banner phải bị **xoá**, không phải đổi số version.
+
+## Đẩy thay đổi lên site
+
+`alp-docs` build lại theo cron mỗi giờ, nên push xong là site tự đúng trong vòng một
+giờ. Muốn thấy ngay thì gọi build từ máy:
+
+```bash
+gh workflow run deploy.yml -R phucanh08/alp-docs
+gh run watch -R phucanh08/alp-docs "$(gh run list -R phucanh08/alp-docs -L 1 --json databaseId --jq '.[0].databaseId')"
+```
+
+Cố ý gọi tay chứ không để `alp-code` tự bắn sang: bắn tự động cần một token của
+`alp-docs` nằm trong secret của repo này, và đây là repo public. Đổi một credential
+rộng lấy vài chục phút độ trễ là lỗ vốn — nhất là khi `gh` trên máy anh đã auth sẵn.
+
+Trước khi push, rà xem docs còn nói về bản cũ không:
+
+```bash
+node scripts/check-docs-drift.cjs
+```

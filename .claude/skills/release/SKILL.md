@@ -192,6 +192,16 @@ là mọi lần cài tarball trong khoảng đó đều 404.
 Cả `npm publish` lẫn `gh release` đều chạy tại máy nên biết kết quả ngay. Không có bước async
 nào để phải đi moi log.
 
+Nếu bước 2 có sửa `docs/user/`, đẩy site luôn sau khi push — cùng lý do: biết kết quả ngay
+thay vì đợi cron mỗi giờ của `alp-docs`.
+
+```bash
+gh workflow run deploy.yml -R phucanh08/alp-docs
+```
+
+`alp-code` cố ý không tự bắn sang: bắn tự động cần token của `alp-docs` nằm trong secret của
+một repo public, đắt hơn nhiều so với vài chục phút độ trễ mà nó tiết kiệm.
+
 ### 6. Xác minh
 
 ```bash
@@ -215,6 +225,7 @@ là thứ `resolveLatestReleaseTag` dựa vào — và asset bundle phải có m
 ✓ artifact:  build/alp-code-0.2.0.tgz + build/alp-code-v0.2.0-bundle.tar.gz
 ✗ tag/push:  CHƯA — chờ principal duyệt
 ✗ npm/release: CHƯA — chờ principal duyệt
+✗ docs site:  CHƯA — build alp-docs sau khi push
 ```
 
 Chưa push thì ghi rõ chưa push, và ghi riêng npm với GitHub Release: dựng được artifact không
