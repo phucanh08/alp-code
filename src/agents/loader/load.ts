@@ -12,6 +12,7 @@ import type {
 } from "../types";
 import { defineLinearWorkflow } from "../../workflow/types";
 import { enforceCeiling, type CapabilityCeiling } from "./ceiling";
+import { scanAgentSkills, type SkillScan } from "./skills";
 import { parseAgentFile } from "./parse";
 import { HOUSE_RULE_SETS, type AgentFile } from "./schema";
 
@@ -42,17 +43,48 @@ export interface AgentLoadResult {
   readonly agentsDirectory: string;
   readonly loaded: readonly LoadedAgent[];
   readonly failed: readonly AgentLoadFailure[];
-  /** Directories that carry no `agent.yaml` — skill overlays for a built-in (§5.7.5). */
-  readonly overlays: readonly string[];
+  /**
+   * Built-in roles carrying project skills (§5.7.5), as the definition they would run with.
+   *
+   * A definition rather than a list of names, so an overlay goes through the same hash, the
+   * same trust decision and the same registry as anything else: it changes the prompt of a
+   * role that was already trusted, and "the same mechanism" is the whole point of §5.7.5.
+   */
+  readonly overlays: readonly LoadedAgent[];
 }
 
 export interface LoadProjectAgentsOptions {
   readonly projectRoot: string;
   readonly builtins?: readonly AgentDefinition<unknown>[];
   readonly catalog?: CapabilityCatalog;
+  /**
+   * `<assetRoot>/skills` — the shipped tree a project link may legitimately point into.
+   * Defaults to the repo's own, which is what a dev clone and a native install both resolve to.
+   */
+  readonly builtinSkillsRoot?: string;
 }
 
-function toDefinition(file: AgentFile): AgentDefinition<unknown> {
+/**
+ * A built-in, plus the project skills placed in `.alp/agents/<id>/skills/`.
+ *
+ * A same-named entry **replaces** the shipped grant rather than joining it: §5.7.1 makes
+ * specific beat general, and the role's own root is searched first, so listing the name twice
+ * would only describe the shadowed copy as if it were still reachable.
+ */
+function withOverlay(builtin: AgentDefinition<unknown>, skills: SkillScan): AgentDefinition<unknown> {
+  const overlaid = skills.bindings.map((binding) => binding.name);
+  return defineAgent({
+    ...builtin,
+    capabilities: {
+      ...builtin.capabilities,
+      skills: [...builtin.capabilities.skills.filter((skill) => !overlaid.includes(skill)), ...overlaid],
+      skillBindings: skills.bindings,
+      skillRoots: [skills.directory],
+    },
+  });
+}
+
+function toDefinition(file: AgentFile, skills: SkillScan): AgentDefinition<unknown> {
   const capabilities = file.capabilities;
   const workspace = capabilities.workspace ?? {};
   const memory = capabilities.memory ?? {};
@@ -73,7 +105,14 @@ function toDefinition(file: AgentFile): AgentDefinition<unknown> {
     ...(file.autoCompactTokens ? { autoCompactTokens: file.autoCompactTokens } : {}),
     capabilities: {
       tools: capabilities.tools,
-      skills: capabilities.skills ?? [],
+      // Two grants that cannot express each other: catalog names for the tree ALP ships and
+      // replaces on update, directory entries for the tree the project owns. The binding
+      // paths ride along so the hash a principal approves covers where each project name
+      // resolved, not only that it existed.
+      skills: [...(capabilities.skills ?? []), ...skills.bindings.map((binding) => binding.name)],
+      ...(skills.bindings.length > 0
+        ? { skillBindings: skills.bindings, skillRoots: [skills.directory] }
+        : {}),
       subagents: capabilities.subagents ?? [],
       mcpServers: capabilities.mcpServers ?? [],
       memory: {
@@ -113,6 +152,8 @@ export async function loadProjectAgents(
   options: LoadProjectAgentsOptions,
 ): Promise<AgentLoadResult> {
   const agentsDirectory = join(options.projectRoot, ".alp", "agents");
+  const builtinSkillsRoot = options.builtinSkillsRoot
+    ?? join(process.env.ALP_REPO_ROOT ?? process.cwd(), "skills");
   const builtins = options.builtins ?? AGENT_DEFINITIONS;
   const coordinator = builtins.find((definition) => definition.id === CUSTOM_AGENT_PARENT);
   if (coordinator === undefined) {
@@ -133,15 +174,31 @@ export async function loadProjectAgents(
 
   const loaded: LoadedAgent[] = [];
   const failed: AgentLoadFailure[] = [];
-  const overlays: string[] = [];
+  const overlays: LoadedAgent[] = [];
 
   for (const entry of entries.filter((candidate) => candidate.isDirectory()).sort()) {
-    const sourcePath = join(agentsDirectory, entry.name, AGENT_FILE_NAME);
+    const agentDirectory = join(agentsDirectory, entry.name);
+    const sourcePath = join(agentDirectory, AGENT_FILE_NAME);
     let source: string;
     try {
       source = await readFile(sourcePath, "utf8");
     } catch {
-      overlays.push(entry.name);
+      // No `agent.yaml`: a directory named after a built-in is that role's skill overlay,
+      // and one named after nothing at all is a directory the principal left here.
+      const builtin = builtins.find((definition) => definition.id === entry.name);
+      if (builtin === undefined) continue;
+      const skills = await scanAgentSkills({ agentDirectory, projectRoot: options.projectRoot, builtinSkillsRoot });
+      if (skills.bindings.length === 0 && skills.issues.length === 0) continue;
+      const issues = [
+        ...skills.issues,
+        // An overlay adds skills; it cannot hand a role the tool to reach them, because that
+        // would be an overlay editing capability — the one thing §5.7.5 says it may not do.
+        ...(skills.bindings.length > 0 && !builtin.capabilities.tools.includes("Skill")
+          ? [`\`${builtin.id}\` holds no \`Skill\` tool; an overlay cannot grant one`]
+          : []),
+      ];
+      if (issues.length > 0) failed.push({ id: entry.name, sourcePath: skills.directory, issues });
+      else overlays.push({ id: entry.name, sourcePath: skills.directory, definition: withOverlay(builtin, skills) });
       continue;
     }
 
@@ -159,14 +216,18 @@ export async function loadProjectAgents(
       continue;
     }
 
-    const issues = enforceCeiling(parsed.file, ceiling);
+    const skills = await scanAgentSkills({ agentDirectory, projectRoot: options.projectRoot, builtinSkillsRoot });
+    const issues = [
+      ...skills.issues,
+      ...enforceCeiling({ file: parsed.file, skills: skills.bindings.map((binding) => binding.name) }, ceiling),
+    ];
     if (issues.length > 0) {
       failed.push({ id: parsed.file.id, sourcePath, issues });
       continue;
     }
 
     try {
-      loaded.push({ id: parsed.file.id, sourcePath, definition: toDefinition(parsed.file) });
+      loaded.push({ id: parsed.file.id, sourcePath, definition: toDefinition(parsed.file, skills) });
     } catch (error) {
       failed.push({
         id: parsed.file.id,
@@ -191,11 +252,14 @@ export async function loadProjectAgents(
 function registryWith(
   agents: readonly LoadedAgent[],
   builtins: readonly AgentDefinition<unknown>[],
+  overlays: readonly LoadedAgent[] = [],
 ): AgentRegistry {
-  if (agents.length === 0) return createAgentRegistry(builtins);
   const ids = agents.map((agent) => agent.id);
+  const base = builtins.map((definition) =>
+    overlays.find((overlay) => overlay.id === definition.id)?.definition ?? definition);
+  if (ids.length === 0) return createAgentRegistry(base);
   return createAgentRegistry([
-    ...builtins.map((definition) => definition.id === CUSTOM_AGENT_PARENT
+    ...base.map((definition) => definition.id === CUSTOM_AGENT_PARENT
       ? defineAgent({ ...definition, delegatesTo: [...definition.delegatesTo, ...ids] })
       : definition),
     ...agents.map((agent) => agent.definition),
@@ -208,8 +272,9 @@ function registryWith(
 export function createTrustedRegistry(
   trusted: readonly LoadedAgent[],
   builtins: readonly AgentDefinition<unknown>[] = AGENT_DEFINITIONS,
+  overlays: readonly LoadedAgent[] = [],
 ): AgentRegistry {
-  return registryWith(trusted, builtins);
+  return registryWith(trusted, builtins, overlays);
 }
 
 /**
@@ -222,6 +287,7 @@ export function createTrustedRegistry(
 export function createCandidateRegistry(
   candidates: readonly LoadedAgent[],
   builtins: readonly AgentDefinition<unknown>[] = AGENT_DEFINITIONS,
+  overlays: readonly LoadedAgent[] = [],
 ): AgentRegistry {
-  return registryWith(candidates, builtins);
+  return registryWith(candidates, builtins, overlays);
 }

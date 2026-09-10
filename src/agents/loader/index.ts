@@ -13,6 +13,13 @@ export {
 } from "./load";
 export { AGENT_FILE_MAX_BYTES, parseAgentFile, type AgentFileParse } from "./parse";
 export {
+  MAX_SKILLS_PER_AGENT,
+  SKILLREF_SUFFIX,
+  SKILLS_DIRECTORY,
+  scanAgentSkills,
+  type SkillScan,
+} from "./skills";
+export {
   AGENT_FILE_SCHEMA_VERSION,
   HOUSE_RULE_SETS,
   MAX_RULES,

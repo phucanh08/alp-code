@@ -54,6 +54,18 @@ export const agentFileSchema = z.strictObject({
   }),
   capabilities: z.strictObject({
     tools: z.array(toolName),
+    /**
+     * Shipped skills, by catalog name. **Project** skills are not declared here — the agent's
+     * own `skills/` directory is that grant list (§5.7), and the two never name the same thing.
+     *
+     * §5.7 asks for no `skills:` field at all, on the good ground that two places to grant one
+     * thing will disagree. It does not survive contact with where the shipped skills live: a
+     * native install keeps them under `~/.alp-code/versions/<tag>/skills`, so the relative
+     * link §5.7 would use to reach `git` names a directory that `alp update` replaces. A
+     * checked-in file cannot point at a path that moves. So the two grants are split by what
+     * they can express — a name for the tree ALP owns, a directory entry for the tree the
+     * project owns — and neither can say what the other says.
+     */
     skills: z.array(name).optional(),
     subagents: z.array(name).optional(),
     mcpServers: z.array(name).optional(),

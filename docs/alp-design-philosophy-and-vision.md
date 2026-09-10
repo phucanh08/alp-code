@@ -565,6 +565,21 @@ tảng, nên nó xứng đáng có mặt từ v1.
 `skills/` của nó, không phải toàn bộ `.alp/skills/`. Không có trường `skills: [...]` trong
 `agent.yaml` — một nguồn sự thật, không phải hai thứ để lệch nhau.
 
+**2026-09-10 — sửa lại: có `skills:`, nhưng nó khai một thứ khác.** Câu trên không sống sót qua
+chỗ skill built-in thật sự nằm. Bản cài native giữ chúng ở `~/.alp-code/versions/<tag>/skills`,
+và `alp update` thay nguyên khối thư mục đó. Một symlink hay `.skillref` **tương đối** trỏ tới
+`git` vì thế trỏ vào một đường dẫn sẽ biến mất ở lần cập nhật kế tiếp — file commit vào repo
+không thể trỏ tới một chỗ di chuyển được. Nên hai grant được tách theo **thứ chúng diễn đạt nổi**:
+
+| Grant | Khai ở đâu | Cho cây nào |
+|---|---|---|
+| Skill built-in | `capabilities.skills: [git]` — tên trong `SKILL_CATALOG` | Cây ALP sở hữu và thay khi update |
+| Skill của project | Một entry trong `.alp/agents/<id>/skills/` | Cây project sở hữu, đi cùng repo qua git |
+
+Không cái nào nói được điều cái kia nói: một tên catalog không trỏ được vào project, một entry
+thư mục không trỏ bền vững vào cây built-in. Loader từ chối khi cùng một tên xuất hiện ở cả hai
+chỗ, nên nỗi lo "hai nguồn sự thật cho một quyết định" ở câu gốc vẫn được giữ.
+
 #### 5.7.1. Thứ tự resolve và trùng tên
 
 Skill root của một execution được dựng theo thứ tự, first-match-wins:
@@ -583,6 +598,10 @@ không âm thầm.
 
 Quan trọng: đây **không phải** một danh sách chung nữa. Mỗi execution nhận tập root của riêng nó,
 pin trong `ExecutionPolicy` — §4.4.
+
+**2026-09-10: đã làm.** `ExecutionPolicy.skillRoots` mang root của chính vai đó và cả hai adapter
+đặt nó lên **đầu** danh sách, nên "cụ thể thắng chung" là hành vi thật chứ không phải mô tả.
+`alp agent show <id>` in thứ tự đã tính, kèm từng binding và nơi nó resolve tới.
 
 #### 5.7.2. Symlink escape phải bị deny
 
@@ -640,6 +659,13 @@ thêm skill, và:
 - **Có `agent.yaml` cạnh một id built-in ⇒ deny.** Overlay không được chiếm quyền identity: không
   sửa capability, model, workflow hay output contract của agent built-in.
 - Overlay vẫn phải trust như custom agent (§5.6) — nó thay đổi prompt của một agent đã trusted.
+
+**2026-09-10: đã làm.** Overlay đi qua đúng cùng một cơ chế — loader dựng ra definition của vai
+built-in kèm skill của project, definition đó được hash và trust như mọi thứ khác. Hai điều chỉnh:
+overlay chưa trust **không** deny vai built-in (vai đó chạy với skill shipped của nó, cộng một
+dòng notice) — deny cả `review` vì một file bên cạnh chưa được duyệt là hạ cả team vì một phần
+thêm chưa ai đọc; và một overlay đặt lên vai **không có tool `Skill`** bị từ chối, vì cấp tool là
+sửa capability, đúng thứ mục này cấm.
 
 Giới hạn cần nói thẳng: **hash pin ranh giới, không pin nội dung.** Nó phủ tên skill và realpath đã
 resolve, không phủ nội dung `SKILL.md` — skill được sửa liên tục là chuyện bình thường, hash lại
@@ -897,8 +923,10 @@ Doc này chỉ được coi là đang thành hiện thực khi các mốc sau đ
   tầng của `alp agent test` trên cả hai runtime (`test/agents/loader.test.ts`,
   `test/agent-test/command.test.ts`), và trust bằng hash cộng nối vào `main.delegatesTo` cũng
   xong (`src/trust/`, `test/trust/trust.test.ts`) — một agent đã trust chạy việc được qua `alp`
-  và `alp delegate`. Chưa có: `.alp/skills/` + skill riêng của agent + `.skillref` (§5.7), và
-  bằng chứng live trên cả hai runtime (tầng 4) vẫn là bước tốn tiền chưa chạy.
+  và `alp delegate`. `.alp/skills/`, skill riêng của agent, `.skillref`, luật escape và overlay
+  cho vai built-in cũng xong (`src/agents/loader/skills.ts`, `test/agents/skills.test.ts`).
+  **M2 coi như đạt**, trừ tầng 4: bằng chứng live trên cả hai runtime vẫn là bước tốn tiền
+  chưa chạy.
 - **M3 — Approval.** `require_approval` được PolicyEngine phát ra, phiên tương tác hỏi được, và
   `--background` deny. *Bằng chứng: test cho `supportsApproval: false` ⇒ deny.*
 - **M4 — Nợ capability đã trả.** `TOOL_CATALOG` không còn là từ vựng của core;

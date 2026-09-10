@@ -385,7 +385,7 @@ function helpText(): string {
     "  alp deinit [path]",
     "  alp identity sync",
     "  alp agent test <role|--all> [--project <path>] [--tier 1|2|3] [--mode <mode>] [--json]",
-    "  alp agent add|untrust <id> [--project <path>]",
+    "  alp agent add|show|untrust <id> [--project <path>]",
     "  alp agent list [--project <path>]",
     "  alp principal show|set",
     "  alp delegate <role> [options] -- <task>",

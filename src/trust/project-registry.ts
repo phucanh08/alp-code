@@ -29,7 +29,13 @@ export async function trustedRegistryFor(
   options: { readonly trustFile?: string } = {},
 ): Promise<ProjectRegistry> {
   const load = await loadProjectAgents({ projectRoot });
-  const decisions = resolveTrust(load.loaded, readTrustedAgents(options.trustFile).records, projectRoot);
+  const records = readTrustedAgents(options.trustFile).records;
+  const decisions = resolveTrust(load.loaded, records, projectRoot);
+  // An overlay changes the prompt of a role that was already trusted, so it needs its own
+  // approval (§5.7.5) — and its own outcome when it lacks one. A refused overlay does not
+  // deny the role: `review` without the project's conventions is still `review`, and denying
+  // a built-in because of a file beside it would take the team down over an unreviewed extra.
+  const overlayDecisions = resolveTrust(load.overlays, records, projectRoot);
   const where = (path: string): string => relative(projectRoot, path) || path;
 
   const notices = [
@@ -42,11 +48,14 @@ export async function trustedRegistryFor(
         ? `DENIED     ${decision.agent.id} changed after it was trusted (${source}); run \`alp agent add ${decision.agent.id}\` to review and approve it again`
         : `UNTRUSTED  ${decision.agent.id} is not approved (${source}); run \`alp agent add ${decision.agent.id}\` to review it`];
     }),
+    ...overlayDecisions.flatMap((decision) => decision.status === "trusted" ? [] : [
+      `${decision.status === "changed" ? "DENIED    " : "UNTRUSTED "} skill overlay for ${decision.agent.id} (${where(decision.agent.sourcePath)}) is not approved; ${decision.agent.id} runs with its shipped skills until \`alp agent add ${decision.agent.id}\``,
+    ]),
   ];
 
   return {
-    registry: createTrustedRegistry(trustedAgents(decisions)),
-    decisions,
+    registry: createTrustedRegistry(trustedAgents(decisions), undefined, trustedAgents(overlayDecisions)),
+    decisions: [...decisions, ...overlayDecisions],
     notices,
   };
 }

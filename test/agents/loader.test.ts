@@ -124,7 +124,8 @@ describe("loadProjectAgents", () => {
     ["a read root outside the project", { 'readRoots: ["."]': 'readRoots: ["/etc"]' }, /must stay inside the project/],
     ["another role's private memory", { '"private:migrator"]\n    write': '"private:main"]\n    write' }, /another role's private memory/],
     ["a write outside its own private scope", { 'write: ["private:migrator"]': 'write: [shared]' }, /only writable scope/],
-    ["an unknown skill", { "tools: [Read, Glob, Grep, Bash]": "tools: [Read, Glob, Grep, Bash, Skill]\n  skills: [no-such-skill]" }, /not in the skill catalog/],
+    ["a skill named without the tool to invoke it", { "tools: [Read, Glob, Grep, Bash]": "tools: [Read, Glob, Grep, Bash]\n  skills: [git]" }, /has no `Skill` tool to invoke them/],
+    ["the `Skill` tool with no skill granted", { "tools: [Read, Glob, Grep, Bash]": "tools: [Read, Glob, Grep, Bash, Skill]" }, /grants no skill — that is a grant on every skill root/],
     ["an in-process subagent", { "tools: [Read, Glob, Grep, Bash]": "tools: [Read, Glob, Grep, Bash]\n  subagents: [explore]" }, /not in the subagent catalog/],
     ["an MCP server", { "tools: [Read, Glob, Grep, Bash]": "tools: [Read, Glob, Grep, Bash]\n  mcpServers: [docs]" }, /not trusted on this machine/],
     ["a tool the coordinator does not hold", { "tools: [Read, Glob, Grep, Bash]": "tools: [Read, Glob, Grep, Bash, Task]" }, /Invalid option|not held by/],
@@ -163,12 +164,30 @@ describe("loadProjectAgents", () => {
     expect(result.failed[0].issues.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("treats a directory with no agent.yaml as a skill overlay, not a failure", async () => {
+  it("treats a directory with no agent.yaml as a skill overlay for that built-in", async () => {
     const root = await project({ ".alp/agents/review/skills/house/SKILL.md": "# house\n" });
 
     const result = await loadProjectAgents({ projectRoot: root });
 
-    expect(result).toMatchObject({ loaded: [], failed: [], overlays: ["review"] });
+    expect(result).toMatchObject({ loaded: [], failed: [] });
+    expect(result.overlays.map((overlay) => overlay.id)).toEqual(["review"]);
+    expect(result.overlays[0].definition.capabilities.skills).toContain("house");
+  });
+
+  it("ignores a directory that is neither an agent nor a built-in", async () => {
+    const root = await project({ ".alp/agents/notes/README.md": "# notes\n" });
+
+    const result = await loadProjectAgents({ projectRoot: root });
+
+    expect(result).toMatchObject({ loaded: [], failed: [], overlays: [] });
+  });
+
+  it("refuses an overlay for a role that holds no `Skill` tool", async () => {
+    const root = await project({ ".alp/agents/titling/skills/house/SKILL.md": "# house\n" });
+
+    const result = await loadProjectAgents({ projectRoot: root });
+
+    expect(result.failed[0].issues.join("\n")).toContain("`titling` holds no `Skill` tool");
   });
 
   it("returns nothing for a project with no `.alp/agents`", async () => {

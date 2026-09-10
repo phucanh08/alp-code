@@ -67,6 +67,7 @@ async function fixture(): Promise<{ root: string; project: string; prepared: Pre
       workspaceAccess: "granted",
       allowedTools: ["Read", "Grep"],
       skills: [],
+      skillRoots: [],
       subagents: [],
       mcpServers: [],
       autoCompactTokens: { claude: null, codex: null },

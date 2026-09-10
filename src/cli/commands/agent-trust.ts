@@ -65,9 +65,9 @@ export async function runAgentAdd(
     return 1;
   }
 
-  const agent = load.loaded.find((candidate) => candidate.id === input.id);
+  const agent = [...load.loaded, ...load.overlays].find((candidate) => candidate.id === input.id);
   if (agent === undefined) {
-    const known = [...load.loaded.map((candidate) => candidate.id), ...load.failed.map((candidate) => candidate.id)];
+    const known = [...load.loaded, ...load.overlays, ...load.failed].map((candidate) => candidate.id);
     throw new Error(known.length === 0
       ? `no agent file under \`${load.agentsDirectory}\``
       : `unknown agent \`${input.id}\`; found: ${known.join(", ")}`);
@@ -75,7 +75,7 @@ export async function runAgentAdd(
 
   const report = await testAgent({
     role: agent.id,
-    registry: createCandidateRegistry(load.loaded),
+    registry: createCandidateRegistry(load.loaded, undefined, load.overlays),
     hooksDirectory: dependencies.hooksDirectory,
     skillsRoot: dependencies.skillsRoot,
     env: dependencies.env,
@@ -165,7 +165,11 @@ export function runAgentList(
   load: AgentLoadResult,
   dependencies: AgentTrustDependencies,
 ): number {
-  const decisions = resolveTrust(load.loaded, readTrustedAgents(dependencies.trustFile).records, input.project);
+  const decisions = resolveTrust(
+    [...load.loaded, ...load.overlays],
+    readTrustedAgents(dependencies.trustFile).records,
+    input.project,
+  );
   const rows = [
     ...decisions.map((decision) => ({
       id: decision.agent.id,

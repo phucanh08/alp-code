@@ -33,6 +33,19 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   trùng, từ chối multi-document, cap 32 KiB trước khi parse và từ chối key lạ thay vì bỏ qua.
   Thêm dependency runtime `yaml` (thuần JS, không dependency con).
 
+- Skill theo project (§5.7): `.alp/skills/` dùng chung, `.alp/agents/<id>/skills/` cho từng agent,
+  ba dạng entry — thư mục thật, symlink, và file `.skillref` một dòng cho Windows/checkout không
+  giữ symlink. **Thư mục là danh sách grant**; `capabilities.skills` trong `agent.yaml` giờ chỉ
+  khai skill **built-in** theo tên catalog, vì cây built-in nằm dưới `~/.alp-code/versions/<tag>/`
+  mà `alp update` thay nguyên khối — không link tương đối tới được. Cùng một tên ở cả hai chỗ là
+  lỗi. Luật escape cưỡng chế lúc load: đích phải nằm trong `.alp/skills/` hoặc cây built-in, theo
+  link đúng một cấp, vượt ra ngoài thì deny cả agent; trần 20 skill mỗi agent.
+  `ExecutionPolicy.skillRoots` pin root của từng execution và cả hai adapter đặt nó lên đầu, nên
+  skill của project che skill built-in cùng tên cho đúng vai đó. Vai built-in nhận skill của
+  project qua overlay (`.alp/agents/<builtin>/skills/`, không có `agent.yaml`) — overlay phải
+  trust riêng, chưa trust thì vai đó vẫn chạy với skill shipped. Thêm `alp agent show <id>` in
+  thứ tự resolve đã tính.
+
 - Trust cho custom agent (§5.6): `alp agent add <id>` chạy đủ ba tầng, in quyền · egress · chi
   phí cộng diff capability nếu file từng được trust khác nội dung, rồi hỏi — và chỉ terminal trả
   lời được, **không có `--yes`**. Hash nằm ở `~/.alp/trusted-agents.json` (0600), khoá theo cả

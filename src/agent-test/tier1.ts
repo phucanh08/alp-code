@@ -100,29 +100,45 @@ export function runTier1(input: Tier1Input): readonly AgentTestCheck[] {
   );
 
   const { skills, subagents, mcpServers, tools } = definition.capabilities;
-  const unknownSkills = missing(skills, new Set(catalog.skills));
+  const bindings = definition.capabilities.skillBindings ?? [];
+  const declaredRoots = definition.capabilities.skillRoots ?? [];
+  // A project skill is not in the shipped catalog and never will be — it carries its own
+  // resolved path instead, checked below.
+  const unknownSkills = skills.filter((skill) =>
+    !catalog.skills.includes(skill) && !bindings.some((binding) => binding.name === skill));
   const holdsSkillTool = tools.includes("Skill");
   const skillCoherent = holdsSkillTool === skills.length > 0;
   add(
     "skill-grant",
     unknownSkills.length === 0 && skillCoherent,
     unknownSkills.length > 0
-      ? `not in SKILL_CATALOG: ${unknownSkills.join(", ")}`
+      ? `neither in SKILL_CATALOG nor bound from the project: ${unknownSkills.join(", ")}`
       : !skillCoherent
         ? holdsSkillTool
           ? "holds the `Skill` tool but names no skill — a grant on every skill root the machine has"
           : "names skills but has no `Skill` tool to invoke them"
-        : skills.join(", ") || "none",
+        : `${skills.join(", ") || "none"}${bindings.length > 0 ? ` (${bindings.length} from the project)` : ""}`,
   );
 
   const skillAssetIssues: string[] = [];
   for (const skill of skills) {
-    const directory = join(skillsRoot, skill);
+    const binding = bindings.find((candidate) => candidate.name === skill);
+    // A project grant carries its own resolved path. Checked against the declared roots
+    // rather than trusted: a binding no root exposes under that name is a path the runtime
+    // will never reach, and the role would go into a session believing it holds the skill.
+    const directory = binding?.path ?? join(skillsRoot, skill);
+    const roots = binding ? declaredRoots : [skillsRoot];
     try {
       const real = realpathSync(directory);
+      if (binding && !roots.some((root) => {
+        try { return realpathSync(join(root, skill)) === real; } catch { return false; }
+      })) {
+        skillAssetIssues.push(`\`${skill}\` is bound to \`${real}\`, which no declared skill root exposes under that name`);
+        continue;
+      }
       // A skill root is a read grant (§4.4). A symlink that leaves it hands the role a path
       // nobody authorized, and the role would never know it had left.
-      if (!pathIsWithin(realpathSync(skillsRoot), real)) {
+      if (!binding && !pathIsWithin(realpathSync(skillsRoot), real)) {
         skillAssetIssues.push(`\`${skill}\` resolves to \`${real}\`, outside the skill root`);
         continue;
       }
@@ -130,13 +146,16 @@ export function runTier1(input: Tier1Input): readonly AgentTestCheck[] {
         skillAssetIssues.push(`\`${skill}\` has no SKILL.md`);
       }
     } catch {
-      skillAssetIssues.push(`\`${skill}\` is not present under \`${skillsRoot}\``);
+      skillAssetIssues.push(`\`${skill}\` is not present under \`${roots.join("`, `")}\``);
     }
   }
   add(
     "skill-assets",
     skillAssetIssues.length === 0,
-    skillAssetIssues.join("; ") || (skills.length === 0 ? "no skill named" : `${skills.length} skill directory resolved under \`${skillsRoot}\``),
+    skillAssetIssues.join("; ")
+      || (skills.length === 0
+        ? "no skill named"
+        : `${skills.length} skill directory resolved (${bindings.length} from the project)`),
   );
 
   const unknownSubagents = subagents.filter((name) => !Object.hasOwn(catalog.subagents, name));

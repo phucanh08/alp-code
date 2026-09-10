@@ -35,6 +35,7 @@ export function probeDefinition(
     capabilities: {
       tools: ["Read"],
       skills: [],
+      skillRoots: [],
       subagents: [],
       mcpServers: [],
       memory: { read: ["shared"], write: [] },
@@ -61,6 +62,7 @@ export function policyFixture(overrides: Partial<ExecutionPolicy> = {}): Executi
     workspaceAccess: "granted",
     allowedTools: ["Read", "Skill"],
     skills: ["git"],
+    skillRoots: [],
     subagents: [],
     mcpServers: [],
     autoCompactTokens: { claude: null, codex: null },

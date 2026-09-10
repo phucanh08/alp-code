@@ -51,8 +51,8 @@ export async function runAgentTest(
   load: AgentLoadResult,
   dependencies: AgentTestDependencies,
 ): Promise<number> {
-  const registry = createCandidateRegistry(load.loaded);
-  const candidates = new Set(load.loaded.map((agent) => agent.id));
+  const registry = createCandidateRegistry(load.loaded, undefined, load.overlays);
+  const candidates = new Set([...load.loaded, ...load.overlays].map((agent) => agent.id));
   const broken = new Map(load.failed.map((failure) => [failure.id, failure]));
 
   const requested = input.all ? registry.list().map((entry) => entry.id) : input.roles;
@@ -103,7 +103,7 @@ export async function runAgentTest(
       return candidates.has(report.role)
         // Said out loud, because tier 2 prepares this role as though `main` already delegated
         // to it. That grant is what trust confers (§11 decision 3), and it is not in force.
-        ? `${rendered}NOTE     \`${report.role}\` is a candidate from \`.alp/agents/\`, not a trusted agent; the run models the grant trust would give it.\n`
+        ? `${rendered}NOTE     \`${report.role}\` carries an unapproved definition or skill overlay from \`.alp/agents/\`; the run models the grant trust would give it.\n`
         : rendered;
     }).join("\n"));
     if (reports.length > 1) {

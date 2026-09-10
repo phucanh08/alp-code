@@ -198,7 +198,7 @@ instructions:
 
 capabilities:
   tools: [Read, Glob, Grep, Bash, Skill]
-  skills: [git, problem-solving]       # tên trong catalog, không phải đường dẫn
+  skills: [git, problem-solving]       # skill built-in, khai bằng tên trong catalog
   memory:
     read:  [shared, "project:*", "private:migrator"]
     write: ["private:migrator"]
@@ -219,7 +219,8 @@ Trần capability cưỡng chế lúc load, mỗi thứ đều fail-closed:
 |---|---|
 | `reportsTo` / `delegatesTo` | ép `main` / ép rỗng — không khai được, custom agent là lá |
 | `tools` | ⊆ `TOOL_CATALOG` **và** ⊆ tool của `main` |
-| `skills` · `subagents` · `mcpServers` | khai bằng **tên**, phải có trong catalog. Hai catalog sau đang rỗng nên mọi grant đều bị từ chối |
+| `skills` | **chỉ** skill built-in, tên phải có trong `SKILL_CATALOG`. Skill của project khai bằng thư mục, xem dưới |
+| `subagents` · `mcpServers` | khai bằng **tên** trong catalog — cả hai catalog đang rỗng nên mọi grant đều bị từ chối |
 | `memory.write` | chỉ `private:<id>` |
 | `memory.read` | `shared`, `shared:*`, `project:*`, `private:<id>` |
 | `workspace.readRoots` | đường dẫn tương đối, không ra khỏi project |
@@ -233,12 +234,55 @@ Parser chạy trên file untrusted nên tắt sẵn những tiện nghi cũng l�
 (chặn YAML bomb), key trùng bị từ chối, multi-document bị từ chối, giới hạn 32 KiB trước khi
 parse, key lạ bị từ chối chứ không bỏ qua.
 
+### Skill của project
+
+Skill riêng của project không khai trong `agent.yaml` — **thư mục chính là danh sách grant**:
+
+```text
+<project>/.alp/
+├── skills/
+│   └── house-conventions/SKILL.md          # dùng chung cho project
+└── agents/migrator/
+    ├── agent.yaml
+    └── skills/
+        ├── framework-migration/SKILL.md    # thư mục thật: chỉ migrator thấy
+        ├── house-conventions -> ../../../skills/house-conventions
+        └── release-drill.skillref          # một dòng: ../../../skills/release-drill
+```
+
+`.skillref` tồn tại cho Windows không bật developer mode và cho checkout git không giữ symlink.
+
+Hai đường khai skill vì chúng diễn đạt hai thứ khác nhau, không phải hai cách nói cùng một
+thứ: skill built-in nằm ở `~/.alp-code/versions/<tag>/skills` — thư mục `alp update` thay
+nguyên khối — nên không link tương đối tới được, phải gọi bằng tên; skill của project đi cùng
+repo qua git nên phải là đường dẫn. Cùng một tên xuất hiện ở cả hai chỗ thì loader từ chối.
+
+Luật escape, cưỡng chế lúc load, áp cho cả symlink lẫn `.skillref`: đích phải nằm trong
+`.alp/skills/` hoặc cây skill built-in, đi theo link đúng **một** cấp, và vượt ra ngoài thì
+**deny cả agent** chứ không bỏ qua riêng link đó. Skill root là một quyền đọc — một link trỏ ra
+`~/.ssh` sẽ biến "được đọc skill của mình" thành "được đọc bất cứ đâu" trong khi
+`workspace.readRoots` vẫn nói khác. Trần: 20 skill mỗi agent.
+
+Thứ tự resolve, **cụ thể thắng chung** — `code-review` của project che `code-review` built-in
+cho đúng vai đó và không ảnh hưởng vai khác:
+
+```bash
+alp agent show review          # in thứ tự đã tính, và từng binding resolve tới đâu
+```
+
+Vai built-in cũng nhận được skill của project qua **cùng một cơ chế**: một thư mục
+`.alp/agents/review/skills/` không có `agent.yaml` là overlay. Nó chỉ thêm skill — có
+`agent.yaml` cạnh một id built-in là deny, và overlay đặt lên vai không có tool `Skill` cũng bị
+từ chối. Overlay chưa trust thì vai built-in vẫn chạy với skill shipped của nó, chỉ mất phần
+thêm.
+
 ### Trust
 
 Một file trong repo chưa phải một agent chạy được. Nó phải được principal duyệt:
 
 ```bash
 alp agent list                  # file nào có, cái nào phiên chạy tới được
+alp agent show migrator         # quyền, trust status, thứ tự resolve skill
 alp agent add migrator          # chạy đủ ba tầng, in quyền, rồi hỏi
 alp agent untrust migrator      # thu lại
 ```

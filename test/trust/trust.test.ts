@@ -1,9 +1,10 @@
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadProjectAgents } from "../../src/agents/loader";
 import { agentRegistry } from "../../src/agents/registry";
+import { runAgentShow } from "../../src/cli/commands/agent-show";
 import { runAgentAdd, runAgentList, runAgentUntrust } from "../../src/cli/commands/agent-trust";
 import { hashAgentDefinition } from "../../src/execution/execution-policy";
 import {
@@ -313,6 +314,90 @@ describe("alp agent add", () => {
 
     expect(output).toContain("authority unchanged; the prompt or workflow moved");
   }, 30_000);
+});
+
+describe("skill overlays for a built-in (§5.7.5)", () => {
+  async function overlayProject(): Promise<string> {
+    const project = await agentProject({});
+    const skills = join(project, ".alp", "agents", "review", "skills", "house-conventions");
+    await mkdir(skills, { recursive: true });
+    await writeFile(join(skills, "SKILL.md"), "---\nname: house-conventions\n---\n", "utf8");
+    return project;
+  }
+
+  it("leaves the built-in on its shipped skills until the overlay is approved", async () => {
+    const project = await overlayProject();
+    const file = await trustFile();
+
+    const result = await trustedRegistryFor(project, { trustFile: file });
+
+    expect(result.registry.get("review").capabilities.skills)
+      .toEqual(agentRegistry.get("review").capabilities.skills);
+    expect(result.notices.join("\n")).toContain("skill overlay for review");
+    expect(result.notices.join("\n")).toContain("runs with its shipped skills");
+  });
+
+  it("adds the project skill once the overlay is trusted", async () => {
+    const project = await overlayProject();
+    const file = await trustFile();
+
+    const added = await addAgent({ project, file, id: "review" });
+    const result = await trustedRegistryFor(project, { trustFile: file });
+
+    expect(added.code).toBe(0);
+    expect(result.registry.get("review").capabilities.skills).toContain("house-conventions");
+    expect(result.registry.get("review").capabilities.skillRoots?.[0])
+      .toBe(join(project, ".alp", "agents", "review", "skills"));
+    expect(result.notices).toEqual([]);
+  }, 30_000);
+
+  /** An overlay may add skills; it may not hand a role the tool to reach them (§5.7.5). */
+  it("refuses an overlay on a role with no `Skill` tool", async () => {
+    const project = await agentProject({});
+    const skills = join(project, ".alp", "agents", "titling", "skills", "house");
+    await mkdir(skills, { recursive: true });
+    await writeFile(join(skills, "SKILL.md"), "# house\n", "utf8");
+
+    const result = await trustedRegistryFor(project, { trustFile: await trustFile() });
+
+    expect(result.notices.join("\n")).toContain("holds no `Skill` tool");
+    expect(result.registry.get("titling").capabilities.skills).toEqual([]);
+  });
+});
+
+describe("alp agent show", () => {
+  it("prints the resolve order so a shadowed skill is visible", async () => {
+    const project = await agentProject({});
+    const skills = join(project, ".alp", "agents", "review", "skills", "code-review");
+    await mkdir(skills, { recursive: true });
+    await writeFile(join(skills, "SKILL.md"), "# project code-review\n", "utf8");
+    let output = "";
+
+    const code = runAgentShow({ id: "review", project }, await loadProjectAgents({ projectRoot: project }), {
+      ...ENVIRONMENT, write: (text) => { output += text; }, interactive: false, trustFile: await trustFile(),
+    });
+
+    expect(code).toBe(0);
+    expect(output).toContain("built-in + skill overlay");
+    expect(output).toContain("skill resolve order (first match wins)");
+    expect(output).toContain(`1. ${join(project, ".alp", "agents", "review", "skills")}`);
+    expect(output).toMatch(/code-review\s+directory\s+\S/);
+    // The shipped `code-review` is shadowed, not held twice.
+    const granted = /\n  skills\s+(.+)\n/.exec(output)?.[1].split(", ") ?? [];
+    expect(granted.filter((skill) => skill === "code-review")).toHaveLength(1);
+  });
+
+  it("prints a built-in with no project file at all", async () => {
+    let output = "";
+
+    const code = runAgentShow({ id: "search", project: REPO_ROOT },
+      await loadProjectAgents({ projectRoot: REPO_ROOT }),
+      { ...ENVIRONMENT, write: (text) => { output += text; }, interactive: false, trustFile: await trustFile() });
+
+    expect(code).toBe(0);
+    expect(output).toContain("source          built-in");
+    expect(output).not.toContain("trust ");
+  });
 });
 
 describe("alp agent list and untrust", () => {

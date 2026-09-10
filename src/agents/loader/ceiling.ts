@@ -14,6 +14,12 @@ export interface CapabilityCeiling {
   readonly builtinIds: ReadonlySet<AgentId>;
 }
 
+export interface CeilingInput {
+  readonly file: AgentFile;
+  /** Names resolved from the agent's own `skills/` directory (§5.7). */
+  readonly skills: readonly string[];
+}
+
 /**
  * §5.5 — the ceiling a custom agent is held to, enforced before `createAgentRegistry`.
  *
@@ -25,7 +31,8 @@ export interface CapabilityCeiling {
  * Returns every issue rather than the first: a principal fixing an agent file should see the
  * whole list, not discover the next one on each retry.
  */
-export function enforceCeiling(file: AgentFile, ceiling: CapabilityCeiling): readonly string[] {
+export function enforceCeiling(input: CeilingInput, ceiling: CapabilityCeiling): readonly string[] {
+  const { file, skills } = input;
   const issues: string[] = [];
   const { coordinator, catalog, builtinIds } = ceiling;
 
@@ -57,17 +64,27 @@ export function enforceCeiling(file: AgentFile, ceiling: CapabilityCeiling): rea
   }
   if (new Set(tools).size !== tools.length) issues.push("a tool is named twice");
 
-  const skills = file.capabilities.skills ?? [];
+  const named = file.capabilities.skills ?? [];
   const known = new Set(catalog.skills);
-  for (const skill of skills) {
-    if (!known.has(skill)) issues.push(`skill \`${skill}\` is not in the skill catalog`);
+  for (const skill of named) {
+    if (!known.has(skill)) {
+      issues.push(`skill \`${skill}\` is not in the skill catalog; a project skill belongs in \`skills/\`, not here`);
+    }
   }
+  // The one thing that would put the two grants back in each other's way.
+  for (const skill of named) {
+    if (skills.includes(skill)) {
+      issues.push(`skill \`${skill}\` is granted twice: named here and present in \`skills/\``);
+    }
+  }
+
   const holdsSkillTool = tools.includes("Skill");
-  if (holdsSkillTool && skills.length === 0) {
-    issues.push("holds the `Skill` tool but names no skill — that is a grant on every skill root the machine has");
+  const granted = [...named, ...skills];
+  if (holdsSkillTool && granted.length === 0) {
+    issues.push("holds the `Skill` tool but grants no skill — that is a grant on every skill root the machine has");
   }
-  if (!holdsSkillTool && skills.length > 0) {
-    issues.push("names skills but has no `Skill` tool to invoke them");
+  if (!holdsSkillTool && granted.length > 0) {
+    issues.push(`grants ${granted.length} skill(s) but has no \`Skill\` tool to invoke them`);
   }
 
   // Both catalogs ship empty (§5.5), so every name is refused today. Written as a catalog

@@ -4,6 +4,7 @@ import { loadProjectAgents } from "../../agents/loader";
 import { parseMode, type ModeId } from "../../agents/modes";
 import type { AgentId } from "../../agents/types";
 import { runAgentTest, type AgentTestDependencies } from "./agent-test";
+import { runAgentShow } from "./agent-show";
 import { runAgentAdd, runAgentList, runAgentUntrust, type AgentTrustDependencies } from "./agent-trust";
 
 export type AgentCommand =
@@ -17,6 +18,7 @@ export type AgentCommand =
     readonly json: boolean;
   }
   | { readonly kind: "add"; readonly id: AgentId; readonly project: string }
+  | { readonly kind: "show"; readonly id: AgentId; readonly project: string }
   | { readonly kind: "untrust"; readonly id: AgentId; readonly project: string }
   | { readonly kind: "list"; readonly project: string; readonly json: boolean };
 
@@ -25,13 +27,15 @@ export type AgentCommandDependencies = AgentTestDependencies & AgentTrustDepende
 const USAGE = [
   "usage: alp agent test <role|--all> [--project <path>] [--tier 1|2|3] [--mode <mode>] [--json]",
   "       alp agent add <id> [--project <path>]",
+  "       alp agent show <id> [--project <path>]",
   "       alp agent untrust <id> [--project <path>]",
   "       alp agent list [--project <path>] [--json]",
 ].join("\n");
 
 export function parseAgentCommand(args: readonly string[], cwd: string): AgentCommand {
   const subcommand = args[0];
-  if (subcommand !== "test" && subcommand !== "add" && subcommand !== "untrust" && subcommand !== "list") {
+  if (subcommand !== "test" && subcommand !== "add" && subcommand !== "untrust"
+    && subcommand !== "list" && subcommand !== "show") {
     throw new Error(USAGE);
   }
 
@@ -70,7 +74,7 @@ export function parseAgentCommand(args: readonly string[], cwd: string): AgentCo
     if (positional.length > 0) throw new Error(`alp agent list takes no agent name; ${USAGE}`);
     return { kind: "list", project, json };
   }
-  if (subcommand === "add" || subcommand === "untrust") {
+  if (subcommand === "add" || subcommand === "untrust" || subcommand === "show") {
     if (all || json || tiers.length > 0 || mode !== undefined) {
       throw new Error(`alp agent ${subcommand} takes only --project; ${USAGE}`);
     }
@@ -106,6 +110,7 @@ export async function runAgentCommand(
 
   const load = await loadProjectAgents({ projectRoot: command.project });
   if (command.kind === "list") return runAgentList(command, load, dependencies);
+  if (command.kind === "show") return runAgentShow(command, load, dependencies);
   if (command.kind === "add") return runAgentAdd(command, load, dependencies);
   return runAgentTest(command, load, dependencies);
 }

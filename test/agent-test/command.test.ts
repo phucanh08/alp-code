@@ -267,7 +267,7 @@ describe("runAgentCommand — test", () => {
 
     expect(code).toBe(0);
     expect(output).toContain("AGENT    migrator — Migrator 🔧");
-    expect(output).toContain("is a candidate from `.alp/agents/`, not a trusted agent");
+    expect(output).toContain("carries an unapproved definition or skill overlay");
     expect(output).not.toContain("FAIL");
   });
 

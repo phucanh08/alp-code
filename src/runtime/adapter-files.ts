@@ -141,9 +141,21 @@ export function compactBridgeEnabled(env: NodeJS.ProcessEnv): boolean {
   return env.ALP_COMPACT_BRIDGE === "1";
 }
 
-export function runtimeSkillRoots(env: NodeJS.ProcessEnv, assetRoot?: string): string {
+/**
+ * The roots a launch resolves `Skill(<name>)` from, most specific first.
+ *
+ * `leading` comes from the execution's own policy — an agent's `.alp/agents/<id>/skills`.
+ * It goes in front of everything, which is what makes "specific beats general" (§5.7.1) true:
+ * a project's `code-review` shadows the shipped one for that role and for no other.
+ */
+export function runtimeSkillRoots(
+  env: NodeJS.ProcessEnv,
+  assetRoot?: string,
+  leading: readonly string[] = [],
+): string {
   const home = env.HOME ?? env.USERPROFILE;
   const roots = [
+    ...leading,
     ...(env.ALP_SKILL_ROOTS ?? "").split(delimiter),
     assetRoot ? join(assetRoot, "skills") : "",
     env.ALP_REPO_ROOT ? join(env.ALP_REPO_ROOT, "skills") : "",
