@@ -123,9 +123,13 @@ Nếu ghi đè một custom agent chưa có sẵn trong loadout, hãy khai cả 
 
 ## Khôi phục mặc định
 
-Để bỏ một override, xóa field, role hoặc section tương ứng khỏi file settings; không đặt
-`null`. Khi đó giá trị từ lớp thấp hơn có hiệu lực trở lại. Muốn về đúng built-in, hãy xóa
-override tương ứng khỏi cả mode gọi đích danh lẫn `"*"` trong cả ba lớp.
+Để bỏ một override, xóa field tương ứng; nếu đó là field cuối cùng, xóa luôn cả entry của
+role vì object rỗng không hợp lệ. Không đặt `null`.
+
+Sau khi xóa, ALP dùng nguồn có độ ưu tiên cao nhất còn lại: bỏ override ở mode gọi đích danh
+có thể làm lộ `"*"` trong cùng file, rồi tới các lớp settings trước đó, cuối cùng mới là
+built-in. Muốn về đúng built-in, hãy xóa override tương ứng khỏi cả mode gọi đích danh lẫn
+`"*"` trong cả ba lớp.
 
 ## Kiểm chứng
 
