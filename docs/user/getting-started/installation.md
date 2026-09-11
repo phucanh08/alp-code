@@ -23,14 +23,14 @@ irm https://raw.githubusercontent.com/phucanh08/alp-code/main/install.ps1 | iex
 Hai lệnh trên tải code rồi chạy ngay với quyền của tài khoản hiện tại. Nếu cần kiểm soát supply chain chặt hơn, hãy tải script về để đọc trước hoặc pin release cụ thể thay vì lấy mặc định.
 :::
 
-Ví dụ pin version đang được bộ docs này mô tả (`v0.12.0`):
+Ví dụ pin version đang được bộ docs này mô tả (`v0.12.1`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/phucanh08/alp-code/main/install.sh | bash -s -- --version v0.12.0
+curl -fsSL https://raw.githubusercontent.com/phucanh08/alp-code/main/install.sh | bash -s -- --version v0.12.1
 ```
 
 ```powershell
-$env:ALP_VERSION = "v0.12.0"
+$env:ALP_VERSION = "v0.12.1"
 irm https://raw.githubusercontent.com/phucanh08/alp-code/main/install.ps1 | iex
 ```
 

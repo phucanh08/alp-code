@@ -8,6 +8,30 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Sửa
+
+- `main` (và mọi vai read-only có `delegatesTo`) lấy lại tool `Bash`. Lớp phòng thủ cho vai
+  read-only khi chạy không sandbox vẫn strip `Bash` vô điều kiện, nên `Bash` rơi vào cả `allow`
+  lẫn `deny` — Claude Code cho `deny` thắng, và shell biến mất dù session context đã in sẵn
+  hướng dẫn `alp delegate`. Windows không có sandbox nên mọi vai delegate đều dính. Vai
+  read-only không delegate vẫn giữ nguyên lớp phòng thủ cũ.
+
+- Stop hook thôi báo "execution policy snapshot is invalid or stale" cho phiên chạy dưới
+  loadout override. `loadExecution` dựng lại launch policy mà không đọc `.alp/settings.json`,
+  nên luôn so với loadout built-in; phiên nào thực sự đổi model/reasoningEffort qua settings
+  đều fail `finalizeExecution`.
+
+- Vai workspace-write được delegate trong phiên headless thôi treo chờ prompt (#18). Adapter
+  Claude không bật `--permission-mode` bypass và không sinh allow rule cho từng tool được cấp,
+  nên `Write`/`Edit`/`Bash` đợi một câu trả lời mà phiên headless không bao giờ đưa được —
+  triệu chứng là `worker` trả `exitCode: 0`, transcript rỗng, workspace không đổi. Tool được
+  cấp giờ allow theo tên trần.
+
+- `alp delegate` ghi `policy.json` đúng root mà `alp context status` đọc (trước đó lệch
+  `execution-snapshots` vs `executionsDirectory()`).
+
+- `install.ps1`: tham số `$Home` không còn che biến tự động của PowerShell.
+
 ## [0.12.0] - 2026-09-10
 
 ### Thêm
