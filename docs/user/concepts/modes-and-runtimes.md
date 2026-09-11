@@ -17,7 +17,7 @@ Tài liệu này phản ánh stable `v0.13.0`. Model mapping có thể đổi �
 | `ultra` | Thiết kế, migration hoặc sự cố mà trả lời sai rất đắt | `claude-opus-5` · `high` | `claude-opus-5` · `high` | `gpt-6-astra` · `high` |
 | `puck` | Toàn Codex hoặc máy chỉ cài Codex CLI | `gpt-5.6-sol` · `xhigh` | `gpt-5.6-sol` · `xhigh` | `gpt-5.6-sol` · `xhigh` |
 
-Ở bốn nấc `low`/`medium`/`high`/`ultra`, `main` luôn là `claude-opus-5` · `high`; núm mode chỉ đổi ghế làm việc (`worker`) và ghế cho ý kiến thứ hai (`oracle`). `puck` là ngoại lệ toàn Codex, không nằm trên trục độ khó.
+Trong loadout built-in trước khi ghép settings, bốn nấc `low`/`medium`/`high`/`ultra` đều giữ `main` ở `claude-opus-5` · `high`; đổi mode giữa bốn nấc chỉ thay ghế làm việc (`worker`) và ghế cho ý kiến thứ hai (`oracle`). `puck` là ngoại lệ toàn Codex, không nằm trên trục độ khó.
 
 ## Chọn mode
 
