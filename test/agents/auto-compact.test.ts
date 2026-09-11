@@ -75,6 +75,7 @@ describe("auto-compact threshold — registry ceiling", () => {
 describe("auto-compact threshold — policy snapshot", () => {
   const policyFor = (autoCompactTokens: RuntimeTokenBudgetMap | undefined) => createExecutionPolicy({
     executionId: "exec-compact",
+    thread: null,
     definition: withThreshold(autoCompactTokens),
     workspace: "/workspace",
     workspaceMode: "read-only",

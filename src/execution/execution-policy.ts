@@ -7,10 +7,13 @@ import {
   deepFreezeExecutionValue,
   type ExecutionId,
   type ExecutionPolicy,
+  type ExecutionThreadBinding,
 } from "./types";
 
 export interface CreateExecutionPolicyInput {
   readonly executionId: ExecutionId;
+  /** Bắt buộc, kể cả khi `null` — xem `ExecutionPolicy.thread`. */
+  readonly thread: ExecutionThreadBinding | null;
   readonly definition: AgentDefinition<unknown>;
   readonly workspace: string;
   readonly workspaceMode: "read-only" | "workspace-write";
@@ -81,6 +84,28 @@ export function hashAgentDefinition(
   });
 }
 
+const THREAD_ID_PATTERN = /^thread_[A-Za-z0-9]+$/;
+const HEX_64 = /^[0-9a-f]{64}$/;
+
+/**
+ * Binding phải là `null` tường minh hoặc đủ ba trường. `undefined` bị chặn ở đây chứ không
+ * chỉ ở kiểu: một caller JavaScript quên field sẽ tạo ra policy trùng hash với legacy.
+ */
+function assertThreadBinding(value: ExecutionThreadBinding | null | undefined): ExecutionThreadBinding | null {
+  if (value === null) return null;
+  if (value === undefined) throw new Error("execution policy requires `thread` (use null when unthreaded)");
+  if (typeof value.id !== "string" || !THREAD_ID_PATTERN.test(value.id)) {
+    throw new Error(`invalid thread binding id \`${String(value.id)}\``);
+  }
+  if (!Number.isInteger(value.contextRevision) || value.contextRevision < 0) {
+    throw new Error("thread binding contextRevision must be a non-negative integer");
+  }
+  if (typeof value.contextDigest !== "string" || !HEX_64.test(value.contextDigest)) {
+    throw new Error("thread binding contextDigest must be a SHA-256 hex digest");
+  }
+  return { id: value.id, contextRevision: value.contextRevision, contextDigest: value.contextDigest };
+}
+
 export function createExecutionPolicy(
   input: CreateExecutionPolicyInput,
 ): ExecutionPolicy {
@@ -107,6 +132,7 @@ export function createExecutionPolicy(
   const model = modelForMode(input.definition, mode, input.modeProfiles);
   const snapshot = {
     executionId: input.executionId,
+    thread: assertThreadBinding(input.thread),
     role: input.definition.id,
     workspace: input.workspace,
     workspaceMode: input.workspaceMode,

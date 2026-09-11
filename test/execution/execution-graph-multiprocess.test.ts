@@ -48,7 +48,7 @@ async function tree(limits?: Partial<ExecutionGraphLimits>, options: { readonly 
     ...(limits ? { limits: { ...DEFAULT_EXECUTION_GRAPH_LIMITS, ...limits } } : {}),
     ...(options.now ? { now: options.now } : {}),
   });
-  const created = await service.createRoot({ agentId: "main", executionId: "exec_root" });
+  const created = await service.createRoot({ agentId: "main", thread: null, executionId: "exec_root" });
   await service.startRoot(created.binding, async () => undefined);
   return { root, graphs, service, binding: created.binding };
 }

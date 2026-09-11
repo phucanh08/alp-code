@@ -57,6 +57,7 @@ export function probeDefinition(
 export function policyFixture(overrides: Partial<ExecutionPolicy> = {}): ExecutionPolicy {
   return {
     executionId: "exec-capability",
+    thread: null,
     role: "probe",
     workspace: "/workspace",
     workspaceMode: "read-only",

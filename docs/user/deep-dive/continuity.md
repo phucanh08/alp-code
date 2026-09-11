@@ -7,16 +7,19 @@ description: Objective và pin sống qua compaction — một file, hai ngườ
 
 Runtime tự compact khi gần hết cửa sổ, và việc nén đó là của runtime chứ không phải của ALP. ALP chỉ giữ một checkpoint nhỏ bên ngoài, rồi tiêm lại sau mỗi lần nén.
 
-## Continuity không phải memory
+## Continuity không phải Thread context, không phải memory
 
-| | Continuity | [Memory](../memory/) |
-|---|---|---|
-| Phạm vi | **Một** execution | Xuyên execution, xuyên phiên |
-| Sống được bao lâu | Tới khi execution kết thúc | Tới khi bị xoá |
-| Địa chỉ | `context/checkpoint.json` của execution đó | Logical ID có scope |
-| Trả lời | "Ta đang làm dở việc gì" | "Ta biết những gì" |
+| | Continuity | [Thread context](../thread/) | [Memory](../memory/) |
+|---|---|---|---|
+| Phạm vi | **Một** execution | **Một** Thread, nhiều execution | Xuyên Thread |
+| Sống được bao lâu | Tới khi execution kết thúc | Tới khi Thread archive | Tới khi bị xoá |
+| Địa chỉ | `context/checkpoint.json` của execution đó | `~/.alp/threads/<id>/context/<rev>.json` | Logical ID có scope |
+| Ai ghi | `prepare()` seed, `alp context pin` sửa | Chiếu tất định từ checkpoint khi root settle | Agent có grant `memory` |
+| Trả lời | "Lượt này đang làm dở gì" | "Việc này tới đâu rồi" | "Ta biết những gì" |
 
-Một quyết định kiến trúc quan trọng thuộc về **memory**. Một blocker của chiều nay thuộc về **continuity**.
+Một quyết định kiến trúc quan trọng thuộc về **memory**. Một blocker của chiều nay thuộc về **continuity** — và nếu bạn pin nó, lượt sau của cùng Thread nhận được nó qua **Thread context**. Pin là đường duy nhất từ lượt này sang lượt sau: projector không đọc transcript.
+
+Checkpoint của một root mới không rỗng: ngoài `objective`, nó được seed bằng các pin từ snapshot Thread mà root đó mở trên. Đó vẫn là work state — bảng quyền ở đầu `session-context.md` không đổi vì bất kỳ dòng nào trong đó.
 
 ## `checkpoint.json`
 
@@ -143,5 +146,6 @@ Exit khác `0` từ `validate` là một finding cần điều tra, không phả
 
 - [Execution](../execution/) — thư mục `context/` nằm ở đâu
 - [Hook](../hook/) — ai ghi journal, ai tiêm lại
+- [Thread](../thread/) — lớp giữa các execution, chiếu từ checkpoint
 - [Memory](../memory/) — thứ sống lâu hơn một execution
 - [Memory và continuity](../../guides/memory-and-continuity/) — hướng dẫn dùng hằng ngày

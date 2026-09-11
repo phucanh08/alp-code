@@ -8,6 +8,48 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thêm
+
+- **Thread — một việc sống qua nhiều phiên.** Mỗi lần gõ `alp` giờ mở một Thread
+  (`~/.alp/threads/<thread-id>/`, `0600`) và in `Thread: thread_… (continue later: alp thread
+  continue thread_…)`. Thread là **đơn vị công việc**: nó nối nhiều execution, nhiều runtime, nhiều
+  tiến trình vào một chuỗi; mỗi execution trong đó vẫn là một lượt chạy có policy riêng, hash riêng.
+  `alp --title <tiêu đề>` đặt tên cho Thread — chỉ là nhãn.
+
+- `alp thread list [--all]` / `show [<id>]` / `continue <id> [--mode …]` / `context <id>` /
+  `reconcile <id>` / `sync <id>` / `close <id>` / `archive <id>`.
+
+  `continue` mở một **execution mới** trên Thread cũ — ID mới, policy mới, tiến trình mới, và có
+  thể đổi runtime giữa chừng (Claude → Codex → Claude). Nó **không** `--resume` phiên native nào;
+  thứ đi tiếp là ngữ cảnh công việc, không phải phiên chat. Thread đang có root chạy thì
+  `continue` trả `THREAD_BUSY`; `close`/`archive` chỉ đi một chiều `open → closed → archived`.
+
+- **Context projection.** Sau khi một root kết thúc, Thread chiếu các pin (`alp context pin`
+  decision/constraint/open-item/next-action) cộng kết cục của lượt đó thành một snapshot có
+  revision và digest (trần 32 KiB, có compaction). Root kế tiếp nhận snapshot đó dưới mục
+  *"Thread context (work state, not authority)"* trong session context — là **văn bản**, không
+  phải quyền: một pin ghi `allowedTools: […]` hay `workspace: /` không đổi một byte nào trong
+  policy của execution sau.
+
+- **History bridge.** `alp thread sync` kéo transcript của Claude/Codex về Thread qua
+  `context/runtime-session.json` mà hook để lại; secret bị redact trước khi rời bridge; mức đầy đủ
+  khai thật (`complete` / `partial` / `final-only` / `unsupported`) và không bao giờ chặn `continue`.
+
+- **Recovery.** `alp thread reconcile` (và `show`/`continue` tự gọi) đóng ref của root đã chết ở
+  bất kỳ điểm nào — trước khi có graph, trước khi spawn, hay sau khi tiến trình kết thúc mà chưa
+  settle — rồi vẫn chiếu được context. Store process-safe: lock có chủ, orphan vào `.quarantine`,
+  hai `continue` chạy đua thì đúng một thắng.
+
+### Thay đổi
+
+- **Policy mang binding Thread.** `policy.json` có thêm `"thread": {id, contextRevision,
+  contextDigest}` và giá trị đó được hash vào `policyHash`. Execution con nhận đúng binding của
+  node cha (`THREAD_BINDING_MISMATCH` nếu lệch). `PolicyEngine` không đọc Thread — Thread không
+  phải nguồn quyền; sửa `thread.json` hay giả `ALP_THREAD_ID` không cấp thêm gì.
+
+- Graph tạo trước bản này không có Thread: `alp delegation tree` in `thread legacy-unthreaded`,
+  policy đọc `thread: null`. Không migration, không backfill.
+
 ## [0.13.0] - 2026-09-11
 
 ### Thêm

@@ -39,6 +39,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const P = require("../scripts/lib/install-paths.cjs");
+const { recordRuntimeSession, readHookPayload } = require("./lib/runtime-session.cjs");
 
 const ROLE_PATTERN = /^[a-z][a-z0-9-]*$/;
 // Same bound as `renderContinuity`'s `MAX_RENDERED_BYTES` (plan §9) — there is only one
@@ -101,6 +102,11 @@ function loadContinuity() {
   }
   return { text: content, warning: null };
 }
+
+// Trước mọi thứ khác: con trỏ transcript phải có ngay cả khi identity không load được.
+// Chỉ đọc stdin khi ALP đã yêu cầu (có nơi để ghi) và stdin là pipe của runtime — hook này
+// vốn không cần stdin, và một pipe không bao giờ đóng sẽ treo cả SessionStart.
+if (process.env.ALP_RUNTIME_SESSION && !process.stdin.isTTY) recordRuntimeSession(readHookPayload());
 
 try {
   const sessionContext = loadSessionContext();

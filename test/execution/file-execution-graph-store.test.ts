@@ -80,6 +80,32 @@ describe("FileExecutionGraphStore on disk", () => {
     );
   });
 
+  /**
+   * Graph ghi trước khi có Thread không có key `thread`. Đọc lên là `null`, không phải corrupt;
+   * và lần ghi tiếp theo phải để lại key trên đĩa — bản "vắng" không được sống thêm một revision.
+   */
+  it("reads a legacy graph without thread bindings and writes the key back on the next revision", async () => {
+    const root = await temporaryRoot();
+    const store = new FileExecutionGraphStore({ root });
+    const legacy = graphFixture({ nodes: [rootNode(), childNode("child-a", "root-1")] });
+    const stripped = {
+      ...legacy,
+      nodes: legacy.nodes.map(({ thread: _thread, ...node }) => node),
+    };
+    await mkdir(root, { recursive: true });
+    await writeFile(join(root, "root-1.json"), JSON.stringify(stripped), "utf8");
+
+    const loaded = await store.get("root-1");
+    expect(loaded?.nodes.map((node) => node.thread)).toEqual([null, null]);
+
+    await store.withExclusiveLease("root-1", async (lease) => {
+      const current = await lease.read();
+      await lease.write(nextRevision(current, { updatedAt: "2026-09-11T00:00:01.000Z" }));
+    });
+    const written = JSON.parse(await readFile(join(root, "root-1.json"), "utf8")) as { nodes: Record<string, unknown>[] };
+    expect(written.nodes.every((node) => node.thread === null)).toBe(true);
+  });
+
   it("rebuilds a locator that is missing, stale, or unreadable", async () => {
     const root = await temporaryRoot();
     const store = new FileExecutionGraphStore({ root });

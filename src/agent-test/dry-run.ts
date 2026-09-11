@@ -106,6 +106,8 @@ export async function dryRunAgent(options: AgentDryRunOptions): Promise<AgentDry
   const definition = registry.get(options.role);
   const execution = await executionService.prepare({
     executionId: `exec_dry_${options.role.replaceAll("-", "_")}`,
+    // Dry-run là execution nội bộ, không phải user work — `null` cố ý (xem P5 migration).
+    thread: null,
     parent: options.parent ?? (definition.reportsTo === "principal" ? "principal" : definition.reportsTo),
     target: options.role,
     task: options.task ?? `Dry-run ${options.role}`,

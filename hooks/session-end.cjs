@@ -13,13 +13,15 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { recordRuntimeSession, readHookPayload } = require("./lib/runtime-session.cjs");
 
 function note(message) { process.stdout.write(JSON.stringify({ systemMessage: message })); }
 
 async function main() {
   const executionId = process.env.ALP_DELEGATION_EXECUTION_ID || "";
+  const payload = readHookPayload();
+  recordRuntimeSession(payload);
   try {
-    const payload = JSON.parse(fs.readFileSync(0, "utf8") || "{}");
     const bridge = require(path.join(__dirname, "..", "dist", "src", "hooks", "execution-bridge.js"));
     const output = payload.last_assistant_message ?? payload.output ?? payload.final_output ?? payload.result;
     const result = await bridge.finalizeExecution({ executionId, output });

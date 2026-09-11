@@ -78,6 +78,8 @@ async function loadExecution(input: HookExecutionInput): Promise<{
   const { profiles: modeProfiles } = await loadModeProfiles({ cwd: policy.workspace });
   const expected = createExecutionPolicy({
     executionId: policy.executionId,
+    // Chép nguyên binding: nó nằm trong hash, và hook không có Thread nào để tra lại.
+    thread: policy.thread ?? null,
     definition,
     workspace: policy.workspace,
     workspaceMode: policy.workspaceMode,

@@ -69,10 +69,15 @@ export interface SeedCheckpointInput {
   readonly policyHash: string;
   /** `capsule.task`, or `null` for an interactive execution — see §8.1 on the sentinel. */
   readonly objective: string | null;
+  /**
+   * Pins the execution starts with — the Thread's context snapshot, handed over from the
+   * previous root. Work state only: nothing here is read by the policy engine.
+   */
+  readonly pins?: Partial<Pick<ContinuityCheckpointV1, "decisions" | "constraints" | "openItems" | "nextActions">>;
   readonly now?: () => string;
 }
 
-/** The checkpoint an execution starts with: no pins, objective seeded from the task. */
+/** The checkpoint an execution starts with: objective seeded from the task, pins from the Thread if any. */
 export function seedCheckpoint(input: SeedCheckpointInput): ContinuityCheckpointV1 {
   const timestamp = (input.now ?? (() => new Date().toISOString()))();
   const body: Omit<ContinuityCheckpointV1, "integrity"> = {
@@ -83,10 +88,10 @@ export function seedCheckpoint(input: SeedCheckpointInput): ContinuityCheckpoint
     createdAt: timestamp,
     updatedAt: timestamp,
     objective: input.objective,
-    decisions: [],
-    constraints: [],
-    openItems: [],
-    nextActions: [],
+    decisions: input.pins?.decisions ?? [],
+    constraints: input.pins?.constraints ?? [],
+    openItems: input.pins?.openItems ?? [],
+    nextActions: input.pins?.nextActions ?? [],
   };
   return { ...body, integrity: { checkpointSha256: checkpointDigest(body) } };
 }

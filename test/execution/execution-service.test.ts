@@ -197,6 +197,7 @@ describe("ExecutionService", () => {
 
     const prepared = await service.prepare({
       executionId: "exec_immutable",
+      thread: null,
       parent: "main",
       target: "search",
       task: "find the entrypoint",
@@ -331,6 +332,7 @@ describe("ExecutionService", () => {
     });
     const work = {
       task: "find the entrypoint",
+      thread: null,
       memoryQueries: [],
       characterBudget: 100,
       invariantContext: "invariants",
@@ -381,6 +383,7 @@ describe("ExecutionService", () => {
 
     const prepared = await service.materialize(authorization, {
       task: "find the entrypoint",
+      thread: null,
       memoryQueries: [],
       characterBudget: 100,
       invariantContext: "invariants",
@@ -411,6 +414,7 @@ describe("ExecutionService", () => {
 
     await expect(service.prepare({
       executionId: "exec-context-denied",
+      thread: null,
       parent: "main",
       target: "search",
       task: "denied",
@@ -456,6 +460,7 @@ describe("ExecutionService", () => {
 
     await expect(service.prepare({
       executionId: "exec-denied",
+      thread: null,
       parent: "main",
       target: "search",
       task: "denied",

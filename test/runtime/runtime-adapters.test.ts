@@ -60,6 +60,7 @@ async function fixture(): Promise<{ root: string; project: string; prepared: Pre
     },
     policy: {
       executionId: "exec-runtime",
+      thread: null,
       role: "search",
       workspace: project,
       workspaceMode: "read-only",

@@ -43,6 +43,10 @@
           "path": "guides/project-setup"
         },
         {
+          "label": "Tùy biến loadout",
+          "path": "guides/customize-mode-loadouts"
+        },
+        {
           "label": "Giao việc",
           "path": "guides/delegation"
         },
@@ -90,6 +94,10 @@
         {
           "label": "Execution graph",
           "path": "deep-dive/execution-graph"
+        },
+        {
+          "label": "Thread",
+          "path": "deep-dive/thread"
         },
         {
           "label": "Workflow",

@@ -32,6 +32,7 @@ async function fixture(
   const definition = options.definition ?? agentRegistry.get(role);
   const policy = createExecutionPolicy({
     executionId,
+    thread: null,
     definition,
     workspace,
     workspaceMode,
@@ -90,6 +91,7 @@ describe("compiled execution hook bridge", () => {
     const definition = agentRegistry.get("search");
     const policy = createExecutionPolicy({
       executionId,
+      thread: null,
       definition,
       workspace,
       workspaceMode: "read-only",

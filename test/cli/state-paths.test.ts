@@ -8,6 +8,7 @@ import {
   hookForwarder,
   memoryRoot,
   stateHome,
+  threadsDirectory,
 } from "../../src/state-paths";
 
 const requireCjs = createRequire(__filename);
@@ -17,6 +18,7 @@ const paths = requireCjs("../../scripts/lib/install-paths.cjs") as {
   agentsDir(env: NodeJS.ProcessEnv): string;
   executionsDir(env: NodeJS.ProcessEnv): string;
   executionGraphsDir(env: NodeJS.ProcessEnv): string;
+  threadsDir(env: NodeJS.ProcessEnv): string;
   hookForwarderPath(name: string, env: NodeJS.ProcessEnv): string;
   detectChannel(root: string): string;
 };
@@ -29,6 +31,7 @@ describe("state paths", () => {
     expect(agentsDirectory(env)).toBe(join("/home/a", ".alp", "agents"));
     expect(executionsDirectory(env)).toBe(join("/home/a", ".alp", "executions"));
     expect(executionGraphsDirectory(env)).toBe(join("/home/a", ".alp", "execution-graphs"));
+    expect(threadsDirectory(env)).toBe(join("/home/a", ".alp", "threads"));
     expect(hookForwarder("session-boot", env)).toBe(join("/home/a", ".alp", "hooks", "session-boot.cjs"));
   });
 
@@ -56,6 +59,7 @@ describe("state paths", () => {
       expect(agentsDirectory(env)).toBe(paths.agentsDir(env));
       expect(executionsDirectory(env)).toBe(paths.executionsDir(env));
       expect(executionGraphsDirectory(env)).toBe(paths.executionGraphsDir(env));
+      expect(threadsDirectory(env)).toBe(paths.threadsDir(env));
       expect(hookForwarder("session-boot", env)).toBe(paths.hookForwarderPath("session-boot", env));
     }
   });

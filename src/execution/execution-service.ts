@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import type { AgentDefinition, AgentId, AgentRegistry } from "../agents/types";
 import { seedCheckpoint, writeCheckpoint } from "../context/checkpoint";
+import { seedPinsFromSnapshot } from "../thread/context-types";
 import { renderContinuity } from "../context/continuity";
 import { atomicRuntimeFile } from "../runtime/adapter-files";
 import type { MemoryService } from "../memory/memory-service";
@@ -167,6 +168,7 @@ export class ExecutionService {
     const createdAt = this.now().toISOString();
     const policy = createExecutionPolicy({
       executionId: authorization.executionId,
+      thread: input.thread,
       definition,
       workspace: authorization.workspace,
       workspaceMode: authorization.workspaceMode,
@@ -192,15 +194,19 @@ export class ExecutionService {
 
     // §8.1: seed the checkpoint here, not lazily on first pin, so a fresh execution's
     // continuity is never empty by omission — the objective alone is worth reinjecting.
+    // Root của một Thread mở đầu với đúng những dòng snapshot rev N: work state E-(n-1) để
+    // lại, seed vào checkpoint như pins nguồn `execution`. Policy ở trên không nhìn thấy chúng.
+    const threadContext = input.threadContext ?? null;
     const checkpoint = await writeCheckpoint(artifacts.checkpointFile, seedCheckpoint({
       executionId: authorization.executionId,
       policyHash: policy.policyHash,
-      objective: capsule.task,
+      objective: threadContext?.snapshot?.objective ?? threadContext?.title ?? capsule.task,
+      pins: seedPinsFromSnapshot(threadContext?.snapshot ?? null, createdAt),
       now: () => createdAt,
     }));
     await atomicRuntimeFile(artifacts.continuityFile, renderContinuity(checkpoint));
 
-    return deepFreezeExecutionValue({ capsule, policy, state, artifacts });
+    return deepFreezeExecutionValue({ capsule, policy, state, artifacts, threadContext });
   }
 
   /**

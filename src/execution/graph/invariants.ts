@@ -7,6 +7,7 @@ import {
   type ExecutionNodeStatus,
   type ExecutionReservation,
 } from "./types";
+import type { ExecutionThreadBinding } from "../types";
 
 const HEX_64 = /^[0-9a-f]{64}$/;
 
@@ -113,6 +114,36 @@ export function assertLimits(value: unknown): ExecutionGraphLimits {
   return limits as unknown as ExecutionGraphLimits;
 }
 
+const THREAD_ID_PATTERN = /^thread_[A-Za-z0-9]+$/;
+
+/**
+ * Binding trong graph node: `null` hoặc đủ ba trường. Key vắng chỉ có ở document ghi trước
+ * khi có Thread — caller normalize về `null` chứ không coi là lỗi.
+ */
+function assertThreadBinding(value: unknown, field: string): ExecutionThreadBinding | null {
+  if (value === null) return null;
+  if (typeof value !== "object") invalid(`${field} must be null or a thread binding`);
+  const binding = value as Record<string, unknown>;
+  if (typeof binding.id !== "string" || !THREAD_ID_PATTERN.test(binding.id)) {
+    invalid(`${field}.id must be a thread id`);
+  }
+  if (typeof binding.contextRevision !== "number" || !Number.isInteger(binding.contextRevision) || binding.contextRevision < 0) {
+    invalid(`${field}.contextRevision must be a non-negative integer`);
+  }
+  assertHash(binding.contextDigest, `${field}.contextDigest`);
+  return binding as unknown as ExecutionThreadBinding;
+}
+
+export function sameThreadBinding(
+  left: ExecutionThreadBinding | null,
+  right: ExecutionThreadBinding | null,
+): boolean {
+  if (left === null || right === null) return left === right;
+  return left.id === right.id
+    && left.contextRevision === right.contextRevision
+    && left.contextDigest === right.contextDigest;
+}
+
 function assertNodeShape(value: unknown, graphId: string): ExecutionNode {
   if (typeof value !== "object" || value === null) invalid("node must be an object");
   const node = value as Record<string, unknown>;
@@ -147,6 +178,11 @@ function assertNodeShape(value: unknown, graphId: string): ExecutionNode {
     assertNonEmpty(node.requestId, `node \`${String(node.executionId)}\`.requestId`);
     assertHash(node.requestFingerprint, `node \`${String(node.executionId)}\`.requestFingerprint`);
   }
+  if (node.thread === undefined) {
+    // Legacy: node ghi trước khi có Thread. Trả bản có key để mọi document ghi ra đều tường minh.
+    return { ...node, thread: null } as unknown as ExecutionNode;
+  }
+  assertThreadBinding(node.thread, `node \`${String(node.executionId)}\`.thread`);
   return node as unknown as ExecutionNode;
 }
 
@@ -198,7 +234,8 @@ export function assertGraphDocument(value: unknown): ExecutionGraphDocument {
   if (!Array.isArray(graph.nodes)) invalid("nodes must be an array");
   if (!Array.isArray(graph.reservations)) invalid("reservations must be an array");
 
-  const nodes = graph.nodes.map((node) => assertNodeShape(node, graphId));
+  const rawNodes: unknown[] = graph.nodes;
+  const nodes = rawNodes.map((node) => assertNodeShape(node, graphId));
   const byId = new Map<string, ExecutionNode>();
   for (const node of nodes) {
     if (byId.has(node.executionId)) invalid(`duplicate node \`${node.executionId}\``);
@@ -222,6 +259,12 @@ export function assertGraphDocument(value: unknown): ExecutionGraphDocument {
     if (!parent) invalid(`node \`${node.executionId}\` names a parent that is not in the graph`);
     if (node.depth !== parent.depth + 1) {
       invalid(`node \`${node.executionId}\` must sit one level below its parent`);
+    }
+    if (!sameThreadBinding(node.thread, parent.thread)) {
+      throw new ExecutionGraphError(
+        "THREAD_BINDING_MISMATCH",
+        `node \`${node.executionId}\` must carry the same thread binding as its parent`,
+      );
     }
   }
 
@@ -260,7 +303,10 @@ export function assertGraphDocument(value: unknown): ExecutionGraphDocument {
     }
   }
 
-  return graph as unknown as ExecutionGraphDocument;
+  // Node legacy (không có key `thread`) đã được normalize thành bản mới; khi đó trả document
+  // dựng lại để bản ghi ra đĩa luôn có key. Còn lại trả nguyên input — caller so identity.
+  const normalized = nodes.some((node, index) => node !== rawNodes[index]);
+  return (normalized ? { ...graph, nodes } : graph) as unknown as ExecutionGraphDocument;
 }
 
 /**
@@ -297,6 +343,9 @@ export function assertStructuralFieldsPreserved(
       if (before[field] !== after[field]) {
         invalid(`node \`${before.executionId}\`.${field} is immutable`);
       }
+    }
+    if (!sameThreadBinding(before.thread, after.thread)) {
+      invalid(`node \`${before.executionId}\`.thread is immutable`);
     }
     assertNodeTransition(before.executionId, before.status, after.status);
   }

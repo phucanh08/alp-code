@@ -54,3 +54,14 @@ export function executionsDirectory(env: NodeJS.ProcessEnv = process.env): strin
 export function executionGraphsDirectory(env: NodeJS.ProcessEnv = process.env): string {
   return join(stateHome(env), "execution-graphs");
 }
+
+/**
+ * `~/.alp/threads/<threadId>/` — một thư mục cho mỗi Thread: index `thread.json` cạnh
+ * payload context/message/compaction bất biến.
+ *
+ * Tách khỏi `execution-graphs/` vì Thread sống lâu hơn mọi graph của nó: dọn một graph là
+ * dọn một lần chạy, dọn một Thread là xoá cả công việc.
+ */
+export function threadsDirectory(env: NodeJS.ProcessEnv = process.env): string {
+  return join(stateHome(env), "threads");
+}

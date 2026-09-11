@@ -46,7 +46,7 @@ describe("ExecutionGraphService root lifecycle", () => {
   it("creates a root that owns its graph, its limits, and one absolute deadline", async () => {
     const { store, service } = harness();
 
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
 
     expect(root.binding.graphId).toBe(root.binding.executionId);
     const stored = await store.get(root.binding.graphId);
@@ -88,7 +88,7 @@ describe("ExecutionGraphService root lifecycle", () => {
   it("keeps the capability out of durable state and stores only its hash", async () => {
     const { store, service } = harness();
 
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     const stored = await store.get(root.binding.graphId);
 
     expect(root.binding.capability).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -100,7 +100,7 @@ describe("ExecutionGraphService root lifecycle", () => {
 
   it("refuses to start a root on a capability that is not the one it issued", async () => {
     const { store, service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     let registered = 0;
 
     const forged = { ...root.binding, capability: "a".repeat(43) };
@@ -120,7 +120,7 @@ describe("ExecutionGraphService root lifecycle", () => {
    */
   it("holds the graph lease across registration", async () => {
     const { store, service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     const events: string[] = [];
 
     const spawned = service.startRoot(root.binding, async () => {
@@ -143,7 +143,7 @@ describe("ExecutionGraphService root lifecycle", () => {
 
   it("leaves a root that failed to spawn terminal and inspectable", async () => {
     const { store, service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
 
     await expect(
       service.startRoot(root.binding, async () => {
@@ -162,7 +162,7 @@ describe("ExecutionGraphService root lifecycle", () => {
 
   it("refuses to start a root whose graph has already passed its deadline", async () => {
     const { service, advance } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
 
     advance(DEFAULT_EXECUTION_GRAPH_LIMITS.wallClockMs);
     expect(await codeOf(() => service.startRoot(root.binding, async () => undefined)))
@@ -171,7 +171,7 @@ describe("ExecutionGraphService root lifecycle", () => {
 
   it("records the result of a root that ran, and never resurrects one that ended", async () => {
     const { store, service, advance } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
 
     advance(1_000);
@@ -191,7 +191,7 @@ describe("ExecutionGraphService root lifecycle", () => {
 
   it("fails a root that never reached the backend at all", async () => {
     const { store, service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
 
     await service.failExecution(root.binding, new Error("memory context exceeded its budget"));
 
@@ -204,7 +204,7 @@ describe("ExecutionGraphService root lifecycle", () => {
 
   it("renders the binding into exactly the four launch variables", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
 
     expect(bindingEnvironment(root.binding)).toEqual({
       [EXECUTION_BINDING_ENV.graphId]: "exec_root_1",

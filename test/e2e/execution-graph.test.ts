@@ -71,7 +71,7 @@ async function waitFor(condition: () => boolean, timeoutMs = 5000): Promise<void
  * would fail here instead of being papered over by an in-memory handoff.
  */
 async function chain(environment: E2eEnvironment) {
-  const root = await environment.graph.createRoot({ agentId: "main", executionId: "exec_main" });
+  const root = await environment.graph.createRoot({ agentId: "main", thread: null, executionId: "exec_main" });
   const main = serviceFor(environment, root.binding, "exec_worker");
   const worker = await main.delegate({
     targetRole: "worker",
@@ -163,7 +163,7 @@ describe("e2e: execution graph", () => {
   /** Cùng một `requestId` gọi hai lần là một lần gọi bị lặp — không phải hai process. */
   it("charges a repeated request once and returns the same child", async () => {
     const environment = await createE2eEnvironment({ output: OUTPUT, registry: nestedRegistry() });
-    const root = await environment.graph.createRoot({ agentId: "main", executionId: "exec_main" });
+    const root = await environment.graph.createRoot({ agentId: "main", thread: null, executionId: "exec_main" });
     const main = serviceFor(environment, root.binding, "exec_worker");
     const request = {
       requestId: "req_retried",
@@ -188,7 +188,7 @@ describe("e2e: execution graph", () => {
   it("cancels a branch to its leaves and leaves the sibling alone", async () => {
     // Mọi nấc còn sống khi tín hiệu tới: huỷ một cây đã tự thoát không chứng minh được gì.
     const environment = await createE2eEnvironment({ holdMs: 4_000, registry: nestedRegistry() });
-    const root = await environment.graph.createRoot({ agentId: "main", executionId: "exec_main" });
+    const root = await environment.graph.createRoot({ agentId: "main", thread: null, executionId: "exec_main" });
     const main = serviceFor(environment, root.binding, "exec_worker");
     await main.delegate({
       targetRole: "worker",

@@ -50,6 +50,7 @@ function stubDependencies(overrides: Record<string, unknown> = {}) {
     principalCommand: async () => 0,
     delegateCommand: async () => 0,
     contextCommand: async () => 0,
+    threadCommand: async () => 0,
     maintenanceCommand: async () => 0,
     ...overrides,
   } as never;
@@ -61,6 +62,10 @@ describe("alp CLI parsing", () => {
     [["--mode", "ultra"], { command: "run-main", mode: "ultra" }],
     [["--mode=low"], { command: "run-main", mode: "low" }],
     [["--mode=puck"], { command: "run-main", mode: "puck" }],
+    // `--title` đặt tên Thread mới, đứng trước hay sau `--mode` đều được.
+    [["--title", "fix login"], { command: "run-main", title: "fix login" }],
+    [["--title=fix login", "--mode", "high"], { command: "run-main", mode: "high", title: "fix login" }],
+    [["--mode=low", "--title", "  padded  "], { command: "run-main", mode: "low", title: "padded" }],
     [["mode", "show"], { command: "mode", action: "show" }],
     [["mode", "set", "high"], { command: "mode", action: "set", mode: "high" }],
     [["init", "/tmp/project"], { command: "init", project: "/tmp/project" }],
@@ -70,6 +75,8 @@ describe("alp CLI parsing", () => {
     [["delegate", "search", "find", "launcher"], { command: "delegate", args: ["search", "find", "launcher"] }],
     [["context", "status", "exec_abc"], { command: "context", args: ["status", "exec_abc"] }],
     [["context", "pin", "decision", "--", "chose", "X"], { command: "context", args: ["pin", "decision", "--", "chose", "X"] }],
+    [["thread", "list", "--all"], { command: "thread", args: ["list", "--all"] }],
+    [["thread", "continue", "thread_abc", "--mode", "low"], { command: "thread", args: ["continue", "thread_abc", "--mode", "low"] }],
     [["doctor", "--quiet"], { command: "maintenance", action: "doctor", args: ["--quiet"] }],
     [["update"], { command: "maintenance", action: "update", args: [] }],
     [["uninstall", "--purge-memory", "--force"], { command: "maintenance", action: "uninstall", args: ["--purge-memory", "--force"] }],
@@ -83,6 +90,9 @@ describe("alp CLI parsing", () => {
     ["--mode", "smart"],
     ["--mode"],
     ["--mode", "low", "--mode", "high"],
+    ["--title"],
+    ["--title", ""],
+    ["--title", "a", "--title", "b"],
     ["mode", "set", "smart"],
     ["mode", "set"],
     ["wat"],
@@ -114,6 +124,18 @@ describe("alp CLI parsing", () => {
     const runMain = vi.fn(async () => 0);
     await expect(main(["--mode", "ultra"], stubDependencies({ runMain }))).resolves.toBe(0);
     expect(runMain).toHaveBeenCalledWith({ cwd: "/caller/project", mode: "ultra" });
+  });
+
+  it("hands `--title` to the session as the new thread's title", async () => {
+    const runMain = vi.fn(async () => 0);
+    await expect(main(["--title", "fix login", "--mode=low"], stubDependencies({ runMain }))).resolves.toBe(0);
+    expect(runMain).toHaveBeenCalledWith({ cwd: "/caller/project", mode: "low", title: "fix login" });
+  });
+
+  it("dispatches `alp thread` to the thread command", async () => {
+    const threadCommand = vi.fn(async () => 0);
+    await expect(main(["thread", "show", "thread_abc"], stubDependencies({ threadCommand }))).resolves.toBe(0);
+    expect(threadCommand).toHaveBeenCalledWith(["show", "thread_abc"]);
   });
 
   it("dispatches maintenance commands through the code-native CLI", async () => {
@@ -190,10 +212,56 @@ function executionStub(options: {
   };
 }
 
+interface ThreadsStub {
+  readonly settled: string[];
+  readonly projected: { executionId: string; runtime: string | null; checkpoint: boolean }[];
+  createThread(input: { agentId: string; workspace: string; title: string | null }): Promise<never>;
+  reserveRoot(threadId: string, executionId: string): Promise<never>;
+  settleRoot(threadId: string, executionId: string, outcome: string): Promise<never>;
+  projectContext(threadId: string, executionId: string, input: { checkpoint: unknown; runtime: string | null }): Promise<never>;
+  collectHistory(threadId: string, source: { executionId: string; runtime: string | null }): Promise<never>;
+}
+
+/** Thread giả: đủ để thấy reserve đứng giữa authorize và `createRoot`, và settle rồi project đứng cuối. */
+function threadsStub(events?: string[]): ThreadsStub {
+  const stub: ThreadsStub = {
+    settled: [],
+    projected: [],
+    async createThread(input) {
+      events?.push(`thread:create:${input.agentId}:${input.workspace}${input.title === null ? "" : `:${input.title}`}`);
+      return { id: "thread_test", agentId: input.agentId, workspace: input.workspace, title: input.title } as never;
+    },
+    async reserveRoot(threadId, executionId) {
+      events?.push(`thread:reserve:${threadId}:${executionId}`);
+      return {
+        ref: { executionId, sequence: 1 },
+        binding: { id: threadId, contextRevision: 0, contextDigest: "0".repeat(64) },
+        handoff: { threadId, sequence: 1, title: null, snapshot: null },
+      } as never;
+    },
+    async settleRoot(threadId, executionId, outcome) {
+      events?.push(`thread:settle:${outcome}`);
+      stub.settled.push(`${threadId}:${executionId}:${outcome}`);
+      return {} as never;
+    },
+    async projectContext(_threadId, executionId, input) {
+      events?.push(`thread:project:${executionId}`);
+      stub.projected.push({ executionId, runtime: input.runtime, checkpoint: input.checkpoint !== null });
+      return {} as never;
+    },
+    async collectHistory(_threadId, source) {
+      events?.push(`thread:history:${source.executionId}`);
+      return {} as never;
+    },
+  };
+  return stub;
+}
+
 interface GraphStub {
   readonly outcomes: { status: string; error?: { code: string; message: string } }[];
   binding: ExecutionBinding | null;
-  createRoot(input: { agentId: string; executionId?: string }): Promise<never>;
+  createRoot(input: { agentId: string; executionId?: string; thread: unknown }): Promise<never>;
+  rootThread: unknown;
   startRoot<T>(binding: ExecutionBinding, register: (binding: ExecutionBinding) => Promise<T>): Promise<T>;
   finishExecution(binding: ExecutionBinding, outcome: { status: string }): Promise<never>;
   failExecution(binding: ExecutionBinding, error: unknown): Promise<never>;
@@ -204,8 +272,10 @@ function graphStub(events?: string[]): GraphStub {
   const stub: GraphStub = {
     outcomes: [],
     binding: null,
+    rootThread: undefined,
     async createRoot(input) {
       events?.push(`root:create:${input.agentId}`);
+      stub.rootThread = input.thread;
       const executionId = input.executionId ?? "exec-main";
       stub.binding = {
         graphId: executionId,
@@ -242,7 +312,7 @@ function preparedMain(input: MaterializeExecutionInput, executionId = "exec-main
   const definition = MAIN_DEFINITION as unknown as AgentDefinition<unknown>;
   return {
     capsule: { executionId },
-    ...(stateFile === undefined ? {} : { artifacts: { stateFile } }),
+    artifacts: { contextDirectory: "/tmp/exec/context", ...(stateFile === undefined ? {} : { stateFile }) },
     policy: {
       model: modelForMode(definition, mode, input.modeProfiles),
       reasoningEffort: reasoningEffortForMode(definition, mode, input.modeProfiles),
@@ -255,7 +325,9 @@ describe("runMainSession", () => {
   it("uses remembered selection, code-native main definition, adapter launch spec, and local lifecycle", async () => {
     const events: string[] = [];
     const graph = graphStub(events);
+    const threads = threadsStub(events);
     let launchBinding: unknown;
+    let materializedThread: unknown;
     const launchSpec = { command: "fake", args: [], cwd: "/project", env: {}, temporaryFiles: [] };
     const result = await runMainSession({ cwd: "/project" }, {
       registry: {
@@ -267,8 +339,9 @@ describe("runMainSession", () => {
       selector: {
         async select(input) { events.push(`select:${input.requestedMode ?? "remembered"}`); return { ok: true, mode: "medium", source: "persisted" }; },
       },
-      executionService: executionStub({ events }),
+      executionService: executionStub({ events, onMaterialize: (input) => { materializedThread = input.thread; } }),
       graph,
+      threads,
       adapters: new Map([["claude", {
         name: "claude",
         compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
@@ -300,7 +373,12 @@ describe("runMainSession", () => {
     expect(events).toEqual([
       "registry:main",
       "select:remembered",
+      // Thread trước mọi thứ, không lease: chỉ là bản ghi "có một việc bắt đầu ở đây".
+      "thread:create:main:/project",
       "authorize:principal->main:/project:read-only",
+      // Authorize trước reserve: execution bị từ chối không được chiếm slot Thread. Reserve
+      // trước `createRoot`: graph mà Thread không biết là một lỗ trong lịch sử continuation.
+      "thread:reserve:thread_test:exec-main",
       // Cây trước file: node `preparing` ra đời giữa hai bước, nên không byte nào của
       // execution này chạm đĩa trước khi có chỗ cho nó trong cây.
       "root:create:main",
@@ -312,9 +390,18 @@ describe("runMainSession", () => {
       "spawn:/project",
       "wait",
       "root:finish:completed",
+      // Graph terminal trước, Thread chép lại sau — hai lease không bao giờ lồng nhau.
+      "thread:settle:completed",
+      // Mirror transcript (P4) đứng giữa: boundary phải có trước bản chiếu context của nó.
+      "thread:history:exec-main",
+      // Rồi chiếu checkpoint của E-1 thành context rev 1, dưới một Thread lease riêng nữa.
+      "thread:project:exec-main",
     ]);
     // Chỗ đứng trong cây đi vào launch spec, chứ không được vá vào `env` sau đó.
     expect(launchBinding).toBe(graph.binding);
+    // Binding Thread đi vào graph node và vào snapshot policy với cùng một giá trị.
+    expect(graph.rootThread).toEqual({ id: "thread_test", contextRevision: 0, contextDigest: "0".repeat(64) });
+    expect(materializedThread).toEqual(graph.rootThread);
   });
 
   /**
@@ -331,6 +418,7 @@ describe("runMainSession", () => {
       selector: { async select() { return { ok: true, mode: "ultra", source: "explicit" }; } },
       executionService: executionStub({ onMaterialize: (input) => { preparedMode = input.mode; } }),
       graph: graphStub(),
+      threads: threadsStub(),
       adapters: new Map([["claude", {
         name: "claude",
         compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
@@ -370,6 +458,7 @@ describe("runMainSession", () => {
       selector: { async select() { return { ok: true, mode: "ultra", source: "explicit" }; } },
       executionService: executionStub(),
       graph: graphStub(),
+      threads: threadsStub(),
       adapters: new Map([["codex", {
         name: "codex",
         compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
@@ -401,6 +490,7 @@ describe("runMainSession", () => {
       selector: { async select() { return { ok: true, mode: "puck", source: "explicit" }; } },
       executionService: executionStub(),
       graph: graphStub(),
+      threads: threadsStub(),
       adapters: new Map([["codex", {
         name: "codex",
         compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
@@ -433,6 +523,7 @@ describe("runMainSession", () => {
         onAuthorize: (input) => { workspaceMode = input.workspaceMode; },
       }),
       graph: graphStub(),
+      threads: threadsStub(),
       adapters: new Map([["claude", { name: "claude", compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true }, async probe() { return { ok: true, runtime: "claude", message: "ok" }; }, async prepare() { return { command: "fake", args: [], cwd: "/unknown", env: {}, temporaryFiles: [] }; } }]]),
       backend: {
         name: "local",
@@ -457,12 +548,14 @@ describe("runMainSession", () => {
   it("leaves the root terminal when the session dies before the backend", async () => {
     const events: string[] = [];
     const graph = graphStub(events);
+    const threads = threadsStub(events);
 
     await expect(runMainSession({ cwd: "/project" }, {
       registry: { get: () => MAIN_DEFINITION },
       selector: { async select() { return { ok: true, mode: "medium", source: "default" }; } },
       executionService: executionStub({ events }),
       graph,
+      threads,
       adapters: new Map([["claude", {
         name: "claude",
         compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
@@ -487,6 +580,12 @@ describe("runMainSession", () => {
     expect(graph.outcomes).toEqual([
       { status: "failed", error: { code: "ROOT_START_FAILED", message: expect.stringContaining("claude is not on PATH") } },
     ]);
+    // Thread không được giữ một ref unsettled cho một root đã chết trước khi có process: cùng
+    // catch ghi graph `failed` rồi settle Thread `failed`, theo đúng thứ tự của đường thành công.
+    expect(events.indexOf("thread:settle:failed")).toBeGreaterThan(events.indexOf("root:fail"));
+    expect(threads.settled).toEqual(["thread_test:exec-main:failed"]);
+    // Chết trước khi có checkpoint thì projection chỉ mang outcome — không mang gì bịa ra.
+    expect(threads.projected).toEqual([{ executionId: "exec-main", runtime: "claude", checkpoint: false }]);
   });
 
   /**
@@ -500,12 +599,14 @@ describe("runMainSession", () => {
     const stateFile = join(root, "state.json");
     await writeFile(stateFile, JSON.stringify({ status: "completed", output: "found it" }));
     const graph = graphStub();
+    const threads = threadsStub();
 
     const result = await runMainSession({ cwd: "/project" }, {
       registry: { get: () => MAIN_DEFINITION },
       selector: { async select() { return { ok: true, mode: "medium", source: "default" }; } },
       executionService: executionStub({ stateFile }),
       graph,
+      threads,
       adapters: new Map([["claude", {
         name: "claude",
         compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
@@ -527,6 +628,7 @@ describe("runMainSession", () => {
 
     expect(result).toMatchObject({ status: "completed", output: "found it" });
     expect(graph.outcomes).toEqual([{ status: "completed" }]);
+    expect(threads.settled).toEqual(["thread_test:exec-main:completed"]);
   });
 });
 
@@ -695,6 +797,7 @@ function treeView(root: ExecutionTreeNode, overrides: Partial<ExecutionTreeView>
     limits: DEFAULT_EXECUTION_GRAPH_LIMITS,
     delegation: { used: 2, limit: DEFAULT_EXECUTION_GRAPH_LIMITS.delegationLimit, remaining: 6 },
     summary: { total: 3, active: 2, byStatus: { running: 2, completed: 1 }, pending: 1 },
+    thread: null,
     root,
     ...overrides,
   };
@@ -834,6 +937,22 @@ describe("alp delegation tree", () => {
     expect(text).toContain(`depth ≤ ${DEFAULT_EXECUTION_GRAPH_LIMITS.maxDepth}`);
     expect(text).toContain("deadline 2026-09-11T02:00:00.000Z");
     expect(text).toContain("revision 7");
+  });
+
+  /**
+   * Cutover P5: cây cũ không có Thread phải đọc được và nói rõ là cũ, thay vì in ra một binding
+   * rỗng trông như lỗi; cây mới nêu Thread và revision context nó mở trên.
+   */
+  it("labels a legacy graph as unthreaded and a threaded graph by its thread", () => {
+    expect(renderExecutionTree(sampleView())).toContain("thread legacy-unthreaded");
+
+    const threaded = treeView(treeNode(), {
+      thread: { id: "thread_x", contextRevision: 1, contextDigest: "a".repeat(64) },
+    });
+    const text = renderExecutionTree(threaded);
+    expect(text).toContain("thread thread_x  ·  context rev 1");
+    expect(text).not.toContain("legacy-unthreaded");
+    expect(text).not.toContain("a".repeat(64));
   });
 
   /** Output của một lệnh đọc không được mang theo capability của execution nào. */

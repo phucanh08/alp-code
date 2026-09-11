@@ -15,6 +15,7 @@ import type {
   MemoryKind,
   MemoryQuery,
 } from "../memory/types";
+import type { ThreadContextHandoff } from "../thread/context-types";
 import type { WorkflowExecutionState } from "../workflow/types";
 import type { WorkflowRunStatus } from "../workflow/types";
 
@@ -35,8 +36,29 @@ export interface SubagentAuthorization extends SubagentCatalogEntry {
   readonly name: string;
 }
 
+/**
+ * Thread mà execution này thuộc về, chụp lúc reserve và không đổi sau đó.
+ *
+ * Nằm **trong** snapshot đã hash: một execution không thể bị "chuyển Thread" bằng cách sửa
+ * metadata, và child kế thừa đúng bản này từ node cha chứ không đọc Thread mutable. Chỉ là
+ * provenance — không field nào ở đây cấp quyền; PolicyEngine không đọc Thread.
+ */
+export interface ExecutionThreadBinding {
+  readonly id: string;
+  /** Revision context Thread mà execution này nhìn thấy lúc reserve; `0` = chưa có. */
+  readonly contextRevision: number;
+  readonly contextDigest: string;
+}
+
 export interface ExecutionPolicy {
   readonly executionId: ExecutionId;
+  /**
+   * Key bắt buộc, `null` khi execution không thuộc Thread nào (legacy, nội bộ).
+   *
+   * `canonicalize()` bỏ key `undefined`, nên "vắng" và "không có" phải là cùng một giá trị
+   * tường minh — nếu không, một policy có Thread và một policy legacy có thể trùng hash.
+   */
+  readonly thread: ExecutionThreadBinding | null;
   readonly role: AgentId;
   readonly workspace: string;
   readonly workspaceMode: "read-only" | "workspace-write";
@@ -151,6 +173,11 @@ export interface PreparedExecution {
   readonly policy: ExecutionPolicy;
   readonly state: StoredExecutionState;
   readonly artifacts: ExecutionArtifactPaths;
+  /**
+   * Context Thread đưa sang cho root này (snapshot rev N) — để render vào session context.
+   * Không hash, không cấp quyền; `null` khi execution không phải root của Thread nào.
+   */
+  readonly threadContext?: ThreadContextHandoff | null;
 }
 
 /**
@@ -196,6 +223,13 @@ export interface AuthorizeExecutionInput {
  */
 export interface MaterializeExecutionInput {
   readonly task: string;
+  /** Thread binding cho snapshot; `null` khi không có Thread. Không ảnh hưởng quyết định cho phép. */
+  readonly thread: ExecutionThreadBinding | null;
+  /**
+   * Snapshot context Thread (rev = `thread.contextRevision`) cho root: seed pins vào checkpoint
+   * và mục "Thread context" của session context. Bỏ trống/`null` khi không có gì để tiếp tục.
+   */
+  readonly threadContext?: ThreadContextHandoff | null;
   /** Bỏ trống thì lấy `DEFAULT_MODE`. */
   readonly mode?: ModeId;
   /** Loadout của nấc sau khi ghép settings; bỏ trống thì bản built-in. */

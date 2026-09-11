@@ -94,7 +94,7 @@ describe("ExecutionGraphService subtree cancellation", () => {
    */
   it("stops the target and everything it delegated below itself", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding, { agentId: "worker" });
     const grandchild = await spawnChild(service, child, { requestId: "req_deep" });
@@ -127,7 +127,7 @@ describe("ExecutionGraphService subtree cancellation", () => {
    */
   it("signals the deepest generation first", async () => {
     const { service } = harness({ maxDepth: 3 });
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding, { agentId: "worker" });
     const grandchild = await spawnChild(service, child, { requestId: "req_deep", agentId: "worker" });
@@ -156,7 +156,7 @@ describe("ExecutionGraphService subtree cancellation", () => {
    */
   it("closes the branch to new children before any signal is sent", async () => {
     const { store, service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding, { agentId: "worker" });
 
@@ -184,7 +184,7 @@ describe("ExecutionGraphService subtree cancellation", () => {
    */
   it("revokes reservations inside the branch and refuses to start them", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding, { agentId: "worker" });
     const pending = await service.reserveChild(child, request({ requestId: "req_pending" })) as ReservedChild;
@@ -210,7 +210,7 @@ describe("ExecutionGraphService subtree cancellation", () => {
    */
   it("makes a cancel wait for a spawn that is holding the lease", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const reserved = await service.reserveChild(root.binding, request()) as ReservedChild;
     const backendCalls = backend();
@@ -248,7 +248,7 @@ describe("ExecutionGraphService subtree cancellation", () => {
    */
   it("leaves a node cancelling when the backend refused the signal", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const stubborn = await spawnChild(service, root.binding, { agentId: "worker" });
     const willing = await spawnChild(service, root.binding, { requestId: "req_ok" });
@@ -269,7 +269,7 @@ describe("ExecutionGraphService subtree cancellation", () => {
   /** Và lần sau reconciliation hỏi lại đúng node đó, rồi mới chốt kết cục. */
   it("lets reconciliation finish a cancel the backend could not confirm", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const stubborn = await spawnChild(service, root.binding, { agentId: "worker" });
     await service.cancelSubtree({
@@ -296,7 +296,7 @@ describe("ExecutionGraphService subtree cancellation", () => {
    */
   it("keeps the result of an execution that finished while the signal was in flight", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding);
 
@@ -316,7 +316,7 @@ describe("ExecutionGraphService subtree cancellation", () => {
   /** Một node đã kết thúc không được gọi tới backend lần nữa — record của nó có thể đã bị dọn. */
   it("never signals a node that had already ended", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const done = await spawnChild(service, root.binding);
     await service.finishExecution(done, { status: "completed" });
@@ -335,7 +335,7 @@ describe("ExecutionGraphService subtree cancellation", () => {
   /** Huỷ hai lần là một lần: node đã dừng, và lý do đầu tiên là lý do. */
   it("is idempotent and keeps the first reason", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding, { agentId: "worker" });
     const input = {
@@ -366,7 +366,7 @@ describe("ExecutionGraphService subtree cancellation", () => {
    */
   it("marks an expired tree with the wall clock, at every level", async () => {
     const { service, advance } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding, { agentId: "worker" });
 
@@ -389,7 +389,7 @@ describe("ExecutionGraphService subtree cancellation", () => {
 
   it("refuses to cancel an execution that is not in the graph", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
 
     expect(await codeOf(() => service.cancelSubtree({
       graphId: root.binding.graphId,

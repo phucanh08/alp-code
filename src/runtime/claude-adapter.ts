@@ -155,7 +155,7 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
       `${JSON.stringify(skillRoots.split(delimiter).filter(Boolean), null, 2)}\n`,
     );
     const env = {
-      ...baseRuntimeEnvironment(capsule, contextFiles, artifacts, input.binding),
+      ...baseRuntimeEnvironment(capsule, contextFiles, artifacts, input.binding, policy.thread),
       ALP_EXECUTION_ROOT: dirname(artifacts.directory),
       ALP_MEMORY_ROOT: this.memoryRoot(),
       ALP_IDENTITY_CAPSULE: capsuleFile,

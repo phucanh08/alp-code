@@ -1,7 +1,7 @@
 # Kiến trúc alp-code
 
 > Tài liệu kiến trúc hệ thống. Mô tả layer, contract giữa các layer, luồng dữ liệu và các
-> ranh giới tin cậy. Cập nhật từ source tại `main` (2026-08-27).
+> ranh giới tin cậy. Cập nhật từ source tại `main` (2026-09-11).
 >
 > Doc này mô tả hệ thống **đang là**. Hướng đi và các nguyên tắc quyết định nằm ở
 > [Triết lý thiết kế & Tầm nhìn](./alp-design-philosophy-and-vision.md).
@@ -37,6 +37,12 @@ quyền. Backend thì chỉ còn một: `LocalProcessBackend`.
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │
 ┌───────────────────────────────▼──────────────────────────────────────┐
+│  thread/         ThreadService — đơn vị VIỆC, không phải quyền       │
+│                  root #n → settle → project context rev n → root #n+1│
+│                  HistoryBridge (claude/codex) → messages/, completeness│
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │  (binding {id, rev, digest} → hash vào policy)
+┌───────────────────────────────▼──────────────────────────────────────┐
 │  execution/      ExecutionService — deny-first orchestrator          │
 │                  ExecutionPolicy (snapshot + hash)                   │
 │                  IdentityCapsule (immutable bundle gửi cho runtime)  │
@@ -69,14 +75,15 @@ quyền. Backend thì chỉ còn một: `LocalProcessBackend`.
 ```
 
 Luật phụ thuộc: layer trên import layer dưới, không bao giờ ngược lại. `policy/` không biết
-runtime; `agents/` không biết backend; `memory/` không biết execution.
+runtime; `agents/` không biết backend; `memory/` không biết execution; **`policy/` không biết
+`thread/`** — Thread là input của snapshot, không phải thứ snapshot tra cứu.
 
 ## 3. Hai luồng chính
 
 ### 3.1 `alp` — phiên main tương tác
 
 ```text
-alp [--mode low|medium|high|ultra|puck]
+alp [--mode low|medium|high|ultra|puck] [--title <tiêu đề>]
   → parseAlpArgs                       (cli/alp.ts; mode: cờ → ALP_MODE → DEFAULT_MODE)
   → ModeSelector.select                (explicit | interactive TTY | persisted | default)
   → runtimeForMode(main, mode)         (model của nấc quyết định CLI — không ai chọn runtime)
@@ -84,8 +91,12 @@ alp [--mode low|medium|high|ultra|puck]
   → ExecutionService.authorize         (parent = "principal", target = "main")
        ├─ assert main.reportsTo === "principal"
        └─ PolicyEngine.authorize({ type: "workspace", ... })   → vé, chưa byte nào chạm đĩa
-  → ExecutionGraphService.createRoot   → node `preparing`, capability + deadline tuyệt đối
-  → ExecutionService.materialize(vé)   (mọi trường mang quyền đọc từ vé, không từ input)
+  → ThreadService.createThread         (bare `alp` LUÔN mở Thread mới; `alp thread continue` mở Thread cũ)
+  → ThreadService.reserveRoot          → ref #n, binding {id, contextRevision, contextDigest} + snapshot
+  → ExecutionGraphService.createRoot   → node `preparing` mang binding Thread, capability + deadline
+  → ExecutionService.materialize(vé)   (mọi trường mang quyền đọc từ vé, không từ input;
+                                        binding Thread hash vào policyHash; snapshot → session-context
+                                        dưới "work state, not authority" + seed pin vào checkpoint)
        ├─ MemoryService.buildContext
        ├─ WorkflowRunner.initialize
        ├─ createExecutionPolicy   → snapshot (kèm `mode`) + definitionHash + policyHash
@@ -96,9 +107,16 @@ alp [--mode low|medium|high|ultra|puck]
   → ExecutionGraphService.startRoot    → giữ lease của cây SUỐT `LocalProcessBackend.spawn`
   → LocalProcessBackend.wait           (ngoài lease — cây phải mở để còn đẻ con)
   → đọc lại state.json → status/output cuối cùng → ExecutionGraphService.finishRoot
+  → ThreadService.settleRoot           (kết cục vào ref #n)
+  → HistoryBridge.collectDelta         (NGOÀI lease Thread) → ThreadService.collectHistory
+  → ThreadService.projectContext       (checkpoint #n + outcome → context rev n+1, digest chain)
 ```
 
 Exit code: `0` completed · `130` cancelled · `1` còn lại.
+
+Lease Thread và lease Graph không bao giờ lồng nhau: mỗi bước ở trên giữ đúng một cái. Root
+chết trước `settleRoot` được `reconcile` (chạy trước mỗi `show`/`continue`) đóng bằng kết cục
+graph/backend biết, rồi `continue` chiếu nốt context của nó trước khi mở root mới.
 
 ### 3.2 `alp delegate <role>` — giao việc cho specialist
 
@@ -462,6 +480,49 @@ execution sống đồng thời cả cây, 8 lượt giao việc cả đời câ
 config nào mở chúng. Token budget và tool-call budget **không** thuộc P0 — trần ở đây đếm
 execution, không đếm token.
 
+### 4.4b `src/thread/` — đơn vị việc, không phải đơn vị quyền
+
+Thread (`thread_…`) là **một việc** kéo dài qua nhiều root execution, nhiều runtime, nhiều
+process. Nó tồn tại để tách hai câu hỏi trước đây bị gộp vào "phiên": *việc tới đâu rồi*
+(Thread) và *lượt này được làm gì* (Execution). Bảy danh từ, mỗi cái một nghĩa:
+
+```text
+AgentDefinition = vai khai báo trong code   Execution      = một lượt chạy đã authorize, bất biến
+Thread          = một việc, bền, nhiều lượt Graph          = cây delegation/huỷ của MỘT lượt
+Runtime         = adapter / CLI của model   Process        = tiến trình OS do backend sinh
+Memory          = tri thức dùng lại qua nhiều Thread (đóng Thread KHÔNG auto-write memory)
+```
+
+Invariant, theo thứ tự quan trọng:
+
+- **Thread không phải nguồn quyền.** `PolicyEngine` không import `thread/`. Policy của mỗi root
+  mang `ExecutionThreadBinding {id, contextRevision, contextDigest}` và binding đó **hash vào
+  `policyHash`** — nó ghi lượt này mở trên snapshot nào, không phải một con trỏ tra về sau. Sửa
+  `thread.json`, forge `parentThreadId`, pin một dòng context viết như policy, đặt
+  `ALP_THREAD_ID` bằng tay: root kế tiếp nhận đúng quyền như root trước. `test/e2e/thread-binding`
+  và `test/thread/thread-context-projection` giữ từng cách.
+- **Execution vẫn là đơn vị bảo mật.** `continue` là một execution mới: ID mới, policy mới,
+  process mới, không `--resume`, không session ID của runtime. Con được uỷ quyền nằm trong graph
+  của cha và thừa kế binding nguyên văn (`THREAD_BINDING_MISMATCH` nếu lệch); Thread chỉ ghi
+  root. Graph cũ không có key `thread` đọc lên là `null`, CLI in `legacy-unthreaded`, không
+  backfill Thread giả.
+- **Một Thread, tối đa một root chưa settle.** `reserveRoot` từ chối bằng `THREAD_BUSY`;
+  `thread.json` có `revision` và ghi dưới lease liên tiến trình (`FileThreadStore`, cùng luật
+  `previous + 1` với graph → `THREAD_REVISION_CONFLICT`). Lease Thread và lease Graph **không
+  lồng nhau**.
+- **Context là bản chiếu tất định, bất biến theo revision.** `projectContext` đọc checkpoint
+  của root vừa settle + kết cục → `context/<rev>.json` (≤ 32 KiB, cắt tất định và ghi
+  `ThreadCompactionRecordV1` với provenance: khoảng message, digest vào/ra), `digest` sha256
+  canonical. Rev 0 là "chưa có". Nguồn duy nhất là **pin** — projector không đọc transcript.
+  Checkpoint mất/hỏng hash → snapshot `degraded`, chỉ kết cục đi tiếp. Snapshot đọc lên lệch
+  digest → `THREAD_CONTEXT_TAMPERED`.
+- **History là bản ghi, không bịa.** `HistoryBridgeRegistry` hỏi bridge của runtime
+  (`ClaudeHistoryBridge` đọc transcript JSONL qua pointer `context/runtime-session.json` mà hook
+  `session-boot`/`session-end` để lại; `CodexHistoryBridge` tương tự) — chạy **ngoài** lease,
+  chỉ bước ghi mới cầm lease. Entry dedupe theo `${executionId}:${nativeId}`; tool input đi qua
+  `redactDeep` trước khi ghi. Completeness `complete | partial | final-only | unsupported`, mức
+  Thread = mức xấu nhất; bridge lỗi → `final-only`, không throw.
+
 ### 4.5 `src/workflow/` — state machine + output contract
 
 Mỗi agent có một workflow tuyến tính (`defineLinearWorkflow`) với tool set thu hẹp dần theo
@@ -763,8 +824,16 @@ dùng còn nằm trong đó đều là dữ liệu hẹn ngày mất.
       checkpoint.json            objective + pin, hash toàn vẹn          (0600)
       continuity.md              render Markdown, bounded 24 KiB         (0600)
       compact-events.jsonl       journal append-only, hook ghi           (0600)
+      runtime-session.json       session_id/transcript_path native, hook để lại  (0600)
   execution-graphs/<graph_id>.json   ExecutionGraphDocument: node, trần, deadline (0600)
     by-execution/<exec_id>     index tra ngược execution → cây chứa nó
+  threads/<thread_id>/         MỘT VIỆC — chuỗi root, không phải cây                (0700)
+    thread.json                  index: status, revision, executions[], currentContext,
+                                 messages[], compactions[]                       (0600)
+    context/<rev>.json           snapshot bất biến, digest chain rev0 → rev1 → …  (0600)
+    messages/<seq>.json          entry history đã redact, mỗi cái một digest      (0600)
+    compactions/*.json           ThreadCompactionRecordV1                         (0600)
+    .lock/                       lease liên tiến trình
   delegation/<key>/          `installed` cho bản cài, hash repo cho dev clone
     code-native-executions.json  execution record của DelegationService
     local.json                   state riêng của backend (pid, log, result)

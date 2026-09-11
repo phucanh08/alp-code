@@ -31,7 +31,9 @@ export type ExecutionGraphErrorCode =
   | "REQUEST_IN_PROGRESS"
   | "RESERVATION_NOT_FOUND"
   | "RESERVATION_EXPIRED"
-  | "EXECUTION_CANCELLED";
+  | "EXECUTION_CANCELLED"
+  /** Child khai Thread binding khác node cha — cây không được đổi Thread giữa chừng. */
+  | "THREAD_BINDING_MISMATCH";
 
 export class ExecutionGraphError extends Error {
   readonly code: ExecutionGraphErrorCode;

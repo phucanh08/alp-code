@@ -1,5 +1,5 @@
 import type { AgentId } from "../../agents/types";
-import type { ExecutionId } from "../types";
+import type { ExecutionId, ExecutionThreadBinding } from "../types";
 
 /**
  * Cây thực thi bền vững của một phiên — thứ `ExecutionBackend` cố tình không biết.
@@ -103,6 +103,12 @@ export interface ExecutionNode {
   readonly graphId: ExecutionGraphId;
   readonly parentExecutionId: ExecutionId | null;
   readonly agentId: AgentId;
+  /**
+   * Thread binding, cấu trúc và bất biến; child luôn bằng đúng bản của cha. `null` cho graph
+   * legacy (đọc lên được normalize) và execution nội bộ. Graph không đọc Thread — nó chỉ
+   * chép cái root đã được cấp lúc reserve.
+   */
+  readonly thread: ExecutionThreadBinding | null;
   readonly depth: number;
   readonly status: ExecutionNodeStatus;
   /** `null` ở root: root không đến từ một delegation request nào. */

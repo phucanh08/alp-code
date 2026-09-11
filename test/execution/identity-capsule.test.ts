@@ -56,6 +56,7 @@ describe("identity capsules", () => {
     });
     const policy = createExecutionPolicy({
       executionId: "exec-capsule",
+      thread: null,
       definition,
       workspace: "/workspace",
       workspaceMode: "read-only",
@@ -141,6 +142,7 @@ describe("identity capsules", () => {
     });
     const input = {
       executionId: "exec-hash",
+      thread: null,
       workspace: "/workspace",
       workspaceMode: "read-only" as const,
       createdAt: "2026-08-26T00:00:00.000Z",

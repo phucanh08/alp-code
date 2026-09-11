@@ -87,6 +87,7 @@ async function strandQueuedChild(
         graphId: graph.graphId,
         parentExecutionId: reservation.parentExecutionId,
         agentId: reservation.agentId,
+        thread: null,
         depth: reservation.depth,
         status: "queued" as const,
         requestId: reservation.requestId,
@@ -131,7 +132,7 @@ describe("ExecutionGraphService reconciliation", () => {
    */
   it("adopts the backend's outcome for every node that was still active", async () => {
     const { store, service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const done = await spawnChild(service, root.binding, { requestId: "req_done" });
     const dead = await spawnChild(service, root.binding, { requestId: "req_dead", agentId: "worker" });
@@ -152,7 +153,7 @@ describe("ExecutionGraphService reconciliation", () => {
   it("promotes a queued node once the backend confirms the process", async () => {
     const context = harness();
     const { service } = context;
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await strandQueuedChild(context, root.binding);
 
@@ -170,7 +171,7 @@ describe("ExecutionGraphService reconciliation", () => {
    */
   it("asks only about nodes that are still active, and never reopens a terminal one", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding);
     await service.finishExecution(child, { status: "completed" });
@@ -188,7 +189,7 @@ describe("ExecutionGraphService reconciliation", () => {
    */
   it("keeps a node active when the backend cannot be reached", async () => {
     const { store, service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding);
 
@@ -205,7 +206,7 @@ describe("ExecutionGraphService reconciliation", () => {
 
   it("writes nothing when the backend agrees with the tree", async () => {
     const { store, service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const before = (await store.get(root.binding.graphId))!.revision;
 
@@ -224,7 +225,7 @@ describe("ExecutionGraphService reconciliation", () => {
   it("gives a queued node a startup grace before calling it never-started", async () => {
     const context = harness();
     const { service, advance } = context;
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await strandQueuedChild(context, root.binding);
     const probe = backend({ [root.binding.executionId]: "active" }).probe;
@@ -249,7 +250,7 @@ describe("ExecutionGraphService reconciliation", () => {
    */
   it("marks a running node interrupted when its process is gone", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding);
 
@@ -267,7 +268,7 @@ describe("ExecutionGraphService reconciliation", () => {
 
   it("purges reservations whose holder never came back", async () => {
     const { store, service, advance } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     await service.reserveChild(root.binding, request());
 
@@ -292,7 +293,7 @@ describe("ExecutionGraphService reconciliation", () => {
       maxConcurrentExecutions: 12,
       delegationLimit: 12,
     });
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     for (let index = 0; index < 5; index += 1) {
       await spawnChild(service, root.binding, { requestId: `req_${index}`, task: `task ${index}` });
@@ -323,7 +324,7 @@ describe("ExecutionGraphService reconciliation", () => {
    */
   it("cancels the live descendants of a node that died", async () => {
     const { store, service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding, { agentId: "worker" });
     const grandchild = await spawnChild(service, child, { requestId: "req_deep" });
@@ -350,7 +351,7 @@ describe("ExecutionGraphService reconciliation", () => {
   /** Một nhánh đã có kết cục của riêng nó thì giữ kết cục đó — cascade không viết đè lịch sử. */
   it("leaves a descendant that already finished alone", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding, { agentId: "worker" });
     const grandchild = await spawnChild(service, child, { requestId: "req_deep" });
@@ -370,7 +371,7 @@ describe("ExecutionGraphService reconciliation", () => {
   /** Cha chết thì cả nhánh chết, chứ không chỉ đời con kế tiếp. */
   it("reaches every generation below the node that died", async () => {
     const { service } = harness({ maxDepth: 3 });
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding, { agentId: "worker" });
     const grandchild = await spawnChild(service, child, { requestId: "req_deep", agentId: "worker" });

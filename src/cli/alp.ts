@@ -9,6 +9,11 @@ import { ExecutionService } from "../execution/execution-service";
 import { FileExecutionStore } from "../execution/execution-store";
 import { ExecutionGraphService } from "../execution/graph/execution-graph-service";
 import { FileExecutionGraphStore } from "../execution/graph/file-execution-graph-store";
+import { FileThreadStore } from "../thread/file-thread-store";
+import { HistoryBridgeRegistry } from "../thread/history-bridge";
+import { ClaudeHistoryBridge } from "../runtime/claude-history-bridge";
+import { CodexHistoryBridge } from "../runtime/codex-history-bridge";
+import { ThreadService, threadGraphReader } from "../thread/thread-service";
 import { MarkdownFileStore } from "../memory/adapters/markdown-file-store";
 import { MemoryService } from "../memory/memory-service";
 import { PolicyEngine } from "../policy/policy-engine";
@@ -18,14 +23,16 @@ import { ModeSelector } from "./mode-selector";
 import { loadModeProfiles } from "./settings";
 import { WorkflowRunner } from "../workflow/workflow-runner";
 import { runContextCommand } from "./commands/context";
+import { backendProbe } from "../delegation/delegation-service";
 import { createDefaultDelegationComposition, isRenderedOutput, runDelegateCommand, runDelegationLifecycleCommand, sharedBackendStateDirectory, workspaceFromArgs } from "./commands/delegate";
 import { parseAgentCommand, runAgentCommand } from "./commands/agent";
 import { syncIdentityDocuments } from "./commands/identity-sync";
 import { deinitializeProject, initializeProject, ProjectRegistryStore } from "./commands/init";
 import { ensurePrincipalProfile, openTerminalPrompt, runPrincipalCommand, type PrincipalCommandInput } from "./commands/principal";
-import { runMainSession, type RunMainInput } from "./commands/run-main";
+import { continueThreadSession, historySourceFromDisk, runMainSession, type RunMainDependencies, type RunMainInput } from "./commands/run-main";
+import { runThreadCommand } from "./commands/thread";
 import { runModeCommand, type ModeCommandInput } from "./commands/mode";
-import { agentsDirectory, executionGraphsDirectory, executionsDirectory, memoryRoot } from "../state-paths";
+import { agentsDirectory, executionGraphsDirectory, executionsDirectory, memoryRoot, threadsDirectory } from "../state-paths";
 import { checkForUpdate, FileUpdateCheckStore, spawnNativeBackgroundUpdateCheck } from "./update-check";
 import type { InstallLayout } from "../install-layout";
 import { BUILD_VERSION } from "../build-info";
@@ -35,7 +42,7 @@ import { updateInstallation } from "../install/update";
 import { uninstallInstallation } from "../install/uninstall";
 
 export type AlpCommand =
-  | { readonly command: "run-main"; readonly mode?: ModeId }
+  | { readonly command: "run-main"; readonly mode?: ModeId; readonly title?: string }
   | { readonly command: "mode"; readonly action: "show" | "set"; readonly mode?: ModeId }
   | { readonly command: "init"; readonly project?: string }
   | { readonly command: "deinit"; readonly project?: string }
@@ -44,6 +51,7 @@ export type AlpCommand =
   | { readonly command: "principal"; readonly action: "show" | "set" }
   | { readonly command: "delegate"; readonly args: readonly string[] }
   | { readonly command: "delegation"; readonly args: readonly string[] }
+  | { readonly command: "thread"; readonly args: readonly string[] }
   | { readonly command: "context"; readonly args: readonly string[] }
   | { readonly command: "maintenance"; readonly action: "doctor" | "update" | "uninstall"; readonly args: readonly string[] }
   | { readonly command: "version" }
@@ -53,30 +61,41 @@ export type AlpCommand =
 const RUNTIME_IS_GONE =
   "runtime không còn là lựa chọn: nấc quyết định model, model quyết định CLI — dùng `alp --mode <nấc>` hoặc `alp mode set <nấc>`";
 
+const RUN_MAIN_USAGE = `alp [--mode ${MODE_IDS.join("|")}] [--title <tiêu đề>]`;
+
 /**
- * `alp [--mode <nấc>]` — một cờ duy nhất. Gõ sai thì dừng ngay chứ không rơi về mặc định, vì
- * một phiên chạy nấc khác nấc người dùng tưởng là im lặng tốn tiền hoặc im lặng yếu đi.
+ * `alp [--mode <nấc>] [--title <tiêu đề>]` — hai cờ, mỗi cờ tối đa một lần. Gõ sai thì dừng
+ * ngay chứ không rơi về mặc định, vì một phiên chạy nấc khác nấc người dùng tưởng là im lặng
+ * tốn tiền hoặc im lặng yếu đi. `--title` chỉ đặt tên cho Thread mới mở; không cấp gì.
  */
 function parseRunMainFlags(argv: readonly string[]): AlpCommand {
   let mode: ModeId | undefined;
+  let title: string | undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
     if (value === "--runtime" || value.startsWith("--runtime=")) throw new Error(RUNTIME_IS_GONE);
-    if (value !== "--mode" && !value.startsWith("--mode=")) {
-      throw new Error(`unknown option \`${value}\`; usage: alp [--mode ${MODE_IDS.join("|")}]`);
-    }
+    const flag = value === "--mode" || value.startsWith("--mode=") ? "--mode"
+      : value === "--title" || value.startsWith("--title=") ? "--title"
+      : null;
+    if (flag === null) throw new Error(`unknown option \`${value}\`; usage: ${RUN_MAIN_USAGE}`);
     let raw: string | undefined;
-    if (value === "--mode") { raw = argv[index + 1]; index += 1; } else { raw = value.slice("--mode=".length); }
-    if (mode !== undefined) throw new Error("multiple mode selections are not allowed");
-    if (raw === undefined || raw === "") throw new Error("alp --mode accepts exactly one mode");
-    mode = parseMode(raw);
+    if (value === flag) { raw = argv[index + 1]; index += 1; } else { raw = value.slice(`${flag}=`.length); }
+    if (flag === "--mode") {
+      if (mode !== undefined) throw new Error("multiple mode selections are not allowed");
+      if (raw === undefined || raw === "") throw new Error("alp --mode accepts exactly one mode");
+      mode = parseMode(raw);
+    } else {
+      if (title !== undefined) throw new Error("alp --title accepts exactly one title");
+      if (raw === undefined || raw.trim() === "") throw new Error("alp --title needs a non-empty title");
+      title = raw.trim();
+    }
   }
-  return { command: "run-main", ...(mode ? { mode } : {}) };
+  return { command: "run-main", ...(mode ? { mode } : {}), ...(title ? { title } : {}) };
 }
 
 export function parseAlpArgs(argv: readonly string[]): AlpCommand {
   if (argv.length === 0) return { command: "run-main" };
-  if (argv[0].startsWith("--mode") || argv[0].startsWith("--runtime")) return parseRunMainFlags(argv);
+  if (argv[0].startsWith("--mode") || argv[0].startsWith("--title") || argv[0].startsWith("--runtime")) return parseRunMainFlags(argv);
   if (argv[0] === "--version" || argv[0] === "-v") {
     if (argv.length !== 1) throw new Error("alp --version does not accept arguments");
     return { command: "version" };
@@ -118,6 +137,7 @@ export function parseAlpArgs(argv: readonly string[]): AlpCommand {
   if (argv[0] === "delegate") return { command: "delegate", args: Object.freeze(argv.slice(1)) };
   if (argv[0] === "delegation") return { command: "delegation", args: Object.freeze(argv.slice(1)) };
   if (argv[0] === "context") return { command: "context", args: Object.freeze(argv.slice(1)) };
+  if (argv[0] === "thread") return { command: "thread", args: Object.freeze(argv.slice(1)) };
   if (argv[0] === "doctor") {
     if (argv.slice(1).some((value) => value !== "--quiet")) throw new Error("usage: alp doctor [--quiet]");
     return { command: "maintenance", action: "doctor", args: Object.freeze(argv.slice(1)) };
@@ -155,6 +175,7 @@ export interface AlpDependencies {
   readonly principalCommand: (input: PrincipalCommandInput) => Promise<number>;
   readonly delegateCommand: (args: readonly string[]) => Promise<number>;
   readonly contextCommand: (args: readonly string[]) => Promise<number>;
+  readonly threadCommand: (args: readonly string[]) => Promise<number>;
   readonly maintenanceCommand: (input: { readonly action: "doctor" | "update" | "uninstall"; readonly args: readonly string[] }) => Promise<number>;
 }
 
@@ -235,8 +256,40 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
   const graph = new ExecutionGraphService({
     store: new FileExecutionGraphStore({ root: executionGraphsDirectory() }),
   });
+  const threads = new ThreadService({
+    store: new FileThreadStore({ root: threadsDirectory() }),
+    graph: threadGraphReader(graph, backendProbe(backend)),
+    history: new HistoryBridgeRegistry([
+      new ClaudeHistoryBridge({ env: process.env }),
+      new CodexHistoryBridge({ env: process.env }),
+    ]),
+  });
   const selector = new ModeSelector({ output: stdout });
   const projectRegistry = new ProjectRegistryStore();
+  /** Cùng một bộ dependency cho bare `alp` và `alp thread continue` — root flow là một. */
+  const sessionDependencies = async (projectCwd: string): Promise<RunMainDependencies> => {
+    const project = await compositionFor(projectCwd);
+    for (const notice of project.notices) stdout.write(`${notice}\n`);
+    const { profiles } = await loadModeProfiles({ cwd: projectCwd, env: process.env });
+    return {
+      registry: project.registry,
+      modeProfiles: profiles,
+      selector,
+      executionService: project.executionService,
+      graph,
+      threads,
+      announce: (line) => stderr.write(`${line}\n`),
+      adapters,
+      backend,
+      executionId: () => `exec_${randomUUID().replaceAll("-", "").slice(0, 20)}`,
+      interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+      workspaceModeFor: async (project) => (await projectRegistry.isRegistered(project))
+        ? "workspace-write"
+        : "read-only",
+    };
+  };
+  const exitCodeOf = (status: "completed" | "cancelled" | string): number =>
+    status === "completed" ? 0 : status === "cancelled" ? 130 : 1;
   return {
     cwd,
     stdout,
@@ -258,24 +311,24 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
       }
     },
     async runMain(input) {
-      const project = await compositionFor(input.cwd);
-      for (const notice of project.notices) stdout.write(`${notice}\n`);
-      const { profiles } = await loadModeProfiles({ cwd: input.cwd, env: process.env });
-      const result = await runMainSession(input, {
-        registry: project.registry,
-        modeProfiles: profiles,
-        selector,
-        executionService: project.executionService,
-        graph,
-        adapters,
-        backend,
-        executionId: () => `exec_${randomUUID().replaceAll("-", "").slice(0, 20)}`,
-        interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
-        workspaceModeFor: async (project) => (await projectRegistry.isRegistered(project))
-          ? "workspace-write"
-          : "read-only",
+      const result = await runMainSession(input, await sessionDependencies(input.cwd));
+      return exitCodeOf(result.status);
+    },
+    async threadCommand(args) {
+      return runThreadCommand(args, {
+        threads,
+        cwd,
+        env: process.env,
+        write: (text) => stdout.write(text),
+        historySource: (executionId) => historySourceFromDisk(executionsDirectory(), executionId),
+        continueThread: async (input) => {
+          const result = await continueThreadSession(
+            { threadId: input.threadId, cwd, ...(input.mode ? { mode: input.mode } : {}) },
+            { ...(await sessionDependencies(cwd)), threads, executionsRoot: executionsDirectory() },
+          );
+          return exitCodeOf(result.status);
+        },
       });
-      return result.status === "completed" ? 0 : result.status === "cancelled" ? 130 : 1;
     },
     async modeCommand(input) {
       const settings = await loadModeProfiles({ cwd, env: process.env });
@@ -429,7 +482,7 @@ function helpText(): string {
   return [
     "alp — code-native agent launcher",
     "",
-    `  alp [--mode ${MODE_IDS.join("|")}]`,
+    `  ${RUN_MAIN_USAGE}`,
     "  alp mode show|set <mode>",
     "  alp init [path]",
     "  alp deinit [path]",
@@ -444,6 +497,8 @@ function helpText(): string {
     "  alp context status|validate [execution-id]",
     "  alp context pin <decision|constraint|open-item|next-action> -- <text>",
     "  alp context unpin <pin-id>",
+    "  alp thread list [--all] | show [<thread-id>] | context|reconcile|sync|close|archive <thread-id>",
+    `  alp thread continue <thread-id> [--mode ${MODE_IDS.join("|")}]`,
     "  alp doctor",
     "  alp update",
     "  alp uninstall [--purge-memory] [--force]",
@@ -477,7 +532,7 @@ export async function main(
     // Cờ thắng biến môi trường; `ALP_MODE` tồn tại để một phiên delegated kế thừa nấc của cha.
     const inheritedMode = process.env.ALP_MODE ? parseMode(process.env.ALP_MODE) : undefined;
     const mode = command.mode ?? inheritedMode;
-    return dependencies.runMain({ cwd, ...(mode ? { mode } : {}) });
+    return dependencies.runMain({ cwd, ...(mode ? { mode } : {}), ...(command.title ? { title: command.title } : {}) });
   }
   if (command.command === "mode") return dependencies.modeCommand(command);
   if (command.command === "init") { await dependencies.initProject({ project: resolve(cwd, command.project ?? ".") }); return 0; }
@@ -488,6 +543,7 @@ export async function main(
   if (command.command === "delegate") return dependencies.delegateCommand(command.args);
   if (command.command === "delegation") return dependencies.delegateCommand(Object.freeze(["__lifecycle", ...command.args]));
   if (command.command === "context") return dependencies.contextCommand(command.args);
+  if (command.command === "thread") return dependencies.threadCommand(command.args);
   if (command.command === "maintenance") return dependencies.maintenanceCommand({ action: command.action, args: command.args });
   stdout.write(helpText());
   return 0;

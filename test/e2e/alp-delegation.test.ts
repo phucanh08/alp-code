@@ -19,6 +19,7 @@ async function delegationService(
 ) {
   const root = await environment.graph.createRoot({
     agentId: options.parent,
+    thread: null,
     executionId: `exec_root_${options.parent}`,
   });
   const service = new DelegationService({

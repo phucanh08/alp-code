@@ -81,7 +81,7 @@ describe("getExecutionTree", () => {
    */
   it("answers from any node with the whole tree, from the root down", async () => {
     const { service } = harness({ maxDepth: 3 });
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding, { agentId: "worker" });
     const grandchild = await spawnChild(service, child, { requestId: "req_deep" });
@@ -101,12 +101,31 @@ describe("getExecutionTree", () => {
   });
 
   /**
+   * Cutover: cây ghi trước khi có Thread đọc lên với `thread: null` (invariants chuẩn hoá key
+   * thiếu), và cây ghi sau cutover mang đúng binding của root — CLI hiển thị từ đây, không phải
+   * đoán từ policy.
+   */
+  it("carries the root's thread binding, or null for a legacy graph", async () => {
+    const { service } = harness();
+    const legacy = await service.createRoot({ agentId: "main", thread: null });
+    await service.startRoot(legacy.binding, async () => undefined);
+    expect((await service.getExecutionTree(legacy.binding.executionId)).thread).toBeNull();
+
+    const thread = { id: "thread_x", contextRevision: 1, contextDigest: "a".repeat(64) };
+    const threaded = await service.createRoot({ agentId: "main", thread });
+    await service.startRoot(threaded.binding, async () => undefined);
+    const child = await spawnChild(service, threaded.binding);
+    // Hỏi từ lá vẫn trả về binding của root — con thừa kế, không tự có Thread riêng.
+    expect((await service.getExecutionTree(child.executionId)).thread).toEqual(thread);
+  });
+
+  /**
    * Cái làm cho DTO này là một quyết định chứ không phải bản sao của node: capability hash và
    * fingerprint là vật liệu nội bộ, và `--json` thì chảy thẳng vào log CI của ai đó.
    */
   it("carries no capability hash, fingerprint, or reservation internals", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     await spawnChild(service, root.binding);
     await service.reserveChild(root.binding, request({ requestId: "req_held" }));
@@ -130,7 +149,7 @@ describe("getExecutionTree", () => {
   /** Nhưng request ID thì còn: đó là sợi dây duy nhất nối một node với lệnh đã sinh ra nó. */
   it("keeps the request correlation a caller can search by", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     await spawnChild(service, root.binding, { requestId: "req_from_ci" });
 
@@ -147,7 +166,7 @@ describe("getExecutionTree", () => {
    */
   it("orders children by creation, then by execution ID when they tie", async () => {
     const { service, advance } = harness({ maxConcurrentChildrenPerExecution: 4 });
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const first = await spawnChild(service, root.binding, { requestId: "req_a" });
     const second = await spawnChild(service, root.binding, { requestId: "req_b" });
@@ -162,7 +181,7 @@ describe("getExecutionTree", () => {
 
   it("is stable across repeated reads of an unchanged graph", async () => {
     const { service } = harness({ maxConcurrentChildrenPerExecution: 4 });
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     await spawnChild(service, root.binding, { requestId: "req_a" });
     await spawnChild(service, root.binding, { requestId: "req_b" });
@@ -179,7 +198,7 @@ describe("getExecutionTree", () => {
    */
   it("reports the allowance, the ceilings, and what is holding a slot", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding, { requestId: "req_a" });
     await service.finishExecution(child, { status: "completed" });
@@ -205,7 +224,7 @@ describe("getExecutionTree", () => {
   /** Chỗ giữ đã hết hạn không còn giữ gì cả, nên nó không được tính vào trần đang chặn ai. */
   it("stops counting a reservation that has expired", async () => {
     const { service, advance } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     await service.reserveChild(root.binding, request({ requestId: "req_held" }));
 
@@ -218,7 +237,7 @@ describe("getExecutionTree", () => {
   /** Lý do dừng là thứ người vận hành đến để đọc — nó phải đi cùng node, không phải tra chỗ khác. */
   it("carries the cancellation context and the deadline mark", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding, { agentId: "worker" });
     const grandchild = await spawnChild(service, child, { requestId: "req_deep" });
@@ -240,7 +259,7 @@ describe("getExecutionTree", () => {
 
   it("carries a failure reason as the node's own error", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding);
     await service.failExecution(child, new Error("runtime refused the task"));
@@ -259,7 +278,7 @@ describe("getExecutionTree", () => {
    */
   it("refuses an execution that belongs to no tree", async () => {
     const { service } = harness();
-    await service.createRoot({ agentId: "main" });
+    await service.createRoot({ agentId: "main", thread: null });
 
     expect(await codeOf(() => service.getExecutionTree("exec_legacy"))).toBe("EXECUTION_NODE_NOT_FOUND");
   });
@@ -267,7 +286,7 @@ describe("getExecutionTree", () => {
   /** Trần bị hạ giữa đời một cây không biến quota còn lại thành một số âm. */
   it("never reports a negative allowance", async () => {
     const { service } = harness({ delegationLimit: 1 });
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     await spawnChild(service, root.binding, { requestId: "req_a" });
 
