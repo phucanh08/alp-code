@@ -185,11 +185,12 @@ describe("capability grants — policy engine", () => {
 
 
 describe("capability grants — Claude ACL", () => {
-  const permissions = (policy: ExecutionPolicy) => claudePermissions({
+  const permissions = (policy: ExecutionPolicy, sandboxed?: boolean) => claudePermissions({
     policy,
     memoryRoot: "/memory",
     runtimeDirectory: "/executions/exec-capability/runtime",
     allRoles: ["probe", "bare"],
+    ...(sandboxed === undefined ? {} : { sandboxed }),
   });
 
   it("allows the named skills and nothing else through the Skill tool", () => {
@@ -240,6 +241,38 @@ describe("capability grants — Claude ACL", () => {
     expect(rules.deny).not.toContain("Bash");
     // A tool the policy withholds is still denied, not merely left ungranted.
     expect(rules.deny).toContain("WebSearch");
+  });
+
+  /**
+   * `main` is read-only (no Write/Edit) but keeps `Bash` as its only way to reach `worker` —
+   * `delegationSection` in render-session-context.ts prints `alp delegate` instructions on
+   * this exact condition. Without this carve-out, the unsandboxed defense below put `Bash`
+   * in both `allow` (granted) and `deny` (read-only, unsandboxed) — deny wins in Claude Code,
+   * so the session context promised a shell the ACL then silently refused. Windows has no
+   * sandbox at all, so this made every delegating role's `Bash` a dead letter there.
+   */
+  it("keeps Bash for a read-only role that delegates through it, even with no sandbox", () => {
+    const rules = permissions(policyFixture({
+      workspaceMode: "read-only",
+      allowedTools: ["Read", "Bash", "Skill"],
+      delegatesTo: ["worker"],
+    }), false);
+    expect(rules.allow).toContain("Bash");
+    expect(rules.deny).not.toContain("Bash");
+  });
+
+  /**
+   * A read-only specialist that does not delegate keeps the older protection: with no
+   * sandbox to stop a shell redirect, `deny` still carries `Bash` (and wins over `allow`
+   * in Claude Code) even though the policy granted the tool.
+   */
+  it("still denies Bash to a read-only, non-delegating role with no sandbox", () => {
+    const rules = permissions(policyFixture({
+      workspaceMode: "read-only",
+      allowedTools: ["Read", "Bash", "Skill"],
+      delegatesTo: [],
+    }), false);
+    expect(rules.deny).toContain("Bash");
   });
 });
 

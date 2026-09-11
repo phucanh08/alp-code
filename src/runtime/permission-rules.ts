@@ -165,7 +165,16 @@ export function claudePermissions(input: RuntimePermissionInput): ClaudePermissi
   // grant, and a sandbox that denies writes to the workspace. Only the second one stops a
   // shell redirect, so where no sandbox exists the shell has to go instead. Losing Bash
   // makes a specialist less capable; losing read-only makes its policy a lie.
-  if (policy.workspaceMode === "read-only" && input.sandboxed === false && !deny.includes("Bash")) {
+  //
+  // Except the role that delegates through Bash (§ `delegationSection` in
+  // render-session-context.ts uses this exact condition to decide whether to print
+  // `alp delegate` instructions): for a coordinator like `main`, Bash is not incidental
+  // capability, it is the only way to reach `worker` at all. Stripping it here left the
+  // rendered session context instructing a shell call the ACL then silently denied —
+  // `allow` and `deny` both carrying bare `Bash`, deny winning. `main`'s own read-only
+  // guarantee already rests on holding no Write/Edit, same as every delegated role.
+  const delegatesViaBash = policy.delegatesTo.length > 0 && policy.allowedTools.includes("Bash");
+  if (policy.workspaceMode === "read-only" && input.sandboxed === false && !delegatesViaBash && !deny.includes("Bash")) {
     deny.push("Bash");
   }
 
