@@ -139,8 +139,8 @@ Sau khi lưu file, xem mode và các override đang có hiệu lực:
 alp mode show
 ```
 
-Sau đó dry-run một role ở tier 2 để kiểm tra model, mức suy nghĩ, runtime và launch spec mà
-mode sẽ tạo:
+Sau đó dry-run một role ở tier 2. Lệnh không spawn model; khối **Cost** xác nhận mode, model,
+mức suy nghĩ và runtime đã resolve sau khi ghép settings:
 
 ```bash
 alp agent test <role> --tier 2 --mode <mode>
