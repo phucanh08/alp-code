@@ -71,17 +71,17 @@ Skill được nạp vào context, nên một danh sách không có trần là m
 
 ## Skill built-in và tool `Skill`
 
-ALP ship 14 skill built-in:
+ALP ship 15 skill built-in:
 
-`agent-memory` · `alp-debug` · `alp-plan` · `alp-predict` · `alp-scenario` · `code-review` · `delegation` · `docs-seeker` · `git` · `gkg` · `problem-solving` · `repomix` · `research` · `security-scan`
+`agent-memory` · `alp-debug` · `alp-plan` · `alp-predict` · `alp-scenario` · `code-review` · `delegation` · `docs-seeker` · `git` · `gkg` · `problem-solving` · `repomix` · `research` · `security-scan` · `test-quality-guard`
 
 Vai có sẵn khai chúng **theo tên** trong `capabilities.skills`:
 
 | Vai | Skill |
 |---|---|
 | `main` | `alp-plan`, `problem-solving`, `delegation`, `git`, `agent-memory` |
-| `worker` | `problem-solving`, `alp-debug`, `git`, `agent-memory` |
-| `review` | `code-review`, `alp-scenario`, `security-scan` |
+| `worker` | `problem-solving`, `alp-debug`, `git`, `agent-memory`, `test-quality-guard` |
+| `review` | `code-review`, `alp-scenario`, `security-scan`, `test-quality-guard` |
 | `librarian` | `docs-seeker`, `research`, `repomix` |
 | `oracle` | `alp-debug`, `alp-predict`, `alp-scenario`, `problem-solving` |
 | `search` | `gkg`, `repomix` |

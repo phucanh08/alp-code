@@ -27,7 +27,7 @@ export const workerAgent = defineAgent({
   delegatesTo: [],
   capabilities: {
     tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Skill"],
-    skills: ["problem-solving", "alp-debug", "git", "agent-memory"],
+    skills: ["problem-solving", "alp-debug", "git", "agent-memory", "test-quality-guard"],
     subagents: [],
     mcpServers: [],
     memory: {

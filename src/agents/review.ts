@@ -15,7 +15,7 @@ export const reviewAgent = defineAgent({
   autoCompactTokens: { claude: 300_000 },
   capabilities: {
     tools: ["Read", "Glob", "Grep", "Bash", "Skill"],
-    skills: ["code-review", "alp-scenario", "security-scan"],
+    skills: ["code-review", "alp-scenario", "security-scan", "test-quality-guard"],
     subagents: [],
     mcpServers: [],
     memory: {

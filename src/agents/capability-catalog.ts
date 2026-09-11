@@ -67,6 +67,7 @@ export const SKILL_CATALOG = Object.freeze([
   "repomix",
   "research",
   "security-scan",
+  "test-quality-guard",
 ]);
 
 /** Empty at v1 — §5.5. */
