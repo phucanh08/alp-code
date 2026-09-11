@@ -96,7 +96,7 @@
           "path": "deep-dive/execution-graph"
         },
         {
-          "label": "Thread (preview)",
+          "label": "Thread",
           "path": "deep-dive/thread"
         },
         {

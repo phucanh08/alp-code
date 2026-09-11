@@ -3,7 +3,7 @@ title: CLI reference
 description: Public command và option của stable ALP.
 ---
 
-Reference này phản ánh stable `v0.13.0`. Nguồn kiểm chứng: [`src/cli/alp.ts`](https://github.com/phucanh08/alp-code/blob/v0.13.0/src/cli/alp.ts) và [`src/cli/commands/`](https://github.com/phucanh08/alp-code/tree/v0.13.0/src/cli/commands).
+Reference này phản ánh stable `v0.14.0`. Nguồn kiểm chứng: [`src/cli/alp.ts`](https://github.com/phucanh08/alp-code/blob/v0.14.0/src/cli/alp.ts) và [`src/cli/commands/`](https://github.com/phucanh08/alp-code/tree/v0.14.0/src/cli/commands).
 
 Internal hook/supervisor dispatch không thuộc public API và không được liệt kê ở đây.
 
@@ -13,7 +13,7 @@ Internal hook/supervisor dispatch không thuộc public API và không được 
 |---|---|
 | `alp` | Mở phiên `main`, dùng mode theo precedence |
 | `alp --mode <low\|medium\|high\|ultra\|puck>` | Override mode cho phiên này |
-| `alp --title <tiêu đề>` | Đặt tên cho Thread mới mở (`main` — chưa có trong stable v0.13.0); chỉ là nhãn |
+| `alp --title <tiêu đề>` | Đặt tên cho Thread mới mở; chỉ là nhãn |
 | `alp mode show` | Xem mode đã lưu, kèm file settings và role bị ghi đè |
 | `alp mode set <mode>` | Lưu mode cho phiên sau |
 
@@ -97,10 +97,6 @@ alp delegation list
 | `EXECUTION_GRAPH_CORRUPT` · `EXECUTION_GRAPH_LOCK_TIMEOUT` | Không đọc/khoá được file cây | Xem [Xử lý sự cố](../troubleshooting/#cây-execution-hỏng-hoặc-bị-khoá) |
 
 ## Thread
-
-:::caution[Preview]
-`alp thread` có trong `main` từ 2026-09-11 và chưa có trong stable v0.13.0.
-:::
 
 ```text
 alp thread list [--all]

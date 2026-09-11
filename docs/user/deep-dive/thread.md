@@ -5,10 +5,6 @@ description: Một việc kéo dài qua nhiều lượt chạy, nhiều runtime,
 
 > **Một câu:** Thread là **một việc** (`thread_…`) — nó sống qua nhiều [execution](../execution/), nhiều runtime, nhiều tiến trình; còn mỗi execution trong nó vẫn là một lượt chạy có policy riêng, hash riêng, và không thừa kế quyền từ Thread.
 
-:::caution[Preview]
-Thread có trong `main` từ 2026-09-11 và chưa có trong stable v0.13.0. Lệnh và layout dưới đây mô tả bản `main`.
-:::
-
 ## Vì sao cần một tầng nữa
 
 Trước Thread, "phiên" của ALP là một execution: gõ `alp`, làm việc, đóng terminal — hết. Muốn làm tiếp việc hôm qua thì mở một execution mới và kể lại từ đầu, hoặc dựa vào `--resume` của runtime, thứ chỉ hoạt động khi runtime hôm nay đúng là runtime hôm qua.
