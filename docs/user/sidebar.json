@@ -43,6 +43,10 @@
           "path": "guides/project-setup"
         },
         {
+          "label": "Tùy biến loadout",
+          "path": "guides/customize-mode-loadouts"
+        },
+        {
           "label": "Giao việc",
           "path": "guides/delegation"
         },

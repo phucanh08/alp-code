@@ -9,15 +9,15 @@ Tài liệu này phản ánh stable `v0.13.0`. Model mapping có thể đổi �
 
 ## Năm mode
 
-| Mode | Dùng khi | `worker` hiện tại | `oracle` hiện tại |
-|---|---|---|---|
-| `low` | Việc vặt, câu trả lời nhanh | Claude Sonnet 5 | GPT-5.6 Sol |
-| `medium` | Việc thường ngày trong repo quen; mặc định | GPT-5.6 Sol | Claude Opus 5 |
-| `high` | Refactor xuyên module, bug khó tái hiện | Claude Opus 5 | GPT-5.6 Sol |
-| `ultra` | Thiết kế, migration hoặc sự cố mà trả lời sai rất đắt | Claude Opus 5 | GPT-6 Astra |
-| `puck` | Toàn Codex hoặc máy chỉ cài Codex CLI | GPT-5.6 Sol | GPT-5.6 Sol |
+| Mode | Dùng khi | `main` | `worker` | `oracle` |
+|---|---|---|---|---|
+| `low` | Việc vặt, câu trả lời nhanh | `claude-opus-5` · `high` | `claude-sonnet-5` · `high` | `gpt-5.6-sol` · `high` |
+| `medium` | Việc thường ngày trong repo quen; mặc định | `claude-opus-5` · `high` | `gpt-5.6-sol` · `high` | `claude-opus-5` · `high` |
+| `high` | Refactor xuyên module, bug khó tái hiện | `claude-opus-5` · `high` | `claude-opus-5` · `high` | `gpt-5.6-sol` · `xhigh` |
+| `ultra` | Thiết kế, migration hoặc sự cố mà trả lời sai rất đắt | `claude-opus-5` · `high` | `claude-opus-5` · `high` | `gpt-6-astra` · `high` |
+| `puck` | Toàn Codex hoặc máy chỉ cài Codex CLI | `gpt-5.6-sol` · `xhigh` | `gpt-5.6-sol` · `xhigh` | `gpt-5.6-sol` · `xhigh` |
 
-Bốn mode đầu chỉ thay đổi hai role mà độ khó chạm tới: `worker` (vai cầm bút) và `oracle` (vai được hỏi khi bí). `main` và các specialist retrieval/review có mapping cố định — `main` đứng yên ở Claude Opus 5 vì việc của nó không dễ đi khi bài toán dễ đi. `puck` là loadout toàn Codex, không nằm trên trục độ khó.
+Trong loadout built-in trước khi ghép settings, bốn nấc `low`/`medium`/`high`/`ultra` đều giữ `main` ở `claude-opus-5` · `high`. `main` là cửa vào và coordinator ổn định: nghe yêu cầu, lập kế hoạch, chia việc và điều phối không tự dễ đi chỉ vì phần thực thi đơn giản hơn, nên độ khó nằm ở `worker` và `oracle`. `puck` là ngoại lệ toàn Codex, không nằm trên trục độ khó.
 
 ## Chọn mode
 
@@ -44,9 +44,9 @@ Bạn cũng có thể đặt `ALP_MODE`. Thứ tự quyết định đầy đủ
 
 Giá trị sai bị từ chối; ALP không lặng lẽ chạy mode khác.
 
-## Đổi model của một role: `settings.json`
+## Tùy biến loadout bằng settings
 
-Bảng trên là loadout ALP ship sẵn. Muốn một role chạy model khác, ghi đè bằng file settings — ba tầng, tầng sau thắng tầng trước:
+Bảng trên là loadout ALP ship sẵn. ALP đọc ba file settings theo thứ tự từ chung tới riêng:
 
 | File | Của ai | Commit? |
 |---|---|---|
@@ -54,36 +54,14 @@ Bảng trên là loadout ALP ship sẵn. Muốn một role chạy model khác, g
 | `<project>/.alp/settings.json` | project, đi cùng repo | có |
 | `<project>/.alp/settings.local.json` | riêng bạn trên project này | không |
 
-```json
-{
-  "modes": {
-    "*":    { "titling": { "model": "gpt-5.6-luna" } },
-    "high": { "worker": { "model": "claude-opus-5", "reasoningEffort": "max" } }
-  }
-}
-```
+File sau chỉ ghi đè những field nó khai báo. Settings chỉ đổi `model` và `reasoningEffort` của role trong năm mode có sẵn; nó không tạo mode mới, không chọn runtime riêng và không thay đổi tool, workspace, memory hay quyền delegate.
 
-- `"*"` áp cho mọi mode và thua mode gọi đích danh.
-- Khai một trường thì trường còn lại giữ nguyên giá trị built-in.
-- Custom agent chưa có trong loadout nào phải khai đủ cả `model` lẫn `reasoningEffort`.
-- Đổi `model` là đổi luôn runtime, vì runtime là hệ quả của model.
-
-File này chỉ ghim **model và mức nghĩ**. Nó không đụng được tới tool, workspace, memory hay quyền delegate — những thứ đó vẫn nằm trong định nghĩa agent.
-
-Sai một dòng thì phiên dừng và báo tên file: mode không tồn tại, tên trường viết sai, model không có runtime, effort không hợp lệ. ALP không lặng lẽ chạy loadout khác.
-
-Xem cái gì đang thật sự có hiệu lực:
-
-```bash
-alp mode show
-```
-
-Khi có settings, `alp mode show` in thêm dòng `SETTINGS` cho mỗi file đã đọc và một dòng `OVERRIDE` cho mỗi role đã dịch khỏi built-in.
+Xem [Tùy biến loadout của mode](../../guides/customize-mode-loadouts/) để biết khuôn file, cách ghép lớp, ví dụ override, khôi phục mặc định và lệnh kiểm chứng.
 
 ## Runtime được chọn thế nào?
 
-- Model có tên `claude-*` chạy qua Claude Code.
-- Model có tên `gpt-*` chạy qua Codex CLI.
+- Model ID được đăng ký với runtime `claude` chạy qua Claude Code; ID đăng ký với `codex` chạy qua Codex CLI.
+- ALP dùng danh sách mapping đóng, không đoán runtime từ tiền tố tên; model chưa được đăng ký bị từ chối.
 - Một phiên có thể dùng cả hai runtime khi `main` delegate sang role có model ở phía còn lại.
 
 ALP không có public runtime switch. Nếu một runtime thiếu, cài CLI mà model cần hoặc chọn loadout phù hợp như `puck`, rồi chạy lại `alp doctor`.
@@ -99,4 +77,4 @@ alp mode show
 alp agent test main --tier 2 --mode high
 ```
 
-Tier 2 chuẩn bị execution thật nhưng dừng trước spawn; output cho biết model, runtime, quyền, khối **Enforced by** và launch spec mà mode sẽ tạo.
+Tier 2 không spawn model. Khối **Cost** xác nhận mode, model, mức suy nghĩ và runtime có hiệu lực sau khi ghép settings. Khối **Launch** chuẩn bị song song hai phương án runtime bằng model và mức suy nghĩ khai trong định nghĩa agent để so sánh; đó không phải launch spec của mode đã chọn hoặc đã tùy biến.
