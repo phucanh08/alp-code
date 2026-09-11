@@ -17,7 +17,7 @@ Tài liệu này phản ánh stable `v0.13.0`. Model mapping có thể đổi �
 | `ultra` | Thiết kế, migration hoặc sự cố mà trả lời sai rất đắt | `claude-opus-5` · `high` | `claude-opus-5` · `high` | `gpt-6-astra` · `high` |
 | `puck` | Toàn Codex hoặc máy chỉ cài Codex CLI | `gpt-5.6-sol` · `xhigh` | `gpt-5.6-sol` · `xhigh` | `gpt-5.6-sol` · `xhigh` |
 
-Trong loadout built-in trước khi ghép settings, bốn nấc `low`/`medium`/`high`/`ultra` đều giữ `main` ở `claude-opus-5` · `high`; đổi mode giữa bốn nấc chỉ thay ghế làm việc (`worker`) và ghế cho ý kiến thứ hai (`oracle`). `puck` là ngoại lệ toàn Codex, không nằm trên trục độ khó.
+Trong loadout built-in trước khi ghép settings, bốn nấc `low`/`medium`/`high`/`ultra` đều giữ `main` ở `claude-opus-5` · `high`. `main` là cửa vào và coordinator ổn định: nghe yêu cầu, lập kế hoạch, chia việc và điều phối không tự dễ đi chỉ vì phần thực thi đơn giản hơn, nên độ khó nằm ở `worker` và `oracle`. `puck` là ngoại lệ toàn Codex, không nằm trên trục độ khó.
 
 ## Chọn mode
 
@@ -60,8 +60,8 @@ Xem [Tùy biến loadout của mode](../../guides/customize-mode-loadouts/) đ�
 
 ## Runtime được chọn thế nào?
 
-- Model có tên `claude-*` chạy qua Claude Code.
-- Model có tên `gpt-*` chạy qua Codex CLI.
+- Model ID được đăng ký với runtime `claude` chạy qua Claude Code; ID đăng ký với `codex` chạy qua Codex CLI.
+- ALP dùng danh sách mapping đóng, không đoán runtime từ tiền tố tên; model chưa được đăng ký bị từ chối.
 - Một phiên có thể dùng cả hai runtime khi `main` delegate sang role có model ở phía còn lại.
 
 ALP không có public runtime switch. Nếu một runtime thiếu, cài CLI mà model cần hoặc chọn loadout phù hợp như `puck`, rồi chạy lại `alp doctor`.
@@ -77,4 +77,4 @@ alp mode show
 alp agent test main --tier 2 --mode high
 ```
 
-Tier 2 chuẩn bị execution thật nhưng dừng trước spawn; output cho biết model, runtime, quyền, khối **Enforced by** và launch spec mà mode sẽ tạo.
+Tier 2 không spawn model. Khối **Cost** xác nhận mode, model, mức suy nghĩ và runtime có hiệu lực sau khi ghép settings. Khối **Launch** chuẩn bị song song hai phương án runtime bằng model và mức suy nghĩ khai trong định nghĩa agent để so sánh; đó không phải launch spec của mode đã chọn hoặc đã tùy biến.
