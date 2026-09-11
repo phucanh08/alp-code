@@ -1,9 +1,9 @@
 ---
 title: CLI reference
-description: Public command và option của stable ALP cùng source preview hiện tại.
+description: Public command và option của stable ALP.
 ---
 
-Reference này phản ánh stable `v0.12.1`. Nguồn kiểm chứng: [`src/cli/alp.ts`](https://github.com/phucanh08/alp-code/blob/v0.12.1/src/cli/alp.ts) và [`src/cli/commands/`](https://github.com/phucanh08/alp-code/tree/v0.12.1/src/cli/commands).
+Reference này phản ánh stable `v0.13.0`. Nguồn kiểm chứng: [`src/cli/alp.ts`](https://github.com/phucanh08/alp-code/blob/v0.13.0/src/cli/alp.ts) và [`src/cli/commands/`](https://github.com/phucanh08/alp-code/tree/v0.13.0/src/cli/commands).
 
 Internal hook/supervisor dispatch không thuộc public API và không được liệt kê ở đây.
 
@@ -65,7 +65,7 @@ alp delegate <role> [--background] [--timeout-ms <positive>] [--workspace <path>
 
 `--project` và `--workspace` là hai spelling của cùng input. Foreground đợi kết quả; `--background` trả execution ID ngay. Task rỗng, timeout không dương hoặc target role thiếu đều bị từ chối.
 
-Phần execution graph dưới đây thuộc bản **kế tiếp `v0.12.1`, chưa phát hành**. Trong đó `alp delegate` chỉ chạy bên trong một phiên ALP: gõ từ terminal trần trả `PARENT_EXECUTION_REQUIRED`, vì vai cha đến từ execution đang chạy chứ không từ biến môi trường. Lệnh lifecycle không đổi.
+`alp delegate` chỉ chạy bên trong một phiên ALP: gõ từ terminal trần trả `PARENT_EXECUTION_REQUIRED`, vì vai cha đến từ execution đang chạy chứ không từ biến môi trường. Lệnh lifecycle dưới đây không chịu ràng buộc đó — chúng tra theo execution ID và chạy được từ terminal trần.
 
 Lifecycle:
 

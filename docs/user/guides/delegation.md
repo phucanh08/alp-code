@@ -6,13 +6,13 @@ description: Delegate task cho specialist và quản lý lifecycle của executi
 Delegation là đường duy nhất để một role giao việc cho role khác trong ALP. Request được authorize và chuẩn bị trước khi runtime được probe hoặc spawn.
 
 :::caution[Delegate phải chạy trong một phiên ALP]
-Trong bản kế tiếp `v0.12.1` (chưa phát hành), `alp delegate` gõ từ terminal trần bị từ chối:
+`alp delegate` gõ từ terminal trần bị từ chối:
 
 ```text
 delegation requires an authenticated parent execution; run it from inside an ALP session
 ```
 
-Danh tính vai cha giờ đến từ execution đang chạy, không từ biến môi trường — nên một execution luôn có cha, có trần và có người huỷ được nó. Cách làm thay thế là mở phiên bình thường rồi nhờ `main` giao việc:
+Danh tính vai cha đến từ execution đang chạy, không từ biến môi trường — nên một execution luôn có cha, có trần và có người huỷ được nó. Cách làm thay thế là mở phiên bình thường rồi nhờ `main` giao việc:
 
 ```bash
 cd ~/code/my-app
@@ -20,7 +20,7 @@ alp
 # rồi nói với main: "giao cho search: tìm auth entrypoint, trả path:line"
 ```
 
-Lệnh lifecycle (`tree`, `status`, `wait`, `cancel`, `cleanup`, `list`) không đổi: chúng tra theo execution ID và chạy được từ terminal trần.
+Lệnh lifecycle (`tree`, `status`, `wait`, `cancel`, `cleanup`, `list`) không chịu ràng buộc đó: chúng tra theo execution ID và chạy được từ terminal trần.
 :::
 
 Ví dụ `alp delegate ...` bên dưới là những gì `main` chạy thay bạn — giữ lại vì output và lỗi bạn đọc vẫn là của chúng.
