@@ -8,6 +8,8 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+## [0.12.1] - 2026-09-11
+
 ### Sửa
 
 - `main` (và mọi vai read-only có `delegatesTo`) lấy lại tool `Bash`. Lớp phòng thủ cho vai
@@ -962,7 +964,8 @@ Bản release đánh số đầu tiên. Trước mốc này alp-code chưa có v
 - `alp init`/`alp deinit`, `alp delegate`, `alp doctor`, `alp uninstall`, installer một dòng
   cho macOS/Linux/WSL và Windows.
 
-[Chưa phát hành]: https://github.com/phucanh08/alp-code/compare/v0.12.0...HEAD
+[Chưa phát hành]: https://github.com/phucanh08/alp-code/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/phucanh08/alp-code/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/phucanh08/alp-code/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/phucanh08/alp-code/compare/v0.10.4...v0.11.0
 [0.10.4]: https://github.com/phucanh08/alp-code/compare/v0.10.3...v0.10.4
