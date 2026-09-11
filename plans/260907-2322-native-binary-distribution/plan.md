@@ -8,6 +8,7 @@ branch: feat/native-binary
 tags: [feature, infra, distribution, packaging, release, critical]
 created: 2026-09-07
 updated: 2026-09-08
+blockedBy: [260911-0623-execution-graph]
 ---
 
 # ALP Native Binary Distribution — Master Plan
@@ -75,4 +76,3 @@ updated: 2026-09-08
 
 - [Bun vs Node SEA spike](./research/spike-bun-vs-sea.md)
 - NB-0 output: `research/bun-compat.md`
-

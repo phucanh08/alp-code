@@ -65,15 +65,35 @@ alp delegate <role> [--background] [--timeout-ms <positive>] [--workspace <path>
 
 `--project` và `--workspace` là hai spelling của cùng input. Foreground đợi kết quả; `--background` trả execution ID ngay. Task rỗng, timeout không dương hoặc target role thiếu đều bị từ chối.
 
+Phần execution graph dưới đây thuộc bản **kế tiếp `v0.12.1`, chưa phát hành**. Trong đó `alp delegate` chỉ chạy bên trong một phiên ALP: gõ từ terminal trần trả `PARENT_EXECUTION_REQUIRED`, vì vai cha đến từ execution đang chạy chứ không từ biến môi trường. Lệnh lifecycle không đổi.
+
 Lifecycle:
 
 ```text
+alp delegation tree <execution-id> [--json]
 alp delegation status <execution-id>
 alp delegation wait <execution-id>
 alp delegation cancel <execution-id>
 alp delegation cleanup <execution-id>
 alp delegation list
 ```
+
+- `tree` nhận ID của **bất kỳ** execution nào trong phiên và luôn vẽ từ gốc xuống, đánh dấu `←` vào execution được hỏi. Header mang revision, hạn của phiên, allowance đã dùng/còn lại, số node sống, số chỗ đã giữ, và trần. Không có `--json` thì CLI tự định dạng — đây là lệnh lifecycle duy nhất làm vậy; `--json` trả nguyên view.
+- `cancel` dừng execution và mọi execution nó đã giao xuống; nhánh khác không bị đụng.
+- `cleanup` chỉ dọn file tạm, log và record process của backend. Node và kết quả lịch sử ở lại. Nó từ chối execution còn `queued`/`running` (`INVALID_REQUEST`); một backend đã quên execution thì được coi là đã dọn xong, không phải lỗi.
+- Cả năm lệnh hỏi cây trước và chỉ dùng record cũ khi cây không có node nào cho ID đó. Cây hỏng thì lệnh **lỗi**, không lặng lẽ trả lời bằng record cũ. `tree` không có đường lui đó: execution trước-execution-graph trả `EXECUTION_NOT_FOUND`.
+
+### Lỗi hay gặp của delegation
+
+| Lỗi | Nghĩa | Làm gì |
+|---|---|---|
+| `PARENT_EXECUTION_REQUIRED` | `alp delegate` chạy ngoài một phiên ALP | Mở `alp` rồi nhờ `main` giao việc |
+| `DEPTH_LIMIT_EXCEEDED` | Cây đã sâu 2 tầng | Giao việc từ tầng trên, hoặc cắt nhỏ ở chỗ khác |
+| `CHILD_LIMIT_EXCEEDED` · `CONCURRENCY_LIMIT_EXCEEDED` | Một execution đã giao 4 việc, hoặc đang chạy 2 | `tree` để xem cái nào còn sống; đợi hoặc `cancel` |
+| `GRAPH_CONCURRENCY_LIMIT_EXCEEDED` | Cả phiên đã có 6 execution sống | Như trên, nhìn cột `active` |
+| `DELEGATION_LIMIT_EXCEEDED` | Hết 8 lượt của cả đời phiên | Mở phiên mới |
+| `WALL_CLOCK_EXCEEDED` | Phiên quá hạn 2 giờ | Mở phiên mới; hạn không gia hạn được |
+| `EXECUTION_GRAPH_CORRUPT` · `EXECUTION_GRAPH_LOCK_TIMEOUT` | Không đọc/khoá được file cây | Xem [Xử lý sự cố](../troubleshooting/#cây-execution-hỏng-hoặc-bị-khoá) |
 
 ## Context và continuity
 
@@ -110,6 +130,7 @@ Doctor trả `0` khi healthy, `1` khi có finding và `2` khi doctor tự lỗi.
 | Biến | Tác dụng |
 |---|---|
 | `ALP_MODE` | Chọn mode sau CLI flag và trước saved preference |
+| `ALP_EXECUTION_GRAPH_ID` · `ALP_DELEGATION_EXECUTION_ID` · `ALP_EXECUTION_CAPABILITY` · `ALP_EXECUTION_DEADLINE_AT` | Binding do ALP cấp cho execution nó spawn — tất-cả-hoặc-không. **Không tự đặt**: chúng là danh tính của một execution, không phải cấu hình |
 | `ALP_SKIP_UPDATE_CHECK=1` | Tắt background update check, hữu ích trong test/CI cô lập |
 | `ALP_STATE_HOME` | Đổi machine state root |
 | `ALP_MEMORY_ROOT` | Đổi riêng memory root |

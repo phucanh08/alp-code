@@ -86,6 +86,73 @@ alp delegate search --project ~/code/my-app -- "Find the auth entrypoint"
 
 Policy denial xảy ra trước runtime probe/spawn. Đừng sửa prompt để cố vượt quyền; sửa definition hoặc chọn đúng role/workspace.
 
+## `alp delegate` báo cần parent execution
+
+**Triệu chứng:**
+
+```text
+delegation requires an authenticated parent execution; run it from inside an ALP session
+```
+
+**Nguyên nhân:** Từ bản kế tiếp `v0.12.1`, vai cha đến từ execution đang chạy chứ không từ biến môi trường, nên `alp delegate` gõ từ terminal trần không còn cha để đứng dưới.
+
+**Cách xử lý:** Mở phiên rồi nhờ `main` giao việc.
+
+```bash
+cd ~/code/my-app
+alp
+```
+
+Đừng tự đặt `ALP_EXECUTION_CAPABILITY` hay ba biến binding còn lại: chúng là danh tính của một execution ALP cấp, không phải cấu hình, và một capability không khớp chỉ đổi lỗi thành `CAPABILITY_INVALID`.
+
+## Giao việc bị từ chối vì chạm trần
+
+**Triệu chứng:** `DEPTH_LIMIT_EXCEEDED`, `CHILD_LIMIT_EXCEEDED`, `CONCURRENCY_LIMIT_EXCEEDED`, `GRAPH_CONCURRENCY_LIMIT_EXCEEDED`, `DELEGATION_LIMIT_EXCEEDED` hoặc `WALL_CLOCK_EXCEEDED`.
+
+```bash
+alp delegation tree exec_abc123
+```
+
+Đọc bốn dòng header: allowance đã dùng/còn lại, số node đang sống, số chỗ đã giữ, và trần. Đó gần như luôn là câu trả lời cho "vì sao nó không giao thêm việc nữa".
+
+- Trần là **cố định**, không có khoá config nào mở được. Sửa trần là sửa code.
+- Hết allowance (`8` lượt) hoặc quá hạn (2 giờ): mở phiên mới. Hạn của phiên là mốc tuyệt đối, không gia hạn.
+- Chạm trần đồng thời: đợi execution đang chạy xong, hoặc `alp delegation cancel <id>` cái không còn cần.
+- `slot(s) held` lớn hơn 0 mà không thấy node tương ứng là chuyện bình thường trong vài giây: một chỗ đã giữ mà process chưa kịp sinh ra. Reservation tự hết hạn sau 2 phút và được quét ở lần giao việc sau.
+
+## Cây execution hỏng hoặc bị khoá
+
+**Triệu chứng:** `EXECUTION_GRAPH_CORRUPT`, `EXECUTION_GRAPH_INVALID` hoặc `EXECUTION_GRAPH_LOCK_TIMEOUT` từ `tree`/`status`/`wait`/`cancel`/`cleanup`.
+
+ALP **không** lặng lẽ trả lời bằng record cũ khi cây hỏng: một fallback che lỗi cây là cách một cây hỏng trở thành một cây vô hình. Lệnh lỗi, và đó là chủ ý.
+
+```bash
+alp doctor
+ls ~/.alp/execution-graphs/
+```
+
+- **`LOCK_TIMEOUT`**: một process khác đang giữ lease. Đợi vài giây rồi chạy lại. Còn kẹt thì tìm process `alp` còn sống (`ps`), vì lease thuộc về nó.
+- **`CORRUPT`/`INVALID`**: file `~/.alp/execution-graphs/<graph-id>.json` không parse được hoặc không thoả invariant — thường là đĩa đầy hoặc máy tắt giữa lúc ghi. Phiên đó không cứu được: kiểm không còn process nào của nó (`alp doctor` báo `ORPHAN-EXECUTION`), dọn process còn sót, rồi chuyển file hỏng đi chỗ khác và mở phiên mới.
+
+```bash
+mv ~/.alp/execution-graphs/exec_abc123.json /tmp/
+```
+
+Đừng sửa tay file cây để "cấp thêm chỗ": revision và invariant được kiểm lúc đọc, nên một file sửa tay chỉ đổi lỗi này thành lỗi khác.
+
+## Execution cũ không tra được nữa
+
+**Triệu chứng:** `alp delegation tree exec_...` trả `EXECUTION_NOT_FOUND` trong khi `status` vẫn trả lời.
+
+Đó là một execution tạo **trước** execution graph. `status`/`wait`/`cancel`/`cleanup` vẫn đọc được nó từ record cũ; `tree` thì không, vì vẽ một cây một node cho nó là bịa ra một cây chưa từng tồn tại.
+
+```bash
+alp delegation status exec_abc123
+alp delegation cleanup exec_abc123
+```
+
+Record cũ chỉ còn được đọc — không execution mới nào ghi vào đó nữa. Dọn dần bằng `cleanup`, và khi chắc không còn gì cần tra thì xoá `code-native-executions.json` trong delegation state dir.
+
 ## Background execution không cho kết quả
 
 ```bash

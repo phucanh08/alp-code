@@ -40,6 +40,8 @@ quyền. Backend thì chỉ còn một: `LocalProcessBackend`.
 │  execution/      ExecutionService — deny-first orchestrator          │
 │                  ExecutionPolicy (snapshot + hash)                   │
 │                  IdentityCapsule (immutable bundle gửi cho runtime)  │
+│    graph/        ExecutionGraphService — cây là logical authority    │
+│                  parent xác thực · trần · allowance · deadline · huỷ │
 └──┬──────────────┬──────────────┬──────────────┬──────────────────────┘
    │              │              │              │
 ┌──▼────────┐ ┌───▼────────┐ ┌───▼────────┐ ┌───▼──────────────────────┐
@@ -79,9 +81,11 @@ alp [--mode low|medium|high|ultra|puck]
   → ModeSelector.select                (explicit | interactive TTY | persisted | default)
   → runtimeForMode(main, mode)         (model của nấc quyết định CLI — không ai chọn runtime)
   → ProjectRegistryStore.isRegistered  → workspace-write nếu đã `alp init`, else read-only
-  → ExecutionService.prepare           (parent = "principal", target = "main")
+  → ExecutionService.authorize         (parent = "principal", target = "main")
        ├─ assert main.reportsTo === "principal"
-       ├─ PolicyEngine.authorize({ type: "workspace", ... })
+       └─ PolicyEngine.authorize({ type: "workspace", ... })   → vé, chưa byte nào chạm đĩa
+  → ExecutionGraphService.createRoot   → node `preparing`, capability + deadline tuyệt đối
+  → ExecutionService.materialize(vé)   (mọi trường mang quyền đọc từ vé, không từ input)
        ├─ MemoryService.buildContext
        ├─ WorkflowRunner.initialize
        ├─ createExecutionPolicy   → snapshot (kèm `mode`) + definitionHash + policyHash
@@ -89,8 +93,9 @@ alp [--mode low|medium|high|ultra|puck]
        └─ FileExecutionStore.create → ~/.alp/executions/<id>/{policy,state}.json  (0600)
   → RuntimeAdapter.probe               (binary có trên PATH không)
   → RuntimeAdapter.prepare             → RuntimeLaunchSpec; model/effort = modelForMode(main, mode)
-  → LocalProcessBackend.spawn + wait
-  → đọc lại state.json → status/output cuối cùng
+  → ExecutionGraphService.startRoot    → giữ lease của cây SUỐT `LocalProcessBackend.spawn`
+  → LocalProcessBackend.wait           (ngoài lease — cây phải mở để còn đẻ con)
+  → đọc lại state.json → status/output cuối cùng → ExecutionGraphService.finishRoot
 ```
 
 Exit code: `0` completed · `130` cancelled · `1` còn lại.
@@ -99,24 +104,36 @@ Exit code: `0` completed · `130` cancelled · `1` còn lại.
 
 ```text
 alp delegate review --project /path -- "Review the diff"
-  → runDelegateCommand                 (parse flag, parentRole từ env ALP_DELEGATED_ROLE)
+  → runDelegateCommand                 (parse flag; KHÔNG đọc vai cha từ argv hay ALP_ROLE)
+  → readBindingFromEnvironment         (4 biến, tất-cả-hoặc-không; thiếu → PARENT_EXECUTION_REQUIRED)
   → DelegationService.delegate
+       ├─ graph.authenticateParent     ← capability so với hash trong cây; actor = node.agentId
        ├─ normalizeRequest             (validate, sinh requestId/executionId)
-       ├─ ExecutionService.prepare     ← DENY-FIRST, trước mọi thứ khác
+       ├─ ExecutionService.authorize   ← DENY-FIRST, trước khi chiếm một chỗ trong cây
        │    └─ PolicyEngine.authorize({ type: "delegation", actor, target })
-       │         · target ∈ actor.delegatesTo ?
-       │         · target.reportsTo === actor ?
-       ├─ runtimeForMode(target, mode) (nấc → model → CLI; request không chọn runtime)
-       ├─ adapter.prepare              → launch spec; model/effort = nấc (ALP_MODE) → definition
-       ├─ resolveBackend               (health check; fallback CHỈ trước spawn)
-       ├─ executionStore.put           (pin backend vào record)
-       └─ backend.spawn
+       │         · target ∈ actor.delegatesTo ?      ← nguồn quyền duy nhất
+       ├─ graph.reconcileGraph         (đóng node mà process đã chết, TRƯỚC khi tính trần)
+       ├─ graph.reserveChild           ← depth · số con · đồng thời · allowance · deadline
+       ├─ ExecutionService.materialize (policy.json + state.json + capsule)
+       ├─ adapter.prepare              → launch spec + binding của con (4 biến env)
+       ├─ backend.healthCheck
+       └─ graph.startReservedChild(() => backend.spawn(...))   ← spawn DƯỚI lease của cây
   → nếu không --background: service.wait(executionId)
 ```
 
-Điểm quan trọng: `ExecutionService.prepare` được gọi **trước** khi resolve runtime, trước
-health check backend, trước khi tạo execution record. Delegation không được phép làm rò rỉ
-sự tồn tại của backend cho một request đã bị policy từ chối.
+Ba điểm quan trọng, theo thứ tự chúng xuất hiện:
+
+1. **Danh tính đến từ cây, không từ input.** Trước 2026-09-11 vai cha đọc từ env
+   (`ALP_DELEGATED_ROLE`) — nghĩa là bất kỳ process nào cũng tự xưng được là `main`. Giờ nó
+   đến từ một capability mà chỉ process được spawn hợp lệ mới cầm, và cây so nó với hash nó
+   giữ. Gõ `alp delegate` từ terminal trần không còn chạy: `PARENT_EXECUTION_REQUIRED`.
+2. **Authorize trước reservation.** Một request bị policy từ chối không được giữ một slot
+   đồng thời, dù chỉ trong khoảng thời gian nó mất để bị từ chối — và backend không được
+   health-check, nên một request trái quyền không học được gì về hạ tầng bên dưới.
+3. **Spawn chạy dưới lease của cây.** Nhả lease trước khi backend có record là mở một cửa sổ
+   mà cây nói "đang chạy" còn process thì chưa tồn tại; một `cancel` rơi vào cửa sổ đó không
+   tìm thấy gì để giết. Reservation hỏng thì node được ghi `failed` với `CHILD_START_FAILED`,
+   không có process nào bị bỏ lại.
 
 ## 4. Chi tiết từng layer
 
@@ -333,7 +350,7 @@ Từ 2026-09-10, `instructions` trên definition là **dữ liệu** (`Instructi
 
 | Type | Quyết định bởi | Deny code chính |
 |---|---|---|
-| `delegation` | `DelegationPolicy` | `DELEGATION_NOT_ALLOWED`, `DELEGATION_PARENT_MISMATCH` |
+| `delegation` | `DelegationPolicy` | `UNKNOWN_TARGET`, `DELEGATION_NOT_ALLOWED` |
 | `memory` | `MemoryPolicy` | `PRIVATE_MEMORY_DENIED`, `MEMORY_NOT_GRANTED` |
 | `workspace` | `WorkspacePolicy` | `WORKSPACE_NOT_GRANTED`, `WORKSPACE_READ_ONLY`, `WORKSPACE_SCOPE_MISMATCH` |
 | `configuration` | luôn deny | `POLICY_MUTATION_DENIED`, `DEFINITION_MUTATION_DENIED` |
@@ -410,6 +427,40 @@ state hiện tại, JSON Schema của output contract.
 
 `FileExecutionStore` ghi qua staging directory + atomic `rename`, mode `0700`/`0600`, và từ
 chối nếu execution ID đã tồn tại hoặc chứa separator.
+
+Cả phiên root (`alp`) lẫn execution được uỷ (`alp delegate`) đều ghi vào **một** root duy nhất,
+`~/.alp/executions/<exec_id>/`. Trước 2026-09-11 con ghi vào `<stateDir>/execution-snapshots/`:
+`alp context`, hook và doctor chỉ đọc root kia, nên artifact của con là artifact không ai tra
+được. Cùng lý do đó, CLI dựng `LocalProcessBackend` trên đúng `stateDir` mà delegation dùng —
+hai bảng process rời nhau nghĩa là một lệnh lifecycle không tra nổi execution mà process khác
+đã mở.
+
+**`ExecutionGraph`** (`src/execution/graph/`) — cây của một phiên, và là **logical authority**
+của mọi câu hỏi về quan hệ: ai là cha, sâu bao nhiêu, còn bao nhiêu lượt giao việc, hạn chót
+lúc nào, ai đã huỷ ai. Một `graphId` là một cây và bằng đúng `rootExecutionId`.
+
+- **Một document, một revision.** Mọi mutation đọc lại rồi ghi dưới một inter-process lease
+  (`FileExecutionGraphStore`), và revision phải là `previous + 1` — một lost update là lỗi
+  (`EXECUTION_GRAPH_REVISION_CONFLICT`), không phải một lần ghi đè im lặng. Document không
+  parse hoặc không thoả invariants thì fail đóng: `EXECUTION_GRAPH_CORRUPT`, không tự sửa và
+  **không** rơi về store legacy.
+- **Capability, không phải tên.** Node giữ `capabilityHash`; secret sống trong env của process
+  sở hữu nó. `authenticateParent(binding)` là cách duy nhất một process chứng minh nó đứng ở
+  một node — `ALP_ROLE` và `parentRole` không còn được tin.
+- **Reservation.** Một chỗ được giữ *trước* khi có file và giữ cho tới khi backend đăng ký
+  xong process, TTL 2 phút. Đó là thứ làm cho trần đồng thời đúng khi bốn process cùng xin
+  con, và làm cho một caller bị kill không để lại slot khoá vĩnh viễn.
+- **Reconciliation.** Cây hỏi backend từng node còn `active` có process thật không, rồi đóng
+  những node đã mất (`EXECUTION_INTERRUPTED`, `EXECUTION_NEVER_STARTED`) và quét reservation
+  quá hạn. Chạy trước mỗi lần tính trần.
+- **Deadline tuyệt đối.** Root chốt một timestamp; mọi node và mọi process trong cây kế thừa
+  đúng timestamp đó. Không có gia hạn, và nó không phải `--timeout-ms` (một lần `wait` chịu
+  đựng bao lâu).
+
+Trần của P0 cố định trong code: depth ≤ 2, 4 con/execution, 2 con đồng thời/execution, 6
+execution sống đồng thời cả cây, 8 lượt giao việc cả đời cây, 2 giờ wall clock. Không có khoá
+config nào mở chúng. Token budget và tool-call budget **không** thuộc P0 — trần ở đây đếm
+execution, không đếm token.
 
 ### 4.5 `src/workflow/` — state machine + output contract
 
@@ -501,8 +552,16 @@ Interface vẫn còn vì test cần thay bằng fake. Nó không còn là điể
 registry, không có `--backend`, không có fallback (2026-09-03).
 
 `DelegationService` sở hữu:
-- **Execution tracking**: mỗi execution được ghi vào `code-native-executions.json` lúc spawn,
-  để `status/wait/cancel/cleanup` từ một CLI process sau vẫn tìm lại được.
+- **Graph-first lifecycle**: `tree/status/wait/cancel/cleanup` hỏi cây trước. Chỉ khi cây trả
+  lời "không có node nào cho ID này" thì mới rơi về record legacy trong
+  `code-native-executions.json` (execution tạo trước 2026-09-11). Cây *hỏng* không rơi về
+  legacy — một fallback che lỗi cây là cách một cây hỏng trở thành một cây vô hình. `tree`
+  không có fallback nào cả.
+- **Execution tracking**: record legacy chỉ còn được đọc; P0 không ghi record mới vào đó và
+  không migrate gì. Rollback về bản trước vẫn đọc đủ record cũ.
+- **`cleanup` giữ lịch sử**: nó xoá temporary file, log, result và record process của backend;
+  node trong cây và kết quả của nó ở lại. Một execution còn `queued`/`running` bị từ chối
+  (`INVALID_REQUEST`) — dọn nó là cắt sợi dây duy nhất còn giết được nó.
 - **Không retry sau spawn**: spawn hỏng nửa chừng được ghi `failed`, không thử lại (tránh
   execution trùng).
 - **Result reconciliation**: khi backend báo terminal, service đọc `state.json` — output đã
@@ -695,7 +754,7 @@ dùng còn nằm trong đó đều là dữ liệu hẹn ngày mất.
   memory/                    scaffold từ `scaffold/memory/`, không theo Git
   agents/<role>.md           cache identity phẳng cho SessionStart hook
   hooks/<tên>.cjs            forwarder có đường dẫn ỔN ĐỊNH → hook của bản cài
-  executions/<exec_id>/
+  executions/<exec_id>/       MỘT root cho cả phiên root lẫn execution được uỷ
     policy.json                ExecutionPolicy snapshot                  (0600)
     state.json                 StoredExecutionState                      (0600)
     runtime/                   capsule, session-context.md, config, skill-roots
@@ -704,6 +763,8 @@ dùng còn nằm trong đó đều là dữ liệu hẹn ngày mất.
       checkpoint.json            objective + pin, hash toàn vẹn          (0600)
       continuity.md              render Markdown, bounded 24 KiB         (0600)
       compact-events.jsonl       journal append-only, hook ghi           (0600)
+  execution-graphs/<graph_id>.json   ExecutionGraphDocument: node, trần, deadline (0600)
+    by-execution/<exec_id>     index tra ngược execution → cây chứa nó
   delegation/<key>/          `installed` cho bản cài, hash repo cho dev clone
     code-native-executions.json  execution record của DelegationService
     local.json                   state riêng của backend (pid, log, result)
@@ -772,6 +833,10 @@ qua stable `current` asset root; npm transition repair link từ payload cũ san
 | Ghi ngoài workspace trong lượt delegated | `WORKSPACE_SCOPE_MISMATCH` + hook kiểm từng path candidate |
 | Ghi bằng Bash trong execution read-only | `isWriteCapableShell` |
 | Trả output rác rồi coi như xong | Output contract + repair budget = 1, Stop hook fail-closed |
+| Tự xưng là `main` để giao việc cho vai khác | Capability so với `capabilityHash` trong cây; `ALP_ROLE`/`parentRole` không được tin |
+| Đẻ vô hạn execution (fork bomb) | Trần cố định trong cây: depth, số con, đồng thời, allowance cả đời, wall clock tuyệt đối |
+| Đọc capability của execution khác trên cùng máy | Cây chỉ giữ hash; supervisor spec `0600` và bị `unlink` trước khi runtime được spawn |
+| Sửa tay graph document để tự cấp chỗ | Invariant check lúc đọc; revision phải `previous + 1`; corrupt = fail đóng, không fallback |
 
 Giới hạn đã biết, ghi trong source: command inspection là guardrail chứ không phải isolation.
 Code thù địch thật sự cần OS sandbox hoặc container.
