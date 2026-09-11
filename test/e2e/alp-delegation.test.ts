@@ -9,27 +9,41 @@ const SEARCH_OUTPUT = "Entrypoint located at index.ts:1 — `export const entryp
 
 afterEach(cleanupEnvironments);
 
-function delegationService(environment: E2eEnvironment, ids: () => string) {
-  return new DelegationService({
+/**
+ * A delegating session, built the way a real one is: a root already standing in a durable
+ * tree, and a service whose only claim to a parent is the capability that tree issued.
+ */
+async function delegationService(
+  environment: E2eEnvironment,
+  options: { readonly parent: string; readonly executionId: string },
+) {
+  const root = await environment.graph.createRoot({
+    agentId: options.parent,
+    executionId: `exec_root_${options.parent}`,
+  });
+  const service = new DelegationService({
     registry: agentRegistry,
     policy: environment.policy,
     memory: environment.memory,
     executionService: environment.executionService,
+    graph: environment.graph,
+    binding: root.binding,
+    executionsRoot: environment.executionsRoot,
     runtimeAdapters: environment.adapters,
     backend: environment.backend,
     executionStore: new InMemoryDelegationExecutionStore(),
     config: { mode: "medium" },
-    ids: { request: () => `req_${ids()}`, execution: ids },
+    ids: { request: () => `req_${options.executionId}`, execution: () => options.executionId },
   });
+  return { service, root };
 }
 
 describe("e2e: specialist delegation", () => {
   it("runs main→search through policy, runtime, and backend to a validated result", async () => {
     const environment = await createE2eEnvironment({ output: SEARCH_OUTPUT });
-    const service = delegationService(environment, () => "exec_search");
+    const { service } = await delegationService(environment, { parent: "main", executionId: "exec_search" });
 
     const spawned = await service.delegate({
-      parentRole: "main",
       targetRole: "search",
       task: "Find the entrypoint",
       workspace: environment.project,
@@ -51,10 +65,9 @@ describe("e2e: specialist delegation", () => {
 
   it("denies search→review before any runtime preparation or spawn", async () => {
     const environment = await createE2eEnvironment({ output: SEARCH_OUTPUT });
-    const service = delegationService(environment, () => "exec_denied");
+    const { service } = await delegationService(environment, { parent: "search", executionId: "exec_denied" });
 
     await expect(service.delegate({
-      parentRole: "search",
       targetRole: "review",
       task: "Review the entrypoint",
       workspace: environment.project,
@@ -72,10 +85,9 @@ describe("e2e: specialist delegation", () => {
     const other = join(environment.root, "other-project");
     await mkdir(other);
     await writeFile(join(other, "secret.ts"), "export const secret = 1;\n");
-    const service = delegationService(environment, () => "exec_scoped");
+    const { service } = await delegationService(environment, { parent: "main", executionId: "exec_scoped" });
 
     const spawned = await service.delegate({
-      parentRole: "main",
       targetRole: "search",
       task: "Find the entrypoint",
       workspace: environment.project,

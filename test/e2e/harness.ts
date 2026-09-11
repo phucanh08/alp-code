@@ -3,10 +3,12 @@ import { chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/pr
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { agentRegistry } from "../../src/agents/registry";
-import type { RuntimeId } from "../../src/agents/types";
+import type { AgentRegistry, RuntimeId } from "../../src/agents/types";
 import { LocalProcessBackend } from "../../src/backend/local-process-backend";
 import { ExecutionService } from "../../src/execution/execution-service";
 import { FileExecutionStore } from "../../src/execution/execution-store";
+import { ExecutionGraphService } from "../../src/execution/graph/execution-graph-service";
+import { FileExecutionGraphStore } from "../../src/execution/graph/file-execution-graph-store";
 import { MarkdownFileStore } from "../../src/memory/adapters/markdown-file-store";
 import { MemoryService } from "../../src/memory/memory-service";
 import { PolicyEngine } from "../../src/policy/policy-engine";
@@ -63,30 +65,48 @@ if (process.env.ALP_E2E_COMPACT_FIXTURES) {
 }
 
 writeFileSync(join(process.env.ALP_E2E_CAPTURE, ${JSON.stringify(runtime)} + ".json"), JSON.stringify(record, null, 2));
+// Cùng một runtime chạy cho nhiều nấc trong một cây, nên bản ghi theo tên runtime bị đè.
+// Bản theo execution ID là bản mà một test nhiều tầng đọc được.
+if (process.env.ALP_DELEGATION_EXECUTION_ID) {
+  writeFileSync(join(process.env.ALP_E2E_CAPTURE, process.env.ALP_DELEGATION_EXECUTION_ID + ".json"), JSON.stringify(record, null, 2));
+}
 
 if (process.env.ALP_E2E_OUTPUT) {
   const stateFile = join(process.env.ALP_EXECUTION_ROOT, process.env.ALP_DELEGATION_EXECUTION_ID, "state.json");
   const state = JSON.parse(readFileSync(stateFile, "utf8"));
   writeFileSync(stateFile, JSON.stringify({ ...state, status: "completed", output: process.env.ALP_E2E_OUTPUT }));
 }
-process.exit(Number(process.env.ALP_E2E_EXIT || 0));
+// Một runtime thật còn sống trong lúc nó làm việc. Test nào cần huỷ, hay cần một cha còn
+// đang chạy để giao việc tiếp, thì cần đúng cái đó chứ không phải một process đã thoát.
+const heldRoles = (process.env.ALP_E2E_HOLD_ROLES || "").split(",").filter(Boolean);
+const held = process.env.ALP_E2E_HOLD_MS && (heldRoles.length === 0 || (record.capsule && heldRoles.includes(record.capsule.role)));
+if (held) {
+  setTimeout(() => process.exit(Number(process.env.ALP_E2E_EXIT || 0)), Number(process.env.ALP_E2E_HOLD_MS));
+} else {
+  process.exit(Number(process.env.ALP_E2E_EXIT || 0));
+}
 `;
 
 export interface E2eEnvironment {
   readonly root: string;
   readonly project: string;
   readonly executionsRoot: string;
+  readonly graphsRoot: string;
   readonly memoryRoot: string;
   readonly captureDirectory: string;
   readonly binDirectory: string;
   readonly policy: PolicyEngine;
   readonly memory: MemoryService;
   readonly executionService: ExecutionService;
+  readonly graph: ExecutionGraphService;
   readonly adapters: ReadonlyMap<RuntimeId, RuntimeAdapter>;
   readonly backend: LocalProcessBackend;
   readonly runtimeEnv: NodeJS.ProcessEnv;
   readonly canonicalizePath: (value: string) => string;
+  readonly registry: AgentRegistry;
   capture(runtime: RuntimeId): Promise<RuntimeCapture>;
+  /** Bản ghi của đúng một execution — bản theo tên runtime bị nấc sau đè lên. */
+  captureOf(executionId: string): Promise<RuntimeCapture>;
 }
 
 export interface RuntimeCapture {
@@ -134,21 +154,33 @@ export async function createE2eEnvironment(options: {
   /** Prose the fake runtime writes back as the execution's answer. */
   readonly output?: string;
   readonly exitCode?: number;
+  /** Giữ runtime giả sống thêm ngần này mili-giây sau khi nó đã ghi xong. */
+  readonly holdMs?: number;
+  /** Chỉ giữ những vai này; bỏ trống thì giữ tất cả. Một cha đang giao việc phải còn sống. */
+  readonly holdRoles?: readonly string[];
   /** Sets `ALP_COMPACT_BRIDGE=1` on both adapters. */
   readonly compactBridge?: boolean;
   /** Fed straight into `compact-record.cjs` by the fake runtime, in order. */
   readonly compactFixtures?: readonly CompactFixture[];
+  /**
+   * Registry cả composition chạy trên đó. Chỉ test mới truyền: topology production là một
+   * hằng số mà `test/agents/definitions.test.ts` khoá lại, và một E2E cần nhiều nấc hơn thì
+   * dựng registry của riêng nó chứ không nới định nghĩa built-in.
+   */
+  readonly registry?: AgentRegistry;
 } = {}): Promise<E2eEnvironment> {
+  const registry = options.registry ?? agentRegistry;
   // Canonical from the start: the execution service realpaths every workspace it prepares.
   const root = await realpath(await mkdtemp(join(tmpdir(), "alp-e2e-")));
   roots.push(root);
   const project = join(root, "project");
   const executionsRoot = join(root, "executions");
+  const graphsRoot = join(root, "execution-graphs");
   const memoryRoot = join(root, "memory");
   const captureDirectory = join(root, "capture");
   const binDirectory = join(root, "bin");
   const hooksDirectory = join(process.cwd(), "hooks");
-  await Promise.all([project, executionsRoot, memoryRoot, captureDirectory, binDirectory]
+  await Promise.all([project, executionsRoot, graphsRoot, memoryRoot, captureDirectory, binDirectory]
     .map((directory) => mkdir(directory, { recursive: true })));
   await writeFile(join(project, "index.ts"), "export const entrypoint = true;\n");
 
@@ -176,7 +208,7 @@ export async function createE2eEnvironment(options: {
   // resolved it against `project` instead, which made every e2e run agree with the policy
   // engine only because the test had told it where "." was — the exact defect that let
   // `alp delegate --project <elsewhere>` ship broken.
-  const policy = new PolicyEngine({ registry: agentRegistry });
+  const policy = new PolicyEngine({ registry });
   const canonicalizePath = (value: string): string => {
     const absolute = isAbsolute(value) ? value : resolve(project, value);
     try { return realpathSync(absolute); } catch { return absolute; }
@@ -187,11 +219,14 @@ export async function createE2eEnvironment(options: {
     audit: { record() {} },
   });
   const executionService = new ExecutionService({
-    registry: agentRegistry,
+    registry,
     policy,
     memory,
     workflowRunner: new WorkflowRunner(),
     store: new FileExecutionStore({ root: executionsRoot }),
+  });
+  const graph = new ExecutionGraphService({
+    store: new FileExecutionGraphStore({ root: graphsRoot }),
   });
   // Adapters probe PATH, so the fake bin directory is the only runtime they can find.
   const adapterEnv = {
@@ -219,6 +254,8 @@ export async function createE2eEnvironment(options: {
     ALP_E2E_HOOKS_DIR: hooksDirectory,
     ...(options.output === undefined ? {} : { ALP_E2E_OUTPUT: options.output }),
     ...(options.exitCode === undefined ? {} : { ALP_E2E_EXIT: String(options.exitCode) }),
+    ...(options.holdMs === undefined ? {} : { ALP_E2E_HOLD_MS: String(options.holdMs) }),
+    ...(options.holdRoles === undefined ? {} : { ALP_E2E_HOLD_ROLES: options.holdRoles.join(",") }),
     ...(compactFixturesFile === undefined ? {} : { ALP_E2E_COMPACT_FIXTURES: compactFixturesFile }),
   };
 
@@ -226,18 +263,24 @@ export async function createE2eEnvironment(options: {
     root,
     project,
     executionsRoot,
+    graphsRoot,
     memoryRoot,
     captureDirectory,
     binDirectory,
     policy,
     memory,
     executionService,
+    graph,
     adapters,
     backend: new LocalProcessBackend({ env: runtimeEnv, stdio: "pipe" }),
     runtimeEnv,
     canonicalizePath,
+    registry,
     async capture(runtime) {
       return JSON.parse(await readFile(join(captureDirectory, `${runtime}.json`), "utf8")) as RuntimeCapture;
+    },
+    async captureOf(executionId) {
+      return JSON.parse(await readFile(join(captureDirectory, `${executionId}.json`), "utf8")) as RuntimeCapture;
     },
   };
 }

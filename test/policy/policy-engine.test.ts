@@ -179,12 +179,31 @@ describe("PolicyEngine deny-first matrix", () => {
     expect(engine().authorize(request)).toMatchObject({ allowed: false, code });
   });
 
-  it("requires a delegation target to report to its parent", () => {
+  /**
+   * `reportsTo` mô tả tổ chức — báo cáo kết quả cho ai — chứ không cấp quyền. Từng có một
+   * check thứ hai ở đây đòi `target.reportsTo === actor`, và hai nguồn quyền cho cùng một câu
+   * hỏi là cách một grant mở ở `delegatesTo` vẫn bị chặn ở chỗ khác mà không ai đọc ra vì sao.
+   */
+  it("reads authority from delegatesTo alone, not from where the target reports", () => {
     const policy = engine([{ id: "search", reportsTo: "principal" }]);
+
+    expect(policy.authorize({ type: "delegation", actor: "main", target: "search" })).toEqual({
+      allowed: true,
+    });
+  });
+
+  it("still fails closed when the actor holds no grant on the target", () => {
+    const policy = engine([{ id: "main", delegatesTo: [] }]);
 
     expect(
       policy.authorize({ type: "delegation", actor: "main", target: "search" }),
-    ).toMatchObject({ allowed: false, code: "DELEGATION_PARENT_MISMATCH" });
+    ).toMatchObject({ allowed: false, code: "DELEGATION_NOT_ALLOWED" });
+    expect(
+      policy.authorize({ type: "delegation", actor: "search", target: "review" }),
+    ).toMatchObject({ allowed: false, code: "DELEGATION_NOT_ALLOWED" });
+    expect(
+      policy.authorize({ type: "delegation", actor: "main", target: "ghost" }),
+    ).toMatchObject({ allowed: false, code: "UNKNOWN_TARGET" });
   });
 
   it("allows the declared delegation, own memory, active workspace, and granted tools", () => {

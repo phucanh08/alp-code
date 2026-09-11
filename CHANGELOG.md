@@ -8,6 +8,79 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thêm
+
+- **Execution graph** — một cây bền vững, process-safe cho mọi phiên: `~/.alp/execution-graphs/<graph-id>.json`
+  (`0600`, có index tra ngược theo execution ID). Cây là **logical authority** cho quan hệ cha–con,
+  trần, allowance, hạn và lý do huỷ; backend store chỉ còn là process authority (pid, log, result).
+  Mọi mutation chạy dưới inter-process lease, revision phải là `previous + 1`, và một document
+  không đọc được thì **fail đóng** chứ không tự sửa.
+
+  Trần cố định trong code, không có khoá config nào mở: độ sâu ≤ 2, 4 con mỗi execution, 2 con
+  chạy đồng thời, 6 execution sống đồng thời cả cây, 8 lượt giao việc cả đời cây, 2 giờ wall clock.
+
+- `alp delegation tree <execution-id> [--json]` — vẽ cả cây từ gốc xuống lá, bắt đầu từ **bất kỳ**
+  execution ID nào trong đó, đánh dấu `←` vào node được hỏi. Header mang revision, hạn, allowance
+  đã dùng/còn lại, số node sống và số chỗ đã giữ, kèm trần để so. Con xếp theo `createdAt`,
+  hoà thì theo execution ID, nên hai lần đọc cho ra cùng một chuỗi byte. Không in capability hash,
+  request fingerprint hay reservation ID.
+
+- **Cascade cancellation.** `alp delegation cancel` khoá nhánh trước khi gửi tín hiệu, thu hồi mọi
+  reservation trong nhánh, rồi báo từ thế hệ sâu nhất lên. Node được hỏi mang `USER_REQUEST`;
+  con cháu mang `PARENT_CANCELLED` kèm execution ID của node đã chết. Anh em ở nhánh khác không bị
+  đụng. Backend từ chối tín hiệu thì node ở lại `cancelling` cho tới khi reconciliation đóng nó —
+  không có node tự nhận `cancelled` trong khi process vẫn sống.
+
+- **Reconciliation.** Trước mỗi lần giao việc, cây hỏi backend từng node còn sống có process thật
+  không, đóng node đã mất (`EXECUTION_INTERRUPTED`, `EXECUTION_NEVER_STARTED`) và quét reservation
+  quá hạn. Một lần reboot không còn để lại cây đầy node `running` ma từ chối mọi việc tiếp theo.
+
+### Thay đổi
+
+- **PHÁ VỠ TƯƠNG THÍCH — `alp delegate` phải chạy trong một phiên ALP.** Gõ từ terminal trần giờ
+  trả `PARENT_EXECUTION_REQUIRED`: *"delegation requires an authenticated parent execution; run it
+  from inside an ALP session"*.
+
+  Trước đây vai cha đọc từ env (`ALP_DELEGATED_ROLE`), nghĩa là bất kỳ process nào cũng tự xưng
+  được là `main`, và execution sinh ra như vậy không có trần, không có hạn, không ai huỷ được.
+  Danh tính giờ đến từ một binding bốn biến, tất-cả-hoặc-không, mà process nhận lúc nó được spawn
+  (`ALP_EXECUTION_GRAPH_ID`, `ALP_DELEGATION_EXECUTION_ID`, `ALP_EXECUTION_CAPABILITY`,
+  `ALP_EXECUTION_DEADLINE_AT`), và cây so capability với hash nó giữ.
+
+  **Cách làm thay thế:** mở `alp` như bình thường rồi nhờ `main` giao việc. Lệnh lifecycle
+  (`tree`, `status`, `wait`, `cancel`, `cleanup`, `list`) **không** đổi — chúng tra theo execution
+  ID và vẫn chạy được từ terminal trần.
+
+- **Hạn của phiên là mốc tuyệt đối, không phải timeout.** Root chốt một timestamp; mọi execution
+  con kế thừa **đúng** timestamp đó và không xin gia hạn được. Quá hạn thì cả cây bị huỷ với
+  `WALL_CLOCK_EXCEEDED` và `terminationReason: "deadline"`. `--timeout-ms` vẫn là thứ khác: thời
+  gian *một lệnh `wait`* chịu đựng, hết giờ thì caller bỏ cuộc còn execution nền vẫn chạy.
+
+- **Capability không thành durable state.** Cây chỉ giữ SHA-256 của capability; bản thân nó sống
+  trong env của process sở hữu và không có mặt trong graph/policy/state JSON, log, result hay
+  output của lệnh nào. Đường duy nhất nó chạm đĩa là supervisor spec của background spawn: file
+  `0600`, và supervisor `unlink` nó **trước** khi spawn runtime, nên nó không tồn tại trong suốt
+  thời gian agent chạy.
+
+- **Lifecycle graph-first.** `tree`/`status`/`wait`/`cancel`/`cleanup` hỏi cây trước và chỉ rơi về
+  record legacy (`code-native-executions.json`) khi cây trả lời *không có node nào cho ID này*.
+  Cây **hỏng** không rơi về legacy — che một cây hỏng bằng record cũ là cách nó trở thành một cây
+  vô hình. `tree` không có đường lui đó: execution tiền-P0 trả `EXECUTION_NOT_FOUND`.
+
+  Legacy store từ nay chỉ còn được đọc: không record mới nào được ghi vào đó, không có migration,
+  và không có gì của bản cũ bị xoá — rollback về bản trước vẫn đọc đủ record.
+
+- `alp delegation cleanup` chỉ dọn thứ của backend (file tạm, log, result, record process); node
+  trong cây và kết quả lịch sử ở lại, nên `tree` sau `cleanup` vẫn kể được phiên đã chạy những gì.
+  Nó từ chối một execution còn `queued`/`running` (`INVALID_REQUEST`) — dọn nó là cắt sợi dây duy
+  nhất còn giết được nó. Một backend đã quên execution được coi là đã dọn xong, không phải lỗi.
+
+- Topology **không đổi**: `worker.delegatesTo` vẫn `[]`, mọi specialist vẫn là lá, và chỉ `main`
+  giao việc. Cây cho phép sâu tới 2 nhưng chưa vai built-in nào dùng tới.
+
+- Token budget và tool-call budget **không** thuộc thay đổi này. Trần ở trên đếm *execution*,
+  không đếm thứ execution tiêu.
+
 ## [0.12.1] - 2026-09-11
 
 ### Sửa

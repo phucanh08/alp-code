@@ -11,7 +11,15 @@ export type DelegationErrorCode =
    * left running; a caller who wants it stopped has `cancel`. Distinct from `failed` because
    * nothing is known to have gone wrong yet.
    */
-  | "EXECUTION_TIMEOUT";
+  | "EXECUTION_TIMEOUT"
+  /**
+   * Execution vượt quá tuổi thọ tuyệt đối của cây nó thuộc về.
+   *
+   * Khác `EXECUTION_TIMEOUT`: cái kia nói caller thôi chờ, cái này nói execution phải chết.
+   * Graph có cùng mã cho cùng chuyện; backend giữ mã riêng vì nó là tầng dưới và không
+   * được biết tới graph.
+   */
+  | "WALL_CLOCK_EXCEEDED";
 
 export class DelegationError extends Error {
   readonly code: DelegationErrorCode;
@@ -29,32 +37,44 @@ export interface DelegationExecutionOptions {
   readonly timeoutMs?: number | null;
 }
 
+/**
+ * Một yêu cầu giao việc, đúng như caller viết ra.
+ *
+ * Không có `parentRole`, cũng không có `parentExecutionId`: cha là ai được đọc từ cây sau khi
+ * capability thừa hưởng qua env được kiểm, chứ không phải từ một trường mà bất kỳ ai gọi
+ * cũng điền được. `ALP_ROLE=main alp delegate ...` từng là toàn bộ chi phí để leo thang
+ * quyền; giờ nó không còn là một câu có nghĩa.
+ */
 export interface DelegationRequestInput {
   readonly requestId?: string;
-  readonly parentRole: string;
-  readonly parentExecutionId?: string | null;
   readonly targetRole: string;
   readonly task: string;
   readonly workspace: string;
   readonly workspaceMode?: "read-only" | "workspace-write";
-  readonly metadata?: { readonly backend?: string };
+  /** Đi vào fingerprint của request, nên hai lần gọi khác metadata là hai việc khác nhau. */
+  readonly metadata?: Readonly<Record<string, unknown>>;
   readonly executionOptions?: DelegationExecutionOptions;
 }
 
 export interface DelegationRequest {
   readonly requestId: string;
-  readonly parentRole: string;
-  readonly parentExecutionId: string | null;
   readonly targetRole: string;
   readonly task: string;
   readonly workspace: string;
   readonly workspaceMode: "read-only" | "workspace-write";
-  readonly metadata: { readonly backend?: string };
+  readonly metadata: Readonly<Record<string, unknown>>;
   readonly executionOptions: Required<Pick<DelegationExecutionOptions, "background" | "interactive">> & {
     readonly timeoutMs: number | null;
   };
 }
 
+/**
+ * Hình dạng của legacy store trên đĩa.
+ *
+ * Execution do graph quản không sinh bản ghi ở đây nữa — cây là nơi giữ sự thật. Kiểu này
+ * còn sống vì những execution mở bằng bản cũ vẫn nằm trên đĩa, và `alp delegation status`
+ * phải trả lời được về chúng cho tới khi chúng kết thúc.
+ */
 export interface DelegationExecutionRecord {
   readonly executionId: string;
   readonly requestId: string;

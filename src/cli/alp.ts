@@ -7,6 +7,8 @@ import { agentRegistry } from "../agents/registry";
 import { LocalProcessBackend } from "../backend/local-process-backend";
 import { ExecutionService } from "../execution/execution-service";
 import { FileExecutionStore } from "../execution/execution-store";
+import { ExecutionGraphService } from "../execution/graph/execution-graph-service";
+import { FileExecutionGraphStore } from "../execution/graph/file-execution-graph-store";
 import { MarkdownFileStore } from "../memory/adapters/markdown-file-store";
 import { MemoryService } from "../memory/memory-service";
 import { PolicyEngine } from "../policy/policy-engine";
@@ -16,14 +18,14 @@ import { ModeSelector } from "./mode-selector";
 import { loadModeProfiles } from "./settings";
 import { WorkflowRunner } from "../workflow/workflow-runner";
 import { runContextCommand } from "./commands/context";
-import { createDefaultDelegationComposition, runDelegateCommand, runDelegationLifecycleCommand, workspaceFromArgs } from "./commands/delegate";
+import { createDefaultDelegationComposition, isRenderedOutput, runDelegateCommand, runDelegationLifecycleCommand, sharedBackendStateDirectory, workspaceFromArgs } from "./commands/delegate";
 import { parseAgentCommand, runAgentCommand } from "./commands/agent";
 import { syncIdentityDocuments } from "./commands/identity-sync";
 import { deinitializeProject, initializeProject, ProjectRegistryStore } from "./commands/init";
 import { ensurePrincipalProfile, openTerminalPrompt, runPrincipalCommand, type PrincipalCommandInput } from "./commands/principal";
 import { runMainSession, type RunMainInput } from "./commands/run-main";
 import { runModeCommand, type ModeCommandInput } from "./commands/mode";
-import { agentsDirectory, executionsDirectory, memoryRoot } from "../state-paths";
+import { agentsDirectory, executionGraphsDirectory, executionsDirectory, memoryRoot } from "../state-paths";
 import { checkForUpdate, FileUpdateCheckStore, spawnNativeBackgroundUpdateCheck } from "./update-check";
 import type { InstallLayout } from "../install-layout";
 import { BUILD_VERSION } from "../build-info";
@@ -213,9 +215,26 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
       ...(layout ? { stableCommand: layout.stableCommand, assetRoot: layout.assetRoot, windowsPathCommand: "alp" } : {}),
     })],
   ]);
-  const backend = new LocalProcessBackend(layout && layout.channel !== "dev" ? {
-    supervisorInvocation: { executable: layout.selfExecutable, args: ["__internal", "supervisor"] },
-  } : {});
+  /**
+   * Cùng một state directory với `alp delegate`.
+   *
+   * Root từng chạy trên backend mặc định (`~/.alp/local`) còn con thì chạy dưới state dir của
+   * delegation — hai bảng process không biết gì về nhau, nên một lệnh lifecycle ở process sau
+   * không tra được execution mà process trước đã mở. Một cây thì phải có một sổ.
+   */
+  const delegationStateDir = sharedBackendStateDirectory({
+    installRoot: layout?.installRoot ?? repoRoot,
+    channel: layout?.channel ?? "dev",
+  });
+  const backend = new LocalProcessBackend({
+    stateDir: delegationStateDir,
+    ...(layout && layout.channel !== "dev" ? {
+      supervisorInvocation: { executable: layout.selfExecutable, args: ["__internal", "supervisor"] },
+    } : {}),
+  });
+  const graph = new ExecutionGraphService({
+    store: new FileExecutionGraphStore({ root: executionGraphsDirectory() }),
+  });
   const selector = new ModeSelector({ output: stdout });
   const projectRegistry = new ProjectRegistryStore();
   return {
@@ -247,6 +266,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
         modeProfiles: profiles,
         selector,
         executionService: project.executionService,
+        graph,
         adapters,
         backend,
         executionId: () => `exec_${randomUUID().replaceAll("-", "").slice(0, 20)}`,
@@ -357,7 +377,9 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
       const value = lifecycle
         ? await runDelegationLifecycleCommand(actual, composition.service)
         : await runDelegateCommand(actual, { cwd, env: process.env, service: composition.service, registry: project.registry });
-      stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+      // `alp delegation tree` đã tự định dạng; mọi lệnh còn lại trả dữ liệu cho script đọc.
+      if (isRenderedOutput(value)) stdout.write(value.rendered);
+      else stdout.write(`${JSON.stringify(value, null, 2)}\n`);
       return typeof value === "object" && value !== null && "status" in value && value.status === "failed" ? 1 : 0;
     },
     async contextCommand(args) {
@@ -417,6 +439,8 @@ function helpText(): string {
     "  alp agent list [--project <path>]",
     "  alp principal show|set",
     "  alp delegate <role> [options] -- <task>",
+    "  alp delegation tree|status|wait|cancel|cleanup <execution-id> [--json]",
+    "  alp delegation list",
     "  alp context status|validate [execution-id]",
     "  alp context pin <decision|constraint|open-item|next-action> -- <text>",
     "  alp context unpin <pin-id>",

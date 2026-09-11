@@ -1,11 +1,37 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { removeTemporary } from "../support/temporary-root";
 import { main, parseAlpArgs } from "../../src/cli/alp";
 import { runMainSession } from "../../src/cli/commands/run-main";
 import { applyModeSettings, parseModeSettings } from "../../src/agents/mode-settings";
 import { DEFAULT_MODE, MODE_PROFILES, modelForMode, reasoningEffortForMode, runtimeForMode } from "../../src/agents/modes";
 import type { AgentDefinition } from "../../src/agents/types";
-import type { PrepareExecutionInput } from "../../src/execution/types";
-import { runDelegateCommand } from "../../src/cli/commands/delegate";
+import type {
+  AuthorizeExecutionInput,
+  MaterializeExecutionInput,
+} from "../../src/execution/types";
+import type { ExecutionBinding } from "../../src/execution/graph/execution-graph-service";
+import {
+  createDefaultDelegationComposition,
+  isRenderedOutput,
+  renderExecutionTree,
+  runDelegateCommand,
+  runDelegationLifecycleCommand,
+  sharedBackendStateDirectory,
+} from "../../src/cli/commands/delegate";
+import type {
+  ExecutionTreeNode,
+  ExecutionTreeView,
+} from "../../src/execution/graph/execution-graph-service";
+import { DEFAULT_EXECUTION_GRAPH_LIMITS } from "../../src/execution/graph/defaults";
+
+const temporaryRoots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(temporaryRoots.splice(0).map(removeTemporary));
+});
 
 /** Mọi lệnh chỉ khác nhau ở nấc, nên phần còn lại của dependency giống hệt nhau. */
 function stubDependencies(overrides: Record<string, unknown> = {}) {
@@ -140,14 +166,83 @@ const MAIN_DEFINITION = {
 } as never;
 
 /**
- * `ExecutionService.prepare` giả. Loadout phải tự chốt từ nấc + settings đúng như bản thật,
- * vì `runMainSession` giờ phóng theo snapshot — không tra lại bảng nấc lần thứ hai.
+ * `ExecutionService` giả, hai bước. Vé là chính input đã authorize, nên một test nhìn thấy
+ * được cả thứ tự lẫn việc `materialize` không tự tra lại target.
  */
-function preparedMain(input: PrepareExecutionInput, executionId = "exec-main") {
+function executionStub(options: {
+  events?: string[];
+  executionId?: string;
+  onAuthorize?: (input: AuthorizeExecutionInput) => void;
+  onMaterialize?: (input: MaterializeExecutionInput) => void;
+  stateFile?: string;
+} = {}) {
+  return {
+    async authorize(input: AuthorizeExecutionInput) {
+      options.events?.push(`authorize:${input.parent}->${input.target}:${input.workspace}:${input.workspaceMode}`);
+      options.onAuthorize?.(input);
+      return { ...input, authorizedAt: "2026-09-11T00:00:00.000Z" } as never;
+    },
+    async materialize(_authorization: never, input: MaterializeExecutionInput) {
+      options.events?.push(`materialize:${input.mode ?? DEFAULT_MODE}`);
+      options.onMaterialize?.(input);
+      return preparedMain(input, options.executionId ?? "exec-main", options.stateFile);
+    },
+  };
+}
+
+interface GraphStub {
+  readonly outcomes: { status: string; error?: { code: string; message: string } }[];
+  binding: ExecutionBinding | null;
+  createRoot(input: { agentId: string; executionId?: string }): Promise<never>;
+  startRoot<T>(binding: ExecutionBinding, register: (binding: ExecutionBinding) => Promise<T>): Promise<T>;
+  finishExecution(binding: ExecutionBinding, outcome: { status: string }): Promise<never>;
+  failExecution(binding: ExecutionBinding, error: unknown): Promise<never>;
+}
+
+/** Cây giả: đủ để đọc thứ tự, và để thấy lease có bọc đúng `spawn` hay không. */
+function graphStub(events?: string[]): GraphStub {
+  const stub: GraphStub = {
+    outcomes: [],
+    binding: null,
+    async createRoot(input) {
+      events?.push(`root:create:${input.agentId}`);
+      const executionId = input.executionId ?? "exec-main";
+      stub.binding = {
+        graphId: executionId,
+        executionId,
+        capability: "cap-test",
+        deadlineAt: "2026-09-11T02:00:00.000Z",
+      };
+      return { binding: stub.binding } as never;
+    },
+    async startRoot(binding, register) {
+      events?.push("root:start");
+      return register(binding);
+    },
+    async finishExecution(_binding, outcome) {
+      events?.push(`root:finish:${outcome.status}`);
+      stub.outcomes.push(outcome as GraphStub["outcomes"][number]);
+      return {} as never;
+    },
+    async failExecution(_binding, error) {
+      events?.push("root:fail");
+      stub.outcomes.push({ status: "failed", error: { code: "ROOT_START_FAILED", message: String(error) } });
+      return {} as never;
+    },
+  };
+  return stub;
+}
+
+/**
+ * `ExecutionService.materialize` giả. Loadout phải tự chốt từ nấc + settings đúng như bản
+ * thật, vì `runMainSession` giờ phóng theo snapshot — không tra lại bảng nấc lần thứ hai.
+ */
+function preparedMain(input: MaterializeExecutionInput, executionId = "exec-main", stateFile?: string) {
   const mode = input.mode ?? DEFAULT_MODE;
   const definition = MAIN_DEFINITION as unknown as AgentDefinition<unknown>;
   return {
     capsule: { executionId },
+    ...(stateFile === undefined ? {} : { artifacts: { stateFile } }),
     policy: {
       model: modelForMode(definition, mode, input.modeProfiles),
       reasoningEffort: reasoningEffortForMode(definition, mode, input.modeProfiles),
@@ -159,6 +254,8 @@ function preparedMain(input: PrepareExecutionInput, executionId = "exec-main") {
 describe("runMainSession", () => {
   it("uses remembered selection, code-native main definition, adapter launch spec, and local lifecycle", async () => {
     const events: string[] = [];
+    const graph = graphStub(events);
+    let launchBinding: unknown;
     const launchSpec = { command: "fake", args: [], cwd: "/project", env: {}, temporaryFiles: [] };
     const result = await runMainSession({ cwd: "/project" }, {
       registry: {
@@ -170,14 +267,17 @@ describe("runMainSession", () => {
       selector: {
         async select(input) { events.push(`select:${input.requestedMode ?? "remembered"}`); return { ok: true, mode: "medium", source: "persisted" }; },
       },
-      executionService: {
-        async prepare(input) { events.push(`prepare:${input.parent}->${input.target}:${input.workspace}:${input.workspaceMode}`); return preparedMain(input); },
-      },
+      executionService: executionStub({ events }),
+      graph,
       adapters: new Map([["claude", {
         name: "claude",
         compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
         async probe() { events.push("probe:claude"); return { ok: true, runtime: "claude", message: "ok" }; },
-        async prepare(input) { events.push(`adapter:${input.model}:${input.reasoningEffort}`); return launchSpec; },
+        async prepare(input) {
+          events.push(`adapter:${input.model}:${input.reasoningEffort}`);
+          launchBinding = input.binding;
+          return launchSpec;
+        },
       }]]),
       backend: {
         name: "local",
@@ -200,12 +300,21 @@ describe("runMainSession", () => {
     expect(events).toEqual([
       "registry:main",
       "select:remembered",
-      "prepare:principal->main:/project:read-only",
+      "authorize:principal->main:/project:read-only",
+      // Cây trước file: node `preparing` ra đời giữa hai bước, nên không byte nào của
+      // execution này chạm đĩa trước khi có chỗ cho nó trong cây.
+      "root:create:main",
+      "materialize:medium",
       "probe:claude",
       "adapter:claude-opus-5:high",
+      // Và `spawn` nằm trong lease của root, không ở ngoài.
+      "root:start",
       "spawn:/project",
       "wait",
+      "root:finish:completed",
     ]);
+    // Chỗ đứng trong cây đi vào launch spec, chứ không được vá vào `env` sau đó.
+    expect(launchBinding).toBe(graph.binding);
   });
 
   /**
@@ -220,9 +329,8 @@ describe("runMainSession", () => {
     await runMainSession({ cwd: "/project", mode: "ultra" }, {
       registry: { get: () => MAIN_DEFINITION },
       selector: { async select() { return { ok: true, mode: "ultra", source: "explicit" }; } },
-      executionService: {
-        async prepare(input) { preparedMode = input.mode; return preparedMain(input); },
-      },
+      executionService: executionStub({ onMaterialize: (input) => { preparedMode = input.mode; } }),
+      graph: graphStub(),
       adapters: new Map([["claude", {
         name: "claude",
         compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
@@ -260,7 +368,8 @@ describe("runMainSession", () => {
     await runMainSession({ cwd: "/project", mode: "ultra" }, {
       registry: { get: () => MAIN_DEFINITION },
       selector: { async select() { return { ok: true, mode: "ultra", source: "explicit" }; } },
-      executionService: { async prepare(input) { return preparedMain(input); } },
+      executionService: executionStub(),
+      graph: graphStub(),
       adapters: new Map([["codex", {
         name: "codex",
         compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
@@ -290,7 +399,8 @@ describe("runMainSession", () => {
     await runMainSession({ cwd: "/project", mode: "puck" }, {
       registry: { get: () => MAIN_DEFINITION },
       selector: { async select() { return { ok: true, mode: "puck", source: "explicit" }; } },
-      executionService: { async prepare(input) { return preparedMain(input); } },
+      executionService: executionStub(),
+      graph: graphStub(),
       adapters: new Map([["codex", {
         name: "codex",
         compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
@@ -318,7 +428,11 @@ describe("runMainSession", () => {
     await runMainSession({ cwd: "/unknown" }, {
       registry: { get: () => MAIN_DEFINITION },
       selector: { async select() { return { ok: true, mode: "medium", source: "default" }; } },
-      executionService: { async prepare(input) { workspaceMode = input.workspaceMode; return preparedMain(input, "exec"); } },
+      executionService: executionStub({
+        executionId: "exec",
+        onAuthorize: (input) => { workspaceMode = input.workspaceMode; },
+      }),
+      graph: graphStub(),
       adapters: new Map([["claude", { name: "claude", compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true }, async probe() { return { ok: true, runtime: "claude", message: "ok" }; }, async prepare() { return { command: "fake", args: [], cwd: "/unknown", env: {}, temporaryFiles: [] }; } }]]),
       backend: {
         name: "local",
@@ -334,16 +448,104 @@ describe("runMainSession", () => {
     });
     expect(workspaceMode).toBe("read-only");
   });
+
+  /**
+   * Một root `preparing` vĩnh viễn là một cây không lệnh nào dọn được: nó vẫn tính vào trần
+   * đồng thời và vẫn hiện ra trong `alp delegation tree`, mà không có process nào để giết.
+   * Phiên chết ở đâu cũng phải để lại một node terminal — và lỗi gốc vẫn là thứ ném lên.
+   */
+  it("leaves the root terminal when the session dies before the backend", async () => {
+    const events: string[] = [];
+    const graph = graphStub(events);
+
+    await expect(runMainSession({ cwd: "/project" }, {
+      registry: { get: () => MAIN_DEFINITION },
+      selector: { async select() { return { ok: true, mode: "medium", source: "default" }; } },
+      executionService: executionStub({ events }),
+      graph,
+      adapters: new Map([["claude", {
+        name: "claude",
+        compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
+        async probe() { return { ok: false, runtime: "claude", message: "claude is not on PATH", remediation: "install it" }; },
+        async prepare() { return { command: "fake", args: [], cwd: "/project", env: {}, temporaryFiles: [] }; },
+      }]]),
+      backend: {
+        name: "local",
+        async healthCheck() { return { ok: true, message: "ok" }; },
+        async spawn() { throw new Error("never reached"); },
+        async status(executionId) { return { executionId, status: "running" }; },
+        async wait(executionId) { return { executionId, status: "completed" }; },
+        async cancel(executionId) { return { executionId, status: "cancelled" }; },
+        async cleanup() {},
+      },
+      executionId: () => "exec-main",
+      interactive: false,
+    })).rejects.toThrowError(/claude is not on PATH; install it/);
+
+    expect(events).toContain("root:fail");
+    expect(events).not.toContain("root:start");
+    expect(graph.outcomes).toEqual([
+      { status: "failed", error: { code: "ROOT_START_FAILED", message: expect.stringContaining("claude is not on PATH") } },
+    ]);
+  });
+
+  /**
+   * Exit code trả lời "process có chết sạch không", `state.json` trả lời "việc có xong
+   * không". Cây ghi câu thứ hai — nếu nó ghi câu đầu thì một phiên viết xong kết quả rồi
+   * thoát khác 0 sẽ nằm trong cây như một thất bại.
+   */
+  it("records the reconciled result as the root outcome, not the raw backend status", async () => {
+    const root = await mkdtemp(join(tmpdir(), "alp-run-main-"));
+    temporaryRoots.push(root);
+    const stateFile = join(root, "state.json");
+    await writeFile(stateFile, JSON.stringify({ status: "completed", output: "found it" }));
+    const graph = graphStub();
+
+    const result = await runMainSession({ cwd: "/project" }, {
+      registry: { get: () => MAIN_DEFINITION },
+      selector: { async select() { return { ok: true, mode: "medium", source: "default" }; } },
+      executionService: executionStub({ stateFile }),
+      graph,
+      adapters: new Map([["claude", {
+        name: "claude",
+        compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true },
+        async probe() { return { ok: true, runtime: "claude", message: "ok" }; },
+        async prepare() { return { command: "fake", args: [], cwd: "/project", env: {}, temporaryFiles: [] }; },
+      }]]),
+      backend: {
+        name: "local",
+        async healthCheck() { return { ok: true, message: "ok" }; },
+        async spawn(input) { return { executionId: input.executionId, status: "running" }; },
+        async status(executionId) { return { executionId, status: "running" }; },
+        async wait(executionId) { return { executionId, status: "failed", exitCode: 130 }; },
+        async cancel(executionId) { return { executionId, status: "cancelled" }; },
+        async cleanup() {},
+      },
+      executionId: () => "exec-main",
+      interactive: false,
+    });
+
+    expect(result).toMatchObject({ status: "completed", output: "found it" });
+    expect(graph.outcomes).toEqual([{ status: "completed" }]);
+  });
 });
 
 describe("alp delegate", () => {
-  it("keeps caller identity and workspace without raw shortcuts", async () => {
+  /**
+   * Ai gọi không còn là một thứ command truyền đi.
+   *
+   * `ALP_ROLE` và `ALP_DELEGATED_ROLE` đặt ở đây đúng như một script cũ — hay một kẻ tấn
+   * công — sẽ đặt, và cả hai phải rơi thẳng xuống đất: cha là ai được `DelegationService`
+   * đọc từ cây sau khi capability thừa hưởng được kiểm, nên không có trường nào ở lớp này
+   * cho lời khai ấy đi qua.
+   */
+  it("keeps the workspace and lets no caller declare its own identity", async () => {
     const calls: unknown[] = [];
     const result = await runDelegateCommand([
       "search", "--background", "--", "find", "launcher",
     ], {
       cwd: "/caller/project",
-      env: { ALP_ROLE: "main", ALP_DELEGATION_EXECUTION_ID: "exec-parent" },
+      env: { ALP_ROLE: "main", ALP_DELEGATED_ROLE: "principal", ALP_DELEGATION_EXECUTION_ID: "exec-parent" },
       service: {
         async delegate(input) { calls.push(input); return { executionId: "exec-child", requestId: "req", status: "running", metadata: { backend: "local", runtime: "codex" } }; },
         async wait() { throw new Error("background must not wait"); },
@@ -351,18 +553,19 @@ describe("alp delegate", () => {
         async cancel() { throw new Error("unused"); },
         async cleanup() { throw new Error("unused"); },
         listExecutions() { return []; },
+        async tree() { throw new Error("unused"); },
       },
     });
 
     expect(result).toMatchObject({ status: "running" });
     expect(calls[0]).toMatchObject({
-      parentRole: "main",
-      parentExecutionId: "exec-parent",
       targetRole: "search",
       task: "find launcher",
       workspace: "/caller/project",
       executionOptions: { background: true },
     });
+    expect(calls[0]).not.toHaveProperty("parentRole");
+    expect(calls[0]).not.toHaveProperty("parentExecutionId");
     expect(calls[0]).not.toHaveProperty("executionOptions.runtime");
   });
 
@@ -389,6 +592,7 @@ describe("alp delegate", () => {
         async cancel() { throw new Error("unused"); },
         async cleanup() { throw new Error("unused"); },
         listExecutions() { return []; },
+        async tree() { throw new Error("unused"); },
       },
     });
 
@@ -410,6 +614,7 @@ describe("alp delegate", () => {
         async cancel() { throw new Error("unused"); },
         async cleanup() { throw new Error("unused"); },
         listExecutions() { return []; },
+        async tree() { throw new Error("unused"); },
       },
     });
 
@@ -428,7 +633,214 @@ describe("alp delegate", () => {
         async cancel() { throw new Error("unused"); },
         async cleanup() { throw new Error("unused"); },
         listExecutions() { return []; },
+        async tree() { throw new Error("unused"); },
       },
     })).rejects.toThrow(/--runtime` không còn tồn tại/);
+  });
+
+  /**
+   * Phiên root và execution được uỷ chạy trên **một** bảng process. Hai thư mục state là hai
+   * `local.json`, và khi đó `alp delegation cancel` ở process sau tra một execution mà process
+   * trước đã mở sẽ không thấy gì — pid vẫn sống, cây vẫn nói đang chạy, không ai giết được.
+   */
+  it("resolves one backend state directory for the main session and `alp delegate`", async () => {
+    const root = await mkdtemp(join(tmpdir(), "alp-composition-"));
+    temporaryRoots.push(root);
+    const stateDir = join(root, "delegation-state");
+    const layout = {
+      channel: "binary" as const,
+      version: "0.0.0",
+      installRoot: join(root, "install"),
+      assetRoot: join(root, "install"),
+      selfExecutable: join(root, "install", "bin", "alp"),
+      stableCommand: join(root, "install", "bin", "alp"),
+    };
+    const env = { ALP_DELEGATION_STATE_DIR: stateDir, ALP_MEMORY_ROOT: join(root, "memory") };
+
+    const composition = await createDefaultDelegationComposition(layout, env);
+
+    expect(composition.config.stateDir).toBe(stateDir);
+    expect(sharedBackendStateDirectory(layout, env)).toBe(composition.config.stateDir);
+  });
+});
+
+function treeNode(overrides: Partial<ExecutionTreeNode> = {}): ExecutionTreeNode {
+  return {
+    executionId: "exec_root",
+    parentExecutionId: null,
+    agentId: "main",
+    depth: 0,
+    status: "running",
+    requestId: null,
+    createdAt: "2026-09-11T00:00:00.000Z",
+    startedAt: "2026-09-11T00:00:00.000Z",
+    endedAt: null,
+    cancellation: null,
+    error: null,
+    terminationReason: null,
+    children: [],
+    ...overrides,
+  };
+}
+
+function treeView(root: ExecutionTreeNode, overrides: Partial<ExecutionTreeView> = {}): ExecutionTreeView {
+  return {
+    graphId: "exec_root",
+    rootExecutionId: "exec_root",
+    executionId: root.executionId,
+    revision: 7,
+    createdAt: "2026-09-11T00:00:00.000Z",
+    updatedAt: "2026-09-11T00:20:00.000Z",
+    deadlineAt: "2026-09-11T02:00:00.000Z",
+    limits: DEFAULT_EXECUTION_GRAPH_LIMITS,
+    delegation: { used: 2, limit: DEFAULT_EXECUTION_GRAPH_LIMITS.delegationLimit, remaining: 6 },
+    summary: { total: 3, active: 2, byStatus: { running: 2, completed: 1 }, pending: 1 },
+    root,
+    ...overrides,
+  };
+}
+
+/** Cây ba nấc, đủ để một dòng có cả anh em lẫn con. */
+function sampleView(highlighted = "exec_root"): ExecutionTreeView {
+  const grandchild = treeNode({
+    executionId: "exec_grandchild", parentExecutionId: "exec_worker", agentId: "search",
+    depth: 2, status: "cancelled", requestId: "req_deep", endedAt: "2026-09-11T00:15:00.000Z",
+    cancellation: { reason: "PARENT_CANCELLED", requestedBy: "exec_worker", requestedAt: "2026-09-11T00:15:00.000Z" },
+  });
+  const worker = treeNode({
+    executionId: "exec_worker", parentExecutionId: "exec_root", agentId: "worker",
+    depth: 1, status: "cancelled", requestId: "req_b", endedAt: "2026-09-11T00:15:00.000Z",
+    cancellation: { reason: "USER_REQUEST", requestedBy: "principal", requestedAt: "2026-09-11T00:15:00.000Z" },
+    children: [grandchild],
+  });
+  const search = treeNode({
+    executionId: "exec_search", parentExecutionId: "exec_root", agentId: "search",
+    depth: 1, status: "failed", requestId: "req_a",
+    error: { code: "CHILD_START_FAILED", message: "runtime refused the task" },
+  });
+  const root = treeNode({ children: [search, worker] });
+  return treeView(root, { executionId: highlighted });
+}
+
+function lifecycleService(view: ExecutionTreeView) {
+  const asked: string[] = [];
+  return {
+    asked,
+    service: {
+      async delegate() { throw new Error("unused"); },
+      async wait() { throw new Error("unused"); },
+      async status() { throw new Error("unused"); },
+      async cancel() { throw new Error("unused"); },
+      async cleanup() { throw new Error("unused"); },
+      listExecutions() { return []; },
+      async tree(executionId: string) { asked.push(executionId); return view; },
+    },
+  };
+}
+
+describe("alp delegation tree", () => {
+  /**
+   * Lệnh này tồn tại vì JSON thô không trả lời được câu hỏi người vận hành mang tới: nhánh
+   * nào chết, vì ai. Nên mặc định là chữ cho người đọc, và `--json` mới là dữ liệu cho script.
+   */
+  it("renders for a person by default and hands back the raw view for --json", async () => {
+    const view = sampleView();
+    const { asked, service } = lifecycleService(view);
+
+    const rendered = await runDelegationLifecycleCommand(["tree", "exec_worker"], service as never);
+    const json = await runDelegationLifecycleCommand(["tree", "exec_worker", "--json"], service as never);
+
+    expect(isRenderedOutput(rendered)).toBe(true);
+    expect(json).toBe(view);
+    expect(isRenderedOutput(json)).toBe(false);
+    expect(asked).toEqual(["exec_worker", "exec_worker"]);
+  });
+
+  /** Mọi lệnh còn lại vẫn là dữ liệu: `isRenderedOutput` không được nuốt kết quả của chúng. */
+  it("leaves every other lifecycle command on the JSON path", async () => {
+    const service = {
+      async delegate() { throw new Error("unused"); },
+      async wait() { throw new Error("unused"); },
+      async status() { return { executionId: "exec_1", status: "running", rendered: "not this field" }; },
+      async cancel() { throw new Error("unused"); },
+      async cleanup() { throw new Error("unused"); },
+      listExecutions() { return []; },
+      async tree() { throw new Error("unused"); },
+    };
+
+    const status = await runDelegationLifecycleCommand(["status", "exec_1"], service as never);
+
+    // `rendered` là string, nhưng một status không phải output đã định dạng — guard phải
+    // nhìn hình dạng, không nhìn một cái tên trường mà backend nào cũng có thể trùng.
+    expect(isRenderedOutput(status)).toBe(false);
+  });
+
+  it("requires the execution ID it is asked about", async () => {
+    const { service } = lifecycleService(sampleView());
+
+    await expect(runDelegationLifecycleCommand(["tree"], service as never)).rejects.toThrow(/execution ID/);
+  });
+
+  it("draws the shape of the tree, not a flat list", async () => {
+    const text = renderExecutionTree(sampleView());
+    const lines = text.split("\n");
+
+    expect(lines).toEqual(expect.arrayContaining([
+      expect.stringContaining("main  ·  exec_root  ·  running"),
+      expect.stringMatching(/^├─ search {2}· {2}exec_search {2}· {2}failed/),
+      expect.stringMatching(/^└─ worker/),
+      // Cháu nối tiếp dưới thân của cha, không thụt lề bằng khoảng trắng trần.
+      expect.stringMatching(/^ {3}└─ search {2}· {2}exec_grandchild/),
+    ]));
+  });
+
+  /** Người vận hành hỏi về một node; cây in ra cả họ hàng, nên node được hỏi phải tự chỉ ra. */
+  it("marks the node that was asked about", () => {
+    const marked = renderExecutionTree(sampleView("exec_grandchild"))
+      .split("\n").filter((line) => line.endsWith("←"));
+
+    expect(marked).toHaveLength(1);
+    expect(marked[0]).toContain("exec_grandchild");
+  });
+
+  it("says why each stopped branch stopped", () => {
+    const text = renderExecutionTree(sampleView());
+
+    expect(text).toContain("USER_REQUEST · requested by principal");
+    expect(text).toContain("PARENT_CANCELLED · requested by exec_worker");
+    expect(text).toContain("CHILD_START_FAILED: runtime refused the task");
+  });
+
+  /** Một nhánh bị đồng hồ giết đọc y hệt một nhánh người dùng huỷ, nếu không nói ra. */
+  it("separates a clock kill from a person's decision", () => {
+    const root = treeNode({
+      status: "cancelled",
+      terminationReason: "deadline",
+      cancellation: { reason: "WALL_CLOCK_EXCEEDED", requestedBy: "exec_root", requestedAt: "2026-09-11T02:00:00.000Z" },
+    });
+
+    expect(renderExecutionTree(treeView(root))).toContain("WALL_CLOCK_EXCEEDED (deadline)");
+  });
+
+  /**
+   * Câu hỏi thường là "vì sao nó không đẻ thêm con nữa", và câu trả lời là một con số ở đầu
+   * trang — nhưng chỉ khi trần nằm ngay cạnh mức đã dùng để so.
+   */
+  it("puts the allowance next to the ceiling that would stop it", () => {
+    const text = renderExecutionTree(sampleView());
+
+    expect(text).toContain("delegation 2/8 used  ·  6 remaining");
+    expect(text).toContain("nodes 3  ·  2 active  ·  1 slot(s) held");
+    expect(text).toContain(`depth ≤ ${DEFAULT_EXECUTION_GRAPH_LIMITS.maxDepth}`);
+    expect(text).toContain("deadline 2026-09-11T02:00:00.000Z");
+    expect(text).toContain("revision 7");
+  });
+
+  /** Output của một lệnh đọc không được mang theo capability của execution nào. */
+  it("prints no secret material", () => {
+    const text = renderExecutionTree(sampleView());
+
+    expect(text).not.toMatch(/capability/i);
+    expect(text).not.toMatch(/fingerprint/i);
   });
 });

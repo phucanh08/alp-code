@@ -85,7 +85,13 @@ describe("code-native role definitions", () => {
     expect(agentRegistry.get("worker").capabilities.workspace.writeRoots).toEqual(["."]);
   });
 
+  /**
+   * Execution graph cho phép đệ quy tới `maxDepth 2`, nhưng *cho phép* không phải là *mở*.
+   * P0 chỉ dựng nền: ai được gọi ai vẫn đúng như trước, và `worker` — vai duy nhất cầm bút,
+   * nên cũng là vai hấp dẫn nhất để mở ra — vẫn là lá.
+   */
   it("locks the main-only delegation topology", () => {
+    expect(agentRegistry.get("worker").delegatesTo).toEqual([]);
     expect(agentRegistry.get("main").reportsTo).toBe("principal");
     expect(agentRegistry.get("main").delegatesTo).toEqual(ROLE_IDS.slice(1));
     for (const id of ROLE_IDS.slice(1)) {

@@ -155,7 +155,7 @@ function buildProbes(input: Tier3Input): readonly Probe[] {
       id: "delegation-not-allowed",
       what: `\`${stranger}\` launching this role`,
       request: { type: "delegation", actor: stranger, target: self },
-      expected: ["DELEGATION_NOT_ALLOWED", "DELEGATION_PARENT_MISMATCH"],
+      expected: ["DELEGATION_NOT_ALLOWED"],
     });
   }
 

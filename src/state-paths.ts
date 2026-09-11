@@ -43,3 +43,14 @@ export function hookForwarder(name: string, env: NodeJS.ProcessEnv = process.env
 export function executionsDirectory(env: NodeJS.ProcessEnv = process.env): string {
   return join(stateHome(env), "executions");
 }
+
+/**
+ * `~/.alp/execution-graphs/` — một file JSON cho mỗi cây execution.
+ *
+ * Tách khỏi `executions/` vì hai thứ có vòng đời khác nhau: `executions/<id>/` là artifact
+ * của một execution đơn lẻ và dọn được từng cái, còn graph là quyền lực logic của cả cây —
+ * dọn nhầm nó là gỡ trần của những execution vẫn đang chạy.
+ */
+export function executionGraphsDirectory(env: NodeJS.ProcessEnv = process.env): string {
+  return join(stateHome(env), "execution-graphs");
+}

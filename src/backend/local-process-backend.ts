@@ -91,18 +91,23 @@ function processAlive(pid: number | null): boolean {
   catch (error) { return (error as NodeJS.ErrnoException).code === "EPERM"; }
 }
 
-function terminalStatus(record: Pick<LocalExecutionRecord, "cancelled">, result: Pick<LocalSupervisorResult, "exitCode" | "signal" | "spawnError">): BackendExecutionResult["status"] {
-  if (record.cancelled) return "cancelled";
+function terminalStatus(
+  record: Pick<LocalExecutionRecord, "cancelled">,
+  result: Pick<LocalSupervisorResult, "exitCode" | "signal" | "spawnError" | "terminationReason">,
+): BackendExecutionResult["status"] {
+  // Hết hạn là bị dừng, không phải tự hỏng. Một runtime bị SIGTERM thoát với exit code khác 0,
+  // nên đọc exit code trước khi hỏi ai giết nó là cách mọi deadline thành `failed`.
+  if (record.cancelled || result.terminationReason === "deadline") return "cancelled";
   if (result.spawnError) return "failed";
   return result.exitCode === 0 ? "completed" : "failed";
 }
 
 function failureError(
   record: Pick<LocalExecutionRecord, "cancelled">,
-  result: Pick<LocalSupervisorResult, "exitCode" | "signal" | "spawnError">,
+  result: Pick<LocalSupervisorResult, "exitCode" | "signal" | "spawnError" | "terminationReason">,
   transcript: string,
 ): LocalExecutionRecord["error"] | undefined {
-  if (record.cancelled) return undefined;
+  if (record.cancelled || result.terminationReason === "deadline") return undefined;
   if (result.spawnError) {
     // A runtime that is not on PATH is a machine problem, not a failure of this execution;
     // naming it `BACKEND_UNAVAILABLE` is what tells the caller to install rather than retry.
@@ -124,6 +129,11 @@ function failureError(
       ? `local execution ended with ${detail}. Last output:\n${transcript}`
       : `local execution ended with ${detail}.`,
   };
+}
+
+/** Result metadata that names the clock as the killer, for a result that is otherwise a plain cancel. */
+function terminationMetadata(source: LocalExecutionRecord["cancellationSource"]): Pick<BackendExecutionResult, "metadata"> {
+  return source === "deadline" ? { metadata: { terminationReason: "deadline" } } : {};
 }
 
 /**
@@ -210,6 +220,16 @@ export class LocalProcessBackend implements ExecutionBackend {
 
   async spawn(input: SpawnExecutionInput): Promise<BackendExecutionResult> {
     if (this.store.get(input.executionId)) throw new Error(`execution \`${input.executionId}\` already exists`);
+    // Trước process, trước cả record. Sinh ra một execution rồi giết nó ở mili-giây kế tiếp
+    // để lại đúng thứ nó lẽ ra phải tránh: một process thật, một record thật, và một cây
+    // phải dọn cả hai.
+    const deadlineAt = input.lifecycle?.deadlineAt ?? null;
+    if (deadlineAt !== null && Date.parse(deadlineAt) <= Date.now()) {
+      throw new DelegationError(
+        "WALL_CLOCK_EXCEEDED",
+        `execution \`${input.executionId}\` was not started: its deadline (${deadlineAt}) has already passed`,
+      );
+    }
     return input.lifecycle?.background === true
       ? this.spawnDetached(input)
       : this.spawnAttached(input);
@@ -226,7 +246,7 @@ export class LocalProcessBackend implements ExecutionBackend {
     const { executionId, launchSpec } = input;
     const logFile = this.logFile(executionId);
     const resultFile = this.resultFile(executionId);
-    const specFile = join(this.stateDir, "specs", `${executionId}.json`);
+    const specFile = this.specFile(executionId);
     const supervisorSpec: LocalSupervisorSpec = {
       executionId,
       command: launchSpec.command,
@@ -236,6 +256,7 @@ export class LocalProcessBackend implements ExecutionBackend {
       logFile,
       resultFile,
       temporaryFiles: [...launchSpec.temporaryFiles],
+      deadlineAt: input.lifecycle?.deadlineAt ?? null,
     };
     mkdirSync(join(this.stateDir, "specs"), { recursive: true, mode: 0o700 });
     writeFileSync(specFile, `${JSON.stringify(supervisorSpec, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
@@ -300,6 +321,24 @@ export class LocalProcessBackend implements ExecutionBackend {
       resultFile: null,
     }));
 
+    // Đồng hồ của một execution attached thuộc về chính process này, vì nó là cha của
+    // runtime: không ai khác còn sống để giết nó khi hết hạn.
+    const deadlineAt = input.lifecycle?.deadlineAt ?? null;
+    let deadlineTimer: NodeJS.Timeout | undefined;
+    if (deadlineAt !== null) {
+      deadlineTimer = setTimeout(() => {
+        const current = this.store.get(executionId);
+        // Người dùng bấm cancel trước thì lý do là của họ: ghi đè ở đây chỉ đổi một câu
+        // trả lời đúng thành một câu đổ cho đồng hồ.
+        if (!current || current.cancelled) return;
+        this.store.update(executionId, {
+          cancelled: true,
+          cancellationSource: "deadline",
+        });
+        this.terminate(current, "SIGTERM");
+      }, Math.max(Date.parse(deadlineAt) - Date.now(), 0));
+    }
+
     let resolveSettled!: (result: BackendExecutionResult) => void;
     let rejectSettled!: (error: unknown) => void;
     const settled = new Promise<BackendExecutionResult>((settle, reject) => {
@@ -311,6 +350,9 @@ export class LocalProcessBackend implements ExecutionBackend {
     const conclude = async (
       outcome: Pick<LocalSupervisorResult, "exitCode" | "signal" | "spawnError">,
     ): Promise<BackendExecutionResult> => {
+      // Mọi đường ra đều đi qua đây — close, error, cancel, hết hạn — nên đây là chỗ duy
+      // nhất cần nhả timer, và một timer còn sống sẽ giữ CLI mở sau khi run đã xong.
+      if (deadlineTimer) clearTimeout(deadlineTimer);
       // `end()` only schedules the flush. Reading the transcript before it lands truncates
       // exactly the last lines — the ones that say why a failing run failed.
       if (log) await new Promise<void>((settle) => log!.end(() => settle()));
@@ -326,6 +368,7 @@ export class LocalProcessBackend implements ExecutionBackend {
         signal: outcome.signal ?? null,
         ...(transcript ? { output: transcript } : {}),
         ...(error ? { error } : {}),
+        ...terminationMetadata(current?.cancellationSource),
       };
       this.store.update(executionId, {
         status,
@@ -377,6 +420,13 @@ export class LocalProcessBackend implements ExecutionBackend {
     // No result file and no process: the supervisor died without recording an outcome, or
     // the machine was rebooted under it. Reporting `running` here is what let an execution
     // sit unreachable forever, so it is named as the orphan it is.
+    //
+    // Đây cũng là chỗ duy nhất được phép xoá một spec chưa ai mở. Supervisor unlink spec
+    // ngay khi đọc, nên một spec còn nằm đó nghĩa là nó chưa từng khởi động — nhưng chỉ
+    // riêng điều đó chưa đủ: một sweep theo tuổi file sẽ rút spec khỏi tay một supervisor
+    // vừa được spawn và chưa kịp đọc. Ở đây thì backend vừa chứng minh xong không process
+    // nào còn sở hữu execution này.
+    rmSync(this.specFile(executionId), { force: true });
     return this.finalize(record, {
       executionId,
       exitCode: null,
@@ -446,9 +496,19 @@ export class LocalProcessBackend implements ExecutionBackend {
   async cancel(executionId: string, signal: NodeJS.Signals = "SIGTERM"): Promise<BackendExecutionResult> {
     const record = this.record(executionId);
     if (["completed", "failed", "cancelled"].includes(record.status)) return this.resultOf(record);
-    this.store.update(executionId, { status: "cancelled", cancelled: true });
+    // `cancellationSource` chỉ ghi khi còn trống: deadline có thể đã nổ giữa lần đọc record
+    // ở trên và dòng này, và lần ghi thứ hai sẽ xoá mất ai thực sự đã dừng execution.
+    this.store.update(executionId, {
+      status: "cancelled",
+      cancelled: true,
+      ...(record.cancellationSource ? {} : { cancellationSource: "user" as const }),
+    });
     this.terminate(record, signal);
-    return { executionId, status: "cancelled" };
+    return {
+      executionId,
+      status: "cancelled",
+      ...terminationMetadata(record.cancellationSource),
+    };
   }
 
   /**
@@ -483,7 +543,7 @@ export class LocalProcessBackend implements ExecutionBackend {
   async cleanup(executionId: string): Promise<void> {
     const record = this.record(executionId);
     await cleanupFiles(record.temporaryFiles);
-    for (const file of [record.resultFile, join(this.stateDir, "specs", `${executionId}.json`)]) {
+    for (const file of [record.resultFile, this.specFile(executionId)]) {
       if (file) rmSync(file, { force: true });
     }
     this.inFlight.delete(executionId);
@@ -521,6 +581,7 @@ export class LocalProcessBackend implements ExecutionBackend {
         ...(input.launchSpec.env.ALP_ROLE ? { "alp.target-role": input.launchSpec.env.ALP_ROLE } : {}),
       }),
       createdAt: new Date().toISOString(),
+      deadlineAt: input.lifecycle?.deadlineAt ?? null,
       ...fields,
     };
   }
@@ -539,10 +600,15 @@ export class LocalProcessBackend implements ExecutionBackend {
     const transcript = tailLog(record.logFile);
     const status = terminalStatus(record, outcome);
     const error = override ?? failureError(record, outcome, transcript);
+    // Supervisor là thứ duy nhất chứng kiến hạn chót của một background run; ghi lại điều
+    // nó kể, nếu không thì lần `status()` sau đọc lại record và thấy một lần huỷ vô danh.
+    const source = record.cancellationSource
+      ?? (outcome.terminationReason === "deadline" ? "deadline" as const : undefined);
     this.store.update(record.executionId, {
       status,
       exitCode: outcome.exitCode,
       signal: outcome.signal,
+      ...(source ? { cancelled: true, cancellationSource: source } : {}),
       ...(transcript ? { output: transcript } : {}),
       ...(error ? { error } : {}),
     });
@@ -553,6 +619,7 @@ export class LocalProcessBackend implements ExecutionBackend {
       signal: outcome.signal,
       ...(transcript ? { output: transcript } : {}),
       ...(error ? { error } : {}),
+      ...terminationMetadata(source),
     };
   }
 
@@ -565,6 +632,7 @@ export class LocalProcessBackend implements ExecutionBackend {
       ...(record.signal === undefined ? {} : { signal: record.signal }),
       ...(output ? { output } : {}),
       ...(record.error ? { error: record.error } : {}),
+      ...terminationMetadata(record.cancellationSource),
     };
   }
 
@@ -576,9 +644,23 @@ export class LocalProcessBackend implements ExecutionBackend {
     return join(this.stateDir, "results", `${executionId}.json`);
   }
 
+  private specFile(executionId: string): string {
+    return join(this.stateDir, "specs", `${executionId}.json`);
+  }
+
+  /**
+   * Bản ghi của một execution, hoặc một lỗi *có mã*.
+   *
+   * `EXECUTION_NOT_FOUND` chứ không phải `Error` trần: reconciliation hỏi backend về từng
+   * node còn sống, và nó phải phân biệt "backend tra được, và không có gì" với "backend
+   * không trả lời được". Gộp hai cái đó lại là cách một lần đọc hỏng biến cả cây thành
+   * orphan. Thông điệp giữ nguyên — nó là thứ đang được khẳng định ở nơi khác.
+   */
   private record(executionId: string): LocalExecutionRecord {
     const record = this.store.get(executionId);
-    if (!record) throw new Error(`unknown local execution \`${executionId}\``);
+    if (!record) {
+      throw new DelegationError("EXECUTION_NOT_FOUND", `unknown local execution \`${executionId}\``);
+    }
     return record;
   }
 }

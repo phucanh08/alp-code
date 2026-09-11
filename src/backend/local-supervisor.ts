@@ -18,7 +18,18 @@ export interface LocalSupervisorSpec {
   readonly logFile: string;
   readonly resultFile: string;
   readonly temporaryFiles: readonly string[];
-  /** Deleted by the supervisor once it has read it, since it duplicates the launch spec. */
+  /**
+   * Khi nào runtime phải chết, dù nó có xong hay không.
+   *
+   * Timer thuộc về supervisor chứ không về CLI đã gọi: một background execution sống tiếp
+   * sau khi CLI thoát, nên nếu đồng hồ nằm ở CLI thì `--background` chính là cách duy nhất
+   * để một agent chạy vô hạn.
+   */
+  readonly deadlineAt?: string | null;
+  /**
+   * Deleted by whoever read it, since it duplicates the launch spec — and carries the
+   * execution capability, which must not sit on disk for the life of the run.
+   */
   readonly specFile?: string;
 }
 
@@ -29,6 +40,8 @@ export interface LocalSupervisorResult {
   readonly endedAt: string;
   /** Set when the runtime could not be started at all, e.g. the binary is not on PATH. */
   readonly spawnError?: string;
+  /** `deadline` khi supervisor tự giết runtime vì hết hạn; `undefined` ở mọi kết cục khác. */
+  readonly terminationReason?: "deadline";
 }
 
 /**
@@ -78,9 +91,14 @@ export async function superviseExecution(spec: LocalSupervisorSpec): Promise<voi
     // recorded as `exit code -2` and classified as an execution failure, when the whole
     // point of `spawnError` is to name it a machine problem the caller should fix.
     let finished = false;
+    let deadlineTimer: NodeJS.Timeout | undefined;
+    let killedByDeadline = false;
     const finish = (result: Omit<LocalSupervisorResult, "executionId" | "endedAt">): void => {
       if (finished) return;
       finished = true;
+      // Nhả timer trên *mọi* đường ra, kể cả đường spawn hỏng: một timer còn sống giữ
+      // event loop mở, và supervisor sẽ ngồi im cho tới hạn thay vì thoát ngay.
+      if (deadlineTimer) clearTimeout(deadlineTimer);
       removeFiles([...spec.temporaryFiles, ...(spec.specFile ? [spec.specFile] : [])]);
       // The log is flushed before the result file appears, never after: `status()` treats
       // the result file as proof the run is over and reads the transcript in the same
@@ -90,6 +108,7 @@ export async function superviseExecution(spec: LocalSupervisorSpec): Promise<voi
           executionId: spec.executionId,
           endedAt: new Date().toISOString(),
           ...result,
+          ...(killedByDeadline ? { terminationReason: "deadline" as const } : {}),
         });
         settle();
       });
@@ -101,6 +120,8 @@ export async function superviseExecution(spec: LocalSupervisorSpec): Promise<voi
         cwd: spec.cwd,
         env: { ...process.env, ...spec.env },
         stdio: ["ignore", "pipe", "pipe"],
+        // Nhóm riêng để một tín hiệu hạn chót tới được cả cây runtime, không chỉ process đầu.
+        ...(process.platform === "win32" ? {} : { detached: true }),
       });
     } catch (error) {
       log.write(`[alp] failed to spawn runtime: ${(error as Error).message}\n`);
@@ -109,6 +130,21 @@ export async function superviseExecution(spec: LocalSupervisorSpec): Promise<voi
 
     child.stdout?.pipe(log, { end: false });
     child.stderr?.pipe(log, { end: false });
+
+    // Đồng hồ đặt sau khi process đã tồn tại: đặt trước thì một spawn hỏng để lại timer trỏ
+    // vào một child không bao giờ có. Hạn đã qua thì `setTimeout` với số âm chạy ngay vòng
+    // sau — đúng cái ta muốn, vì lúc đó không còn gì để chờ.
+    if (spec.deadlineAt) {
+      const remaining = Date.parse(spec.deadlineAt) - Date.now();
+      deadlineTimer = setTimeout(() => {
+        killedByDeadline = true;
+        log.write(`[alp] execution exceeded its deadline (${spec.deadlineAt}); terminating\n`);
+        // Âm pid để tín hiệu tới cả process group: runtime thường tự đẻ con, và giết mỗi
+        // process đầu sẽ để lại đúng đám đang thực sự tiêu CPU.
+        try { if (child.pid) process.kill(-child.pid, "SIGTERM"); }
+        catch { child.kill("SIGTERM"); }
+      }, Math.max(remaining, 0));
+    }
     child.on("error", (error) => {
       log.write(`[alp] failed to spawn runtime: ${error.message}\n`);
       finish({ exitCode: null, signal: null, spawnError: error.message });
@@ -125,6 +161,8 @@ if (require.main === module) {
     process.exit(2);
   }
   const spec = JSON.parse(readFileSync(specFile, "utf8")) as LocalSupervisorSpec;
-  void superviseExecution({ ...spec, specFile }).then(() => process.exit(0));
+  // Spec mang capability của execution: xoá ngay khi đã đọc xong, trước khi runtime chạy.
+  rmSync(specFile, { force: true });
+  void superviseExecution(spec).then(() => process.exit(0));
 }
 /* c8 ignore stop */

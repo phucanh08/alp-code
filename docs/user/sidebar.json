@@ -4,34 +4,130 @@
     {
       "label": "Bắt đầu",
       "items": [
-        { "label": "Giới thiệu", "path": "" },
-        { "label": "Cài đặt", "path": "getting-started/installation" },
-        { "label": "Bắt đầu nhanh", "path": "getting-started/quickstart" }
+        {
+          "label": "Giới thiệu",
+          "path": ""
+        },
+        {
+          "label": "Cài đặt",
+          "path": "getting-started/installation"
+        },
+        {
+          "label": "Bắt đầu nhanh",
+          "path": "getting-started/quickstart"
+        }
       ]
     },
     {
       "label": "Khái niệm",
       "items": [
-        { "label": "ALP hoạt động thế nào", "path": "concepts/how-alp-works" },
-        { "label": "Nấc và runtime", "path": "concepts/modes-and-runtimes" },
-        { "label": "Agent và quyền", "path": "concepts/agents-and-authority" }
+        {
+          "label": "ALP hoạt động thế nào",
+          "path": "concepts/how-alp-works"
+        },
+        {
+          "label": "Nấc và runtime",
+          "path": "concepts/modes-and-runtimes"
+        },
+        {
+          "label": "Agent và quyền",
+          "path": "concepts/agents-and-authority"
+        }
       ]
     },
     {
       "label": "Hướng dẫn",
       "items": [
-        { "label": "Thiết lập project", "path": "guides/project-setup" },
-        { "label": "Giao việc", "path": "guides/delegation" },
-        { "label": "Memory và continuity", "path": "guides/memory-and-continuity" },
-        { "label": "Custom agent (preview)", "path": "guides/custom-agents" },
-        { "label": "Skill của project (preview)", "path": "guides/project-skills" }
+        {
+          "label": "Thiết lập project",
+          "path": "guides/project-setup"
+        },
+        {
+          "label": "Giao việc",
+          "path": "guides/delegation"
+        },
+        {
+          "label": "Memory và continuity",
+          "path": "guides/memory-and-continuity"
+        },
+        {
+          "label": "Custom agent (preview)",
+          "path": "guides/custom-agents"
+        },
+        {
+          "label": "Skill của project (preview)",
+          "path": "guides/project-skills"
+        }
+      ]
+    },
+    {
+      "label": "Chuyên sâu",
+      "items": [
+        {
+          "label": "Từ điển khái niệm",
+          "path": "deep-dive/glossary"
+        },
+        {
+          "label": "Agent",
+          "path": "deep-dive/agent"
+        },
+        {
+          "label": "Capability",
+          "path": "deep-dive/capability"
+        },
+        {
+          "label": "Policy",
+          "path": "deep-dive/policy"
+        },
+        {
+          "label": "Delegation",
+          "path": "deep-dive/delegation"
+        },
+        {
+          "label": "Execution",
+          "path": "deep-dive/execution"
+        },
+        {
+          "label": "Execution graph",
+          "path": "deep-dive/execution-graph"
+        },
+        {
+          "label": "Workflow",
+          "path": "deep-dive/workflow"
+        },
+        {
+          "label": "Memory",
+          "path": "deep-dive/memory"
+        },
+        {
+          "label": "Skill",
+          "path": "deep-dive/skill"
+        },
+        {
+          "label": "Runtime và launch spec",
+          "path": "deep-dive/runtime"
+        },
+        {
+          "label": "Hook",
+          "path": "deep-dive/hook"
+        },
+        {
+          "label": "Checkpoint và continuity",
+          "path": "deep-dive/continuity"
+        }
       ]
     },
     {
       "label": "Tham chiếu",
       "items": [
-        { "label": "CLI", "path": "reference/cli" },
-        { "label": "Xử lý sự cố", "path": "reference/troubleshooting" }
+        {
+          "label": "CLI",
+          "path": "reference/cli"
+        },
+        {
+          "label": "Xử lý sự cố",
+          "path": "reference/troubleshooting"
+        }
       ]
     }
   ]

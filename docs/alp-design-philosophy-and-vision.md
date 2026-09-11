@@ -316,6 +316,25 @@ Cancellation phải lan xuống. Không được để orphan execution chạy t
 
 Tracing tồn tại độc lập với surface. Surface chỉ render hoặc forward.
 
+**Trạng thái 2026-09-11 — bounded delegation đã cưỡng chế được.** Execution graph
+(`src/execution/graph/`) là logical authority cho quan hệ cha–con, và nó giữ bốn thứ mà trước
+đó chỉ là lời hứa trong doc này:
+
+| Đã cưỡng chế | Bằng gì |
+|---|---|
+| Cha phải được **xác thực** | Capability so với hash trong cây; `ALP_ROLE`/`parentRole` không được tin |
+| Trần cấu trúc | depth ≤ 2 · 4 con/execution · 2 con đồng thời · 6 execution sống cả cây |
+| Delegation budget | 8 lượt cả đời một cây, đếm theo *lượt* nên một con đã xong vẫn tiêu một lượt |
+| Wall clock | Một timestamp tuyệt đối chốt ở root; mọi node kế thừa đúng nó, không gia hạn |
+| Cascade cancellation | Khoá nhánh → thu reservation → tín hiệu từ lá lên; anh em không bị đụng |
+| Không orphan | Reconciliation hỏi backend từng node `active`, đóng node mà process đã mất |
+
+Ba thứ trong đoạn trên vẫn **chưa**: **token budget** và **tool-call budget** không được đếm ở
+đâu cả, và trace ghép `parent → child → tool` mới có hai nấc đầu (cây nối được
+`parent → child`; `tool_call_id` chưa vào đó). Trần hiện tại đếm *execution*, không đếm thứ
+execution tiêu — một cây trong trần vẫn tiêu bao nhiêu token tuỳ nó. Đừng đọc bảng trên rộng
+hơn đúng những dòng có trong nó.
+
 ### 4.11. Adapter chỉ dịch, không chứa business logic
 
 Runtime adapter chịu trách nhiệm: dịch `PreparedExecution` → launch spec, map event, map approval
@@ -833,7 +852,7 @@ tới khi có nhu cầu thật, vì mỗi thứ đều tự biện minh được
 | Plugin **có code** / registry | Có ≥ 3 extension bên thứ ba thật, **và** có mô hình signing + sandbox |
 | Workflow DSL / engine tổng quát | Có ≥ 2 workflow không diễn đạt được bằng linear workflow |
 | Custom agent được delegate | Có use case thật cần cây sâu 2 tầng (built-in `orchestrator` ở §5.9 là đường khác, không phải cái này) |
-| `orchestrator` (§5.9) | §4.10 xong: budget, cancellation, trace parent→child |
+| `orchestrator` (§5.9) | §4.10 xong: budget, cancellation, trace parent→child — cancellation và delegation/wall-clock budget đã xong 2026-09-11; **token/tool-call budget thì chưa**, nên điều kiện chưa mở |
 | Runtime thứ ba | Có người dùng thật cần |
 | Cloud execution / ALP Cloud | Sau khi trace và budget đã đầy đủ |
 | Tách repo thành `core/ runtime/ extensions/` | Xem §9 |

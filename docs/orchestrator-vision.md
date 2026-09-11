@@ -75,6 +75,23 @@ Cụ thể phải đo được trước khi có dòng code `orchestrator` đầu
 - budget của cả cụm là một con số, không phải tổng cộng dồn sau khi đã tiêu;
 - một trace duy nhất ghép được toàn bộ cây, không phải N log rời.
 
+**Nền đã có, điều kiện chưa mở (2026-09-11).** Execution graph
+([`docs/delegation.md`](./delegation.md#execution-graph)) làm xong phần hình dạng: một cây bền
+vững và process-safe, cha được xác thực bằng capability, trần depth/con/đồng thời, delegation
+allowance đếm cả đời cây, deadline tuyệt đối kế thừa nguyên vẹn, và cascade cancellation đã đo
+được — huỷ một node thì con cháu dừng, anh em không bị đụng, và reconciliation không để lại
+process không ai quản.
+
+Hai gạch đầu dòng đầu vì vậy đã có bằng chứng. Gạch thứ ba thì chưa, và một gạch nữa vẫn
+thiếu hẳn: **token và tool-call budget không được đếm ở đâu cả.** Trần của P0 đếm execution,
+không đếm thứ execution tiêu — đúng cái phân biệt giữa "8 lượt giao việc" và "một con số cho
+cả cụm" ở gạch thứ hai. Với `orchestrator`, đó mới là budget đáng lo: nó sinh ra để chạy dài
+và chạy song song, nên nó là vai duy nhất mà trần đếm-execution không đủ.
+
+Và P0 **không** đổi topology: cây cho phép sâu tới 2, nhưng không vai built-in nào dùng tới —
+`worker.delegatesTo` vẫn `[]`, đúng như §5.5. Nền của recursion đã dựng; recursion trong
+loadout thật thì vẫn hoãn, và `orchestrator` vẫn là chỗ nó sẽ được duyệt riêng.
+
 ### 4.3. Đây là phép thử của "không phải swarm tự do"
 
 §8 tuyên bố ALP **không phải swarm tự do**: delegation phải có hierarchy, budget, cancellation,
@@ -92,7 +109,9 @@ Workflow + Execution ghép lại**. Không thêm dòng nào vào bảng primitiv
 
 | Cần | Vì sao |
 |---|---|
-| §4.10 xong: budget, cancellation, trace parent→child | §4.2 ở trên |
+| ~~cancellation lan xuống~~ **xong 2026-09-11** | §4.2 — cascade cancellation + reconciliation trong execution graph |
+| Token/tool-call budget cho cả cụm | §4.2 — P0 chỉ đếm execution, không đếm thứ execution tiêu |
+| Trace ghép `parent → child → tool` | §4.2 — cây nối được `parent → child`; `tool_call_id` chưa vào |
 | `DelegationService` có bề mặt workspace + schedule | §4.1 — không mở đường vòng qua raw tool |
 | Có use case thật cần chạy song song trên worktree tách biệt | §8: không xây trước nhu cầu |
 

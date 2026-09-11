@@ -1,5 +1,5 @@
 import { modelForMode, type ModeId } from "../../src/agents/modes";
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { agentRegistry } from "../../src/agents/registry";
@@ -25,6 +25,7 @@ async function runMain(
     // An explicit --mode never prompts, so selection is deterministic here.
     selector: { select: async (input) => ({ ok: true, mode: input.requestedMode!, source: "explicit" }) },
     executionService: environment.executionService,
+    graph: environment.graph,
     adapters: environment.adapters,
     backend: environment.backend,
     executionId: () => `exec_main_${mode}`,
@@ -106,6 +107,41 @@ describe("e2e: alp main session", () => {
     // Runtime artifacts live under the execution root and are removed once the child exits.
     expect(await readdir(environment.executionsRoot)).toEqual(["exec_main_ultra"]);
     expect(await readdir(join(environment.executionsRoot, "exec_main_ultra", "runtime"))).toEqual([]);
+  });
+
+  /**
+   * Phiên root là node đầu tiên của một cây, và cây là thứ sống lâu hơn process này: một lệnh
+   * huỷ hay một `alp delegation tree` ở process khác chỉ đọc được nó nếu nó nằm trên đĩa. Còn
+   * capability thì đi vào env của con và dừng ở đó — nó là secret, và graph thì ai cũng đọc.
+   */
+  it("writes the root into a durable tree and keeps its capability out of it", async () => {
+    const environment = await createE2eEnvironment({ output: MAIN_OUTPUT });
+
+    await runMain(environment, "ultra");
+
+    // `by-execution/` là index tra ngược của store; một cây thì đúng một document.
+    expect(await readdir(environment.graphsRoot)).toEqual(["by-execution", "exec_main_ultra.json"]);
+    const document = await readFile(join(environment.graphsRoot, "exec_main_ultra.json"), "utf8");
+    const graph = JSON.parse(document) as {
+      rootExecutionId: string;
+      deadlineAt: string;
+      nodes: { executionId: string; status: string; depth: number; capabilityHash: string }[];
+    };
+    expect(graph.rootExecutionId).toBe("exec_main_ultra");
+    expect(graph.nodes).toHaveLength(1);
+    expect(graph.nodes[0]).toMatchObject({
+      executionId: "exec_main_ultra",
+      status: "completed",
+      depth: 0,
+    });
+
+    // Con nhận được chỗ đứng của nó qua env, và cùng một deadline tuyệt đối mà cây ghi.
+    const claude = await environment.capture("claude");
+    expect(claude.env.ALP_EXECUTION_GRAPH_ID).toBe("exec_main_ultra");
+    expect(claude.env.ALP_DELEGATION_EXECUTION_ID).toBe("exec_main_ultra");
+    expect(claude.env.ALP_EXECUTION_DEADLINE_AT).toBe(graph.deadlineAt);
+    expect(claude.env.ALP_EXECUTION_CAPABILITY).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(document).not.toContain(claude.env.ALP_EXECUTION_CAPABILITY);
   });
 
   it("reports a failing runtime as a failed session without inventing output", async () => {
