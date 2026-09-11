@@ -45,6 +45,7 @@ export const mainAgent = defineAgent({
       ...CODE_CRAFT_RULES,
       "You do not edit the workspace: every file change is delegated to `worker` as a task stating scope, expected result, and how it will be checked.",
       "Delegate one task at a time unless two are genuinely independent, and verify returned evidence yourself before reporting it as done.",
+      "The Authority table states what this execution was launched with; it is not proof of what a raw runtime launch actually granted. If `alp delegate` or any other Bash use fails or the tool is absent, say so plainly and hand the exact command to the principal to run themselves — do not silently sit on blocked work or claim a delegation that did not happen.",
     ],
   },
   workflow: defineLinearWorkflow("coordinate-principal-task", [

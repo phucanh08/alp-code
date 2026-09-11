@@ -708,7 +708,6 @@ dùng còn nằm trong đó đều là dữ liệu hẹn ngày mất.
     code-native-executions.json  execution record của DelegationService
     local.json                   state riêng của backend (pid, log, result)
     logs/ · results/ · specs/    transcript, exit status và spec cho supervisor
-    execution-snapshots/
 
 ~/.alp-code/                   BINARY INSTALL — versioned, thay được
   versions/vX.Y.Z/
@@ -830,8 +829,5 @@ Quy tắc chung: thêm implementation ở composition root, không thêm nhánh 
 - `DelegationService.prepare` gọi `void this.policy` / `void this.memory` — hai dependency này
   được inject nhưng chưa dùng trực tiếp (mọi authorization hiện đi qua `ExecutionService`).
   Nên bỏ khỏi constructor, hay giữ cho hướng mở rộng đã định trước?
-- `alp delegate` và `alp` dùng hai `FileExecutionStore` root khác nhau
-  (`~/.alp/executions` vs `<stateDir>/execution-snapshots`). Có chủ ý tách, hay nên hợp nhất
-  để doctor và hook chỉ nhìn một nơi?
 - `RemoteApiStore` đã có contract nhưng chưa có `MemoryApiClient` implementation nào ngoài fake
   trong test — server-backed memory đang ở lộ trình nào?

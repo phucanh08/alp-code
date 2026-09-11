@@ -16,7 +16,7 @@ import type { RuntimeAdapter } from "../../runtime/runtime-adapter";
 import { WorkflowRunner } from "../../workflow/workflow-runner";
 import type { InstallLayout } from "../../install-layout";
 import { loadDelegationConfig } from "../../install/config";
-import { memoryRoot } from "../../install/paths";
+import { executionsDirectory, memoryRoot } from "../../install/paths";
 
 export interface RunDelegateDependencies {
   readonly cwd: string;
@@ -162,7 +162,12 @@ export async function createDefaultDelegationComposition(
     policy,
     memory,
     workflowRunner: new WorkflowRunner(),
-    store: new FileExecutionStore({ root: join(config.stateDir, "execution-snapshots") }),
+    // Same root `alp context status` reads (`executionsDirectory()`) and the same root
+    // `runMain`'s own composition writes under — a delegated execution's `policy.json` used
+    // to land under `<delegation state dir>/execution-snapshots` instead, so any lifecycle
+    // command addressing it by execution ID (`alp context status <id>`) failed with an ENOENT
+    // even though the delegation itself had completed.
+    store: new FileExecutionStore({ root: executionsDirectory(env) }),
   });
   const service = new DelegationService({
     registry,

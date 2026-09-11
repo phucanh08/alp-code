@@ -222,6 +222,25 @@ describe("capability grants — Claude ACL", () => {
     }));
     expect(rules.allow).toContain("mcp__docs");
   });
+
+  /**
+   * A `workspace-write` role gets no `--permission-mode` bypass from the Claude adapter
+   * (only `interactive` and `read-only` launches get one), so without a bare-name allow
+   * rule per granted tool, `defaultMode: "default"` left Write/Edit/Bash waiting on a
+   * prompt a headless run can never answer — reported (GitHub #18) on a delegated `worker`:
+   * `exitCode: 0` with an empty transcript and no workspace change.
+   */
+  it("allows every granted tool by bare name, so a headless run never has to prompt for it", () => {
+    const rules = permissions(policyFixture({
+      workspaceMode: "workspace-write",
+      allowedTools: ["Read", "Write", "Edit", "Bash", "Skill"],
+    }));
+    expect(rules.allow).toEqual(expect.arrayContaining(["Read", "Write", "Edit", "Bash"]));
+    expect(rules.deny).not.toContain("Write");
+    expect(rules.deny).not.toContain("Bash");
+    // A tool the policy withholds is still denied, not merely left ungranted.
+    expect(rules.deny).toContain("WebSearch");
+  });
 });
 
 

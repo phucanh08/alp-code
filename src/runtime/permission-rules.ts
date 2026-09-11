@@ -136,10 +136,17 @@ export function claudePermissions(input: RuntimePermissionInput): ClaudePermissi
       return [absoluteRule("Read", directory), absoluteRule("Edit", directory)];
     });
 
-  // Tools outside the policy are denied by bare name. Claude Code only honours a path
-  // argument on Read and Edit; on the others a bare name is the only rule that applies.
+  // Tools outside the policy are denied by bare name, and tools inside it are allowed the
+  // same way — without this half, a `workspace-write` role had no CLI bypass (see the Claude
+  // adapter: only `interactive` and `read-only` launches get one) and no allow rule either,
+  // so `defaultMode: "default"` left every Write/Edit/Bash call waiting on a prompt that a
+  // headless run can never answer. Reported 2026-09-11 (GitHub #18) against a delegated
+  // `worker`: `exitCode: 0` with an empty transcript and no workspace change. Claude Code
+  // only honours a path argument on Read and Edit; on the others a bare name is the only
+  // rule that applies.
   for (const tool of TOOL_CATALOG) {
-    if (!policy.allowedTools.includes(tool as ToolId)) deny.push(tool);
+    if (policy.allowedTools.includes(tool as ToolId)) allow.push(tool);
+    else deny.push(tool);
   }
 
   // The loop above can only deny what ALP itself defines. The runtime's own in-process agent

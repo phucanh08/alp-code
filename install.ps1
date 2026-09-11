@@ -84,9 +84,9 @@
     }
   }
 
-  function Replace-Current([string]$Home, [string]$Destination) {
-    $current = Join-Path $Home 'current'
-    $temporary = Join-Path $Home ".current.$PID.$([DateTime]::UtcNow.Ticks)"
+  function Replace-Current([string]$InstallRoot, [string]$Destination) {
+    $current = Join-Path $InstallRoot 'current'
+    $temporary = Join-Path $InstallRoot ".current.$PID.$([DateTime]::UtcNow.Ticks)"
     New-Item -ItemType Junction -Path $temporary -Target $Destination | Out-Null
     try {
       if (Test-Path $current) {
