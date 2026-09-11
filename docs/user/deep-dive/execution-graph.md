@@ -7,6 +7,8 @@ description: Cây của một phiên — quan hệ cha-con, trần, allowance, h
 
 Một `graphId` là một cây, và nó **bằng đúng** execution ID của gốc. Cây sống ở `~/.alp/execution-graphs/<graph-id>.json` (mode `0600`), kèm một index tra ngược từ execution ID về cây chứa nó.
 
+Cây là của **một lượt chạy**. Một việc kéo dài qua nhiều lượt là một [Thread](../thread/): mỗi root của Thread có cây riêng, và Thread chỉ ghi các root — con được uỷ quyền nằm trong cây của cha, không nằm trong Thread. Mỗi node mang `thread` — binding của root, con thừa kế nguyên văn (một con lệch binding cha là `THREAD_BINDING_MISMATCH`, cây bị từ chối lúc đọc); cây ghi trước khi có Thread đọc lên với `thread: null`.
+
 ## Hai loại thẩm quyền
 
 | | Trả lời | Ở đâu |
@@ -112,6 +114,7 @@ alp delegation tree exec_abc123
 
 ```text
 graph exec_main  ·  revision 7  ·  updated 2026-09-11T02:14:05.000Z
+thread thread_k3x9  ·  context rev 1
 deadline 2026-09-11T04:00:00.000Z
 delegation 3/8 used  ·  5 remaining
 nodes 4  ·  2 active  ·  1 slot(s) held
@@ -125,7 +128,7 @@ main  ·  exec_main  ·  running
 
 Nhận ID của **bất kỳ** node nào trong cây và luôn vẽ từ gốc xuống, đánh dấu `←` vào node được hỏi. Con xếp theo thời điểm tạo, hoà thì theo execution ID — nên hai lần đọc cho ra cùng một chuỗi byte.
 
-Bốn dòng header gần như luôn là câu trả lời cho *"vì sao nó không giao thêm việc nữa"*.
+Bốn dòng header gần như luôn là câu trả lời cho *"vì sao nó không giao thêm việc nữa"*. Dòng `thread` in `legacy-unthreaded` cho cây ghi trước khi có Thread — đó là một cây bình thường, không phải một cây hỏng.
 
 ## Mã lỗi
 
@@ -156,4 +159,5 @@ Cây hỏng thì xem [Xử lý sự cố](../../reference/troubleshooting/#cây-
 
 - [Delegation](../delegation/) — cái tạo ra node mới trong cây
 - [Execution](../execution/) — một node tương ứng với cái gì trên đĩa
+- [Thread](../thread/) — chuỗi các root, mỗi root một cây
 - [Policy](../policy/) — vì sao deny xảy ra trước khi chạm tới cây

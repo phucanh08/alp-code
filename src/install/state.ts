@@ -5,6 +5,7 @@ import { loadDelegationConfig } from "./config";
 import {
   agentsDirectory,
   executionsDirectory,
+  threadsDirectory,
   installRecord,
   legacyDelegationDirectory,
   memoryRoot as resolveMemoryRoot,
@@ -204,6 +205,7 @@ export function ensureState(options: EnsureStateOptions): EnsureStateResult {
   mkdirPrivate(stateHome);
   const memoryRoot = ensureMemory(layout, env, log);
   mkdirPrivate(executionsDirectory(env));
+  mkdirPrivate(threadsDirectory(env));
   mkdirPrivate(agentsDirectory(env));
 
   const delegation = loadDelegationConfig(layout.installRoot, env, layout.channel);

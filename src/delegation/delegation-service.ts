@@ -241,6 +241,40 @@ export class FileDelegationExecutionStore implements DelegationExecutionStore {
   }
 }
 
+/**
+ * Backend nói gì về một execution, dịch sang từ vựng của cây.
+ *
+ * `EXECUTION_NOT_FOUND` là `missing` — backend tra được và không có gì. Mọi lỗi khác là
+ * `unknown`: một lần đọc hỏng không phải là bằng chứng rằng process đã chết, và đối xử với
+ * nó như thế là cách cả một cây đang chạy bị khai tử trong một nhịp I/O xấu.
+ *
+ * Dùng chung cho delegation và Thread reconcile — một cách đọc backend, không hai.
+ */
+export function backendProbe(backend: Pick<ExecutionBackend, "status">): ExecutionProbe {
+  return async (executionId) => {
+    try {
+      const value = await backend.status(executionId);
+      switch (value.status) {
+        case "queued":
+        case "running":
+          return "active" satisfies ProbeStatus;
+        case "completed":
+          return "completed";
+        case "cancelled":
+          // Cùng một `cancelled` trên dây, hai chuyện khác hẳn nhau: người dùng bấm dừng,
+          // hay đồng hồ của cây đã hết. Chỉ metadata phân biệt được, và cây cần biết.
+          return value.metadata?.terminationReason === "deadline" ? "expired" : "cancelled";
+        default:
+          return "failed";
+      }
+    } catch (error) {
+      return (error as { readonly code?: unknown })?.code === "EXECUTION_NOT_FOUND"
+        ? "missing"
+        : "unknown";
+    }
+  };
+}
+
 export class DelegationService {
   readonly config: DelegationServiceConfig;
   private readonly registry: AgentRegistry;
@@ -266,6 +300,7 @@ export class DelegationService {
     this.executionsRoot = options.executionsRoot;
     this.runtimeAdapters = options.runtimeAdapters;
     this.backend = options.backend;
+    this.probe = backendProbe(this.backend);
     this.executionStore = options.executionStore;
     this.config = options.config;
     this.ids = options.ids ?? defaultIds();
@@ -317,6 +352,9 @@ export class DelegationService {
     try {
       execution = await this.executionService.materialize(authorization, {
         task: request.task,
+        // Binding chép từ node cha qua reservation — không phải từ Thread mutable, và không
+        // phải từ thứ gì process con tự khai.
+        thread: parent.node.thread,
         mode,
         ...(this.config.modeProfiles === undefined ? {} : { modeProfiles: this.config.modeProfiles }),
         memoryQueries: [],
@@ -530,35 +568,7 @@ export class DelegationService {
     return this.graph.reconcile(graphId, this.probe);
   }
 
-  /**
-   * Backend nói gì về một execution, dịch sang từ vựng của cây.
-   *
-   * `EXECUTION_NOT_FOUND` là `missing` — backend tra được và không có gì. Mọi lỗi khác là
-   * `unknown`: một lần đọc hỏng không phải là bằng chứng rằng process đã chết, và đối xử với
-   * nó như thế là cách cả một cây đang chạy bị khai tử trong một nhịp I/O xấu.
-   */
-  private readonly probe: ExecutionProbe = async (executionId) => {
-    try {
-      const value = await this.backend.status(executionId);
-      switch (value.status) {
-        case "queued":
-        case "running":
-          return "active" satisfies ProbeStatus;
-        case "completed":
-          return "completed";
-        case "cancelled":
-          // Cùng một `cancelled` trên dây, hai chuyện khác hẳn nhau: người dùng bấm dừng,
-          // hay đồng hồ của cây đã hết. Chỉ metadata phân biệt được, và cây cần biết.
-          return value.metadata?.terminationReason === "deadline" ? "expired" : "cancelled";
-        default:
-          return "failed";
-      }
-    } catch (error) {
-      return (error as { readonly code?: unknown })?.code === "EXECUTION_NOT_FOUND"
-        ? "missing"
-        : "unknown";
-    }
-  };
+  private readonly probe: ExecutionProbe;
 
   /**
    * Backend được hỏi, nhưng cây có tiếng nói cuối cùng khi backend đã quên.

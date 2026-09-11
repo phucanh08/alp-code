@@ -1,5 +1,5 @@
-import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -210,5 +210,45 @@ describe("session-boot hook continuity reinjection", () => {
 
     expect(context).toBe("");
     expect(warning).toContain("ALP identity not loaded");
+  });
+});
+
+describe("session-boot hook runtime session pointer", () => {
+  /** Chạy hook với payload trên stdin — đúng cách Claude Code gọi nó ở SessionStart. */
+  function bootWith(env: NodeJS.ProcessEnv, payload: string): Promise<{ code: number | null; stdout: string }> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [HOOK], { env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"] });
+      let stdout = "";
+      child.stdout.on("data", (chunk) => { stdout += chunk; });
+      child.on("error", reject);
+      child.on("close", (code) => resolve({ code, stdout }));
+      child.stdin.end(payload);
+    });
+  }
+
+  it("records session_id and transcript_path where the history bridge will look, before anything else", async () => {
+    const { root } = await fixture();
+    const context = join(root, "session-context.md");
+    await writeFile(context, "# briefed\n");
+    const file = join(root, "exec", "context", "runtime-session.json");
+    const { code, stdout } = await bootWith(
+      { ALP_SESSION_CONTEXT: context, ALP_RUNTIME_SESSION: file },
+      JSON.stringify({ session_id: "sess-9", transcript_path: join(root, "t.jsonl"), source: "startup" }),
+    );
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout).hookSpecificOutput.additionalContext).toBe("# briefed\n");
+    expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({ v: 1, sessionId: "sess-9", transcriptPath: join(root, "t.jsonl") });
+  });
+
+  it("stays fail-open: garbage stdin or no pointer variable never changes the boot", async () => {
+    const { root } = await fixture();
+    const context = join(root, "session-context.md");
+    await writeFile(context, "# briefed\n");
+    const garbage = await bootWith({ ALP_SESSION_CONTEXT: context, ALP_RUNTIME_SESSION: join(root, "never.json") }, "{not json");
+    expect(garbage.code).toBe(0);
+    expect(JSON.parse(garbage.stdout).hookSpecificOutput.additionalContext).toBe("# briefed\n");
+    await expect(readFile(join(root, "never.json"), "utf8")).rejects.toThrow();
+    const none = await bootWith({ ALP_SESSION_CONTEXT: context }, JSON.stringify({ session_id: "s", transcript_path: "/t" }));
+    expect(none.code).toBe(0);
   });
 });

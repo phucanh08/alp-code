@@ -116,6 +116,7 @@ describe("capability grants — registry ceiling", () => {
 describe("capability grants — policy snapshot", () => {
   const policyFor = (definition: AgentDefinition<unknown>): ExecutionPolicy => createExecutionPolicy({
     executionId: "exec-capability",
+    thread: null,
     definition,
     workspace: "/workspace",
     workspaceMode: "read-only",

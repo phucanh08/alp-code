@@ -197,6 +197,8 @@ export function renderExecutionTree(view: ExecutionTreeView): string {
   const { limits, delegation, summary } = view;
   return [
     `graph ${view.graphId}  ·  revision ${view.revision}  ·  updated ${view.updatedAt}`,
+    // Cây thuộc về một Thread (đơn vị công việc) — hoặc là cây của bản `alp` trước Thread.
+    `thread ${view.thread ? `${view.thread.id}  ·  context rev ${view.thread.contextRevision}` : "legacy-unthreaded"}`,
     `deadline ${view.deadlineAt}`,
     `delegation ${delegation.used}/${delegation.limit} used  ·  ${delegation.remaining} remaining`,
     `nodes ${summary.total}  ·  ${summary.active} active  ·  ${summary.pending} slot(s) held`,

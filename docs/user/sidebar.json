@@ -96,6 +96,10 @@
           "path": "deep-dive/execution-graph"
         },
         {
+          "label": "Thread (preview)",
+          "path": "deep-dive/thread"
+        },
+        {
           "label": "Workflow",
           "path": "deep-dive/workflow"
         },

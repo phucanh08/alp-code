@@ -29,6 +29,10 @@ export function executionGraphsDirectory(env: NodeJS.ProcessEnv = process.env): 
   return join(stateHome(env), "execution-graphs");
 }
 
+export function threadsDirectory(env: NodeJS.ProcessEnv = process.env): string {
+  return join(stateHome(env), "threads");
+}
+
 export function projectsRegistry(env: NodeJS.ProcessEnv = process.env): string {
   return join(stateHome(env), "projects.json");
 }

@@ -5,10 +5,13 @@ import { isAbsolute, join, resolve } from "node:path";
 import { agentRegistry } from "../../src/agents/registry";
 import type { AgentRegistry, RuntimeId } from "../../src/agents/types";
 import { LocalProcessBackend } from "../../src/backend/local-process-backend";
+import { backendProbe } from "../../src/delegation/delegation-service";
 import { ExecutionService } from "../../src/execution/execution-service";
 import { FileExecutionStore } from "../../src/execution/execution-store";
 import { ExecutionGraphService } from "../../src/execution/graph/execution-graph-service";
 import { FileExecutionGraphStore } from "../../src/execution/graph/file-execution-graph-store";
+import { FileThreadStore } from "../../src/thread/file-thread-store";
+import { ThreadService, threadGraphReader } from "../../src/thread/thread-service";
 import { MarkdownFileStore } from "../../src/memory/adapters/markdown-file-store";
 import { MemoryService } from "../../src/memory/memory-service";
 import { PolicyEngine } from "../../src/policy/policy-engine";
@@ -37,6 +40,7 @@ const sessionContextFile = process.env.ALP_SESSION_CONTEXT;
 const record = {
   runtime: ${JSON.stringify(runtime)},
   command: process.env.ALP_E2E_COMMAND,
+  pid: process.pid,
   argv,
   cwd: process.cwd(),
   env: Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith("ALP_"))),
@@ -92,6 +96,7 @@ export interface E2eEnvironment {
   readonly project: string;
   readonly executionsRoot: string;
   readonly graphsRoot: string;
+  readonly threadsRoot: string;
   readonly memoryRoot: string;
   readonly captureDirectory: string;
   readonly binDirectory: string;
@@ -99,6 +104,7 @@ export interface E2eEnvironment {
   readonly memory: MemoryService;
   readonly executionService: ExecutionService;
   readonly graph: ExecutionGraphService;
+  readonly threads: ThreadService;
   readonly adapters: ReadonlyMap<RuntimeId, RuntimeAdapter>;
   readonly backend: LocalProcessBackend;
   readonly runtimeEnv: NodeJS.ProcessEnv;
@@ -111,6 +117,8 @@ export interface E2eEnvironment {
 
 export interface RuntimeCapture {
   readonly runtime: RuntimeId;
+  /** PID của process runtime giả — mỗi root một process, không bao giờ attach lại. */
+  readonly pid: number;
   readonly argv: readonly string[];
   readonly cwd: string;
   readonly env: Record<string, string>;
@@ -176,11 +184,12 @@ export async function createE2eEnvironment(options: {
   const project = join(root, "project");
   const executionsRoot = join(root, "executions");
   const graphsRoot = join(root, "execution-graphs");
+  const threadsRoot = join(root, "threads");
   const memoryRoot = join(root, "memory");
   const captureDirectory = join(root, "capture");
   const binDirectory = join(root, "bin");
   const hooksDirectory = join(process.cwd(), "hooks");
-  await Promise.all([project, executionsRoot, graphsRoot, memoryRoot, captureDirectory, binDirectory]
+  await Promise.all([project, executionsRoot, graphsRoot, threadsRoot, memoryRoot, captureDirectory, binDirectory]
     .map((directory) => mkdir(directory, { recursive: true })));
   await writeFile(join(project, "index.ts"), "export const entrypoint = true;\n");
 
@@ -259,11 +268,17 @@ export async function createE2eEnvironment(options: {
     ...(compactFixturesFile === undefined ? {} : { ALP_E2E_COMPACT_FIXTURES: compactFixturesFile }),
   };
 
+  const backend = new LocalProcessBackend({ env: runtimeEnv, stdio: "pipe" });
+  const threads = new ThreadService({
+    store: new FileThreadStore({ root: threadsRoot }),
+    graph: threadGraphReader(graph, backendProbe(backend)),
+  });
   return {
     root,
     project,
     executionsRoot,
     graphsRoot,
+    threadsRoot,
     memoryRoot,
     captureDirectory,
     binDirectory,
@@ -271,8 +286,9 @@ export async function createE2eEnvironment(options: {
     memory,
     executionService,
     graph,
+    threads,
     adapters,
-    backend: new LocalProcessBackend({ env: runtimeEnv, stdio: "pipe" }),
+    backend,
     runtimeEnv,
     canonicalizePath,
     registry,

@@ -59,6 +59,56 @@ describe("execution graph shape", () => {
     expect(ancestorsOf(graph, "grandchild").map((node) => node.executionId)).toEqual(["child-a", "root-1"]);
   });
 
+  /**
+   * Thread binding là cấu trúc của cây: con chép nguyên bản của cha, không tự khai. Một child
+   * khai Thread khác — hay khai `null` khi cha có — là cây đã đổi chủ giữa chừng.
+   */
+  it("requires every child to carry exactly its parent's thread binding", () => {
+    const thread = { id: "thread_a", contextRevision: 2, contextDigest: digest("ctx-2") };
+    const bound = graphFixture({
+      nodes: [rootNode({ thread }), childNode("child-a", "root-1", { thread })],
+    });
+    expect(() => assertGraphDocument(bound)).not.toThrow();
+
+    for (const mismatch of [
+      null,
+      { ...thread, id: "thread_b" },
+      { ...thread, contextRevision: 3 },
+      { ...thread, contextDigest: digest("ctx-3") },
+    ]) {
+      const graph = graphFixture({
+        nodes: [rootNode({ thread }), childNode("child-a", "root-1", { thread: mismatch })],
+      });
+      expect(codeOf(() => assertGraphDocument(graph))).toBe("THREAD_BINDING_MISMATCH");
+    }
+    // Chiều ngược lại cũng vậy: cha `null` thì con không được tự gắn mình vào một Thread.
+    expect(codeOf(() => assertGraphDocument(graphFixture({
+      nodes: [rootNode(), childNode("child-a", "root-1", { thread })],
+    })))).toBe("THREAD_BINDING_MISMATCH");
+  });
+
+  it("rejects a malformed thread binding but normalizes a legacy node without the key", () => {
+    for (const bad of [
+      { id: "not-a-thread", contextRevision: 0, contextDigest: digest("x") },
+      { id: "thread_a", contextRevision: -1, contextDigest: digest("x") },
+      { id: "thread_a", contextRevision: 1, contextDigest: "short" },
+      "thread_a",
+    ]) {
+      const graph = graphFixture({ nodes: [rootNode({ thread: bad as never })] });
+      expect(codeOf(() => assertGraphDocument(graph))).toBe("EXECUTION_GRAPH_INVALID");
+    }
+
+    // Document ghi trước khi có Thread: không có key. Đọc lên phải ra `null` tường minh, và
+    // document trả về phải mang key — để lần ghi kế tiếp không còn tạo ra bản "vắng" nữa.
+    const { thread: _root, ...legacyRoot } = rootNode();
+    const { thread: _child, ...legacyChild } = childNode("child-a", "root-1");
+    const legacy = graphFixture({ nodes: [legacyRoot as never, legacyChild as never] });
+    const normalized = assertGraphDocument(legacy);
+    expect(normalized).not.toBe(legacy);
+    expect(normalized.nodes.map((node) => node.thread)).toEqual([null, null]);
+    expect(normalized.nodes.every((node) => "thread" in node)).toBe(true);
+  });
+
   it("requires exactly one root, at depth 0, with no delegation request behind it", () => {
     expect(codeOf(() => assertGraphDocument(graphFixture({ nodes: [] })))).toBe("EXECUTION_GRAPH_INVALID");
     expect(
@@ -228,6 +278,8 @@ describe("structural fields", () => {
       { requestId: "request-other" },
       { capabilityHash: digest("stolen") },
       { createdAt: at(10) },
+      // Binding Thread là cấu trúc: đổi nó là "chuyển Thread" cho một execution đã chạy.
+      { thread: { id: "thread_a", contextRevision: 0, contextDigest: digest("ctx") } },
     ]) {
       const next = {
         ...previous,

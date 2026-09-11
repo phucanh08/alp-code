@@ -26,6 +26,7 @@ async function runMain(
     selector: { select: async (input) => ({ ok: true, mode: input.requestedMode!, source: "explicit" }) },
     executionService: environment.executionService,
     graph: environment.graph,
+    threads: environment.threads,
     adapters: environment.adapters,
     backend: environment.backend,
     executionId: () => `exec_main_${mode}`,
@@ -72,9 +73,12 @@ describe("e2e: alp main session", () => {
 
     // Identity now reaches both runtimes the same way — `ALP_SESSION_CONTEXT`, read by the
     // SessionStart hook, which Claude Code and Codex alike turn into a developer-role
-    // message ahead of turn 1. No per-runtime section, so the two files are byte-identical.
+    // message ahead of turn 1. No per-runtime section, so the two files are byte-identical —
+    // save for the Thread line: two bare `alp` launches are two Threads, by design.
     expect(claude.sessionContext).toContain(claude.capsule.instructions);
-    expect(codex.sessionContext).toBe(claude.sessionContext);
+    const withoutThreadId = (context: string) => context.replace(/^Thread: thread_[0-9a-f]+/m, "Thread: <id>");
+    expect(withoutThreadId(codex.sessionContext)).toBe(withoutThreadId(claude.sessionContext));
+    expect(codex.sessionContext).not.toBe(claude.sessionContext);
 
     // The invariant this whole change exists for, proven end to end: a main session is
     // interactive, so no task is ever submitted and the runtime sits idle waiting for the

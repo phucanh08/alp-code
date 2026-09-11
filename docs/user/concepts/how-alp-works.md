@@ -10,6 +10,15 @@ ALP sở hữu quyết định **ai được làm gì**; Claude Code hoặc Code
 - **Phiên main:** bạn chạy `alp` trong project. `main` là coordinator nói chuyện trực tiếp với bạn và có thể delegate việc chuyên môn.
 - **Delegated execution:** `main` hoặc một caller được cấp quyền gọi một role khác qua ALP Delegation API. Specialist nhận task đã chuẩn bị và trả report về caller.
 
+Cả hai đều là **execution** — một lượt chạy có policy riêng. Phiên main còn thuộc về một **[Thread](../../deep-dive/thread/)**: một việc kéo dài qua nhiều lượt. `alp` mở Thread mới; `alp thread continue <id>` mở lượt kế tiếp của việc đó, có thể trên runtime khác. Thread ghi việc tới đâu; nó không cấp quyền.
+
+```text
+alp --title "Fix auth bug"      Thread T
+  └─ execution #1 (claude)        context rev 0 → rev 1
+alp thread continue T
+  └─ execution #2 (codex)         mở trên rev 1 → rev 2
+```
+
 Không có đường public để chọn runtime trực tiếp. [Mode](../modes-and-runtimes/) chọn model cho từng role; model đó quyết định runtime.
 
 ## Luồng một execution
@@ -18,7 +27,8 @@ Không có đường public để chọn runtime trực tiếp. [Mode](../modes-
 Command hoặc delegation request
   → resolve project + AgentDefinition
   → PolicyEngine authorize role, tool, workspace và memory
-  → tạo identity capsule + policy snapshot + workflow state
+  → (root `alp`) tạo hoặc mở Thread; giữ chỗ cho lượt này
+  → tạo identity capsule + policy snapshot (kèm binding Thread) + workflow state
   → runtime adapter tạo launch spec
   → backend probe runtime
   → backend spawn child process nếu probe thành công
@@ -26,6 +36,8 @@ Command hoặc delegation request
 ```
 
 Ở delegated flow, trạng thái được ghi trước khi spawn để lệnh `status`, `wait`, `cancel` và `cleanup` ở process khác vẫn truy được execution.
+
+Khi root kết thúc, Thread chiếu checkpoint của nó thành một context revision mới; lượt kế tiếp mở trên revision đó. Policy chạy **trước** bước Thread và không đọc gì từ Thread.
 
 ## Definition là nguồn quyền
 

@@ -155,6 +155,7 @@ describe("mode dial — resolution", () => {
 describe("mode dial — policy snapshot", () => {
   const policyFor = (mode: ModeArg, modeProfiles?: ModeProfiles) => createExecutionPolicy({
     executionId: "exec-mode",
+    thread: null,
     definition: probeDefinition(),
     workspace: "/workspace",
     workspaceMode: "read-only",

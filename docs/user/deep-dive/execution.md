@@ -7,6 +7,8 @@ description: Một lượt chạy có ID, có snapshot quyền bất biến trê
 
 Câu cuối là lý do execution phải tồn tại trên đĩa chứ không chỉ trong bộ nhớ: `alp delegation status exec_abc123` gõ ở terminal thứ hai, mười phút sau, vẫn phải trả lời được.
 
+Một execution là **một lượt**, không phải một việc. Việc — thứ kéo dài qua nhiều lượt — là [Thread](../thread/). Mỗi root `alp` mở là một execution mới trong một Thread; `alp thread continue` mở một execution mới nữa, không "nối" vào execution cũ.
+
 ## Ba artifact được sinh cho mỗi lượt
 
 | Artifact | Là gì | Bất biến? |
@@ -21,6 +23,16 @@ Câu cuối là lý do execution phải tồn tại trên đĩa chứ không ch�
 
 - `definitionHash` — băm của [definition](../agent/) đã canonicalize. Trả lời *"vai này có còn đúng là vai principal đã duyệt không"*. Nó **không** đổi theo nấc: nấc là lựa chọn lúc phóng, không phải một vai khác.
 - `policyHash` — băm của chính snapshot, gồm cả `mode`, `model`, `reasoningEffort`, `runtime`. Trả lời *"lần chạy này chạy cái gì"*. Từ khi `settings.json` sửa được nội dung một nấc, tên nấc một mình không còn trả lời nổi câu đó — nên hai lần chạy khác model không thể có cùng `policyHash` dù cùng tên nấc.
+
+## Binding Thread trong policy
+
+Root của `alp` (và mọi con nó uỷ quyền) mang trong `policy.json`:
+
+```jsonc
+"thread": { "id": "thread_…", "contextRevision": 1, "contextDigest": "…" }
+```
+
+Ba trường này được **hash vào `policyHash`**: chúng nói lượt này mở trên snapshot nào của Thread, và chúng là input của snapshot chứ không phải một con trỏ policy tra cứu về sau. Không trường nào trong phần quyền — `allowedTools`, `workspace`, `delegatesTo`, `memory` — đọc từ Thread. Execution ghi trước khi có Thread có `"thread": null`.
 
 ## Trên đĩa
 
@@ -91,7 +103,8 @@ alp doctor
 
 ## Liên quan
 
-- [Execution graph](../execution-graph/) — cây chứa các execution của một phiên
+- [Thread](../thread/) — chuỗi các root mà một việc đi qua
+- [Execution graph](../execution-graph/) — cây chứa các execution của một lượt chạy
 - [Delegation](../delegation/) — thứ tự tạo ra một execution
 - [Checkpoint và continuity](../continuity/) — nội dung thư mục `context/`
 - [Runtime và launch spec](../runtime/) — nội dung thư mục `runtime/`

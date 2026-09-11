@@ -55,6 +55,7 @@ function prepared(executionId: string, target = "search", profiles: ModeProfiles
     },
     policy: {
       executionId,
+      thread: null,
       role: target,
       workspace,
       workspaceMode: "read-only",
@@ -157,7 +158,7 @@ async function graphFixture(root: string) {
   const graph = new ExecutionGraphService({
     store: new FileExecutionGraphStore({ root: join(root, "execution-graphs") }),
   });
-  const parent = await graph.createRoot({ agentId: "main", executionId: "exec_parent" });
+  const parent = await graph.createRoot({ agentId: "main", thread: null, executionId: "exec_parent" });
   return { graph, parent };
 }
 
@@ -191,7 +192,7 @@ function fakeExecutionService(options: {
     async authorize(input: Parameters<ExecutionService["authorize"]>[0]) {
       if (options.authorizeError) throw options.authorizeError;
       const ticket = { executionId: input.executionId } as ExecutionAuthorization;
-      tickets.set(ticket, { ...input, task: "", memoryQueries: [], characterBudget: 0, invariantContext: "", policyContext: "" } as PrepareExecutionInput);
+      tickets.set(ticket, { ...input, thread: null, task: "", memoryQueries: [], characterBudget: 0, invariantContext: "", policyContext: "" } as PrepareExecutionInput);
       return ticket;
     },
     async materialize(authorization: ExecutionAuthorization, input: MaterializeExecutionInput) {

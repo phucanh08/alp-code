@@ -17,6 +17,7 @@ afterEach(cleanupEnvironments);
 async function prepareMain(environment: E2eEnvironment, executionId: string): Promise<PreparedExecution> {
   return environment.executionService.prepare({
     executionId,
+    thread: null,
     parent: "principal",
     target: "main",
     task: INTERACTIVE_TASK_SENTINEL,

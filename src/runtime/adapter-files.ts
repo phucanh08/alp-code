@@ -4,7 +4,8 @@ import {
   bindingEnvironment,
   type ExecutionBinding,
 } from "../execution/graph/execution-graph-service";
-import type { ExecutionArtifactPaths, ExecutionPolicy, IdentityCapsule, PreparedExecution } from "../execution/types";
+import type { ExecutionArtifactPaths, ExecutionPolicy, ExecutionThreadBinding, IdentityCapsule, PreparedExecution } from "../execution/types";
+import { runtimeSessionFile } from "../hooks/runtime-session";
 import { renderSessionContext } from "./render-session-context";
 import { renderTaskInput } from "./render-task-input";
 
@@ -78,7 +79,7 @@ export async function writeRuntimeContextFiles(
   const { capsule, policy, artifacts } = execution;
   const sessionContextFile = await atomicRuntimeFile(
     join(artifacts.runtimeDirectory, "session-context.md"),
-    renderSessionContext(capsule, policy),
+    renderSessionContext(capsule, policy, execution.threadContext ?? null),
   );
   const taskText = interactive ? null : renderTaskInput(capsule);
   const taskFile = taskText === null
@@ -122,8 +123,9 @@ export function taskArguments(
 export function baseRuntimeEnvironment(
   capsule: IdentityCapsule,
   files: RuntimeContextFiles,
-  artifacts: Pick<ExecutionArtifactPaths, "continuityFile" | "compactEventsFile">,
+  artifacts: Pick<ExecutionArtifactPaths, "continuityFile" | "compactEventsFile" | "contextDirectory">,
   binding?: ExecutionBinding | null,
+  thread?: ExecutionThreadBinding | null,
 ): Record<string, string> {
   if (binding && binding.executionId !== capsule.executionId) {
     throw new Error(
@@ -132,6 +134,9 @@ export function baseRuntimeEnvironment(
   }
   return {
     ...(binding ? bindingEnvironment(binding) : {}),
+    // Nhãn, không phải quyền: `alp thread show` không đối số đọc nó cho tiện. Authorization
+    // vẫn chỉ nhìn policy đã hash — trong đó binding Thread đã nằm sẵn.
+    ...(thread ? { ALP_THREAD_ID: thread.id } : {}),
     ALP_ROLE: capsule.role,
     ALP_DELEGATED_ROLE: capsule.role,
     ALP_DELEGATION_EXECUTION_ID: capsule.executionId,
@@ -151,6 +156,10 @@ export function baseRuntimeEnvironment(
     // rendering exist regardless of `ALP_COMPACT_BRIDGE` — only the PreCompact/PostCompact
     // hook registration is gated on that flag (see `compactBridgeEnabled`).
     ALP_COMPACT_EVENTS: artifacts.compactEventsFile,
+    // Read by `session-boot.cjs` and `session-end.cjs`: where they leave the native
+    // `session_id`/`transcript_path` so the Thread history bridge can find the transcript
+    // after this process is gone.
+    ALP_RUNTIME_SESSION: runtimeSessionFile(artifacts.contextDirectory),
   };
 }
 

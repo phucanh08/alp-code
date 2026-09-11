@@ -78,7 +78,7 @@ describe("ExecutionGraphService child reservation", () => {
    */
   it("holds a slot against the ceiling before any artifact exists", async () => {
     const { store, service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
 
     const reserved = await service.reserveChild(root.binding, request());
 
@@ -107,7 +107,7 @@ describe("ExecutionGraphService child reservation", () => {
    */
   it("derives the child capability from the parent and stores only its hash", async () => {
     const { store, service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
 
     const reserved = await service.reserveChild(root.binding, request()) as ReservedChild;
 
@@ -129,7 +129,7 @@ describe("ExecutionGraphService child reservation", () => {
   /** Ai không cầm capability của cha thì không giữ được chỗ nào — vai không phải bằng chứng. */
   it("refuses a parent binding the graph did not issue", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
 
     const forged = { ...root.binding, capability: "not-the-capability-this-graph-issued" };
     expect(await codeOf(() => service.reserveChild(forged, request()))).toBe("CAPABILITY_INVALID");
@@ -141,7 +141,7 @@ describe("ExecutionGraphService child reservation", () => {
    */
   it("returns the existing child for a repeated request instead of making another", async () => {
     const { store, service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     const reserved = await service.reserveChild(root.binding, request()) as ReservedChild;
     await start(service, reserved);
 
@@ -158,7 +158,7 @@ describe("ExecutionGraphService child reservation", () => {
   /** Một request đang được dựng dở là một request đang chạy, không phải một chỗ trống. */
   it("reports a repeated request that is still being started", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.reserveChild(root.binding, request());
 
     const error = await service.reserveChild(root.binding, request()).catch((value) => value);
@@ -171,7 +171,7 @@ describe("ExecutionGraphService child reservation", () => {
    */
   it("rejects a reused request ID that describes different work", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     const reserved = await service.reserveChild(root.binding, request()) as ReservedChild;
     await start(service, reserved);
 
@@ -200,7 +200,7 @@ describe("ExecutionGraphService child reservation", () => {
    */
   it("expires a stale reservation and lets the request be made again", async () => {
     const { store, service, advance } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.reserveChild(root.binding, request());
 
     advance(DEFAULT_EXECUTION_GRAPH_LIMITS.reservationTtlMs + 1);
@@ -215,7 +215,7 @@ describe("ExecutionGraphService child reservation", () => {
 
   it("releases a reservation that never became a child", async () => {
     const { store, service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     const reserved = await service.reserveChild(root.binding, request()) as ReservedChild;
 
     await service.releaseReservation(root.binding.graphId, reserved.reservationId);
@@ -229,7 +229,7 @@ describe("ExecutionGraphService child reservation", () => {
   /** Cha đã chết thì không còn ai chờ kết quả của con — và không ai giao việc thay nó. */
   it("refuses to reserve under a parent that is no longer active", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.finishExecution(root.binding, { status: "completed" });
 
     expect(await codeOf(() => service.reserveChild(root.binding, request()))).toBe("PARENT_NOT_ACTIVE");
@@ -241,7 +241,7 @@ describe("ExecutionGraphService child reservation", () => {
    */
   it("refuses to reserve under a cancelled ancestor", async () => {
     const { store, service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     const child = await service.reserveChild(root.binding, request({ agentId: "worker" })) as ReservedChild;
     await start(service, child);
 
@@ -262,7 +262,7 @@ describe("ExecutionGraphService child reservation", () => {
 
   it("refuses to reserve past the graph's absolute deadline", async () => {
     const { service, advance } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
 
     advance(DEFAULT_EXECUTION_GRAPH_LIMITS.wallClockMs + 1);
 
@@ -275,7 +275,7 @@ describe("ExecutionGraphService child reservation", () => {
    */
   it("counts live reservations against the concurrency ceiling", async () => {
     const { service } = harness({ maxConcurrentChildrenPerExecution: 1 });
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.reserveChild(root.binding, request());
 
     expect(await codeOf(() => service.reserveChild(root.binding, request({ requestId: "req_2" }))))
@@ -284,7 +284,7 @@ describe("ExecutionGraphService child reservation", () => {
 
   it("stops a child from delegating past the depth ceiling", async () => {
     const { service } = harness({ maxDepth: 1 });
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     const child = await service.reserveChild(root.binding, request({ agentId: "worker" })) as ReservedChild;
     await start(service, child);
 
@@ -298,7 +298,7 @@ describe("ExecutionGraphService child reservation", () => {
    */
   it("spends the delegation allowance once and never refunds a failed spawn", async () => {
     const { store, service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     const reserved = await service.reserveChild(root.binding, request()) as ReservedChild;
 
     const failure = new Error("spawn died");
@@ -321,7 +321,7 @@ describe("ExecutionGraphService child reservation", () => {
    */
   it("registers the process under the same lease that commits the node", async () => {
     const { store, service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     const reserved = await service.reserveChild(root.binding, request()) as ReservedChild;
 
     let statusDuringSpawn: string | undefined;
@@ -345,7 +345,7 @@ describe("ExecutionGraphService child reservation", () => {
 
   it("refuses to start a reservation that expired while artifacts were being built", async () => {
     const { store, service, advance } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     const reserved = await service.reserveChild(root.binding, request()) as ReservedChild;
 
     advance(DEFAULT_EXECUTION_GRAPH_LIMITS.reservationTtlMs + 1);
@@ -358,7 +358,7 @@ describe("ExecutionGraphService child reservation", () => {
 
   it("refuses to start a reservation that was already released", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     const reserved = await service.reserveChild(root.binding, request()) as ReservedChild;
     await service.releaseReservation(root.binding.graphId, reserved.reservationId);
 

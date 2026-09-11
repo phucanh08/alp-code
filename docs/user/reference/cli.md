@@ -13,6 +13,7 @@ Internal hook/supervisor dispatch không thuộc public API và không được 
 |---|---|
 | `alp` | Mở phiên `main`, dùng mode theo precedence |
 | `alp --mode <low\|medium\|high\|ultra\|puck>` | Override mode cho phiên này |
+| `alp --title <tiêu đề>` | Đặt tên cho Thread mới mở (`main` — chưa có trong stable v0.13.0); chỉ là nhãn |
 | `alp mode show` | Xem mode đã lưu, kèm file settings và role bị ghi đè |
 | `alp mode set <mode>` | Lưu mode cho phiên sau |
 
@@ -95,6 +96,32 @@ alp delegation list
 | `WALL_CLOCK_EXCEEDED` | Phiên quá hạn 2 giờ | Mở phiên mới; hạn không gia hạn được |
 | `EXECUTION_GRAPH_CORRUPT` · `EXECUTION_GRAPH_LOCK_TIMEOUT` | Không đọc/khoá được file cây | Xem [Xử lý sự cố](../troubleshooting/#cây-execution-hỏng-hoặc-bị-khoá) |
 
+## Thread
+
+:::caution[Preview]
+`alp thread` có trong `main` từ 2026-09-11 và chưa có trong stable v0.13.0.
+:::
+
+```text
+alp thread list [--all]
+alp thread show [<thread-id>]
+alp thread continue <thread-id> [--mode <mode>]
+alp thread context <thread-id>
+alp thread reconcile <thread-id>
+alp thread sync <thread-id>
+alp thread close <thread-id>
+alp thread archive <thread-id>
+```
+
+- Bare `alp` **luôn** mở Thread mới; `continue` là cách duy nhất mở lượt tiếp theo của một Thread, và lượt đó là một execution mới (ID, policy, tiến trình mới — không `--resume`).
+- `list` mặc định chỉ Thread `open` trong workspace hiện tại; `--all` thêm mọi workspace và trạng thái.
+- `show` không đối số đọc `ALP_THREAD_ID` của phiên đang chạy; luôn reconcile trước khi in.
+- `continue` từ chối khi Thread còn một lượt đang chạy (`THREAD_BUSY`), đã đóng (`THREAD_CLOSED`) hoặc đã archive (`THREAD_ARCHIVED`).
+- `sync` chép lại history từ transcript runtime cho mọi lượt đã kết thúc; chạy lại không nhân đôi entry.
+- `close` chỉ từ `open`; `archive` chỉ từ `closed`. Không có reopen.
+
+Xem [Thread](../../deep-dive/thread/).
+
 ## Context và continuity
 
 ```text
@@ -131,6 +158,7 @@ Doctor trả `0` khi healthy, `1` khi có finding và `2` khi doctor tự lỗi.
 |---|---|
 | `ALP_MODE` | Chọn mode sau CLI flag và trước saved preference |
 | `ALP_EXECUTION_GRAPH_ID` · `ALP_DELEGATION_EXECUTION_ID` · `ALP_EXECUTION_CAPABILITY` · `ALP_EXECUTION_DEADLINE_AT` | Binding do ALP cấp cho execution nó spawn — tất-cả-hoặc-không. **Không tự đặt**: chúng là danh tính của một execution, không phải cấu hình |
+| `ALP_THREAD_ID` | Nhãn Thread của execution đang chạy, để `alp thread show` không đối số. **Không phải quyền**: đặt tay không đổi gì |
 | `ALP_SKIP_UPDATE_CHECK=1` | Tắt background update check, hữu ích trong test/CI cô lập |
 | `ALP_STATE_HOME` | Đổi machine state root |
 | `ALP_MEMORY_ROOT` | Đổi riêng memory root |

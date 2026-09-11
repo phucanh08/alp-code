@@ -60,6 +60,10 @@ function executionGraphsDir(env = process.env) {
   return path.join(stateHome(env), "execution-graphs");
 }
 
+function threadsDir(env = process.env) {
+  return path.join(stateHome(env), "threads");
+}
+
 /**
  * Đường dẫn hook mà `alp init` ghi vào `<project>/.claude/settings.local.json`.
  *
@@ -148,6 +152,7 @@ module.exports = {
   hooksDir,
   executionsDir,
   executionGraphsDir,
+  threadsDir,
   hookForwarderPath,
   installRecordPath,
   readInstallRecord,

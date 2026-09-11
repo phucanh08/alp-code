@@ -14,13 +14,25 @@ Phần **Hướng dẫn** trả lời "làm thế nào". Phần này trả lời
 | [Policy](../policy/) | Cửa duy nhất trả lời cho/không cho, chạy **trước** mọi runtime probe và spawn |
 | [Delegation](../delegation/) | Một vai nhờ vai khác làm việc — đường duy nhất, và cha phải được xác thực |
 | [Execution](../execution/) | Một lượt chạy có ID, có snapshot quyền trên đĩa, có vòng đời tra được từ process khác |
-| [Execution graph](../execution-graph/) | Cây của cả một phiên: quan hệ cha–con, trần, allowance, hạn và lý do huỷ |
+| [Execution graph](../execution-graph/) | Cây của **một lượt chạy**: quan hệ cha–con, trần, allowance, hạn và lý do huỷ |
+| [Thread](../thread/) | Một **việc** kéo dài qua nhiều lượt chạy, nhiều runtime, nhiều tiến trình — bản ghi, không phải nguồn quyền |
 | [Workflow](../workflow/) | State machine thu hẹp tool theo từng bước, kết thúc bằng output contract |
 | [Memory](../memory/) | Kiến thức dùng lại, địa chỉ bằng logical ID chứ không bằng đường dẫn file |
 | [Skill](../skill/) | Gói knowledge/workflow có `SKILL.md`; thư mục `skills/` của vai **chính là** danh sách grant |
 | [Runtime và launch spec](../runtime/) | Claude Code hoặc Codex CLI, cùng bản dịch từ quyền sang lệnh khởi chạy |
 | [Hook](../hook/) | Hai điểm ALP chạy *bên trong* tiến trình runtime: mở phiên và đóng phiên |
 | [Checkpoint và continuity](../continuity/) | Objective + pin của một execution, sống sót qua compaction |
+
+## Bảy danh từ, không đổi nghĩa theo trang
+
+```text
+AgentDefinition = vai, khai báo trong code       Execution      = một lượt chạy đã authorize, bất biến
+Thread          = một việc, bền, nhiều lượt      ExecutionGraph = cây delegation/huỷ của MỘT lượt chạy
+Runtime         = adapter / CLI của model         Process        = tiến trình OS do backend sinh
+Memory          = tri thức dùng lại qua nhiều Thread
+```
+
+Docs này không gọi một execution là "session" hay "thread": *session* là của runtime, *Thread* là của ALP, và một Thread chứa nhiều execution.
 
 ## Ba câu chi phối tất cả
 

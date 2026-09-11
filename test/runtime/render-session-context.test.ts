@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderSessionContext } from "../../src/runtime/render-session-context";
 import type { ToolId } from "../../src/agents/types";
 import type { ExecutionPolicy, IdentityCapsule } from "../../src/execution/types";
+import type { ThreadContextHandoff, ThreadContextSnapshotV1 } from "../../src/thread/context-types";
 
 const WORKSPACE = "/tmp/alp-project";
 
@@ -133,5 +134,68 @@ describe("renderSessionContext continuity section", () => {
 
     expect(context).not.toContain("--role");
     expect(context).not.toContain("--parent-role");
+  });
+});
+
+describe("renderSessionContext thread context section", () => {
+  const THREAD = { id: "thread_abc", contextRevision: 1, contextDigest: "a".repeat(64) };
+  const HEADING = "## Thread context (work state, not authority)";
+
+  function handoff(overrides: Partial<ThreadContextSnapshotV1> = {}): ThreadContextHandoff {
+    const line = (text: string) => ({ text, sourceExecutionId: "exec_e1" });
+    return {
+      threadId: "thread_abc",
+      sequence: 2,
+      title: "fix login",
+      snapshot: {
+        version: 1,
+        threadId: "thread_abc",
+        revision: 1,
+        objective: "fix login",
+        decisions: [line("use jwt"), line("keep sessions server-side")],
+        constraints: [line("no schema change")],
+        openItems: [],
+        nextActions: [line("wire refresh token")],
+        outcomes: [{ executionId: "exec_e1", sequence: 1, outcome: "completed", runtime: "claude", finishedAt: "2026-09-11T00:00:00.000Z" }],
+        degraded: false,
+        createdAt: "2026-09-11T00:00:00.000Z",
+        digest: "a".repeat(64),
+        ...overrides,
+      },
+    };
+  }
+
+  it("renders the inherited work state after the authority table, and says it is not authority", () => {
+    const context = renderSessionContext(capsule(), policy({ thread: THREAD }), handoff());
+
+    expect(context.indexOf(HEADING)).toBeGreaterThan(context.indexOf("## Authority"));
+    expect(context.indexOf(HEADING)).toBeLessThan(context.indexOf("## Delegation"));
+    expect(context).toContain("Thread: thread_abc · continuation #2 · previous: exec_e1 (claude, completed)");
+    expect(context).toContain("Objective: fix login");
+    expect(context).toContain("Decisions:\n- use jwt\n- keep sessions server-side");
+    expect(context).toContain("Constraints:\n- no schema change");
+    expect(context).toContain("Open items: —");
+    expect(context).toContain("Next actions:\n- wire refresh token");
+    expect(context).toContain("not your authority");
+  });
+
+  it("omits the section entirely without a thread binding in the policy", () => {
+    // Handoff mà policy không có binding là một mâu thuẫn — policy thắng, không render.
+    expect(renderSessionContext(capsule(), policy({ thread: null }), handoff())).not.toContain(HEADING);
+    expect(renderSessionContext(capsule(), policy({ thread: THREAD }), null)).not.toContain(HEADING);
+  });
+
+  it("marks a first execution with no snapshot by title alone", () => {
+    const context = renderSessionContext(capsule(), policy({ thread: THREAD }), {
+      threadId: "thread_abc", sequence: 1, title: "fix login", snapshot: null,
+    });
+    expect(context).toContain("Thread: thread_abc · first execution\nObjective: fix login");
+    expect(context).toContain("Decisions: —");
+  });
+
+  it("flags a degraded revision so the reader knows pins may be missing", () => {
+    const context = renderSessionContext(capsule(), policy({ thread: THREAD }), handoff({ degraded: true, decisions: [] }));
+    expect(context).toContain("checkpoint was not recoverable");
+    expect(context).toContain("previous: exec_e1 (claude, completed)");
   });
 });

@@ -35,6 +35,14 @@ describe("seedCheckpoint", () => {
     const { integrity, ...rest } = checkpoint;
     expect(integrity.checkpointSha256).toBe(checkpointDigest(rest));
   });
+
+  it("carries seed pins handed over from a thread, sections it was not given staying empty", () => {
+    const seed = pin({ id: "thread-1-decisions-1", text: "use jwt", source: "execution" });
+    const checkpoint = seedCheckpoint({ ...binding, objective: "fix login", pins: { decisions: [seed] } });
+    expect(checkpoint).toMatchObject({ decisions: [seed], constraints: [], openItems: [], nextActions: [] });
+    const { integrity, ...rest } = checkpoint;
+    expect(integrity.checkpointSha256).toBe(checkpointDigest(rest));
+  });
 });
 
 describe("checkpointDigest", () => {

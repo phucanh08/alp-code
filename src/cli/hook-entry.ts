@@ -1,5 +1,6 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { recordRuntimeSession } from "../hooks/runtime-session";
 import { agentsDirectory } from "../install/paths";
 
 type FinalizeExecution = typeof import("../hooks/execution-bridge").finalizeExecution;
@@ -66,7 +67,24 @@ function loadContinuity(env: NodeJS.ProcessEnv): { text: string; warning: string
   return { text: content, warning: null };
 }
 
+/** Con trỏ tới transcript native, cho history bridge. Fail-open: hook không bao giờ vì nó mà hỏng. */
+function noteRuntimeSession(dependencies: HookDependencies, payload: unknown): void {
+  const file = dependencies.env.ALP_RUNTIME_SESSION;
+  if (file) recordRuntimeSession(file, payload, dependencies.now);
+}
+
+function readPayload(dependencies: HookDependencies): Record<string, unknown> {
+  try {
+    const input = dependencies.readStdin();
+    if (input.length > MAX_STDIN_BYTES) return {};
+    return JSON.parse(input.toString("utf8") || "{}") as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
 function emitSessionBoot(dependencies: HookDependencies): number {
+  noteRuntimeSession(dependencies, readPayload(dependencies));
   let context = "";
   let warning: string | null = null;
   try {
@@ -87,8 +105,9 @@ function emitSessionBoot(dependencies: HookDependencies): number {
 async function emitSessionEnd(dependencies: HookDependencies): Promise<number> {
   const executionId = dependencies.env.ALP_DELEGATION_EXECUTION_ID || "";
   let message: string;
+  const payload = readPayload(dependencies);
+  noteRuntimeSession(dependencies, payload);
   try {
-    const payload = JSON.parse(dependencies.readStdin().toString("utf8") || "{}") as Record<string, unknown>;
     const output = payload.last_assistant_message ?? payload.output ?? payload.final_output ?? payload.result;
     const result = await dependencies.finalize({ executionId, output });
     message = result.ok

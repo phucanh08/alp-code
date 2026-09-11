@@ -81,7 +81,7 @@ describe("execution graph deadlines", () => {
   it("fixes the root deadline once, at wall clock from creation", async () => {
     const { service } = harness();
 
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
 
     expect(root.graph.deadlineAt)
       .toBe(new Date(Date.parse(BASE_TIME) + DEFAULT_EXECUTION_GRAPH_LIMITS.wallClockMs).toISOString());
@@ -96,7 +96,7 @@ describe("execution graph deadlines", () => {
    */
   it("hands a child the same instant, however late it is born", async () => {
     const { service, advance } = harness({ maxDepth: 3 });
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
 
     advance(90 * 60_000);
@@ -111,7 +111,7 @@ describe("execution graph deadlines", () => {
   /** Cùng một kết luận, nhưng ở đường tính thuần tuý: `childBinding` cũng chỉ chép lại. */
   it("copies the deadline when a binding is derived without touching disk", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
 
     expect(childBinding(root.binding, "exec_derived").deadlineAt).toBe(root.binding.deadlineAt);
   });
@@ -119,7 +119,7 @@ describe("execution graph deadlines", () => {
   /** Và nó sống sót chuyến đi qua env, vì đó là cách con thật sự nhận được nó. */
   it("survives the trip through the child environment", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     const child = childBinding(root.binding, "exec_child");
 
     const environment = bindingEnvironment(child);
@@ -131,7 +131,7 @@ describe("execution graph deadlines", () => {
   /** Thiếu deadline là binding không đọc được, chứ không phải binding không hạn. */
   it("refuses a binding whose environment lost the deadline", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     const environment = bindingEnvironment(root.binding);
     delete environment[EXECUTION_BINDING_ENV.deadlineAt];
 
@@ -145,7 +145,7 @@ describe("execution graph deadlines", () => {
    */
   it("stops accepting children once the tree has expired", async () => {
     const { service, advance } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
 
     advance(DEFAULT_EXECUTION_GRAPH_LIMITS.wallClockMs + 1);
@@ -156,7 +156,7 @@ describe("execution graph deadlines", () => {
   /** Ngay trước hạn thì vẫn là trong hạn: biên là `>`, không phải `>=`. */
   it("still accepts a child at the last instant before the deadline", async () => {
     const { service, advance } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
 
     advance(DEFAULT_EXECUTION_GRAPH_LIMITS.wallClockMs - 1);
@@ -172,7 +172,7 @@ describe("execution graph deadlines", () => {
    */
   it("learns about an expired process from the probe, and records why", async () => {
     const { service, advance } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding);
 
@@ -195,7 +195,7 @@ describe("execution graph deadlines", () => {
    */
   it("separates a clock kill from a person's cancel at the same terminal status", async () => {
     const { service } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const expired = await spawnChild(service, root.binding);
     const stopped = await spawnChild(service, root.binding, { requestId: "req_2" });
@@ -216,7 +216,7 @@ describe("execution graph deadlines", () => {
   /** Hạn của cây là bất biến: reconcile ghi node, không ghi lại luật chơi. */
   it("never moves the deadline once the tree is open", async () => {
     const { service, advance } = harness();
-    const root = await service.createRoot({ agentId: "main" });
+    const root = await service.createRoot({ agentId: "main", thread: null });
     await service.startRoot(root.binding, async () => undefined);
     const child = await spawnChild(service, root.binding);
 

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runHookCommand, type HookDependencies } from "../../src/cli/hook-entry";
+import { readRuntimeSession } from "../../src/hooks/runtime-session";
 import { removeTemporary } from "../support/temporary-root";
 
 const roots: string[] = [];
@@ -38,6 +39,34 @@ describe("native hook entry", () => {
     expect(await runHookCommand(["session-end"], fixture.dependencies)).toBe(0);
     expect(fixture.dependencies.finalize).toHaveBeenCalledWith({ executionId: "exec_hook", output: "done" });
     expect(JSON.parse(fixture.output()).systemMessage).toContain("finalized");
+  });
+
+  it("leaves the native session pointer for the history bridge on boot and on end, fail-open", async () => {
+    const root = await mkdtemp(join(tmpdir(), "alp-hook-session-"));
+    roots.push(root);
+    const context = join(root, "context.md");
+    await writeFile(context, "identity\n");
+    const file = join(root, "context", "runtime-session.json");
+    // SessionStart: ghi lần đầu — Claude Code đưa `session_id` + `transcript_path` ngay từ đây.
+    const boot = deps(
+      { ALP_SESSION_CONTEXT: context, ALP_RUNTIME_SESSION: file },
+      Buffer.from(JSON.stringify({ session_id: "sess-1", transcript_path: "/state/projects/x/sess-1.jsonl", source: "startup" })),
+    );
+    expect(await runHookCommand(["session-boot"], boot.dependencies)).toBe(0);
+    expect(await readRuntimeSession(file)).toEqual({ v: 1, sessionId: "sess-1", transcriptPath: "/state/projects/x/sess-1.jsonl", recordedAt: "2026-09-08T00:00:00.000Z" });
+    // Stop: ghi đè bằng payload mới nhất (Codex mới có transcript_path chắc chắn ở đây).
+    const end = deps(
+      { ALP_DELEGATION_EXECUTION_ID: "exec_hook", ALP_RUNTIME_SESSION: file },
+      Buffer.from(JSON.stringify({ session_id: "sess-1", transcript_path: "/state/sessions/rollout-sess-1.jsonl", last_assistant_message: "done" })),
+    );
+    expect(await runHookCommand(["session-end"], end.dependencies)).toBe(0);
+    expect((await readRuntimeSession(file))?.transcriptPath).toBe("/state/sessions/rollout-sess-1.jsonl");
+    // Payload không có transcript → giữ bản cũ; env không có ALP_RUNTIME_SESSION → không ghi gì, không lỗi.
+    const bare = deps({ ALP_DELEGATION_EXECUTION_ID: "exec_hook", ALP_RUNTIME_SESSION: file }, Buffer.from("{}"));
+    expect(await runHookCommand(["session-end"], bare.dependencies)).toBe(0);
+    expect((await readRuntimeSession(file))?.transcriptPath).toBe("/state/sessions/rollout-sess-1.jsonl");
+    const none = deps({ ALP_SESSION_CONTEXT: context }, Buffer.from('{"session_id":"s","transcript_path":"/t"}'));
+    expect(await runHookCommand(["session-boot"], none.dependencies)).toBe(0);
   });
 
   it("records a bounded compact envelope and always exits zero", async () => {

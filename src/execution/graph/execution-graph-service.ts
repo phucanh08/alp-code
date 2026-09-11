@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import type { AgentId } from "../../agents/types";
-import type { ExecutionId } from "../types";
+import type { ExecutionId, ExecutionThreadBinding } from "../types";
 import { DEFAULT_EXECUTION_GRAPH_LIMITS, QUEUED_STARTUP_GRACE_MS } from "./defaults";
 import { ExecutionGraphError } from "./errors";
 import type { ExecutionGraphLease, ExecutionGraphStore } from "./execution-graph-store";
@@ -258,6 +258,8 @@ export interface ReservedChild {
   readonly parentExecutionId: ExecutionId;
   readonly agentId: AgentId;
   readonly depth: number;
+  /** Chép từ node cha lúc giữ chỗ — caller đưa vào `materialize()` mà không đọc Thread. */
+  readonly thread: ExecutionThreadBinding | null;
 }
 
 /** Cùng một request đã thành node từ lần gọi trước — retry không được spawn lần nữa. */
@@ -369,6 +371,11 @@ export class ExecutionGraphService {
   async createRoot(input: {
     readonly agentId: AgentId;
     /**
+     * Thread binding của cả cây. Root nhận từ `ThreadService.reserveRoot`; mọi child sau này
+     * chép nguyên bản này. `null` = execution không thuộc Thread (legacy/nội bộ).
+     */
+    readonly thread: ExecutionThreadBinding | null;
+    /**
      * ID đã cấp từ trước, khi caller phải xin quyền trước lúc mở cây — `runMainSession` xin
      * `principal → main` rồi mới tạo root, và cả hai bước nói về cùng một execution.
      */
@@ -383,6 +390,7 @@ export class ExecutionGraphService {
       graphId: executionId,
       parentExecutionId: null,
       agentId: input.agentId,
+      thread: input.thread,
       depth: 0,
       status: "preparing",
       requestId: null,
@@ -616,6 +624,7 @@ export class ExecutionGraphService {
         parentExecutionId: parentNode.executionId,
         agentId: request.agentId,
         depth: reservation.depth,
+        thread: parentNode.thread,
       });
     });
   }
@@ -706,6 +715,8 @@ export class ExecutionGraphService {
         graphId: graph.graphId,
         parentExecutionId: reservation.parentExecutionId,
         agentId: reservation.agentId,
+        // Child không bao giờ tự khai Thread: nó là bản sao của cha tại thời điểm attach.
+        thread: parentNode.thread,
         depth: reservation.depth,
         status: "queued",
         requestId: reservation.requestId,
@@ -1125,6 +1136,7 @@ export class ExecutionGraphService {
       updatedAt: graph.updatedAt,
       deadlineAt: graph.deadlineAt,
       limits: graph.limits,
+      thread: root.thread,
       delegation: Object.freeze({
         used: graph.delegationUsed,
         limit: graph.limits.delegationLimit,
@@ -1355,6 +1367,11 @@ export interface ExecutionTreeView {
     readonly remaining: number;
   };
   readonly summary: ExecutionTreeSummary;
+  /**
+   * Thread mà root của cây thuộc về. `null` = cây của một `alp` cũ, trước khi mọi root có
+   * Thread — hiển thị `legacy-unthreaded`, không bao giờ backfill một Thread giả.
+   */
+  readonly thread: ExecutionThreadBinding | null;
   readonly root: ExecutionTreeNode;
 }
 
