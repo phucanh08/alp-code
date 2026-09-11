@@ -33,6 +33,7 @@ Nếu role, tool, path hoặc memory scope không được khai báo, ALP từ c
 - Muốn mở phiên đầu tiên? Làm theo [Bắt đầu nhanh](./getting-started/quickstart/).
 - Đã dùng ALP? Tra [CLI reference](./reference/cli/) hoặc [xử lý sự cố](./reference/troubleshooting/).
 - Muốn mở rộng cho project riêng? Xem [Custom agent](./guides/custom-agents/) và [skill của project](./guides/project-skills/).
+- Muốn hiểu một khái niệm tới tận gốc? Mỗi định nghĩa có một trang riêng, bắt đầu từ [Từ điển khái niệm](./deep-dive/glossary/).
 
 ## Ranh giới quan trọng
 
