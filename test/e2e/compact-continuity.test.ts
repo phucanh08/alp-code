@@ -94,7 +94,7 @@ describe.each([["claude"], ["codex"]] as const)("e2e: compact continuity bridge 
     const spawned = await environment.backend.spawn({
       executionId,
       launchSpec,
-      lifecycle: { requestId: executionId, parentExecutionId: null, background: false, interactive: true, timeoutMs: null },
+      lifecycle: { requestId: executionId, parentExecutionId: null, background: false, interactive: true, timeoutMs: null, deadlineAt: null },
     });
     const result = spawned.status === "running" ? await environment.backend.wait(executionId) : spawned;
     expect(result.status).toBe("completed");
@@ -157,7 +157,7 @@ describe("e2e: compact continuity failure modes", () => {
     });
     const spawned = await environment.backend.spawn({
       executionId, launchSpec,
-      lifecycle: { requestId: executionId, parentExecutionId: null, background: false, interactive: true, timeoutMs: null },
+      lifecycle: { requestId: executionId, parentExecutionId: null, background: false, interactive: true, timeoutMs: null, deadlineAt: null },
     });
     if (spawned.status === "running") await environment.backend.wait(executionId);
 
@@ -184,7 +184,7 @@ describe("e2e: compact continuity failure modes", () => {
     });
     const spawned = await environment.backend.spawn({
       executionId, launchSpec,
-      lifecycle: { requestId: executionId, parentExecutionId: null, background: false, interactive: true, timeoutMs: null },
+      lifecycle: { requestId: executionId, parentExecutionId: null, background: false, interactive: true, timeoutMs: null, deadlineAt: null },
     });
     if (spawned.status === "running") await environment.backend.wait(executionId);
 

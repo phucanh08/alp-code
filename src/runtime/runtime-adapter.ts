@@ -1,5 +1,6 @@
 import type { ReasoningEffort, RuntimeId } from "../agents/types";
 import type { CompactCapabilities } from "../context/types";
+import type { ExecutionBinding } from "../execution/graph/execution-graph-service";
 import type { PreparedExecution } from "../execution/types";
 
 export interface RuntimeHealth {
@@ -34,6 +35,14 @@ export interface PrepareRuntimeInput {
   readonly model: string;
   readonly reasoningEffort: ReasoningEffort;
   readonly interactive: boolean;
+  /**
+   * Chỗ đứng của execution này trong cây, khi nó thuộc về một cây.
+   *
+   * Vào đây chứ không vá vào `env` sau khi `prepare()` trả về: spec đã freeze lúc đó, nên
+   * "vá" nghĩa là dựng lại — và bản dựng lại là chỗ một cờ sandbox rơi mất. `undefined` là
+   * đường legacy (`alp delegate` từ một process không do ALP mở), vẫn chạy được.
+   */
+  readonly binding?: ExecutionBinding;
 }
 
 export interface RuntimeAdapter {

@@ -312,6 +312,66 @@ describe("runtime adapters", () => {
     expect(JSON.parse(await readFile(runtimeFile(launch, "skill-roots.json"), "utf8"))).toContain(join(root, ".codex", "skills"));
     expect(await readdir(project)).toEqual([]);
   });
+
+  /**
+   * Invariant 7. Capability là thứ duy nhất chứng minh một process được phép nói thay cho một
+   * node, nên nó chỉ được sống trong env của process đó. Một dòng của nó trong `settings.json`
+   * hay `identity-capsule.json` là một secret nằm lại trên đĩa sau khi phiên đã kết thúc —
+   * và những file ấy còn là thứ người ta paste vào bug report.
+   */
+  it("carries the tree binding in the launch env and nowhere on disk, on both runtimes", async () => {
+    const capability = "Cap4bIl1tY-pl4inteXt-must-not-be-persisted";
+    const binding = {
+      graphId: "exec_root_graph",
+      executionId: "exec-runtime",
+      capability,
+      deadlineAt: "2026-09-11T02:00:00.000Z",
+    };
+    const adapters = [
+      async () => {
+        const { root, prepared } = await fixture();
+        const adapter = new ClaudeRuntimeAdapter({ platform: "linux", env: { HOME: root, ALP_REPO_ROOT: root } });
+        return adapter.prepare({ execution: prepared, model: "claude-test", reasoningEffort: "high", interactive: false, binding });
+      },
+      async () => {
+        const { root, prepared } = await fixture();
+        const adapter = new CodexRuntimeAdapter({ platform: "linux", env: { HOME: root, ALP_REPO_ROOT: root } });
+        return adapter.prepare({ execution: prepared, model: "gpt-test", reasoningEffort: "high", interactive: false, binding });
+      },
+    ];
+
+    for (const prepareLaunch of adapters) {
+      const launch = await prepareLaunch();
+      expect(launch.env).toMatchObject({
+        ALP_EXECUTION_GRAPH_ID: "exec_root_graph",
+        ALP_DELEGATION_EXECUTION_ID: "exec-runtime",
+        ALP_EXECUTION_CAPABILITY: capability,
+        ALP_EXECUTION_DEADLINE_AT: "2026-09-11T02:00:00.000Z",
+      });
+      expect(launch.args.join("\u0000")).not.toContain(capability);
+      for (const file of launch.temporaryFiles) {
+        expect(await readFile(file, "utf8")).not.toContain(capability);
+      }
+    }
+  });
+
+  it("refuses a binding that belongs to another execution", async () => {
+    const { root, prepared } = await fixture();
+    const adapter = new ClaudeRuntimeAdapter({ platform: "linux", env: { HOME: root, ALP_REPO_ROOT: root } });
+
+    await expect(adapter.prepare({
+      execution: prepared,
+      model: "claude-test",
+      reasoningEffort: "high",
+      interactive: false,
+      binding: {
+        graphId: "exec_root_graph",
+        executionId: "exec-someone-else",
+        capability: "irrelevant",
+        deadlineAt: "2026-09-11T02:00:00.000Z",
+      },
+    })).rejects.toThrowError(/does not belong to execution `exec-runtime`/);
+  });
 });
 
 /**

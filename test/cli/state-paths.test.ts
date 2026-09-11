@@ -1,7 +1,14 @@
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { agentsDirectory, executionsDirectory, hookForwarder, memoryRoot, stateHome } from "../../src/state-paths";
+import {
+  agentsDirectory,
+  executionGraphsDirectory,
+  executionsDirectory,
+  hookForwarder,
+  memoryRoot,
+  stateHome,
+} from "../../src/state-paths";
 
 const requireCjs = createRequire(__filename);
 const paths = requireCjs("../../scripts/lib/install-paths.cjs") as {
@@ -9,6 +16,7 @@ const paths = requireCjs("../../scripts/lib/install-paths.cjs") as {
   memoryRoot(env: NodeJS.ProcessEnv): string;
   agentsDir(env: NodeJS.ProcessEnv): string;
   executionsDir(env: NodeJS.ProcessEnv): string;
+  executionGraphsDir(env: NodeJS.ProcessEnv): string;
   hookForwarderPath(name: string, env: NodeJS.ProcessEnv): string;
   detectChannel(root: string): string;
 };
@@ -20,6 +28,7 @@ describe("state paths", () => {
     expect(memoryRoot(env)).toBe(join("/home/a", ".alp", "memory"));
     expect(agentsDirectory(env)).toBe(join("/home/a", ".alp", "agents"));
     expect(executionsDirectory(env)).toBe(join("/home/a", ".alp", "executions"));
+    expect(executionGraphsDirectory(env)).toBe(join("/home/a", ".alp", "execution-graphs"));
     expect(hookForwarder("session-boot", env)).toBe(join("/home/a", ".alp", "hooks", "session-boot.cjs"));
   });
 
@@ -46,6 +55,7 @@ describe("state paths", () => {
       expect(memoryRoot(env)).toBe(paths.memoryRoot(env));
       expect(agentsDirectory(env)).toBe(paths.agentsDir(env));
       expect(executionsDirectory(env)).toBe(paths.executionsDir(env));
+      expect(executionGraphsDirectory(env)).toBe(paths.executionGraphsDir(env));
       expect(hookForwarder("session-boot", env)).toBe(paths.hookForwarderPath("session-boot", env));
     }
   });

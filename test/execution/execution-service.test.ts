@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, mkdir, readFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -118,6 +118,47 @@ const context: BuiltMemoryContext = {
   },
 };
 
+interface Harness {
+  readonly events: string[];
+  readonly registry: MutableRegistry;
+  readonly service: ExecutionService;
+  readonly root: string;
+}
+
+async function setup(label: string): Promise<Harness> {
+  const root = await mkdtemp(join(tmpdir(), `alp-execution-${label}-`));
+  temporaryRoots.push(root);
+  await mkdir(join(root, "workspace"));
+  const events: string[] = [];
+  const registry = new MutableRegistry(
+    [role("main", events, ["Read", "Write"]), role("search", events, ["Read"])],
+    events,
+  );
+  const service = new ExecutionService({
+    registry,
+    policy: {
+      authorize(request: AuthorizationRequest): Authorization {
+        events.push(`authorize:${request.type}`);
+        return { allowed: true };
+      },
+    },
+    memory: {
+      async buildContext(_input: BuildMemoryContextInput): Promise<BuiltMemoryContext> {
+        events.push("memory");
+        return context;
+      },
+    },
+    workflowRunner: new RecordingRunner(events),
+    store: new FileExecutionStore({ root: join(root, "executions") }),
+    resolveWorkspace: async (value) => {
+      events.push("workspace");
+      return value;
+    },
+    now: () => new Date("2026-08-26T00:00:00.000Z"),
+  });
+  return { events, registry, service, root };
+}
+
 describe("ExecutionService", () => {
   it("prepares in deny-first order and persists immutable restrictive snapshots", async () => {
     const root = await mkdtemp(join(tmpdir(), "alp-execution-"));
@@ -234,6 +275,118 @@ describe("ExecutionService", () => {
       decisions: [], constraints: [], openItems: [], nextActions: [],
     });
     expect(await readFile(continuityPath, "utf8")).toContain("find the entrypoint");
+  });
+
+  /**
+   * The split exists so that nothing durable is created while the answer to "is this allowed"
+   * is still open. A test that only checked the return value would pass on a service that
+   * wrote `policy.json` first and handed back a ticket afterwards, so what is asserted here is
+   * the absence: no memory built, no workflow initialised, no execution directory on disk.
+   */
+  it("authorizes without building memory, workflow, or anything on disk", async () => {
+    const { events, service, root } = await setup("authorize-only");
+
+    const authorization = await service.authorize({
+      executionId: "exec_authorize",
+      parent: "main",
+      target: "search",
+      workspace: join(root, "workspace"),
+      workspaceMode: "read-only",
+    });
+
+    expect(events).toEqual([
+      "resolve:main",
+      "resolve:search",
+      "authorize:delegation",
+      "workspace",
+      "authorize:workspace",
+    ]);
+    expect(authorization).toMatchObject({
+      executionId: "exec_authorize",
+      parent: "main",
+      target: "search",
+      workspace: join(root, "workspace"),
+      workspaceMode: "read-only",
+    });
+    expect(Object.isFrozen(authorization)).toBe(true);
+    await expect(readdir(join(root, "executions"))).rejects.toThrow();
+  });
+
+  /**
+   * The ticket carries no secret and its fields are all readable, so an object of the same
+   * shape is trivial to build. What makes it a ticket is that this service instance issued it:
+   * a forgery, or a genuine ticket from a service wired to a different registry and policy,
+   * would otherwise let `materialize()` write a policy snapshot nobody ever authorized.
+   */
+  it("materializes only an authorization it issued itself", async () => {
+    const mine = await setup("materialize-mine");
+    const other = await setup("materialize-other");
+
+    const authorization = await mine.service.authorize({
+      executionId: "exec_materialize",
+      parent: "main",
+      target: "search",
+      workspace: join(mine.root, "workspace"),
+      workspaceMode: "read-only",
+    });
+    const work = {
+      task: "find the entrypoint",
+      memoryQueries: [],
+      characterBudget: 100,
+      invariantContext: "invariants",
+      policyContext: "policy",
+    } as const;
+
+    await expect(mine.service.materialize({ ...authorization }, work)).rejects.toThrowError(
+      /authorization was not issued by this service/,
+    );
+    const elsewhere = await other.service.authorize({
+      executionId: "exec_materialize",
+      parent: "main",
+      target: "search",
+      workspace: join(other.root, "workspace"),
+      workspaceMode: "read-only",
+    });
+    await expect(mine.service.materialize(elsewhere, work)).rejects.toThrowError(
+      /authorization was not issued by this service/,
+    );
+    await expect(readdir(join(mine.root, "executions"))).rejects.toThrow();
+
+    const prepared = await mine.service.materialize(authorization, work);
+    expect(prepared.policy).toMatchObject({
+      executionId: "exec_materialize",
+      role: "search",
+      workspace: join(mine.root, "workspace"),
+    });
+    expect(mine.events.slice(-2)).toEqual(["memory", "workflow"]);
+    expect(await readdir(join(mine.root, "executions"))).toEqual(["exec_materialize"]);
+  });
+
+  /**
+   * Registry sửa được lúc chạy, nên hai lần tra cùng một tên không hứa hẹn cùng một câu trả
+   * lời. Nếu `materialize()` tra lại thì nó vừa mở đúng cửa sổ mà việc kiểm quyền trước đó
+   * vừa đóng: policy duyệt một definition, `policy.json` lại sinh ra từ một definition khác.
+   */
+  it("materializes the definition that was authorized, not the one the registry holds later", async () => {
+    const { events, registry, service, root } = await setup("materialize-pinned");
+
+    const authorization = await service.authorize({
+      executionId: "exec_pinned",
+      parent: "main",
+      target: "search",
+      workspace: join(root, "workspace"),
+      workspaceMode: "read-only",
+    });
+    registry.replace(role("search", events, ["Read", "Write", "Bash"]));
+
+    const prepared = await service.materialize(authorization, {
+      task: "find the entrypoint",
+      memoryQueries: [],
+      characterBudget: 100,
+      invariantContext: "invariants",
+      policyContext: "policy",
+    });
+    expect(prepared.policy.allowedTools).toEqual(["Read"]);
   });
 
   it("does not create a context/ directory for a denied execution", async () => {

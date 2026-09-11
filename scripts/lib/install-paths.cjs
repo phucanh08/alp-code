@@ -55,6 +55,11 @@ function executionsDir(env = process.env) {
   return path.join(stateHome(env), "executions");
 }
 
+/** `~/.alp/execution-graphs/` — quyền lực logic của mỗi cây execution, một file mỗi cây. */
+function executionGraphsDir(env = process.env) {
+  return path.join(stateHome(env), "execution-graphs");
+}
+
 /**
  * Đường dẫn hook mà `alp init` ghi vào `<project>/.claude/settings.local.json`.
  *
@@ -142,6 +147,7 @@ module.exports = {
   agentsDir,
   hooksDir,
   executionsDir,
+  executionGraphsDir,
   hookForwarderPath,
   installRecordPath,
   readInstallRecord,

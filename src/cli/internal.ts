@@ -1,4 +1,4 @@
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, unlinkSync } from "node:fs";
 import type { LocalSupervisorSpec } from "../backend/local-supervisor";
 
 const MAX_SPEC_BYTES = 1024 * 1024;
@@ -30,9 +30,21 @@ function readSupervisorSpec(file: string): LocalSupervisorSpec {
     !Array.isArray(spec.args) || !spec.args.every((value) => typeof value === "string") ||
     typeof spec.cwd !== "string" || typeof spec.env !== "object" || spec.env === null ||
     typeof spec.logFile !== "string" || typeof spec.resultFile !== "string" ||
-    !Array.isArray(spec.temporaryFiles) || !spec.temporaryFiles.every((value) => typeof value === "string")
+    !Array.isArray(spec.temporaryFiles) || !spec.temporaryFiles.every((value) => typeof value === "string") ||
+    !(spec.deadlineAt === undefined || spec.deadlineAt === null
+      || (typeof spec.deadlineAt === "string" && Number.isFinite(Date.parse(spec.deadlineAt))))
   ) throw new Error("invalid supervisor spec schema");
-  return { ...(spec as LocalSupervisorSpec), specFile: file };
+  // Xoá ngay sau khi đọc xong, và trước khi runtime được spawn.
+  //
+  // Spec mang toàn bộ env của execution, capability trong đó. Trước đây supervisor mới xoá
+  // nó lúc kết thúc, nên một secret nằm trên đĩa suốt cả run — tới hai giờ với hạn mặc định —
+  // và bất kỳ process nào của cùng người dùng cũng đọc được. Nội dung đã nằm trong bộ nhớ
+  // rồi; file chỉ còn là bản sao thừa.
+  //
+  // Xoá *trước* spawn chứ không phải sau: runtime kế thừa cwd và môi trường của ta, và
+  // khoảng giữa hai lệnh đó là khoảng duy nhất một agent có thể tự đọc spec của chính nó.
+  unlinkSync(file);
+  return spec as LocalSupervisorSpec;
 }
 
 export interface InternalDependencies {

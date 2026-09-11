@@ -1,5 +1,9 @@
 import { access, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { basename, delimiter, dirname, join, resolve } from "node:path";
+import {
+  bindingEnvironment,
+  type ExecutionBinding,
+} from "../execution/graph/execution-graph-service";
 import type { ExecutionArtifactPaths, ExecutionPolicy, IdentityCapsule, PreparedExecution } from "../execution/types";
 import { renderSessionContext } from "./render-session-context";
 import { renderTaskInput } from "./render-task-input";
@@ -104,12 +108,30 @@ export function taskArguments(
     : [files.taskText]);
 }
 
+/**
+ * Env chung của mọi runtime, cộng binding của cây khi execution này thuộc về một cây.
+ *
+ * Binding đi vào đây chứ không vào từng adapter vì `RuntimeLaunchSpec` đã freeze khi rời
+ * `prepare()`: một caller muốn thêm biến sau đó chỉ còn cách dựng lại spec bằng tay, và bản
+ * dựng lại ấy là chỗ một cờ sandbox hay một `--strict-mcp-config` rơi mất.
+ *
+ * `ALP_DELEGATION_EXECUTION_ID` xuất hiện ở cả hai nguồn nên hai nguồn phải nói cùng một điều:
+ * một binding của execution khác ghép với capsule này là một process mang danh tính của người
+ * khác trong khi đọc file của mình.
+ */
 export function baseRuntimeEnvironment(
   capsule: IdentityCapsule,
   files: RuntimeContextFiles,
   artifacts: Pick<ExecutionArtifactPaths, "continuityFile" | "compactEventsFile">,
+  binding?: ExecutionBinding | null,
 ): Record<string, string> {
+  if (binding && binding.executionId !== capsule.executionId) {
+    throw new Error(
+      `execution binding \`${binding.executionId}\` does not belong to execution \`${capsule.executionId}\``,
+    );
+  }
   return {
+    ...(binding ? bindingEnvironment(binding) : {}),
     ALP_ROLE: capsule.role,
     ALP_DELEGATED_ROLE: capsule.role,
     ALP_DELEGATION_EXECUTION_ID: capsule.executionId,

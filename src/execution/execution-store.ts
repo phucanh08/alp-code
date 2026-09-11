@@ -33,6 +33,33 @@ function assertExecutionId(id: string): void {
   }
 }
 
+/**
+ * Nơi mọi artifact của một execution nằm, suy ra từ root và ID — không đọc đĩa.
+ *
+ * Một hàm chứ không phải một bảng trong `create()`: process đẻ ra execution và process đọc
+ * lại nó thường là hai process khác nhau (`alp delegation status` chạy sau khi phiên cha đã
+ * thoát), và bên đọc không có `PreparedExecution` nào trong tay. Hai chỗ tự ghép đường dẫn
+ * là hai chỗ có thể lệch nhau đúng một lần đổi tên file.
+ */
+export function executionArtifactPaths(
+  root: string,
+  executionId: string,
+): ExecutionArtifactPaths {
+  assertExecutionId(executionId);
+  const directory = join(root, executionId);
+  const contextDirectory = join(directory, "context");
+  return Object.freeze({
+    directory,
+    stateFile: join(directory, "state.json"),
+    policyFile: join(directory, "policy.json"),
+    runtimeDirectory: join(directory, "runtime"),
+    contextDirectory,
+    checkpointFile: join(contextDirectory, "checkpoint.json"),
+    continuityFile: join(contextDirectory, "continuity.md"),
+    compactEventsFile: join(contextDirectory, "compact-events.jsonl"),
+  });
+}
+
 async function pathExists(path: string): Promise<boolean> {
   try {
     await access(path);
@@ -74,6 +101,7 @@ export class FileExecutionStore implements ExecutionStore {
       this.root,
       `.${input.policy.executionId}.${randomUUID()}.tmp`,
     );
+    const paths = executionArtifactPaths(this.root, input.policy.executionId);
     const policyFileName = "policy.json";
     const stateFileName = "state.json";
     try {
@@ -88,16 +116,6 @@ export class FileExecutionStore implements ExecutionStore {
       throw error;
     }
 
-    const contextDirectory = join(directory, "context");
-    return Object.freeze({
-      directory,
-      stateFile: join(directory, stateFileName),
-      policyFile: join(directory, policyFileName),
-      runtimeDirectory: join(directory, "runtime"),
-      contextDirectory,
-      checkpointFile: join(contextDirectory, "checkpoint.json"),
-      continuityFile: join(contextDirectory, "continuity.md"),
-      compactEventsFile: join(contextDirectory, "compact-events.jsonl"),
-    });
+    return paths;
   }
 }

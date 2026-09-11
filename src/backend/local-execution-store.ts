@@ -34,6 +34,13 @@ export interface LocalExecutionRecord {
   /** Provenance under `alp.*` keys: request id, parent execution, target role. */
   readonly labels: Readonly<Record<string, string>>;
   readonly createdAt: string;
+  /** Tuổi thọ tuyệt đối kế thừa từ root. `null` khi execution không thuộc cây nào. */
+  readonly deadlineAt?: string | null;
+  /**
+   * Ai đã dừng execution này. Ghi lần đầu thắng: một người bấm cancel rồi deadline nổ ngay
+   * sau đó vẫn là một lần huỷ của người đó, và đảo lại thì báo cáo sẽ đổ cho đồng hồ.
+   */
+  readonly cancellationSource?: "user" | "deadline";
   readonly updatedAt?: string;
   readonly exitCode?: number | null;
   readonly signal?: NodeJS.Signals | null;

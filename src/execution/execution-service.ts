@@ -1,5 +1,5 @@
 import { realpath } from "node:fs/promises";
-import type { AgentId, AgentRegistry } from "../agents/types";
+import type { AgentDefinition, AgentId, AgentRegistry } from "../agents/types";
 import { seedCheckpoint, writeCheckpoint } from "../context/checkpoint";
 import { renderContinuity } from "../context/continuity";
 import { atomicRuntimeFile } from "../runtime/adapter-files";
@@ -12,6 +12,9 @@ import type { ExecutionStore } from "./execution-store";
 import { createIdentityCapsule } from "./identity-capsule";
 import {
   deepFreezeExecutionValue,
+  type AuthorizeExecutionInput,
+  type ExecutionAuthorization,
+  type MaterializeExecutionInput,
   type PrepareExecutionInput,
   type PreparedExecution,
   type StoredExecutionState,
@@ -54,6 +57,16 @@ export class ExecutionService {
   private readonly store: ExecutionStore;
   private readonly resolveWorkspace: (workspace: string) => Promise<string>;
   private readonly now: () => Date;
+  /**
+   * Những vé chính instance này đã phát, và definition đã được duyệt cùng mỗi vé.
+   *
+   * Khoá là object chứ không phải một cờ bên trong nó: cờ nào cũng sao chép được, còn danh
+   * tính của một object thì không. Definition đi kèm vì registry sửa được lúc chạy — tra lại
+   * `target` ở `materialize()` là mở đúng cửa sổ mà việc kiểm quyền trước vừa đóng: policy
+   * duyệt một definition, artifact lại sinh ra từ một definition khác. Vé chết cùng người
+   * cầm nó, nên bảng này không lớn lên theo số execution đã chạy.
+   */
+  private readonly issued = new WeakMap<ExecutionAuthorization, AgentDefinition<unknown>>();
 
   constructor(options: ExecutionServiceOptions) {
     this.registry = options.registry;
@@ -65,7 +78,14 @@ export class ExecutionService {
     this.now = options.now ?? (() => new Date());
   }
 
-  async prepare(input: PrepareExecutionInput): Promise<PreparedExecution> {
+  /**
+   * Deny-first, và chỉ có thế: không memory, không workflow, không một byte nào chạm đĩa.
+   *
+   * Khoảng lặng giữa `authorize()` và `materialize()` là chỗ `runMainSession` ghi node
+   * `preparing` vào graph, nên không có lúc nào một execution có thư mục trên đĩa mà cây
+   * chưa biết tới nó.
+   */
+  async authorize(input: AuthorizeExecutionInput): Promise<ExecutionAuthorization> {
     let parent: AgentId | "principal" = input.parent;
     if (parent !== "principal") {
       parent = this.registry.get(parent).id;
@@ -113,6 +133,29 @@ export class ExecutionService {
       );
     }
 
+    const authorization = deepFreezeExecutionValue<ExecutionAuthorization>({
+      executionId: input.executionId,
+      parent,
+      target: definition.id,
+      workspace,
+      workspaceMode: input.workspaceMode,
+      authorizedAt: this.now().toISOString(),
+    });
+    this.issued.set(authorization, definition);
+    return authorization;
+  }
+
+  /**
+   * Biến một vé thành artifact. Mọi trường mang quyền đều đọc từ vé, không từ `input`.
+   */
+  async materialize(
+    authorization: ExecutionAuthorization,
+    input: MaterializeExecutionInput,
+  ): Promise<PreparedExecution> {
+    const definition = this.issued.get(authorization);
+    if (!definition) {
+      throw new Error("execution authorization was not issued by this service");
+    }
     const memoryContext = await this.memory.buildContext({
       actor: definition.id,
       queries: input.memoryQueries,
@@ -123,10 +166,10 @@ export class ExecutionService {
     const workflowState = this.workflowRunner.initialize(definition.workflow);
     const createdAt = this.now().toISOString();
     const policy = createExecutionPolicy({
-      executionId: input.executionId,
+      executionId: authorization.executionId,
       definition,
-      workspace,
-      workspaceMode: input.workspaceMode,
+      workspace: authorization.workspace,
+      workspaceMode: authorization.workspaceMode,
       ...(input.mode === undefined ? {} : { mode: input.mode }),
       ...(input.modeProfiles === undefined ? {} : { modeProfiles: input.modeProfiles }),
       createdAt,
@@ -139,7 +182,7 @@ export class ExecutionService {
       workflowState,
     });
     const state: StoredExecutionState = deepFreezeExecutionValue({
-      executionId: input.executionId,
+      executionId: authorization.executionId,
       status: "prepared",
       workflow: { ...workflowState },
       policyHash: policy.policyHash,
@@ -150,7 +193,7 @@ export class ExecutionService {
     // §8.1: seed the checkpoint here, not lazily on first pin, so a fresh execution's
     // continuity is never empty by omission — the objective alone is worth reinjecting.
     const checkpoint = await writeCheckpoint(artifacts.checkpointFile, seedCheckpoint({
-      executionId: input.executionId,
+      executionId: authorization.executionId,
       policyHash: policy.policyHash,
       objective: capsule.task,
       now: () => createdAt,
@@ -158,5 +201,12 @@ export class ExecutionService {
     await atomicRuntimeFile(artifacts.continuityFile, renderContinuity(checkpoint));
 
     return deepFreezeExecutionValue({ capsule, policy, state, artifacts });
+  }
+
+  /**
+   * Đường cũ, giữ nguyên chữ ký cho các call site chưa cần cửa sổ ở giữa.
+   */
+  async prepare(input: PrepareExecutionInput): Promise<PreparedExecution> {
+    return this.materialize(await this.authorize(input), input);
   }
 }

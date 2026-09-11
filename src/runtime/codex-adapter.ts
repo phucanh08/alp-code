@@ -143,7 +143,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
     );
     const autoCompactTokens = policy.autoCompactTokens[this.name] ?? defaultAutoCompactTokens(input.model);
     const env = {
-      ...baseRuntimeEnvironment(capsule, contextFiles, artifacts),
+      ...baseRuntimeEnvironment(capsule, contextFiles, artifacts, input.binding),
       ALP_EXECUTION_ROOT: dirname(artifacts.directory),
       ALP_MEMORY_ROOT: this.memoryRoot(),
       ALP_IDENTITY_CAPSULE: capsuleFile,

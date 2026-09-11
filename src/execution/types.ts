@@ -153,13 +153,49 @@ export interface PreparedExecution {
   readonly artifacts: ExecutionArtifactPaths;
 }
 
-export interface PrepareExecutionInput {
+/**
+ * Vé đã kiểm nhưng chưa tiêu: policy đã đồng ý, chưa gì được tạo ra.
+ *
+ * `prepare()` từng làm cả hai việc trong một lần gọi, và điều đó buộc thứ tự "kiểm quyền
+ * trước, tạo artifact sau" phải đúng nhờ vị trí các dòng code. Tách ra thì thứ tự ấy thành
+ * kiểu: không ai gọi được `materialize()` mà không cầm một vé, và vé chỉ ra đời từ một lần
+ * `authorize()` đã đi qua đủ mọi cửa.
+ *
+ * Tách còn mở ra cửa sổ mà graph root cần: giữa lúc quyền đã kiểm và lúc file đầu tiên được
+ * ghi, `runMainSession` chen được một node `preparing` vào graph — nên không có khoảnh khắc
+ * nào một execution tồn tại trên đĩa mà cây không biết về nó.
+ *
+ * Các trường ở đây là để đọc và log. Quyền thật nằm trong danh sách vé mà chính service
+ * phát hành giữ, nên một object cùng hình dạng dựng bằng tay không đi qua được `materialize()`.
+ */
+export interface ExecutionAuthorization {
   readonly executionId: ExecutionId;
   readonly parent: AgentId | "principal";
   readonly target: AgentId;
-  readonly task: string;
+  /** Workspace đã canonicalize — đúng path policy đã duyệt, không phải path caller đưa vào. */
   readonly workspace: string;
   readonly workspaceMode: "read-only" | "workspace-write";
+  readonly authorizedAt: string;
+}
+
+/** Những gì cần để trả lời "được phép hay không" — và không gì hơn. */
+export interface AuthorizeExecutionInput {
+  readonly executionId: ExecutionId;
+  readonly parent: AgentId | "principal";
+  readonly target: AgentId;
+  readonly workspace: string;
+  readonly workspaceMode: "read-only" | "workspace-write";
+}
+
+/**
+ * Phần còn lại: nội dung của execution, thứ chỉ có nghĩa sau khi quyền đã xong.
+ *
+ * Không có trường nào ở đây ảnh hưởng tới quyết định cho phép, nên `materialize()` đọc mọi
+ * trường mang quyền từ vé chứ không từ input — caller không đổi được target hay workspace
+ * giữa hai bước.
+ */
+export interface MaterializeExecutionInput {
+  readonly task: string;
   /** Bỏ trống thì lấy `DEFAULT_MODE`. */
   readonly mode?: ModeId;
   /** Loadout của nấc sau khi ghép settings; bỏ trống thì bản built-in. */
@@ -169,6 +205,10 @@ export interface PrepareExecutionInput {
   readonly invariantContext: string;
   readonly policyContext: string;
 }
+
+export interface PrepareExecutionInput
+  extends AuthorizeExecutionInput,
+    MaterializeExecutionInput {}
 
 export function deepFreezeExecutionValue<T>(value: T): T {
   if (value === null || typeof value !== "object" || Object.isFrozen(value)) {
