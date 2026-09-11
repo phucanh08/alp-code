@@ -6,6 +6,7 @@ import { loadProjectAgents } from "../../src/agents/loader";
 import type { ModeId } from "../../src/agents/modes";
 import { agentRegistry } from "../../src/agents/registry";
 import type { AgentDefinition } from "../../src/agents/types";
+import { loadModeProfiles } from "../../src/cli/settings";
 import { createExecutionPolicy } from "../../src/execution/execution-policy";
 import { finalizeExecution, validateHookExecution } from "../../src/hooks/execution-bridge";
 import { WorkflowRunner } from "../../src/workflow/workflow-runner";
@@ -63,6 +64,48 @@ describe("compiled execution hook bridge", () => {
     await expect(finalizeExecution({
       executionId: value.executionId,
       executionRoot: value.root,
+      output: "Found it in src/index.ts:42.",
+    })).resolves.toMatchObject({ ok: true, status: "completed" });
+  });
+
+  /**
+   * Same gap as the `mode` regression above, one field over: the re-derivation used to assume
+   * the built-in loadout, so any execution launched under a project `settings.json` override
+   * (#16) failed the tamper check the same silent way.
+   */
+  it("finalizes an execution that ran under a project settings.json loadout override", async () => {
+    const root = await mkdtemp(join(tmpdir(), "alp-hooks-"));
+    roots.push(root);
+    const workspace = join(root, "workspace");
+    await mkdir(join(workspace, ".alp"), { recursive: true });
+    await writeFile(
+      join(workspace, ".alp", "settings.json"),
+      JSON.stringify({ modes: { medium: { search: { model: "gpt-5.6-sol", reasoningEffort: "high" } } } }),
+    );
+    const { profiles: modeProfiles } = await loadModeProfiles({ cwd: workspace });
+
+    const executionId = "exec_hook_fixture";
+    const directory = join(root, executionId);
+    await mkdir(directory);
+    const definition = agentRegistry.get("search");
+    const policy = createExecutionPolicy({
+      executionId,
+      definition,
+      workspace,
+      workspaceMode: "read-only",
+      modeProfiles,
+      createdAt: "2026-08-26T00:00:00.000Z",
+    });
+    expect(policy.model).toBe("gpt-5.6-sol");
+    const runner = new WorkflowRunner();
+    const state = { executionId, status: "prepared", workflow: runner.initialize(definition.workflow), policyHash: policy.policyHash, createdAt: policy.createdAt };
+    await writeFile(join(directory, "policy.json"), JSON.stringify(policy));
+    await writeFile(join(directory, "state.json"), JSON.stringify(state));
+    await chmod(directory, 0o700);
+
+    await expect(finalizeExecution({
+      executionId,
+      executionRoot: root,
       output: "Found it in src/index.ts:42.",
     })).resolves.toMatchObject({ ok: true, status: "completed" });
   });

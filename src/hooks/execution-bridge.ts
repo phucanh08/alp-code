@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { loadProjectAgents } from "../agents/loader";
 import { agentRegistry } from "../agents/registry";
 import type { AgentDefinition } from "../agents/types";
+import { loadModeProfiles } from "../cli/settings";
 import { createExecutionPolicy, hashAgentDefinition } from "../execution/execution-policy";
 import type { ExecutionPolicy, StoredExecutionState } from "../execution/types";
 import { WorkflowRunner } from "../workflow/workflow-runner";
@@ -71,6 +72,10 @@ async function loadExecution(input: HookExecutionInput): Promise<{
   if (policy.executionId !== input.executionId || state.executionId !== input.executionId) throw new Error("execution ID mismatch");
   if (state.policyHash !== policy.policyHash) throw new Error("execution state policy hash mismatch");
   const definition = await definitionFor(policy);
+  // Same gap as `mode` before it (see below): left out, this re-derivation always assumed the
+  // built-in loadout, so every execution launched under a project/machine `settings.json`
+  // override — the very thing #16 shipped — failed the tamper check on its Stop hook.
+  const { profiles: modeProfiles } = await loadModeProfiles({ cwd: policy.workspace });
   const expected = createExecutionPolicy({
     executionId: policy.executionId,
     definition,
@@ -80,6 +85,7 @@ async function loadExecution(input: HookExecutionInput): Promise<{
     // execution launched on any other nấc failed the tamper check and its Stop hook quietly
     // gave up — the eight built-in roles included. Found by the first live run.
     mode: policy.mode,
+    modeProfiles,
     createdAt: policy.createdAt,
   });
   if (JSON.stringify(expected) !== JSON.stringify(policy)) throw new Error("execution policy snapshot is invalid or stale");
