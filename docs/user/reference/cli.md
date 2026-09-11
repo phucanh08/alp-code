@@ -18,7 +18,7 @@ Internal hook/supervisor dispatch không thuộc public API và không được 
 
 Chỉ được chọn một mode. Option lạ và mode sai đều fail thay vì fallback.
 
-Loadout của mode (model + reasoning effort của từng role) ghi đè được bằng `~/.alp/settings.json`, `<project>/.alp/settings.json` và `<project>/.alp/settings.local.json` — đọc theo đúng thứ tự đó, file sau thắng. Xem [Nấc và runtime](../../concepts/modes-and-runtimes/#đổi-model-của-một-role-settingsjson).
+Loadout của mode (model + reasoning effort của từng role) ghi đè được bằng `~/.alp/settings.json`, `<project>/.alp/settings.json` và `<project>/.alp/settings.local.json` — đọc theo đúng thứ tự đó, file sau thắng. Xem [Tùy biến loadout của mode](../../guides/customize-mode-loadouts/) để cấu hình và [Nấc và runtime](../../concepts/modes-and-runtimes/) để hiểu cách định tuyến.
 
 ## Project và identity
 

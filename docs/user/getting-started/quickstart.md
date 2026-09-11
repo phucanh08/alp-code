@@ -54,6 +54,8 @@ alp --mode high
 
 `medium` phù hợp phần lớn công việc hằng ngày. Xem [Nấc và runtime](../../concepts/modes-and-runtimes/) trước khi chọn `high`, `ultra` hoặc `puck`.
 
+Muốn giữ mode đã chọn nhưng đổi model hoặc mức suy nghĩ của một role, xem [Tùy biến loadout của mode](../../guides/customize-mode-loadouts/).
+
 ## 4. Mở phiên
 
 ```bash
