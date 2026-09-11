@@ -8,9 +8,9 @@ const { resolveWindowsCommand, spawnSyncCommand } = require("./lib/delegation/co
 const TEMP_DIRS = [];
 process.on("exit", () => TEMP_DIRS.forEach((dir) => fs.rmSync(dir, { recursive: true, force: true })));
 
-testAlpFacadePreservesCallerWorkspace();
 testWindowsCommandShim();
-testLocalBackendContract().then(
+// Contract chạy trước vì nó là chỗ build `dist/` khi thiếu; facade cần graph service trong đó.
+testLocalBackendContract().then(testAlpFacadePreservesCallerWorkspace).then(
   () => console.log("OK               delegation: local contract · caller workspace · command shim"),
   (error) => { console.error(error); process.exitCode = 1; },
 );
@@ -92,7 +92,7 @@ async function testLocalBackendContract() {
  * static role document. Both are settled inside a child process, so they are checked by
  * shadowing the runtime binary on `PATH` and reading back what it was actually handed.
  */
-function testAlpFacadePreservesCallerWorkspace() {
+async function testAlpFacadePreservesCallerWorkspace() {
   // The fake runtime below is a shebang script, which Windows will not exec from `PATH`.
   // `testWindowsCommandShim` covers the resolution rules that matter there.
   if (process.platform === "win32") return;
@@ -122,6 +122,22 @@ function testAlpFacadePreservesCallerWorkspace() {
   ].join("\n") + "\n");
   fs.chmodSync(fakeRuntime, 0o755);
 
+  // Từ v0.13.0 `alp delegate` đòi binding của execution cha trong env — gõ từ terminal trần
+  // là `PARENT_EXECUTION_REQUIRED`. Test mở một root `main` trong graph store của state home
+  // ghim dưới đây và đưa đúng bốn biến binding cho CLI, như một phiên `alp` thật sẽ để lại.
+  const stateHome = path.join(dir, ".alp-state");
+  const { ExecutionGraphService, bindingEnvironment } = require(path.join(
+    process.cwd(), "dist", "src", "execution", "graph", "execution-graph-service.js",
+  ));
+  const { FileExecutionGraphStore } = require(path.join(
+    process.cwd(), "dist", "src", "execution", "graph", "file-execution-graph-store.js",
+  ));
+  const { executionGraphsDirectory } = require(path.join(process.cwd(), "dist", "src", "install", "paths.js"));
+  const graph = new ExecutionGraphService({
+    store: new FileExecutionGraphStore({ root: executionGraphsDirectory({ ALP_STATE_HOME: stateHome }) }),
+  });
+  const parent = await graph.createRoot({ agentId: "main", thread: null });
+
   const run = spawnSync(process.execPath, [
     path.join(process.cwd(), "scripts", "alp.cjs"),
     "delegate", "search", "--background", "--", "cwd probe",
@@ -130,11 +146,12 @@ function testAlpFacadePreservesCallerWorkspace() {
     encoding: "utf8",
     env: {
       ...process.env,
+      ...bindingEnvironment(parent.binding),
       PATH: `${bin}${path.delimiter}${process.env.PATH}`,
       // `alp.cjs` tự dựng `~/.alp` ở lần chạy đầu. Không ghim state home thì test ghi đè
       // install record THẬT của máy đang chạy: hook forwarder của mọi project quay sang trỏ
       // vào clone này, và người dùng chỉ phát hiện khi phiên `claude` nạp nhầm bản cài.
-      ALP_STATE_HOME: path.join(dir, ".alp-state"),
+      ALP_STATE_HOME: stateHome,
       ALP_DELEGATION_STATE_DIR: stateDir,
       ALP_TEST_RUNTIME_CAPTURE: capture,
       ALP_SKIP_UPDATE_CHECK: "1",

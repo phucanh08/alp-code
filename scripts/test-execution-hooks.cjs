@@ -39,6 +39,8 @@ try {
       workspace,
       workspaceMode,
       createdAt: "2026-08-27T00:00:00.000Z",
+      // Hook không nhìn Thread; `null` là execution không có Thread (graph cũ), đủ cho test này.
+      thread: null,
     });
     fs.writeFileSync(path.join(directory, "policy.json"), JSON.stringify(policy), { mode: 0o600 });
     fs.writeFileSync(path.join(directory, "state.json"), JSON.stringify({
