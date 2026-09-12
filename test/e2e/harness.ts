@@ -31,6 +31,12 @@ const { readFileSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 
 const argv = process.argv.slice(2);
+// The launch receipt asks the binary for its version before spawning the real launch — the
+// fake answers in the same shape the real CLIs print (\`2.1.269 (Claude Code)\`, \`codex-cli 0.154.0\`).
+if (argv[0] === "--version") {
+  process.stdout.write(${JSON.stringify(runtime)} === "claude" ? "9.9.9 (Claude Code)\\n" : "codex-cli 9.9.9\\n");
+  process.exit(0);
+}
 // The two channels, captured separately because the whole point is that they are separate:
 // session context always arrives via env for the SessionStart hook to read, while a task
 // only exists as a positional argument, and only for a headless run.
@@ -176,6 +182,8 @@ export async function createE2eEnvironment(options: {
    * dựng registry của riêng nó chứ không nới định nghĩa built-in.
    */
   readonly registry?: AgentRegistry;
+  /** Extra variables for the backend's environment — e.g. a fake credential the receipt must classify but never copy. */
+  readonly extraEnv?: Readonly<Record<string, string>>;
 } = {}): Promise<E2eEnvironment> {
   const registry = options.registry ?? agentRegistry;
   // Canonical from the start: the execution service realpaths every workspace it prepares.
@@ -266,6 +274,7 @@ export async function createE2eEnvironment(options: {
     ...(options.holdMs === undefined ? {} : { ALP_E2E_HOLD_MS: String(options.holdMs) }),
     ...(options.holdRoles === undefined ? {} : { ALP_E2E_HOLD_ROLES: options.holdRoles.join(",") }),
     ...(compactFixturesFile === undefined ? {} : { ALP_E2E_COMPACT_FIXTURES: compactFixturesFile }),
+    ...options.extraEnv,
   };
 
   const backend = new LocalProcessBackend({ env: runtimeEnv, stdio: "pipe" });

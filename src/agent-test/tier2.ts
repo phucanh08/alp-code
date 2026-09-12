@@ -4,8 +4,9 @@ import type { AgentDefinition, RuntimeId } from "../agents/types";
 import { RUNTIME_IDS } from "../agents/types";
 import { MODE_PROFILES, modelForMode, reasoningEffortForMode, runtimeForMode, type ModeId, type ModeProfiles } from "../agents/modes";
 import { defaultAutoCompactTokens } from "../agents/model-context";
-import { enforcementNotes } from "../runtime/permission-rules";
+import { capabilitiesFor, describeEnforcement, type EnforcementField } from "../runtime/capabilities";
 import type { AgentDryRun } from "./dry-run";
+import type { SandboxProbe, SandboxProbeResult } from "./sandbox-probe";
 import type { AgentTestCheck, AgentTestDisclosure, AgentTestLaunchFacts } from "./types";
 
 const TASK_POINTER = /^ALP task is in (.+); execute it\.$/;
@@ -17,6 +18,14 @@ export interface Tier2Input {
   /** Loadout đã ghép settings; bỏ trống thì báo cáo theo bản built-in. */
   readonly modeProfiles?: ModeProfiles;
   readonly skillsRoot: string;
+  /**
+   * Measures the sandbox on this machine; absent, nothing is probed and the check says so.
+   * Injected because a real probe runs the runtime binary, and a suite that ran it would
+   * pass or fail with whatever happens to be on the developer's PATH.
+   */
+  readonly probe?: SandboxProbe;
+  /** Which row of the enforcement table to disclose and compare against; defaults to this process. */
+  readonly platform?: NodeJS.Platform;
 }
 
 async function directoryBytes(directory: string): Promise<number> {
@@ -155,6 +164,43 @@ export async function runTier2(input: Tier2Input): Promise<{
       : `claude=[${alpEnv("claude").join(", ")}] codex=[${alpEnv("codex").join(", ")}]`,
   );
 
+  // The table is a claim; the probe is the claim checked here. A cell that measures
+  // differently from what `policy.enforcement` will snapshot is `DRIFT`, and it is red:
+  // a principal about to trust a role on the strength of "the sandbox refuses writes" has to
+  // learn that it does not before that decision, not from the evidence afterwards.
+  const platform = input.platform ?? process.platform;
+  const measured: SandboxProbeResult[] = [];
+  let probeError: string | null = null;
+  if (input.probe !== undefined) {
+    for (const runtime of RUNTIME_IDS) {
+      try {
+        // Asked about one runtime, a probe answers about that runtime; anything else it
+        // says is not a measurement of the row being compared.
+        measured.push(...(await input.probe({ runtime }) ?? []).filter((result) => result.runtime === runtime));
+      } catch (error) {
+        probeError = `${runtime}: ${error instanceof Error ? error.message : String(error)}`;
+        break;
+      }
+    }
+  }
+  const drifted = measured.filter((result) => capabilitiesFor(result.runtime, platform)[result.field] !== result.observed);
+  const probedRuntimes = [...new Set(measured.map((result) => result.runtime))];
+  const fieldsOf = (runtime: RuntimeId): EnforcementField[] =>
+    measured.filter((result) => result.runtime === runtime).map((result) => result.field).sort();
+  add(
+    "enforcement-drift",
+    probeError === null && drifted.length === 0,
+    probeError !== null
+      ? `probe failed — ${probeError}`
+      : drifted.length > 0
+        ? drifted
+          .map((result) => `DRIFT(${result.runtime} ${result.field}: table says ${capabilitiesFor(result.runtime, platform)[result.field]}, measured ${result.observed} — ${result.evidence})`)
+          .join("; ")
+        : measured.length === 0
+          ? `not probed on this machine (${input.probe === undefined ? "no probe" : `${platform}, nothing probeable`}); the table row is a claim, not a measurement`
+          : `table holds where probed — ${probedRuntimes.map((runtime) => `probed ${runtime}: ${fieldsOf(runtime).join(", ")}`).join("; ")}`,
+  );
+
   const skillBytes = await Promise.all(
     definition.capabilities.skills.map(async (skill) => [skill, await directoryBytes(join(skillsRoot, skill))] as const),
   );
@@ -174,7 +220,7 @@ export async function runTier2(input: Tier2Input): Promise<{
   const webTools = definition.capabilities.tools.filter((tool) => tool === "WebFetch" || tool === "WebSearch");
   const disclosure: AgentTestDisclosure = {
     authority: authorityTable(run.sessionContext),
-    enforcement: enforcementNotes(policy),
+    enforcement: RUNTIME_IDS.flatMap((runtime) => describeEnforcement(capabilitiesFor(runtime, platform), policy)),
     egress: [
       webTools.length > 0 ? `tools reaching the network: ${webTools.join(", ")}` : "no network tool granted",
       policy.mcpServers.length > 0

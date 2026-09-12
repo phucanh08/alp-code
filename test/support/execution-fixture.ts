@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentDefinition, AgentId } from "../../src/agents/types";
 import type { ExecutionPolicy, PreparedExecution } from "../../src/execution/types";
+import { capabilitiesFor } from "../../src/runtime/capabilities";
 import { removeTemporary } from "./temporary-root";
 
 /**
@@ -64,6 +65,7 @@ export function policyFixture(overrides: Partial<ExecutionPolicy> = {}): Executi
     model: "claude-haiku-4-5",
     reasoningEffort: "low",
     runtime: "claude",
+    enforcement: capabilitiesFor("claude", process.platform),
     mode: "medium",
     workspaceAccess: "granted",
     allowedTools: ["Read", "Skill"],

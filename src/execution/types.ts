@@ -15,6 +15,7 @@ import type {
   MemoryKind,
   MemoryQuery,
 } from "../memory/types";
+import type { RuntimeEnforcementCapabilitiesV1 } from "../runtime/capabilities";
 import type { ThreadContextHandoff } from "../thread/context-types";
 import type { WorkflowExecutionState } from "../workflow/types";
 import type { WorkflowRunStatus } from "../workflow/types";
@@ -80,6 +81,12 @@ export interface ExecutionPolicy {
   readonly model: string;
   readonly reasoningEffort: ReasoningEffort;
   readonly runtime: RuntimeId;
+  /**
+   * What that runtime was measured to refuse on the platform this execution was prepared
+   * on — the row of the table in `runtime/capabilities.ts`, snapshotted and hashed. It
+   * records what the runtime honours; it grants nothing.
+   */
+  readonly enforcement: RuntimeEnforcementCapabilitiesV1;
   /**
    * Whether this role holds any workspace grant at all. `none` for a role that declares no
    * root (read-thread, compaction, titling): it works from memory, the workspace is only

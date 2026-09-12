@@ -374,6 +374,44 @@ memory.
 Role phụ luôn `read-only` theo ALP guard/policy. `main` chỉ được `workspace-write` tại
 alp-code hoặc workspace đã có trong `workspaces.write`; cwd lạ vẫn read-only.
 
+### Runtime cưỡng chế được gì — bảng đo, không phải lời hứa
+
+Bảng Authority mà một role đọc là *một* lời hứa viết hai lần: Claude từ chối tool ngoài
+grant lúc gọi, Codex thì shell là built-in và đọc được mọi path. `src/runtime/capabilities.ts`
+giữ điều đó thành dữ liệu có `measuredOn { platform, runtimeVersion, measuredAt }`, và
+`ExecutionPolicy.enforcement` chụp đúng dòng đã dựa vào **vào `policyHash`** — hai policy
+khác nhau ở mức cưỡng chế là hai identity khác nhau. Ba mức: `enforced` (runtime tự từ chối),
+`declared-only` (ALP nói ra, không ai từ chối), `none` (không cưỡng chế **hoặc chưa đo** — ô
+chưa đo là `none`, không chép từ platform bên cạnh).
+
+| | toolGrant | readIsolation | writeIsolation | writeScope | networkEgress | nativeDelegationDeny |
+|---|---|---|---|---|---|---|
+| codex · darwin/linux (đo trên 0.154) | declared-only | none | enforced | enforced | enforced | enforced |
+| codex · win32 | declared-only | none | none | none | none | enforced |
+| claude · darwin/linux (đo trên 2.1) | enforced | enforced | enforced | none (P2 đo) | declared-only | enforced |
+| claude · win32 | enforced | declared-only | none | declared-only | declared-only | enforced |
+
+`describeEnforcement(caps, policy)` sinh dòng giải thích cho bảng của `alp agent test` /
+`alp agent add` từ chính dữ liệu này, nên không thể lệch với nó. Tầng 2 của `alp agent test`
+còn *đo lại* trên máy đang chạy: `codex sandbox` ghi một file ngoài writable roots (dưới
+`$HOME/.alp/`, không phải `/tmp` — Codex cho ghi `/tmp` mặc định) và đọc một file ngoài
+workspace ở `read-only`; sai với bảng ⇒ `DRIFT(<runtime> <field>: table says X, measured Y)`
+và exit ≠ 0. Claude không probe được ngoài phiên model; Windows không có dòng nào để probe.
+
+### Launch receipt — binary nào đã thật sự chạy
+
+Backend ghi `<execution>/context/launch.json` (`LaunchProvenanceV1`) **trước** khi spawn,
+nên process crash vẫn để lại receipt; nằm trong `context/` để sống qua dọn `runtime/`.
+`runtimeVersion` lấy từ `<runtime> --version` với budget 2s, cache theo path + mtime của
+binary, hỏng ⇒ `"unknown"`. `authMethod` chỉ nhìn *sự tồn tại* của env/file (Claude:
+`ANTHROPIC_API_KEY` → `api-key`; `CLAUDE_CODE_OAUTH_TOKEN`, `.credentials.json` hoặc item
+keychain macOS → `oauth`. Codex: `OPENAI_API_KEY` → `api-key`; `~/.codex/auth.json` →
+`oauth`), không bao giờ đọc giá trị. `launchSpecDigest` băm command/args/cwd và **tên** biến
+env — giá trị có thể là secret. Receipt không vào `policyHash`: nó là sự kiện, không phải
+quyết định. Version lệch `measuredOn` **không chặn** launch — chặn là ALP chết mỗi lần CLI
+update; `alp doctor` in "not re-measured for <version>" và `alp thread show` in
+`ran <runtime> <version> (<auth>)` cho từng execution.
+
 ## Error và failure behavior
 
 Core chỉ trả các lỗi trung lập runtime:
@@ -424,6 +462,10 @@ trùng — và vì không còn nơi nào khác để retry sang.
 alp delegation list
 alp doctor
 ```
+
+Doctor in `ENFORCEMENT-CLAUDE` / `ENFORCEMENT-CODEX`: version binary trên PATH, auth method
+sẽ dùng, dòng bảng enforcement của platform này, và cảnh báo khi bảng đo trên version khác —
+luôn là observation, không phải finding, vì version mới không phải cài đặt hỏng.
 
 Doctor báo `ORPHAN-EXECUTION` cho execution state còn sót lại, kèm lệnh dọn cụ thể.
 `LocalProcessBackend.orphanExecutions()` là thứ trả lời câu hỏi đó: execution còn ghi

@@ -261,6 +261,8 @@ async function runThreadRoot(
       dependencies.backend.spawn({
         executionId,
         launchSpec,
+        // In `context/`, not `runtime/`: the receipt has to outlive the launch files.
+        receipt: { file: join(execution.artifacts.contextDirectory, "launch.json"), runtime: execution.policy.runtime },
         lifecycle: {
           requestId: executionId,
           parentExecutionId: null,

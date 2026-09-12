@@ -571,9 +571,12 @@ Ba dòng cuối bảng đo được ngày 2026-09-10, không phải suy từ tà
 `exec_42c6500fcbe74dfea28b`), còn `codex sandbox -c sandbox_mode='"read-only"' -- cat <path ngoài
 workspace>` in ra nội dung file. Cùng phép đo cho thấy ghi bị `Operation not permitted` và `curl`
 không nối được mạng. Nghĩa là **trên Codex, `Bash` và `workspace.readRoots` là ràng buộc mức
-prompt**; ghi và egress thì sandbox giữ thật. `enforcementNotes` trong `permission-rules.ts` in
-đúng điều này ra trong bảng của `alp agent test` và `alp agent add`, để principal duyệt trust
-không đọc bảng Authority như một lời hứa mà nó chỉ giữ được một nửa.
+prompt**; ghi và egress thì sandbox giữ thật. Phép đo đó sống ở `src/runtime/capabilities.ts`
+dưới dạng bảng `(runtime, platform)` có `measuredOn`; `policy.enforcement` chụp dòng đã dựa vào
+(vào `policyHash`), `describeEnforcement` sinh ghi chú cho bảng của `alp agent test` và
+`alp agent add` từ chính bảng đó, và tầng 2 của `alp agent test` đo lại `codex sandbox` trên máy
+đang chạy để báo `DRIFT` — principal duyệt trust không đọc bảng Authority như một lời hứa mà nó
+chỉ giữ được một nửa. Xem `docs/delegation.md` § "Runtime cưỡng chế được gì".
 
 **Phiên interactive chạy không guardrail, và đó là quyết định có ý thức.** `alp` (`run-main`) là
 phiên duy nhất đặt `interactive: true`; `alp delegate` luôn `false`. Principal ngồi ngay đó và tự

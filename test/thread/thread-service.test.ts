@@ -277,6 +277,7 @@ describe("ThreadService — lock order", () => {
           return {
             capsule: { executionId: "exec_root" },
             policy: { model: "claude-opus-5", reasoningEffort: "high", runtime: "claude", thread: input.thread },
+            artifacts: { contextDirectory: "/state/executions/exec_root/context" },
           } as never;
         },
       },

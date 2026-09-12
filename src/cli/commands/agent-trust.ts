@@ -1,5 +1,5 @@
 import { relative } from "node:path";
-import { renderAgentTestReport, testAgent } from "../../agent-test";
+import { renderAgentTestReport, testAgent, type SandboxProbe } from "../../agent-test";
 import { createCandidateRegistry, type AgentLoadResult } from "../../agents/loader";
 import { hashAgentDefinition } from "../../execution/execution-policy";
 import {
@@ -24,6 +24,8 @@ export interface AgentTrustDependencies {
   readonly openPrompt?: () => PrincipalPrompt;
   /** Overridden in tests; defaults to `~/.alp/trusted-agents.json`. */
   readonly trustFile?: string;
+  /** Same probe as `alp agent test`: a trust decision is where a `DRIFT` matters most. */
+  readonly probe?: SandboxProbe;
 }
 
 const SHORT_HASH = 12;
@@ -81,6 +83,7 @@ export async function runAgentAdd(
     env: dependencies.env,
     ...(dependencies.assetRoot ? { assetRoot: dependencies.assetRoot } : {}),
     ...(dependencies.stableCommand ? { stableCommand: dependencies.stableCommand } : {}),
+    ...(dependencies.probe ? { probe: dependencies.probe } : {}),
   });
   dependencies.write(renderAgentTestReport(report));
   if (!report.ok) {

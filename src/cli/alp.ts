@@ -25,6 +25,7 @@ import { WorkflowRunner } from "../workflow/workflow-runner";
 import { runContextCommand } from "./commands/context";
 import { backendProbe } from "../delegation/delegation-service";
 import { createDefaultDelegationComposition, isRenderedOutput, runDelegateCommand, runDelegationLifecycleCommand, sharedBackendStateDirectory, workspaceFromArgs } from "./commands/delegate";
+import { codexSandboxProbe } from "../agent-test";
 import { parseAgentCommand, runAgentCommand } from "./commands/agent";
 import { syncIdentityDocuments } from "./commands/identity-sync";
 import { deinitializeProject, initializeProject, ProjectRegistryStore } from "./commands/init";
@@ -32,6 +33,7 @@ import { ensurePrincipalProfile, openTerminalPrompt, runPrincipalCommand, type P
 import { continueThreadSession, historySourceFromDisk, runMainSession, type RunMainDependencies, type RunMainInput } from "./commands/run-main";
 import { runThreadCommand } from "./commands/thread";
 import { runModeCommand, type ModeCommandInput } from "./commands/mode";
+import { readLaunchReceipt } from "../runtime/launch-provenance";
 import { agentsDirectory, executionGraphsDirectory, executionsDirectory, memoryRoot, threadsDirectory } from "../state-paths";
 import { checkForUpdate, FileUpdateCheckStore, spawnNativeBackgroundUpdateCheck } from "./update-check";
 import type { InstallLayout } from "../install-layout";
@@ -321,6 +323,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
         env: process.env,
         write: (text) => stdout.write(text),
         historySource: (executionId) => historySourceFromDisk(executionsDirectory(), executionId),
+        launchReceipt: (executionId) => readLaunchReceipt(join(executionsDirectory(), executionId, "context", "launch.json")),
         continueThread: async (input) => {
           const result = await continueThreadSession(
             { threadId: input.threadId, cwd, ...(input.mode ? { mode: input.mode } : {}) },
@@ -378,6 +381,8 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
         modeProfiles: profiles,
         ...(layout ? { stableCommand: layout.stableCommand } : {}),
         env: process.env,
+        // Tier 2 measures the Codex sandbox here rather than trusting the table for it.
+        probe: codexSandboxProbe({ env: process.env, platform: process.platform }),
         write: (text: string) => { stdout.write(text); },
         // Trust is a decision a person makes, so `alp agent add` needs a real terminal to
         // ask in — and refuses rather than assuming when it does not have one.

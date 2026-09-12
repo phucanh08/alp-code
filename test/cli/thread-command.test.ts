@@ -4,6 +4,7 @@ import { InMemoryThreadStore } from "../../src/thread/in-memory-thread-store";
 import { HistoryBridgeRegistry, type RuntimeHistoryBridge } from "../../src/thread/history-bridge";
 import { ThreadService, type ThreadGraphReader } from "../../src/thread/thread-service";
 import type { ExecutionGraphDocument, ExecutionNode, ExecutionNodeStatus } from "../../src/execution/graph/types";
+import type { LaunchProvenanceV1 } from "../../src/runtime/launch-provenance";
 import { at } from "../support/thread-fixture";
 
 function graphReader(nodes: Record<string, ExecutionNodeStatus> = {}): ThreadGraphReader {
@@ -36,7 +37,12 @@ function scriptedBridge(runtime: "claude" | "codex", texts: readonly string[], c
   };
 }
 
-function harness(options: { readonly graph?: ThreadGraphReader; readonly env?: NodeJS.ProcessEnv; readonly bridges?: readonly RuntimeHistoryBridge[] } = {}) {
+function harness(options: {
+  readonly graph?: ThreadGraphReader;
+  readonly env?: NodeJS.ProcessEnv;
+  readonly bridges?: readonly RuntimeHistoryBridge[];
+  readonly receipts?: Readonly<Record<string, LaunchProvenanceV1>>;
+} = {}) {
   let tick = 0;
   const now = () => new Date(at(tick++));
   const store = new InMemoryThreadStore({ now });
@@ -53,6 +59,7 @@ function harness(options: { readonly graph?: ThreadGraphReader; readonly env?: N
     cwd: "/project",
     env: options.env ?? {},
     write: (text) => { output.push(text); },
+    ...(options.receipts ? { launchReceipt: async (executionId: string) => options.receipts?.[executionId] ?? null } : {}),
   };
   const run = (...args: string[]) => runThreadCommand(args, dependencies);
   const printed = () => output.join("");
@@ -173,6 +180,33 @@ describe("alp thread show", () => {
     expect(printed()).toContain("Activity:  running (exec_1)");
     expect(printed()).toMatch(/#1 {2}exec_1 {2}running/);
     expect(printed()).not.toContain("alp thread continue");
+  });
+
+  /**
+   * The receipt is the only record of which binary ran a root; `policy.json` was hashed
+   * before the process existed. Two roots of one Thread can have run on different versions,
+   * and a principal reading E-1 against E-2 needs that on the same line as the outcome.
+   */
+  it("prints the runtime version and auth method each root ran with, from its launch receipt", async () => {
+    const receipt = (executionId: string, runtime: "claude" | "codex", runtimeVersion: string, authMethod: "oauth" | "api-key" | "unknown"): LaunchProvenanceV1 => ({
+      version: 1, executionId, runtime, runtimeVersion, platform: "darwin", authMethod,
+      credentialConfigured: authMethod !== "unknown", launchSpecDigest: "0".repeat(64), launchedAt: at(0),
+    });
+    const { threads, run, printed } = harness({
+      receipts: { exec_1: receipt("exec_1", "codex", "0.154.0", "oauth"), exec_2: receipt("exec_2", "claude", "unknown", "unknown") },
+    });
+    const { id } = await threads.createThread({ agentId: "main", workspace: "/project" });
+    for (const executionId of ["exec_1", "exec_2", "exec_3"]) {
+      await threads.reserveRoot(id, executionId);
+      await threads.settleRoot(id, executionId, "completed");
+      await threads.projectContext(id, executionId, { checkpoint: null, runtime: "claude" });
+    }
+    await run("show", id);
+    const text = printed();
+    expect(text).toMatch(/#1 {2}exec_1 {2}completed.*ran codex 0\.154\.0 \(oauth\)/);
+    expect(text).toMatch(/#2 {2}exec_2 {2}completed.*ran claude unknown \(unknown\)/);
+    // No receipt (an execution from before receipts existed) says so rather than nothing.
+    expect(text).toMatch(/#3 {2}exec_3 {2}completed.*no launch receipt/);
   });
 
   it("reads the thread ID from ALP_THREAD_ID when none is given", async () => {

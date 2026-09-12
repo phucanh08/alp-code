@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { InstallLayout } from "../../src/install-layout";
-import { inspectInstallation } from "../../src/install/doctor";
+import { inspectInstallation, inspectRuntimes } from "../../src/install/doctor";
 import { hostBinaryTarget } from "../../src/install/targets";
 import { removeTemporary } from "../support/temporary-root";
 
@@ -54,5 +54,56 @@ describe("native doctor", () => {
     await symlink(join("versions", "v0.9.0"), join(fixture.home, "current"));
     const findings = inspectInstallation(fixture.layout, fixture.env).findings;
     expect(findings.some((item) => item.tag === "CURRENT" && item.message.includes("v0.9.0"))).toBe(true);
+  });
+});
+
+/**
+ * Oracle: P5 of the governance-loop plan — `alp doctor` prints, per runtime, the version the
+ * binary itself answers, how it will authenticate (by presence of a key or a login, never
+ * the value), and the enforcement table row with a warning when that row was measured on a
+ * different version. A moved version is an observation, not a finding: blocking on it
+ * would take `alp` down on every CLI update.
+ */
+describe("native doctor — runtime version, auth and enforcement table", () => {
+  it("reports version, auth method and every cell of the table for each runtime", async () => {
+    const observations = await inspectRuntimes({
+      env: { ANTHROPIC_API_KEY: "sk-ant-secret-value", HOME: "/home/u" },
+      platform: "darwin",
+      versionOf: async (command) => command.startsWith("claude") ? "2.1.269" : "0.154.0",
+      exists: (path) => path === join("/home/u", ".codex", "auth.json"),
+    });
+
+    const claude = observations.find((item) => item.tag === "ENFORCEMENT-CLAUDE")?.message ?? "";
+    expect(claude).toContain("2.1.269");
+    expect(claude).toContain("auth api-key");
+    expect(claude).not.toContain("sk-ant-secret-value");
+    expect(claude).toContain("writeIsolation enforced");
+    expect(claude).toContain("networkEgress declared-only");
+    expect(claude).toContain("measured on 2.1");
+    expect(claude).not.toContain("not re-measured");
+
+    const codex = observations.find((item) => item.tag === "ENFORCEMENT-CODEX")?.message ?? "";
+    expect(codex).toContain("0.154.0");
+    expect(codex).toContain("auth oauth");
+    expect(codex).toContain("readIsolation none");
+    expect(codex).toContain("toolGrant declared-only");
+    expect(codex).not.toContain("not re-measured");
+  });
+
+  it("warns that the table was not re-measured when the version moved or could not be read", async () => {
+    const observations = await inspectRuntimes({
+      env: { HOME: "/home/u" },
+      platform: "linux",
+      versionOf: async (command) => command.startsWith("claude") ? "2.2.0" : "unknown",
+      exists: () => false,
+    });
+    const claude = observations.find((item) => item.tag === "ENFORCEMENT-CLAUDE")?.message ?? "";
+    const codex = observations.find((item) => item.tag === "ENFORCEMENT-CODEX")?.message ?? "";
+    expect(claude).toContain("not re-measured for 2.2.0");
+    expect(codex).toContain("version unknown");
+    expect(codex).toContain("not re-measured");
+    expect(claude).toContain("auth unknown");
+    // Observations only: nothing here is a broken install.
+    expect(observations.every((item) => item.remediation === undefined)).toBe(true);
   });
 });

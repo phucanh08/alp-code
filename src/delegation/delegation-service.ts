@@ -394,6 +394,7 @@ export class DelegationService {
         this.backend.spawn({
           executionId,
           launchSpec: launchSpec as RuntimeLaunchSpec,
+          receipt: { file: join(execution.artifacts.contextDirectory, "launch.json"), runtime: execution.policy.runtime },
           lifecycle: {
             requestId: request.requestId,
             parentExecutionId: parent.node.executionId,

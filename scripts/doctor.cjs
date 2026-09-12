@@ -42,6 +42,23 @@ async function checkRuntimes() {
   }
 }
 
+// Version thật của binary, auth sẽ dùng, và dòng bảng enforcement máy này — luôn là observation:
+// version mới không phải cài đặt hỏng (xem `inspectRuntimes` trong src/install/doctor.ts).
+async function checkEnforcement() {
+  try {
+    const { inspectRuntimes } = require(compiled("install/doctor"));
+    const { createRuntimeVersionReader, macKeychainHas } = require(compiled("runtime/launch-provenance"));
+    const rows = await inspectRuntimes({
+      env: process.env,
+      platform: process.platform,
+      versionOf: createRuntimeVersionReader({ env: process.env }),
+      exists: fs.existsSync,
+      keychainHas: macKeychainHas,
+    });
+    for (const row of rows) observe(row.tag, row.message);
+  } catch (error) { observe("ENFORCEMENT", `not inspected: ${error.message}`); }
+}
+
 async function checkMemory() {
   const root = P.memoryRoot();
   try {
@@ -141,6 +158,7 @@ const render = ({ tag, msg, fix }) => `${tag.padEnd(20)} ${msg}\n${" ".repeat(20
 async function main() {
   checkAgentRegistry();
   await checkRuntimes();
+  await checkEnforcement();
   await checkMemory();
   checkExecutionState();
   checkBuildDrift();

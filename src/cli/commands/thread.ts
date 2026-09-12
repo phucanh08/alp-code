@@ -1,4 +1,5 @@
 import { MODE_IDS, parseMode, type ModeId } from "../../agents/modes";
+import type { LaunchProvenanceV1 } from "../../runtime/launch-provenance";
 import type { HistoryExecutionSource } from "../../thread/history-bridge";
 import { worseCompleteness, type HistoryCompleteness } from "../../thread/history-types";
 import type { ThreadService } from "../../thread/thread-service";
@@ -28,6 +29,11 @@ export interface ThreadCommandDependencies {
   /** `ALP_THREAD_ID` — nhãn root process nhận, để `show` không đối số hoạt động từ trong phiên. */
   readonly env: NodeJS.ProcessEnv;
   readonly write: (text: string) => unknown;
+  /**
+   * `context/launch.json` của một root — version và auth thật lúc phóng. Tuỳ chọn để suite
+   * không cần đĩa; bỏ trống thì `show` không in cột này.
+   */
+  readonly launchReceipt?: (executionId: string) => Promise<LaunchProvenanceV1 | null>;
 }
 
 /**
@@ -56,7 +62,11 @@ export async function runThreadCommand(
       // câu trả lời đến từ graph/backend, không từ ref mà một process đã chết để lại.
       const thread = await dependencies.threads.reconcile(threadId);
       const activity = await dependencies.threads.activity(threadId);
-      write(renderThreadShow(thread, activity));
+      const receipts = dependencies.launchReceipt === undefined
+        ? undefined
+        : new Map(await Promise.all(thread.executions.map(async (ref) =>
+          [ref.executionId, await dependencies.launchReceipt!(ref.executionId).catch(() => null)] as const)));
+      write(renderThreadShow(thread, activity, receipts));
       return 0;
     }
     case "continue": {
@@ -154,7 +164,16 @@ export function renderThreadList(summaries: readonly ThreadSummary[], options: {
   return lines;
 }
 
-export function renderThreadShow(thread: ThreadDocumentV1, activity: ThreadActivity): string[] {
+/** `ran codex 0.154.0 (oauth)` — hoặc nói rõ là không có receipt, thay vì im lặng. */
+function renderReceipt(receipt: LaunchProvenanceV1 | null): string {
+  return receipt === null ? "  no launch receipt" : `  ran ${receipt.runtime} ${receipt.runtimeVersion} (${receipt.authMethod})`;
+}
+
+export function renderThreadShow(
+  thread: ThreadDocumentV1,
+  activity: ThreadActivity,
+  receipts?: ReadonlyMap<string, LaunchProvenanceV1 | null>,
+): string[] {
   const context = thread.currentContext;
   const lines = [
     `Thread:    ${thread.id}`,
@@ -177,7 +196,8 @@ export function renderThreadShow(thread: ThreadDocumentV1, activity: ThreadActiv
       : ref.settled.outcome;
     const projected = ref.settled !== null && ref.settled.nextContextRevision === null ? "  (context not projected yet)" : "";
     const history = ref.history ? `  history ${renderHistory(ref.history)}` : "";
-    lines.push(`  #${ref.sequence}  ${ref.executionId}  ${state.padEnd(11)} rev ${ref.contextRevision}  ${ref.reservedAt}${projected}${history}`);
+    const receipt = receipts === undefined ? "" : renderReceipt(receipts.get(ref.executionId) ?? null);
+    lines.push(`  #${ref.sequence}  ${ref.executionId}  ${state.padEnd(11)} rev ${ref.contextRevision}  ${ref.reservedAt}${projected}${history}${receipt}`);
   }
   lines.push("", `Children of a root: alp delegation tree <execution-id>`);
   if (thread.status === "open" && activity.kind === "idle") lines.push(`Continue:            alp thread continue ${thread.id}`);

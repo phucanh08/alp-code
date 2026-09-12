@@ -1,5 +1,5 @@
 import { relative } from "node:path";
-import { renderAgentTestReport, testAgent, AGENT_TEST_TIERS, type AgentTestReport, type AgentTestTier } from "../../agent-test";
+import { renderAgentTestReport, testAgent, AGENT_TEST_TIERS, type AgentTestReport, type AgentTestTier, type SandboxProbe } from "../../agent-test";
 import { createCandidateRegistry, type AgentLoadResult } from "../../agents/loader";
 import type { ModeId, ModeProfiles } from "../../agents/modes";
 import type { AgentId } from "../../agents/types";
@@ -23,6 +23,12 @@ export interface AgentTestDependencies {
   readonly write: (text: string) => void;
   /** Loadout đã ghép settings của project được test. Bỏ trống thì báo cáo theo bản built-in. */
   readonly modeProfiles?: ModeProfiles;
+  /**
+   * Tier 2's measurement of the sandbox on this machine. The CLI wires the real one; a suite
+   * leaves it out, because a probe runs the runtime binary and would make every command test
+   * answer for whatever `codex` happens to be on the developer's PATH.
+   */
+  readonly probe?: SandboxProbe;
 }
 
 function renderLoadFailures(load: AgentLoadResult, project: string): string {
@@ -81,6 +87,7 @@ export async function runAgentTest(
       ...(dependencies.modeProfiles ? { modeProfiles: dependencies.modeProfiles } : {}),
       ...(dependencies.assetRoot ? { assetRoot: dependencies.assetRoot } : {}),
       ...(dependencies.stableCommand ? { stableCommand: dependencies.stableCommand } : {}),
+      ...(dependencies.probe ? { probe: dependencies.probe } : {}),
     }));
   }
 

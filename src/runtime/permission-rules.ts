@@ -28,9 +28,10 @@ import type { ExecutionPolicy } from "../execution/types";
  * read-only role on Codex cannot change anything or reach the network; it can read and it
  * can run commands.
  *
- * `enforcementNotes` below turns this into something a principal reads before trusting an
- * agent, because a disclosure that lists grants without saying which runtime honours them is
- * the half-truth that matters most at exactly that moment.
+ * These measurements are the table in `capabilities.ts` (`capabilitiesFor`), which is what
+ * `policy.json` snapshots and what `alp agent test` prints and probes — a disclosure that
+ * lists grants without saying which runtime honours them is the half-truth that matters
+ * most at exactly the moment a principal decides to trust an agent.
  * `PolicyEngine` still runs at `prepare` time; only the per-call interception is gone.
  */
 
@@ -56,24 +57,6 @@ export interface RuntimePermissionInput {
    * adapter for why that changes the tool grant rather than the workspace guarantee.
    */
   readonly sandboxed?: boolean;
-}
-
-/**
- * Per-runtime enforcement, in the terms of *this* policy.
- *
- * Lives next to the code that writes the ACL so the two cannot drift: a line here is a claim
- * about what `claudePermissions` and `codexSandboxLines` actually produce, and both are a few
- * lines away.
- */
-export function enforcementNotes(policy: ExecutionPolicy): readonly string[] {
-  const holdsBash = policy.allowedTools.includes("Bash");
-  const readsWorkspace = policy.workspaceAccess === "granted";
-  return Object.freeze([
-    "claude: the tool grant, the skill names and the read roots are ACL rules the runtime refuses at call time",
-    `codex: the shell is built in and cannot be withheld${holdsBash ? "" : " — this role holds no `Bash`, and a command can still run"}`,
-    `codex: the read-only sandbox permits reading any path${readsWorkspace ? ", so `workspace.readRoots` is instruction-level here" : ", so the memory-only boundary is instruction-level here"}`,
-    `codex: writes outside the writable roots and network egress are refused by the sandbox`,
-  ]);
 }
 
 export interface ClaudePermissions {

@@ -4,6 +4,7 @@ import { basename, delimiter, dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ClaudeRuntimeAdapter } from "../../src/runtime/claude-adapter";
 import { CodexRuntimeAdapter } from "../../src/runtime/codex-adapter";
+import { capabilitiesFor } from "../../src/runtime/capabilities";
 import { absoluteRule } from "../../src/runtime/permission-rules";
 import type { PreparedExecution } from "../../src/execution/types";
 import type { RuntimeLaunchSpec } from "../../src/runtime/runtime-adapter";
@@ -68,6 +69,7 @@ async function fixture(): Promise<{ root: string; project: string; prepared: Pre
       model: "gpt-5.6-terra",
       reasoningEffort: "low",
       runtime: "codex",
+      enforcement: capabilitiesFor("codex", process.platform),
       workspaceAccess: "granted",
       allowedTools: ["Read", "Grep"],
       skills: [],

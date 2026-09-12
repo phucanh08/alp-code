@@ -89,6 +89,9 @@ async function loadExecution(input: HookExecutionInput): Promise<{
     mode: policy.mode,
     modeProfiles,
     createdAt: policy.createdAt,
+    // Carried too: the enforcement row is signed, and the hook may not run on the platform
+    // that prepared the execution.
+    ...(policy.enforcement === undefined ? {} : { platform: policy.enforcement.measuredOn.platform }),
   });
   if (JSON.stringify(expected) !== JSON.stringify(policy)) throw new Error("execution policy snapshot is invalid or stale");
   return { policy, definition, state };

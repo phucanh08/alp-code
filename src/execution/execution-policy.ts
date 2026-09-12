@@ -3,6 +3,7 @@ import { capabilityCatalog, type CapabilityCatalog } from "../agents/capability-
 import { DEFAULT_MODE, modelForMode, reasoningEffortForMode, runtimeForMode, type ModeId, type ModeProfiles } from "../agents/modes";
 import type { AgentDefinition, RuntimeId } from "../agents/types";
 import { RUNTIME_IDS } from "../agents/types";
+import { capabilitiesFor } from "../runtime/capabilities";
 import {
   deepFreezeExecutionValue,
   type ExecutionId,
@@ -27,6 +28,12 @@ export interface CreateExecutionPolicyInput {
   readonly createdAt: string;
   /** Defaults to the shipped catalog — see `capability-catalog.ts`. */
   readonly catalog?: CapabilityCatalog;
+  /**
+   * The platform the enforcement row is looked up for. Defaults to the process preparing the
+   * execution; a re-derivation (the hook bridge) carries the snapshot's own value instead,
+   * because the row is part of what was signed.
+   */
+  readonly platform?: NodeJS.Platform;
 }
 
 function canonicalize(value: unknown): unknown {
@@ -130,6 +137,7 @@ export function createExecutionPolicy(
   // lại bảng nấc; với settings thì "tra lại" nghĩa là có thể tra ra kết quả khác cái đã ký,
   // và `policy.json` sẽ mô tả một execution khác execution đang chạy.
   const model = modelForMode(input.definition, mode, input.modeProfiles);
+  const runtime = runtimeForMode(input.definition, mode, input.modeProfiles);
   const snapshot = {
     executionId: input.executionId,
     thread: assertThreadBinding(input.thread),
@@ -141,7 +149,11 @@ export function createExecutionPolicy(
     mode,
     model,
     reasoningEffort: reasoningEffortForMode(input.definition, mode, input.modeProfiles),
-    runtime: runtimeForMode(input.definition, mode, input.modeProfiles),
+    runtime,
+    // The measured row this execution is judged against, inside the hash: the same role on
+    // two machines whose runtime refuses different things is two different policies, and
+    // the evidence later reads this row rather than whatever the table says by then.
+    enforcement: capabilitiesFor(runtime, input.platform ?? process.platform),
     workspaceAccess: input.definition.capabilities.workspace.readRoots.length > 0
       ? "granted" as const
       : "none" as const,

@@ -1,5 +1,5 @@
 ---
-status: draft
+status: in-progress
 created: 2026-09-12
 slug: governance-loop
 source: plans/260912-0749-governance-loop/research/roadmap-v3.md
@@ -40,7 +40,7 @@ Nguồn sự thật: [roadmap V3](./research/roadmap-v3.md) — đã qua hai lư
 | 2 | [`writeScope`](./phase-2-write-scope.md) — mở đầu bằng đo precedence sandbox Claude | pending |
 | 3 | [Evidence](./phase-3-evidence.md) — bridge cho child, git baseline, `verify.commands`, evaluator | pending |
 | 4 | [Acceptance](./phase-4-acceptance.md) — `alp delegation accept\|reject`, nguồn thứ hai của projector | pending |
-| 5 | [Runtime enforcement capabilities + launch receipt](./phase-5-enforcement-capabilities.md) — `measuredOn`, `launch.json`, agent test tầng 2 | pending |
+| 5 | [Runtime enforcement capabilities + launch receipt](./phase-5-enforcement-capabilities.md) — `measuredOn`, `launch.json`, agent test tầng 2 | completed (2026-09-12) |
 | 6 | [Usage telemetry + budget observe-only](./phase-6-usage.md) — parse từ transcript bridge đã mở | pending |
 
 Thứ tự bắt buộc: 2 → 3 → 4 (vòng governance). 1 và 5 độc lập; 5 nên trước 3 vì evaluator đọc `policy.enforcement` + `launch.json`. Ước lượng ≈ 5–6 tuần tuần tự (tham chiếu: graph 5 phase ≈ 1 tuần, Thread 6 phase ≈ 1 tuần). Không phase nào có thao tác khó đảo ngược cần hỏi principal trước khi chạy; `alp trust verify` là hành động của principal, không phải của phase.

@@ -22,6 +22,7 @@ import type {
   PreparedExecution,
   PrepareExecutionInput,
 } from "../../src/execution/types";
+import { capabilitiesFor } from "../../src/runtime/capabilities";
 import type { RuntimeAdapter, RuntimeLaunchSpec } from "../../src/runtime/runtime-adapter";
 import { removeTemporary } from "../support/temporary-root";
 
@@ -63,6 +64,7 @@ function prepared(executionId: string, target = "search", profiles: ModeProfiles
       model: modelForMode(definition, "medium", profiles),
       reasoningEffort: reasoningEffortForMode(definition, "medium", profiles),
       runtime: runtimeForMode(definition, "medium", profiles),
+      enforcement: capabilitiesFor(runtimeForMode(definition, "medium", profiles), process.platform),
       workspaceAccess: "granted",
       allowedTools: ["Read"],
       skills: [],

@@ -1,6 +1,7 @@
 # P5 — Runtime enforcement capabilities + launch receipt
 
 <!-- Sửa: rà đối kháng + kiểm chứng lượt 2 (2026-09-12) — gộp P7 launch provenance vào đây; measuredOn chỉ cho enforcement, transcript dùng pinned version của bridge -->
+<!-- Implement 2026-09-12, xem "Đã làm khác plan" cuối file -->
 
 **Mục tiêu:** biến `enforcementNotes` (text) thành dữ liệu có `measuredOn`; `policy.json` ghi enforcement đã dựa vào; mỗi process có receipt version/auth thật lúc phóng; `alp agent test` tầng 2 phát hiện drift.
 **Phụ thuộc:** P2 (bảng tối thiểu đã tạo). Nên trước P3/P6 vì hai phase đó đọc `policy.enforcement` và `launch.json`.
@@ -118,3 +119,16 @@ Probe thật cho từng dòng probe được (ghi file ngoài scope, ghi vào ex
 - `alp agent test` trên darwin với Claude + Codex thật: không `DRIFT`.
 - `policy.json` có `enforcement`; `context/launch.json` cho mọi execution; `alp doctor` in bảng + `authMethod` hai runtime.
 - `npm test` xanh.
+
+## Đã làm khác plan (implement 2026-09-12)
+
+| Plan nói | Làm thật | Vì sao |
+|---|---|---|
+| Bảng "mở rộng bản tối thiểu của P2" | P5 tạo `capabilities.ts` từ đầu (P2 chưa làm; thứ tự 1 → 5 → 2) | P2 chỉ đo `writeScope` Claude; ô đó là `none` cho tới P2 |
+| codex · win32 `*đo*` | `none` cho writeIsolation/writeScope/networkEgress | Chưa đo ⇒ `none` đúng luật fail-closed của chính bảng |
+| `authMethod` Claude: env hoặc credentials file | Thêm `CLAUDE_CODE_OAUTH_TOKEN` và item keychain macOS (`security find-generic-password -s "Claude Code-credentials"`, không `-w`) | Trên macOS Claude Code không ghi `.credentials.json`; thiếu keychain thì mọi máy Mac đăng nhập OAuth in `unknown` |
+| Tầng 2 probe "ghi ngoài scope, executions root, tool không grant, private memory, `Task`" | Chỉ probe được Codex write (`workspace-write`) + read (`read-only`) qua `codex sandbox`; Claude và Windows ⇒ `null` = "không probe được", pass có ghi chú | Claude sandbox chỉ sống trong phiên model (tốn call); các ô còn lại cần model gọi tool. Probe ghi dưới `$HOME/.alp/` vì Codex cho ghi `/tmp` mặc định |
+| `alp doctor` "cảnh báo lệch" | Observation `ENFORCEMENT-*` với "not re-measured for <ver>", không phải finding | Version mới không phải cài đặt hỏng; doctor đỏ mỗi lần CLI update sẽ bị bỏ qua |
+| `describeEnforcement(capabilities)` | `describeEnforcement(capabilities, policy)` — dòng Codex thay đổi theo role có `Bash` / workspace | Cùng đoạn trên mọi agent thì không ai đọc |
+| "cutover reader: evaluator coi `declared-only`" | `readEnforcement(snapshot)` trả `null` khi thiếu; cách evaluator xử lý để P3 | P3 chưa làm |
+| `alp thread show` | Cột `ran <runtime> <ver> (<auth>)` / `no launch receipt` qua dependency `launchReceipt` | — |
