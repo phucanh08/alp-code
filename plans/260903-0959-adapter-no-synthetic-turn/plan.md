@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: completed
 created: 2026-09-03
 slug: adapter-no-synthetic-turn
 source:

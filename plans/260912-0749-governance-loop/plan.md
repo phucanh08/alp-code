@@ -17,7 +17,7 @@ blocks: []
 
 Nguồn sự thật: [roadmap V3](./research/roadmap-v3.md) — đã qua hai lượt review V1/V2, §12 ghi từng thay đổi và vì sao.
 
-**Ngoài phạm vi:** Supervisor / policy pack / workspace governance; M1 (surface/UI), M4; resume runtime session; `AssignmentContract`/`LaunchContract`/`assignmentId`/lease riêng; budget "hard" chặn tool call giữa chừng (ADR riêng); approval đi lên theo cây cho child (ADR riêng); ExecutionGraph thành DAG; >1 active root/Thread; steer message vào process; markdown làm nguồn config; role `orchestrator` (là gate mở *sau* plan này, không nằm trong).
+**Ngoài phạm vi:** approval cho `--mode` (principal tự gõ flag); `verify.commands` tầng user-global; Supervisor / policy pack / workspace governance; M1 (surface/UI), M4; resume runtime session; `AssignmentContract`/`LaunchContract`/`assignmentId`/lease riêng; budget "hard" chặn tool call giữa chừng (ADR riêng); approval đi lên theo cây cho child (ADR riêng); ExecutionGraph thành DAG; >1 active root/Thread; steer message vào process; markdown làm nguồn config; role `orchestrator` (là gate mở *sau* plan này, không nằm trong).
 
 ## Nguyên tắc bất biến
 
@@ -30,7 +30,7 @@ Nguồn sự thật: [roadmap V3](./research/roadmap-v3.md) — đã qua hai lư
 7. **Context là untrusted model input.** Section `delegations` trong handoff là dữ liệu; policy không đọc nó.
 8. **Không fabricate.** Bridge `partial` ⇒ evidence `derived`; `unsupported` ⇒ `unknown`; usage không parse được ⇒ `null` + completeness.
 9. **Runtime = f(model).** Không phase nào thêm cách chọn runtime.
-10. **Không thư mục mới** (vision §9). File mới chỉ trong `src/execution/`, `src/runtime/`, `src/cli/commands/`.
+10. **Không thư mục mới** (vision §9). File mới chỉ trong `src/execution/`, `src/runtime/`; CLI thêm subcommand vào `delegate.ts`/`agent-trust.ts`.
 
 ## Phase
 
@@ -40,11 +40,10 @@ Nguồn sự thật: [roadmap V3](./research/roadmap-v3.md) — đã qua hai lư
 | 2 | [`writeScope`](./phase-2-write-scope.md) — mở đầu bằng đo precedence sandbox Claude | pending |
 | 3 | [Evidence](./phase-3-evidence.md) — bridge cho child, git baseline, `verify.commands`, evaluator | pending |
 | 4 | [Acceptance](./phase-4-acceptance.md) — `alp delegation accept\|reject`, nguồn thứ hai của projector | pending |
-| 5 | [Runtime enforcement capabilities](./phase-5-enforcement-capabilities.md) — `measuredOn`, agent test tầng 2 | pending |
+| 5 | [Runtime enforcement capabilities + launch receipt](./phase-5-enforcement-capabilities.md) — `measuredOn`, `launch.json`, agent test tầng 2 | pending |
 | 6 | [Usage telemetry + budget observe-only](./phase-6-usage.md) — parse từ transcript bridge đã mở | pending |
-| 7 | [Launch provenance](./phase-7-launch-provenance.md) | pending |
 
-Thứ tự bắt buộc: 2 → 3 → 4 (vòng governance). 1, 5, 7 độc lập; 5 nên trước 6 vì evaluator của 3 và usage của 6 đọc `policy.enforcement`. Ước lượng ≈ 5–7 tuần tuần tự (tham chiếu: graph 5 phase ≈ 1 tuần, Thread 6 phase ≈ 1 tuần).
+Thứ tự bắt buộc: 2 → 3 → 4 (vòng governance). 1 và 5 độc lập; 5 nên trước 3 vì evaluator đọc `policy.enforcement` + `launch.json`. Ước lượng ≈ 5–6 tuần tuần tự (tham chiếu: graph 5 phase ≈ 1 tuần, Thread 6 phase ≈ 1 tuần). Không phase nào có thao tác khó đảo ngược cần hỏi principal trước khi chạy; `alp trust verify` là hành động của principal, không phải của phase.
 
 ## Gate
 
@@ -63,6 +62,7 @@ Thứ tự bắt buộc: 2 → 3 → 4 (vòng governance). 1, 5, 7 độc lập;
 | Cần | [Thread as Unit of Work](../260911-1811-thread-unit-of-work/plan.md) — tái dùng `HistoryBridge`, `projectContext`, `history-redact` | done |
 | Tái dùng | [Paseo permit ACL](../260903-1345-paseo-permit-acl/plan.md) — `permission-rules.ts` declarative | done |
 | Không đụng | [Native Binary Distribution](../260907-2322-native-binary-distribution/plan.md) | chỉ thêm file dưới `<execution>/`, không đổi state layout |
+| Đã xong, cùng file | [Adapter: bỏ turn giả](../260903-0959-adapter-no-synthetic-turn/plan.md) — P2/P5 đụng `claude-adapter.ts`, `adapter-files.ts` | P0–P2 xong 2026-09-03; status đổi `completed` ở lượt 2 (P3 tầm nhìn giữ trong file) |
 
 ## Rà đối kháng
 
@@ -82,6 +82,26 @@ Lượt 1 — 2026-09-12, review roadmap V1 → V2 → V3 đối chiếu code `m
 | 10 | NÊN SỬA | `schemaVersion`, `ExecutionUsage` không version, không sizing/test strategy, §13 còn markdown source | `version: 1` + `V1`; §0/§8 V3; bỏ markdown |
 | 11 | SỬA NHẬN ĐỊNH | Review V2 nói "root interactive không đo được usage" | Sai: bridge đã mở transcript có usage (Claude JSONL `message.usage`, Codex rollout `token_count`); child cũng không chạy `-p` (`adapter-files.ts:102`) nên transcript là đường duy nhất cho cả hai (P6) |
 
+Lượt 2 — 2026-09-12, tự rà bốn lăng kính (kẻ tấn công, failure, phá giả định, phạm vi) trên draft đã commit `038608f`. Principal uỷ quyền tự quyết: **15 phát hiện, nhận 15, bác 0.** CHẶN 3 · NÊN SỬA 10 · GHI NHẬN 2.
+
+| # | Mức | Lăng kính | Phát hiện | Xử lý | Áp vào |
+|---|---|---|---|---|---|
+| 1 | CHẶN | failure | `collectEvidence` "sau settle" không có điểm kích hoạt; settle qua `reconcileGraph` gọi từ `wait/status/tree/cancel` — treo vào reconcile thì `tree` chạy `npm test`; treo chỉ vào `wait` thì child background không bao giờ có evidence | Nhận: bảng điểm kích hoạt — `wait`, `alp delegation evidence`, `accept`; không bao giờ reconcile | P3, P4 |
+| 2 | CHẶN | tấn công | `verify.commands` từ repo chạy bằng process ALP **ngoài** sandbox, full quyền user — clone repo lạ là RCE; lý do "agent đã chạy lệnh" sai vì agent chạy dưới sandbox | Nhận: chỉ chạy khi digest khối `verify` đã `alp trust verify` (tái dùng `src/trust/`); lệch ⇒ `verify-skipped untrusted` | P3 |
+| 3 | CHẶN | giả định | Baseline `sha256(git status --porcelain)` không trừ được file dirty sẵn ⇒ quy nhầm cho child | Nhận: baseline lưu danh sách `{path, status, contentHash}` | P3 |
+| 4 | NÊN SỬA | failure | `ambiguousWith` chỉ tính sibling, bỏ qua cha/ông active cùng workspace (`main` có Bash, read-only chỉ sandbox darwin/linux) | Nhận: overlap trên mọi node active; `writeIsolation ≠ enforced` ⇒ luôn vào | P3 |
+| 5 | NÊN SỬA | giả định | Bảng provenance dùng `writeIsolation` cho cả `outsideScope` — hai câu hỏi khác nhau | Nhận: `outsideScopeVerified` theo `enforcement.writeScope` | P3 |
+| 6 | NÊN SỬA | failure | Usage root: cursor do `collectHistory` tiến, gọi hai lần, không có nơi cộng dồn | Nhận: `ref.history.usage` cộng dồn cùng commit cursor | P6 |
+| 7 | NÊN SỬA | giả định | Dựng `measuredOn` cho định dạng transcript trong khi bridge đã có `pinnedVersion` + `completenessForVersion` | Nhận: parser trong bridge dùng pinned version; `measuredOn` chỉ cho enforcement | P5, P6 |
+| 8 | NÊN SỬA | tấn công | "Thêm `TOOL_CATALOG` cùng nhóm `alp delegate`" không tồn tại — `alp delegate` qua bare `Bash` allow; mọi role có Bash gọi được `accept` | Nhận: bỏ việc thừa; nói rõ guard là binding + cha-con; test role không có child ⇒ `ACCEPTANCE_NOT_PARENT` | P4 |
+| 9 | NÊN SỬA | phạm vi | Rule `--mode ultra` hỏi lại chính người vừa gõ flag | Nhận: bỏ; P1 còn một rule | P1 |
+| 10 | NÊN SỬA | phạm vi | P7 phase riêng cho receipt có consumer yếu, `runtimeVersion` P5 đã lấy | Nhận: gộp vào P5; còn 6 phase | P5, xoá P7 |
+| 11 | NÊN SỬA | failure | Child bị cascade-cancel lúc root kết thúc cũng thành `undecided` ⇒ handoff đổ "cha quên" | Nhận: `decision: cancelled` derive từ node status | P4 |
+| 12 | NÊN SỬA | giả định | Node có `endedAt`, plan viết `finishedAt` | Nhận | P3 |
+| 13 | NÊN SỬA | tấn công | "`approvals.json` 0600 chỉ root đọc" — cùng OS user, 0600 không ngăn child; thứ ngăn là sandbox | Nhận: sửa lý do; P2 assert executions root ∉ `writable_roots`/`allowWrite` | P1, P2 |
+| 14 | GHI NHẬN | phạm vi | Plan `adapter-no-synthetic-turn` `in-progress` nhưng P0–P2 xong 09-03; đụng cùng adapter file | Nhận: đổi `completed`; ghi vào phụ thuộc | plan adapter, plan.md |
+| 15 | GHI NHẬN | giả định | `verify:<id>` fingerprint chỉ hash id; settings đổi lệnh vẫn cùng fingerprint | Nhận: item `verify` ghi `commandDigest` | P3 |
+
 ## Nhật ký kiểm chứng
 
 ### Lượt 1 — 2026-09-12 (principal uỷ quyền tự chốt)
@@ -93,7 +113,19 @@ Lượt 1 — 2026-09-12, review roadmap V1 → V2 → V3 đối chiếu code `m
 | Version lệch `measuredOn` ⇒ fail-closed? | **Không chặn launch**; evidence hạ `observed` → `derived`, `alp doctor` cảnh báo | Chặn = ALP chết mỗi lần CLI update. Hạ provenance là fail-closed đúng lớp | P5, evaluator P3 |
 | `verify.commands` từ tầng nào? | **Project trở lên**, không user-global | Repo config chạy lệnh — chấp nhận vì agent đã chạy lệnh trong repo đó; user-global mở trust boundary khác | P3 |
 | Field mới vào graph node: bump `version`? | **Không** — `acceptance`, `usage` optional, additive; `revision + 1` như mọi ghi | Quy ước: additive optional không bump; đổi nghĩa mới bump | P4, P6 |
-| Launch provenance vào `policyHash`? | **Không** — ghi `<execution>/runtime/launch.json` sau policy | Là sự kiện, không phải quyết định | P7 |
+| Launch provenance vào `policyHash`? | **Không** — ghi `<execution>/context/launch.json` sau policy | Là sự kiện, không phải quyết định | P5 |
+
+### Lượt 2 — 2026-09-12
+
+**Vì sao kiểm chứng:** rà đối kháng lượt 2 lộ bốn điểm plan đang đoán thay principal. Principal trả lời nguyên văn: *"Em hãy tự quyết nhé"* — uỷ quyền, em chọn phương án đề nghị ở cả bốn.
+**Số câu hỏi:** 4
+
+| Câu hỏi | Phương án | Chọn | Vì sao | Ảnh hưởng |
+|---|---|---|---|---|
+| [Rủi ro] `verify.commands` chạy với điều kiện gì? | a. qua trust store như agent definition · b. chỉ khi principal truyền `--verify` mỗi lần · c. giữ như plan | **a** | Tái dùng `src/trust/`; cùng mô hình "principal đã duyệt gì" theo digest; b làm `requiredEvidence` vô dụng khi cha là agent | P3 |
+| [Phạm vi] P7 launch provenance? | a. gộp vào P5 · b. giữ riêng · c. bỏ | **a** | Cùng nguồn `runtimeVersion`; consumer yếu không đáng một phase | P5, xoá P7 |
+| [Giả định] Child background mà cha không `wait` — evidence lấy lúc nào? | a. `accept\|reject` tự collect trước khi ghi · b. `settleRoot` collect mọi child thiếu · c. digest rỗng như plan | **a** | Record luôn có digest thật; b kéo verify vào đường settle root | P3, P4 |
+| [Phạm vi] Plan `adapter-no-synthetic-turn` `in-progress`? | a. đổi `completed`, P3 tầm nhìn để nguyên · b. giữ, ghi `blocks/blockedBy` hai chiều | **a** | P0–P2 xong 09-03, P3 chưa mở khoá — không có việc đang chạy để chặn | plan adapter |
 
 ## Câu hỏi còn mở
 
@@ -102,3 +134,4 @@ Không chặn plan; mỗi cái là một ADR khi có nhu cầu thật.
 1. **Hard budget / per-call enforcement.** Cần `PreToolUse` hook trở lại; Codex không có hook tương đương ⇒ bất đối xứng; giá trị so với observe-only + reject chưa chứng minh.
 2. **Approval đi lên theo cây cho child.** Cần graph node `pending-approval` + root TTY poll — M3 đầy đủ.
 3. **Claude writeScope trên Windows.** Không sandbox ⇒ chỉ permission rules (không chặn Bash ghi file) hoặc `declared-only`. Chốt sau khi Phase 2 đo.
+4. **`verify.commands` tầng user-global.** Hiện chỉ project trở lên; nếu cần lint chung máy thì cần ADR về trust boundary riêng.

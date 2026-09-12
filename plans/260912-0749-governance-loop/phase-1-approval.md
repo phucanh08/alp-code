@@ -1,7 +1,9 @@
 # P1 — Approval hẹp (M3, prepare-time)
 
-**Mục tiêu:** `PolicyDecision` có nhánh `require_approval`; chỉ **một** surface hỏi được (`alp` root TTY); mọi surface khác ⇒ `deny`. Hai rule cụ thể, không hơn.
-**Phụ thuộc:** không. Độc lập với P2–P7.
+<!-- Sửa: rà đối kháng lượt 2 (2026-09-12) — bỏ rule mode, sửa lý do bảo vệ approvals.json -->
+
+**Mục tiêu:** `PolicyDecision` có nhánh `require_approval`; chỉ **một** surface hỏi được (`alp` root TTY); mọi surface khác ⇒ `deny`. Một rule cụ thể, không hơn.
+**Phụ thuộc:** không. Độc lập với P2–P6.
 
 ---
 
@@ -18,7 +20,7 @@
 
 ```ts
 // src/policy/types.ts
-export type ApprovalRuleId = "workspace-outside-grant-inside-project" | "mode-requires-approval";
+export type ApprovalRuleId = "workspace-outside-grant-inside-project";
 export type PolicyDecision =
   | { readonly kind: "allow" }
   | { readonly kind: "deny"; readonly code: PolicyErrorCode; readonly reason: string }
@@ -55,25 +57,23 @@ engine.decide(request) → allow                      → vé
 
 - `once`: không lưu.
 - `execution`: nhớ trong lần `authorize()` này.
-- `session`: đời của **root execution** hiện tại — `<root execution>/context/approvals.json`, chỉ root đọc, `0600`. Không có khái niệm session nào khác.
+- `session`: đời của **root execution** hiện tại — `<root execution>/context/approvals.json`. Thứ ngăn child sửa file này **không** phải `0600` (cùng OS user) mà là sandbox runtime: executions root ∉ `writable_roots`/không nằm trong `allowWrite` (P2 thêm assert). Không có khái niệm session nào khác.
 
 ### Rule ở phase này
 
 1. `workspace-outside-grant-inside-project`: `--workspace` ngoài các root đã grant nhưng nằm **trong** project root hiện tại → hỏi thay vì `WORKSPACE_NOT_GRANTED`. Ngoài project root ⇒ vẫn `deny`.
-2. `mode-requires-approval`: nấc có `requiresApproval: true` trong mode profile (mặc định built-in: `ultra`) → hỏi một lần/session.
 
-**Không hỏi** cho tool grant, delegation target, memory — là identity, giữ `deny`.
+**Không hỏi** cho tool grant, delegation target, memory — là identity, giữ `deny`. **Không hỏi** cho `--mode`: principal tự gõ flag, hỏi lại chính họ là nhiễu, không phải governance (bỏ ở rà đối kháng lượt 2). Phase này chốt *cơ chế* + surface; rule thêm là additive.
 
 ## Việc phải làm
 
 1. Test fail trước: engine trả `require_approval` đúng rule/đúng scope; `authorize()` với surface giả yes/no/absent; `policyHash` đổi khi `approvals` đổi; `approvals.json` chỉ root đọc; child chạm rule ⇒ `APPROVAL_UNAVAILABLE` không spawn.
 2. `src/policy/types.ts`: `PolicyDecision`, `ApprovalRuleId`, hai code mới `APPROVAL_UNAVAILABLE | APPROVAL_DENIED`.
-3. `src/policy/policy-engine.ts` + `workspace-policy.ts`: `decide()` bọc `authorize()` hiện có; hai rule.
+3. `src/policy/policy-engine.ts` + `workspace-policy.ts`: `decide()` bọc `authorize()` hiện có; một rule.
 4. `src/execution/types.ts`, `src/execution/execution-policy.ts`: `approvals` vào snapshot + hash; reader chấp nhận snapshot cũ thiếu key (test cutover).
 5. `src/execution/execution-service.ts`: `authorize()` nhận `ApprovalSurface`.
 6. `src/cli/commands/run-main.ts`: surface TTY; `src/cli/commands/delegate.ts`: `NO_APPROVAL_SURFACE`.
-7. `src/agents/modes.ts` / `mode-settings.ts`: `requiresApproval?: boolean` trong profile.
-8. `alp thread show`, `alp delegation tree`: in `approvals`.
+7. `alp thread show`, `alp delegation tree`: in `approvals`.
 
 ## File đụng tới
 
@@ -82,7 +82,6 @@ engine.decide(request) → allow                      → vé
 | `src/policy/types.ts`, engine | sửa | `PolicyDecision`, hai rule, hai code |
 | `src/execution/types.ts`, `execution-policy.ts`, `execution-service.ts` | sửa | `approvals`, `ApprovalSurface` |
 | `src/cli/commands/run-main.ts`, `delegate.ts` | sửa | surface TTY / none |
-| `src/agents/modes.ts`, `mode-settings.ts` | sửa | `requiresApproval` |
 | `test/policy/approval.test.ts`, `test/execution/approval-surface.test.ts`, `test/e2e/approval.test.ts`, `test/cutover/policy-approvals.test.ts` | tạo | |
 | `docs/alp-design-philosophy-and-vision.md` | sửa | M3 → "đã có, phạm vi hẹp"; chú thích approval theo cây là ADR |
 
@@ -91,8 +90,8 @@ engine.decide(request) → allow                      → vé
 | Failure mode | Giảm thiểu |
 |---|---|
 | Prompt TTY hiện giữa lúc runtime đã chiếm stdin | Hỏi **trước** spawn, trong `authorize()`; sau spawn không còn rule nào hỏi |
-| `approvals.json` bị sửa tay để "đã duyệt" | Chỉ ảnh hưởng `session` scope của chính root đó; record vào policy của execution mới vẫn ghi `decidedAt` mới; không cấp quyền gì ngoài hai rule |
-| Hai rule quá ít để đáng làm | Cố ý: phase này chốt *cơ chế* + surface; rule thêm là additive |
+| `approvals.json` bị child sửa để "đã duyệt" | Sandbox không cho ghi executions root (assert P2); kể cả sửa được cũng chỉ ảnh hưởng `session` scope của một rule, không cấp quyền identity |
+| Một rule quá ít để đáng làm | Cố ý: phase này chốt *cơ chế* + surface; rule thêm là additive |
 
 ## Tiêu chí hoàn thành
 

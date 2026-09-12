@@ -1,5 +1,7 @@
 # P2 — `writeScope`
 
+<!-- Sửa: rà đối kháng lượt 2 (2026-09-12) — assert executions root không ghi được -->
+
 **Mục tiêu:** child `workspace-write` khai được *tập đường dẫn* nó được ghi; ALP cưỡng chế ở mức runtime cho phép và **ghi rõ** mức đó.
 **Phụ thuộc:** không (P1 độc lập). Việc đầu tiên: **đo** precedence `allowWrite`/`denyWrite` của Claude sandbox trước khi code.
 
@@ -48,7 +50,7 @@ P3 dùng `writeScope` để phân loại change `inScope | outsideScope` và tá
 ## Việc phải làm
 
 0. **Đo** trên máy dev với `claude` thật: allowWrite/denyWrite precedence; ghi kết quả + version vào `research/claude-sandbox-precedence.md`.
-1. Test fail trước: canonicalize (symlink ra ngoài, `..`, absolute ngoài ws); fingerprint đổi khi scope đổi; `policyHash` đổi; child vượt cha ⇒ lỗi; config Codex/Claude sinh đúng.
+1. Test fail trước: canonicalize (symlink ra ngoài, `..`, absolute ngoài ws); fingerprint đổi khi scope đổi; `policyHash` đổi; child vượt cha ⇒ lỗi; config Codex/Claude sinh đúng; executions root không bao giờ nằm trong `writable_roots`/`allowWrite`.
 2. `src/execution/graph/execution-graph-service.ts`: `ChildRequest.writeScope`, fingerprint.
 3. `src/delegation/types.ts`, `delegation-service.ts`: truyền qua; `src/cli/commands/delegate.ts`: `--write-scope`.
 4. `src/policy/*`: ba code mới + kiểm ⊆ cha.
@@ -76,6 +78,7 @@ P3 dùng `writeScope` để phân loại change `inScope | outsideScope` và tá
 | Claude allow không thắng deny ⇒ scope không cưỡng chế được bằng sandbox | Phương án (b), bảng ghi `declared-only`; evidence P3 hạ `derived` |
 | Scope chứa symlink trỏ ra ngoài sau khi launch | Canonicalize lúc authorize; P3 ghi `outsideScope` nếu diff thấy path ngoài |
 | Memory private root bị mất khỏi `writable_roots` khi thay list | Test assert luôn có `memory/private/<role>` |
+| Scope hoặc workspace trùm lên executions root ⇒ child sửa được `policy.json`/`approvals.json`/`evidence.json` | Authorize từ chối scope/workspace chứa executions root (`WRITE_SCOPE_OUTSIDE_WORKSPACE` hoặc mã hiện có cho workspace); test assert executions root ∉ mọi `writable_roots`/`allowWrite` phát ra |
 
 ## Tiêu chí hoàn thành
 
