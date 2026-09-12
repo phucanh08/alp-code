@@ -59,6 +59,7 @@ function prepared(executionId: string, target = "search", profiles: ModeProfiles
       role: target,
       workspace,
       workspaceMode: "read-only",
+      writeScope: null,
       mode: "medium",
       model: modelForMode(definition, "medium", profiles),
       reasoningEffort: reasoningEffortForMode(definition, "medium", profiles),
@@ -496,6 +497,7 @@ describe("DelegationService", () => {
       task: "read one more file",
       workspace: process.cwd(),
       workspaceMode: "read-only",
+      writeScope: null,
       mode: "medium",
       background: true,
       interactive: false,
@@ -758,7 +760,8 @@ describe("DelegationService — launch scope for the approval rule", () => {
     await fixture.service.delegate(input);
     expect(fixture.executionService.authorized).toHaveLength(1);
     const [authorizeInput, surface] = fixture.executionService.authorized[0];
-    expect(authorizeInput.launch).toEqual({ root: process.cwd(), project: "/registered/project" });
+    // P2: the parent's scope rides along, `null` out loud for an unscoped root.
+    expect(authorizeInput.launch).toEqual({ root: process.cwd(), project: "/registered/project", writeScope: null });
     expect(surface).toBeUndefined();
   });
 
@@ -766,7 +769,7 @@ describe("DelegationService — launch scope for the approval rule", () => {
     const fixture = await serviceFixture({ root });
     await fixture.service.delegate(input);
     const [authorizeInput] = fixture.executionService.authorized[0];
-    expect(authorizeInput.launch).toEqual({ root: process.cwd(), project: process.cwd() });
+    expect(authorizeInput.launch).toEqual({ root: process.cwd(), project: process.cwd(), writeScope: null });
   });
 
   it("presents the root execution's session approvals, kept under its context/", async () => {
@@ -789,5 +792,80 @@ describe("DelegationService — launch scope for the approval rule", () => {
     await expect(fixture.service.delegate(input)).rejects.toMatchObject({ code: "EXECUTION_NOT_FOUND" });
     expect(fixture.executionService.authorized).toHaveLength(0);
     expect(fixture.primary.calls).toEqual([]);
+  });
+});
+
+/**
+ * Oracle: P2 spec — `DelegationRequestInput.writeScope` is passed through to authorization
+ * (normalized the way the fingerprint needs: trimmed, sorted, deduplicated), the parent's own
+ * scope rides along as `launch.writeScope` from its signed snapshot, a scope that names
+ * nothing is `INVALID_REQUEST`, and two requests differing only in scope are two children.
+ */
+describe("DelegationService — writeScope", () => {
+  let root = "";
+  beforeEach(async () => { root = await mkdtemp(join(tmpdir(), "alp-delegation-")); });
+  afterEach(async () => { await removeTemporary(root); });
+
+  const scopedInput = { ...input, targetRole: "worker", workspaceMode: "workspace-write" as const };
+
+  it("passes a normalized scope to authorization, with the parent's scope as the launch's", async () => {
+    const fixture = await serviceFixture({ root });
+    await fixture.service.delegate({ ...scopedInput, writeScope: [" src ", "docs", "src"] });
+    const [authorizeInput] = fixture.executionService.authorized[0];
+    expect(authorizeInput.writeScope).toEqual(["docs", "src"]);
+    // The root fixture is unscoped: the launch says so explicitly rather than leaving it out.
+    expect(authorizeInput.launch).toMatchObject({ writeScope: null });
+  });
+
+  it("reads the parent's scope from its snapshot, never from the request", async () => {
+    const fixture = await serviceFixture({ root });
+    const parentPolicy = prepared("exec_parent", "main").policy;
+    await persist(root, { ...prepared("exec_parent", "main"), policy: { ...parentPolicy, writeScope: [join(process.cwd(), "src")] } });
+    await fixture.service.delegate({ ...scopedInput, writeScope: ["src/lib"] });
+    const [authorizeInput] = fixture.executionService.authorized[0];
+    expect(authorizeInput.launch?.writeScope).toEqual([join(process.cwd(), "src")]);
+  });
+
+  it("leaves the scope absent when the caller gave none", async () => {
+    const fixture = await serviceFixture({ root });
+    await fixture.service.delegate(scopedInput);
+    const [authorizeInput] = fixture.executionService.authorized[0];
+    expect(authorizeInput.writeScope).toBeUndefined();
+  });
+
+  it("refuses a scope that names nothing before anything is authorized", async () => {
+    const fixture = await serviceFixture({ root });
+    for (const writeScope of [[], [" "], ["src", ""]]) {
+      await expect(fixture.service.delegate({ ...scopedInput, writeScope })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    }
+    expect(fixture.executionService.authorized).toHaveLength(0);
+  });
+
+  it("treats the same task under another scope as different work", async () => {
+    const fixture = await serviceFixture({ root });
+    const first = await fixture.service.delegate({ ...scopedInput, writeScope: ["src"] });
+    // Same request, same scope: the same child. Same request ID, another scope: a conflict.
+    expect((await fixture.service.delegate({ ...scopedInput, writeScope: ["src"] })).executionId).toBe(first.executionId);
+    await expect(fixture.service.delegate({ ...scopedInput, writeScope: ["docs"] })).rejects.toMatchObject({ code: "REQUEST_ID_CONFLICT" });
+    await expect(fixture.service.delegate(scopedInput)).rejects.toMatchObject({ code: "REQUEST_ID_CONFLICT" });
+  });
+
+  it("reports the scope an execution ran under from its snapshot", async () => {
+    const fixture = await serviceFixture({
+      root,
+      materialize: async (request) => {
+        const execution = prepared(request.executionId, request.target);
+        return { ...execution, policy: { ...execution.policy, writeScope: request.writeScope?.map((entry) => join(process.cwd(), entry)) ?? null } };
+      },
+    });
+    const spawned = await fixture.service.delegate({ ...scopedInput, writeScope: ["src"] });
+    expect(await fixture.service.status(spawned.executionId)).toMatchObject({ writeScope: [join(process.cwd(), "src")] });
+    // `null` out loud for an unscoped child, not an absent field. (No explicit requestId:
+    // the fixture mints a fresh execution ID only alongside a fresh request ID.)
+    const { requestId: _explicit, ...withoutId } = scopedInput;
+    const unscoped = await fixture.service.delegate({ ...withoutId, task: "another task" });
+    const status = await fixture.service.status(unscoped.executionId);
+    expect(status).toHaveProperty("writeScope");
+    expect(status.writeScope).toBeNull();
   });
 });

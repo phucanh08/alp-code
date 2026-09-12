@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { TOOL_CATALOG, type AgentId, type ToolId } from "../agents/types";
 import type { ExecutionPolicy } from "../execution/types";
 
@@ -57,6 +57,56 @@ export interface RuntimePermissionInput {
    * adapter for why that changes the tool grant rather than the workspace guarantee.
    */
   readonly sandboxed?: boolean;
+  /**
+   * Paths that a scoped `workspace-write` policy must not write although they sit in the
+   * workspace — the enumerated siblings of the scope, from `writeScopeDenyPaths`. Each one
+   * becomes an `Edit` deny rule (the verb Claude Code also applies to Write, NotebookEdit and
+   * MultiEdit). Absent or empty for an unscoped policy.
+   */
+  readonly writeScopeDenyPaths?: readonly string[];
+}
+
+function pathWithin(root: string, target: string): boolean {
+  const relation = relative(root, target);
+  return relation === "" || (!relation.startsWith("..") && !isAbsolute(relation));
+}
+
+/**
+ * What must be denied so that, inside `workspace`, only `writableRoots` can be written —
+ * measured for Claude Code 2.1.269 (`research/claude-sandbox-precedence.md`): `denyWrite`
+ * beats `allowWrite`, so the scope cannot be *allowed*; its siblings must be *denied*.
+ *
+ * Every directory on the way from the workspace down to each writable root has its entries
+ * listed, and each entry that is not itself on the way to some writable root is denied. A
+ * writable root outside the workspace (private memory) contributes nothing: it is outside
+ * the tree being confined. The result is sorted and duplicate-free so the same scope on the
+ * same tree yields the same config.
+ *
+ * Partial by construction — hence `writeScope: "partial"` for Claude in the capability
+ * table: an entry created *after* this list was generated, beside the scope, is not in it.
+ */
+export async function writeScopeDenyPaths(
+  workspace: string,
+  writableRoots: readonly string[],
+  listDirectory: (directory: string) => Promise<readonly string[]>,
+): Promise<readonly string[]> {
+  const roots = writableRoots.filter((root) => pathWithin(workspace, root));
+  const onTheWay = (path: string): boolean => roots.some((root) => pathWithin(path, root) || pathWithin(root, path));
+  const ancestors = new Set<string>();
+  for (const root of roots) {
+    for (let directory = dirname(root); pathWithin(workspace, directory); directory = dirname(directory)) {
+      ancestors.add(directory);
+      if (directory === workspace || dirname(directory) === directory) break;
+    }
+  }
+  const denied = new Set<string>();
+  for (const directory of ancestors) {
+    for (const entry of await listDirectory(directory)) {
+      const path = join(directory, entry);
+      if (!onTheWay(path)) denied.add(path);
+    }
+  }
+  return Object.freeze([...denied].sort());
 }
 
 export interface ClaudePermissions {
@@ -118,6 +168,10 @@ export function claudePermissions(input: RuntimePermissionInput): ClaudePermissi
       const directory = join(input.memoryRoot, "private", role);
       return [absoluteRule("Read", directory), absoluteRule("Edit", directory)];
     });
+  // Inside a scoped workspace, what stands beside the scope is denied by name. `Edit` is
+  // the verb: Claude Code reads it for Write, NotebookEdit and MultiEdit too, while a
+  // `Write(...)` rule is ignored (measured 2026-09-12).
+  for (const path of input.writeScopeDenyPaths ?? []) deny.push(absoluteRule("Edit", path));
 
   // Tools outside the policy are denied by bare name, and tools inside it are allowed the
   // same way — without this half, a `workspace-write` role had no CLI bypass (see the Claude
@@ -196,8 +250,10 @@ function tomlStringArray(values: readonly string[]): string {
  */
 export function codexSandboxLines(input: RuntimePermissionInput): readonly string[] {
   const { policy } = input;
+  // The scope replaces the workspace as what Codex may write — never widens it. Codex
+  // enforces `writable_roots` in its own sandbox, so this line alone is the enforcement.
   const writableRoots = policy.workspaceMode === "workspace-write"
-    ? [policy.workspace, join(input.memoryRoot, "private", policy.role)]
+    ? [...(policy.writeScope ?? [policy.workspace]), join(input.memoryRoot, "private", policy.role)]
     : [];
   return Object.freeze([
     // Nothing in a delegated execution should need an approval prompt: the policy already

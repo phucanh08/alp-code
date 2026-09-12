@@ -209,7 +209,9 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
    */
   const compositionFor = async (projectRoot: string) => {
     const project = await trustedRegistryFor(projectRoot);
-    const policy = new PolicyEngine({ registry: project.registry });
+    // The executions root is where every `policy.json` lives: no launch, scoped or not, may
+    // be allowed to write over it.
+    const policy = new PolicyEngine({ registry: project.registry, protectedRoots: [executionsDirectory()] });
     const memory = new MemoryService({
       store: new MarkdownFileStore({ root: memoryRoot() }),
       policy,

@@ -51,6 +51,12 @@ export interface DelegationRequestInput {
   readonly task: string;
   readonly workspace: string;
   readonly workspaceMode?: "read-only" | "workspace-write";
+  /**
+   * Các cây con trong workspace mà con được ghi — tương đối so với workspace hoặc tuyệt đối.
+   * Chỉ có nghĩa với `workspace-write`; bỏ trống là cả workspace. Danh sách rỗng hoặc phần
+   * tử trống là `INVALID_REQUEST`.
+   */
+  readonly writeScope?: readonly string[];
   /** Đi vào fingerprint của request, nên hai lần gọi khác metadata là hai việc khác nhau. */
   readonly metadata?: Readonly<Record<string, unknown>>;
   readonly executionOptions?: DelegationExecutionOptions;
@@ -62,6 +68,8 @@ export interface DelegationRequest {
   readonly task: string;
   readonly workspace: string;
   readonly workspaceMode: "read-only" | "workspace-write";
+  /** Đã trim, sort, bỏ trùng — `null` là cả workspace. */
+  readonly writeScope: readonly string[] | null;
   readonly metadata: Readonly<Record<string, unknown>>;
   readonly executionOptions: Required<Pick<DelegationExecutionOptions, "background" | "interactive">> & {
     readonly timeoutMs: number | null;
@@ -86,6 +94,8 @@ export interface DelegationExecutionRecord {
   readonly backend: string;
   readonly createdAt: string;
   readonly status: BackendExecutionStatus;
+  /** Scope ghi đã ký trong `policy.json` — `null` là cả workspace; vắng ở bản ghi legacy. */
+  readonly writeScope?: readonly string[] | null;
   readonly executionStateFile?: string;
   readonly error?: string;
 }
@@ -106,6 +116,8 @@ export interface DelegationResult {
   readonly signal?: NodeJS.Signals | null;
   /** Why a `failed` execution failed, carried through from the backend. */
   readonly error?: Readonly<{ code: string; message: string }>;
+  /** The write scope in the execution's signed policy — `null` for the whole workspace; absent for a legacy record. */
+  readonly writeScope?: readonly string[] | null;
   readonly metadata: Readonly<{ backend: string; runtime: RuntimeId } & Record<string, unknown>>;
 }
 

@@ -9,6 +9,11 @@ export type PolicyErrorCode =
   | "WORKSPACE_NOT_GRANTED"
   | "WORKSPACE_READ_ONLY"
   | "WORKSPACE_SCOPE_MISMATCH"
+  | "WRITE_SCOPE_ON_READ_ONLY"
+  | "WRITE_SCOPE_OUTSIDE_WORKSPACE"
+  | "WRITE_SCOPE_EXCEEDS_PARENT"
+  | "WRITE_SCOPE_NOT_FOUND"
+  | "WRITE_SCOPE_PROTECTED_ROOT"
   | "PATH_RESOLUTION_FAILED"
   | "POLICY_MUTATION_DENIED"
   | "DEFINITION_MUTATION_DENIED"
@@ -44,6 +49,13 @@ export interface ExecutionWorkspaceScope {
 export interface LaunchScope {
   readonly root: string;
   readonly project: string;
+  /**
+   * What the launcher itself may write — its own `writeScope`, or `null` when it was launched
+   * unscoped. A scoped parent can only hand down a piece of its own scope: a child asking for
+   * more than that is `WRITE_SCOPE_EXCEEDS_PARENT`, and an unscoped child under a scoped
+   * parent inherits nothing, so its whole workspace must sit inside the parent's scope.
+   */
+  readonly writeScope?: readonly string[] | null;
 }
 
 /**
@@ -94,6 +106,13 @@ export type AuthorizationRequest =
       readonly path: string;
       readonly execution: ExecutionWorkspaceScope;
       readonly launch?: LaunchScope;
+      /**
+       * The subtrees a write launch asks to be confined to — absolute, already resolved by
+       * the caller. Only meaningful with `operation: "write"`; every entry must lie inside
+       * `path`, outside every protected root, and (under a scoped parent) inside the parent's
+       * scope. Absent means "the whole workspace", which is what every launch meant before.
+       */
+      readonly writeScope?: readonly string[];
     }
   | {
       readonly type: "configuration";

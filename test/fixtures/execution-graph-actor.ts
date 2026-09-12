@@ -30,6 +30,7 @@ function request(label: string, index: number): ChildRequest {
     task: `task ${label} ${index}`,
     workspace: "/project",
     workspaceMode: "read-only",
+    writeScope: null,
     mode: "medium",
     background: true,
     interactive: false,

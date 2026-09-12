@@ -62,6 +62,7 @@ export function policyFixture(overrides: Partial<ExecutionPolicy> = {}): Executi
     role: "probe",
     workspace: "/workspace",
     workspaceMode: "read-only",
+    writeScope: null,
     model: "claude-haiku-4-5",
     reasoningEffort: "low",
     runtime: "claude",

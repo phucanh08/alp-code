@@ -77,6 +77,7 @@ export async function runDelegateCommand(
   let background = false;
   let timeoutMs: number | null = null;
   let workspace = dependencies.cwd;
+  const writeScope: string[] = [];
   const task: string[] = [];
   for (let index = 1; index < argv.length; index += 1) {
     const value = argv[index];
@@ -90,6 +91,9 @@ export async function runDelegateCommand(
       if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("--timeout-ms must be positive");
     } else if (WORKSPACE_FLAGS.includes(value)) {
       workspace = required(argv, ++index, `${value} requires a path`);
+    } else if (value === "--write-scope") {
+      // Repeatable: each flag names one subtree of the workspace the child may write.
+      writeScope.push(required(argv, ++index, "--write-scope requires a path"));
     } else if (value === "--parent-role" || value === "--role" || value === "--kind") {
       throw new Error(`unsupported identity-aware raw-runtime shortcut \`${value}\``);
     } else if (value === "--backend") {
@@ -115,6 +119,9 @@ export async function runDelegateCommand(
     // cầm bút. Hỏi đúng definition thì cả hai chuyện đó tự hết, và PolicyEngine vẫn là chốt
     // cuối: một vai không khai write root mà xin ghi thì bị chặn ở đó chứ không ở đây.
     workspaceMode: writesWorkspace(registry, targetRole) ? "workspace-write" : "read-only",
+    // Only when asked for: absent means the whole workspace, and the service (not this
+    // parser) is where a scope on a read-only role is refused, by policy.
+    ...(writeScope.length === 0 ? {} : { writeScope }),
     metadata: {},
     executionOptions: { background, interactive: false, timeoutMs },
   });
@@ -270,7 +277,10 @@ export async function createDefaultDelegationComposition(
       supervisorInvocation: { executable: layout.selfExecutable, args: ["__internal", "supervisor"] },
     }),
   });
-  const policy = new PolicyEngine({ registry });
+  // `~/.alp/executions/` holds every `policy.json` and evidence file: no launch may ever be
+  // handed a scope, or a whole workspace, that can write there.
+  const executionsRoot = executionsDirectory(env);
+  const policy = new PolicyEngine({ registry, protectedRoots: [executionsRoot] });
   const memory = new MemoryService({
     store: new MarkdownFileStore({ root: memoryRoot(env) }),
     policy,
@@ -279,7 +289,6 @@ export async function createDefaultDelegationComposition(
   // `~/.alp/executions/<id>/` — cùng chỗ với phiên root. Hai root khác nhau từng là một
   // câu hỏi mở trong `docs/architecture.md`: doctor, hook và `alp context` đều đọc một nơi,
   // nên artifact của con nằm ở nơi kia là artifact không ai tìm thấy.
-  const executionsRoot = executionsDirectory(env);
   const executionService = new ExecutionService({
     registry,
     policy,

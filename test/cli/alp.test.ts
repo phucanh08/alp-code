@@ -738,6 +738,29 @@ describe("alp delegate", () => {
     expect(calls[0]?.workspaceMode).toBe(expected);
   });
 
+  /**
+   * Oracle: P2 spec — "`alp delegate --write-scope <path>` lặp được". Each occurrence adds one
+   * entry; the flag never leaks into the task; without it the request carries no scope at all.
+   */
+  it("collects every `--write-scope` into the request and keeps it out of the task", async () => {
+    const calls: { writeScope?: readonly string[]; task?: string }[] = [];
+    const service = {
+      async delegate(input: { writeScope?: readonly string[]; task: string }) { calls.push(input); return { executionId: "exec-child", requestId: "req", status: "completed" as const, metadata: { backend: "local", runtime: "codex" as const } }; },
+      async wait() { throw new Error("unused"); },
+      async status() { throw new Error("unused"); },
+      async cancel() { throw new Error("unused"); },
+      async cleanup() { throw new Error("unused"); },
+      listExecutions() { return []; },
+      async tree() { throw new Error("unused"); },
+    };
+    await runDelegateCommand(["worker", "--write-scope", "src/parser", "--write-scope", "docs", "--", "fix", "the", "parser"], { cwd: "/caller/project", env: {}, service });
+    expect(calls[0]).toMatchObject({ writeScope: ["src/parser", "docs"], task: "fix the parser" });
+    await runDelegateCommand(["worker", "--", "fix", "the", "parser"], { cwd: "/caller/project", env: {}, service });
+    expect(calls[1]).not.toHaveProperty("writeScope");
+    await expect(runDelegateCommand(["worker", "--", "fix", "--write-scope"], { cwd: "/caller/project", env: {}, service }))
+      .rejects.toThrow(/--write-scope requires a path/);
+  });
+
   /** Tên không có trong registry vẫn đi tiếp: "vai này không tồn tại" là câu của
    * `ExecutionService`, nói bằng đúng mã lỗi, chứ không phải một exception bật ra ở chỗ đang
    * tính quyền workspace. */

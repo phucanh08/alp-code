@@ -39,6 +39,7 @@ function request(overrides: Partial<ChildRequest> = {}): ChildRequest {
     task: "find the entrypoint",
     workspace: "/project",
     workspaceMode: "read-only",
+    writeScope: null,
     mode: "medium",
     background: true,
     interactive: false,

@@ -13,11 +13,14 @@ import type { ExecutionPolicy } from "../execution/types";
  *
  * Levels:
  *  - `enforced`      — the runtime refuses the operation itself (sandbox, ACL rule).
+ *  - `partial`       — the runtime refuses what ALP could name at launch, and nothing more:
+ *                      the boundary is enumerated, not a rule, so what appears after the
+ *                      enumeration (a new entry beside a write scope) is not refused.
  *  - `declared-only` — ALP states the boundary (prompt, config) but nothing refuses it.
  *  - `none`          — not enforced, **or not measured**. A cell nobody has measured is
  *                      `none`, never a guess copied from the platform next door.
  */
-export const ENFORCEMENT_LEVELS = ["enforced", "declared-only", "none"] as const;
+export const ENFORCEMENT_LEVELS = ["enforced", "partial", "declared-only", "none"] as const;
 export type EnforcementLevel = (typeof ENFORCEMENT_LEVELS)[number];
 
 export const ENFORCEMENT_FIELDS = [
@@ -94,13 +97,15 @@ const CODEX_WIN32: Cells = {
  * The permission rules are refused at call time (tool grant, `Skill(name)`, read roots,
  * `deny Task/Agent`); the darwin/linux sandbox refuses writes outside the workspace. No
  * sandbox rule covers egress — only the tool grant stands between the role and the net.
- * `writeScope` narrower than the workspace is what P2 measures; until then it is `none`.
+ * `writeScope` is `partial` (measured 2026-09-12, `research/claude-sandbox-precedence.md`):
+ * `denyWrite` beats `allowWrite`, so a scope is expressed by denying its enumerated siblings
+ * — existing paths beside the scope are refused, a path created there afterwards is not.
  */
 const CLAUDE_POSIX: Cells = {
   toolGrant: "enforced",
   readIsolation: "enforced",
   writeIsolation: "enforced",
-  writeScope: "none",
+  writeScope: "partial",
   networkEgress: "declared-only",
   nativeDelegationDeny: "enforced",
 };
@@ -154,6 +159,7 @@ export function versionMatchesMeasured(measured: string, actual: string): boolea
 
 const LEVEL_PHRASES: Readonly<Record<EnforcementLevel, string>> = {
   enforced: "refused by the runtime",
+  partial: "refused by the runtime for what existed beside the scope at launch; an entry created there afterwards is not",
   "declared-only": "stated to the role, not refused by the runtime",
   none: "not enforced (or not measured)",
 };

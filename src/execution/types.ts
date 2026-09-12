@@ -96,6 +96,13 @@ export interface ExecutionPolicy {
    */
   readonly approvals: readonly ApprovalRecordV1[];
   /**
+   * The subtrees this execution may write, canonical and sorted — or `null` when the whole
+   * workspace is (the only thing a launch could mean before phase 2). In the hash, and
+   * therefore explicit: `canonicalize()` drops `undefined`, so an unscoped policy must say
+   * `null` or it would collide with one written before scopes existed.
+   */
+  readonly writeScope: readonly string[] | null;
+  /**
    * Whether this role holds any workspace grant at all. `none` for a role that declares no
    * root (read-thread, compaction, titling): it works from memory, the workspace is only
    * the process cwd, and the runtime ACL must not hand it the tree as a read root.
@@ -219,6 +226,8 @@ export interface ExecutionAuthorization {
   readonly workspaceMode: "read-only" | "workspace-write";
   /** The approvals this launch was granted on — carried into the policy by `materialize()`. */
   readonly approvals: readonly ApprovalRecordV1[];
+  /** The scope policy approved — canonical, sorted, deduplicated — or `null` for the whole workspace. */
+  readonly writeScope: readonly string[] | null;
   readonly authorizedAt: string;
 }
 
@@ -234,6 +243,12 @@ export interface AuthorizeExecutionInput {
    * around it. Absent, the workspace check is identity only and no question is ever asked.
    */
   readonly launch?: LaunchScope;
+  /**
+   * Subtrees of the workspace a `workspace-write` launch is confined to, relative to the
+   * workspace or absolute. Each must exist and resolve inside it; an empty list is a
+   * contradiction and refused. Absent means the whole workspace.
+   */
+  readonly writeScope?: readonly string[];
   /** The session's collected approvals, when the launch runs under a root that keeps them. */
   readonly sessionApprovals?: SessionApprovals;
 }

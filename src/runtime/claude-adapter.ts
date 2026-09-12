@@ -1,9 +1,10 @@
+import { readdir } from "node:fs/promises";
 import { delimiter, dirname, join } from "node:path";
 import { defaultAutoCompactTokens } from "../agents/model-context";
 import { agentRegistry } from "../agents/registry";
 import { memoryRoot as resolveMemoryRoot } from "../state-paths";
 import { atomicRuntimeFile, baseRuntimeEnvironment, compactBridgeEnabled, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
-import { claudePermissions } from "./permission-rules";
+import { claudePermissions, writeScopeDenyPaths } from "./permission-rules";
 import type { PrepareRuntimeInput, RuntimeAdapter, RuntimeHealth, RuntimeLaunchSpec } from "./runtime-adapter";
 import { hookInvocation, renderHookCommand } from "./hook-command";
 
@@ -86,6 +87,18 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
     const contextFiles = await writeRuntimeContextFiles(input.execution, input.interactive);
     const skillRoots = runtimeSkillRoots(this.env, this.assetRoot, policy.skillRoots);
     const autoCompactTokens = policy.autoCompactTokens[this.name] ?? defaultAutoCompactTokens(input.model);
+    // A scoped write launch is confined by denying what stands beside the scope, on both
+    // surfaces Claude Code offers: the `Edit` rules (the tool) and `sandbox.denyWrite`
+    // (the shell). Neither can *allow* a subtree — measured 2026-09-12, `denyWrite` beats
+    // `allowWrite` — so the workspace's siblings are enumerated instead, and the executions
+    // root, which is never inside a workspace policy would sign, is in no list at all.
+    const denyPaths = policy.workspaceMode === "workspace-write" && policy.writeScope !== null
+      ? await writeScopeDenyPaths(
+          capsule.activeWorkspace,
+          [...policy.writeScope, join(this.memoryRoot(), "private", policy.role)],
+          (directory) => readdir(directory),
+        )
+      : [];
     const settingsFile = await atomicRuntimeFile(
       join(artifacts.runtimeDirectory, "claude-settings.json"),
       `${JSON.stringify({
@@ -121,6 +134,7 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
           runtimeDirectory: artifacts.runtimeDirectory,
           allRoles: agentRegistry.list().map((definition) => definition.id),
           sandboxed: this.sandboxAvailable(),
+          ...(denyPaths.length === 0 ? {} : { writeScopeDenyPaths: denyPaths }),
         }),
         ...(policy.workspaceMode === "read-only" && this.sandboxAvailable() ? {
           sandbox: {
@@ -128,6 +142,14 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
             failIfUnavailable: true,
             allowUnsandboxedCommands: false,
             filesystem: { denyWrite: [capsule.activeWorkspace] },
+          },
+        } : {}),
+        ...(denyPaths.length > 0 && this.sandboxAvailable() ? {
+          sandbox: {
+            enabled: true,
+            failIfUnavailable: true,
+            allowUnsandboxedCommands: false,
+            filesystem: { denyWrite: [...denyPaths] },
           },
         } : {}),
       }, null, 2)}\n`,

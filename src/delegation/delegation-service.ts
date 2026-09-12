@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import type { AgentRegistry, RuntimeId } from "../agents/types";
 import type { BackendExecutionResult, BackendExecutionStatus, ExecutionBackend } from "../backend/execution-backend";
 import { FileSessionApprovals } from "../execution/approvals";
+import { readWriteScope } from "../execution/execution-policy";
 import type { ExecutionService } from "../execution/execution-service";
 import { executionArtifactPaths } from "../execution/execution-store";
 import {
@@ -137,6 +138,7 @@ function normalizeRequest(input: DelegationRequestInput, ids: DelegationIds): De
     task: input.task.trim(),
     workspace: input.workspace,
     workspaceMode: input.workspaceMode ?? "read-only",
+    writeScope: normalizeWriteScope(input.writeScope),
     metadata: Object.freeze({ ...(input.metadata ?? {}) }),
     executionOptions: Object.freeze({
       background: Boolean(input.executionOptions?.background),
@@ -144,6 +146,23 @@ function normalizeRequest(input: DelegationRequestInput, ids: DelegationIds): De
       timeoutMs,
     }),
   });
+}
+
+/**
+ * Một scope là một *tập*: trim, sort, bỏ trùng, để cùng một scope viết hai kiểu vẫn là một
+ * fingerprint. Rỗng hay có phần tử trống là lỗi ở đây — trước khi hỏi policy — vì đó không
+ * phải "không được phép" mà là "không nói gì cả".
+ */
+function normalizeWriteScope(value: readonly string[] | undefined): readonly string[] | null {
+  if (value === undefined) return null;
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new DelegationError("INVALID_REQUEST", "writeScope must list at least one path (omit it for the whole workspace)");
+  }
+  const entries = value.map((entry) => (typeof entry === "string" ? entry.trim() : ""));
+  if (entries.some((entry) => entry === "")) {
+    throw new DelegationError("INVALID_REQUEST", "writeScope entries must be non-empty paths");
+  }
+  return Object.freeze([...new Set(entries)].sort());
 }
 
 /** Trạng thái node quy về từ vựng của backend, cho những caller chỉ biết từ vựng đó. */
@@ -335,7 +354,8 @@ export class DelegationService {
     // the request, which is the field a caller fills in. No surface: nobody at a child's
     // keyboard is the principal, so a question here is `APPROVAL_UNAVAILABLE` unless the
     // root already answered it for this session.
-    const grant = String(this.policySnapshot(parent.node.executionId).workspace ?? "");
+    const parentSnapshot = this.policySnapshot(parent.node.executionId);
+    const grant = String(parentSnapshot.workspace ?? "");
     const executionId = this.ids.execution();
     const authorization = await this.executionService.authorize({
       executionId,
@@ -343,7 +363,15 @@ export class DelegationService {
       target: request.targetRole,
       workspace: request.workspace,
       workspaceMode: request.workspaceMode,
-      launch: { root: grant, project: (await this.projectRootOf(grant)) ?? grant },
+      ...(request.writeScope === null ? {} : { writeScope: request.writeScope }),
+      // The parent's own scope rides along, from the same signed snapshot as the grant: a
+      // child may only be handed a piece of what its launcher may write. `null` out loud
+      // when the parent is unscoped, so "no constraint" is a value and not an omission.
+      launch: {
+        root: grant,
+        project: (await this.projectRootOf(grant)) ?? grant,
+        writeScope: readWriteScope(parentSnapshot as Record<string, unknown>),
+      },
       sessionApprovals: new FileSessionApprovals(
         join(executionArtifactPaths(this.executionsRoot, parent.graph.rootExecutionId).contextDirectory, "approvals.json"),
       ),
@@ -637,16 +665,17 @@ export class DelegationService {
       backend: this.backend.name,
       createdAt: node.createdAt,
       status: backendStatusOf(node.status),
+      writeScope: readWriteScope(snapshot as Record<string, unknown>),
       executionStateFile: paths.stateFile,
       ...(node.error ? { error: node.error.message } : {}),
     });
   }
 
   /** The signed `policy.json` of an execution on disk — the only source for its workspace and runtime. */
-  private policySnapshot(executionId: string): { readonly workspace?: unknown; readonly runtime?: unknown } {
+  private policySnapshot(executionId: string): { readonly workspace?: unknown; readonly runtime?: unknown; readonly writeScope?: unknown } {
     const paths = executionArtifactPaths(this.executionsRoot, executionId);
     try {
-      return JSON.parse(readFileSync(paths.policyFile, "utf8")) as { readonly workspace?: unknown; readonly runtime?: unknown };
+      return JSON.parse(readFileSync(paths.policyFile, "utf8")) as { readonly workspace?: unknown; readonly runtime?: unknown; readonly writeScope?: unknown };
     } catch (error) {
       throw new DelegationError(
         "EXECUTION_NOT_FOUND",
@@ -663,6 +692,7 @@ export class DelegationService {
       task: request.task,
       workspace: request.workspace,
       workspaceMode: request.workspaceMode,
+      writeScope: request.writeScope,
       // Nấc nằm trong fingerprint vì nấc quyết định model: cùng một câu hỏi ở `puck` và ở
       // `ultra` là hai việc khác nhau, và một retry đổi nấc phải được đẻ ra con mới.
       mode: this.config.mode ?? DEFAULT_MODE,
@@ -732,6 +762,8 @@ export class DelegationService {
       ...(value.exitCode === undefined ? {} : { exitCode: value.exitCode }),
       ...(value.signal === undefined ? {} : { signal: value.signal }),
       ...(value.error === undefined ? {} : { error: value.error }),
+      // From the signed snapshot, not the request: what the child *ran* under.
+      ...(record.writeScope === undefined ? {} : { writeScope: record.writeScope }),
       metadata: Object.freeze({ ...(value.metadata ?? {}), backend: record.backend, runtime: record.runtime }),
     });
   }

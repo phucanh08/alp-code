@@ -157,6 +157,8 @@ export interface ChildRequest {
   readonly task: string;
   readonly workspace: string;
   readonly workspaceMode: "read-only" | "workspace-write";
+  /** Scope ghi xin cho con — `null` là cả workspace. Đổi scope là đổi quyền, nên là một việc khác. */
+  readonly writeScope: readonly string[] | null;
   /** Nấc công suất đã chọn cho con. Đổi nấc là đổi model, nên nó là một việc khác. */
   readonly mode: string;
   readonly background: boolean;
@@ -232,6 +234,7 @@ export function requestFingerprint(
         task: request.task,
         workspace: request.workspace,
         workspaceMode: request.workspaceMode,
+        writeScope: request.writeScope,
         mode: request.mode,
         background: request.background,
         interactive: request.interactive,

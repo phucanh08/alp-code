@@ -1,4 +1,5 @@
 import { realpath } from "node:fs/promises";
+import { resolve } from "node:path";
 import type { AgentDefinition, AgentId, AgentRegistry } from "../agents/types";
 import { seedCheckpoint, writeCheckpoint } from "../context/checkpoint";
 import { seedPinsFromSnapshot } from "../thread/context-types";
@@ -122,6 +123,7 @@ export class ExecutionService {
     }
 
     const workspace = await this.resolveWorkspace(input.workspace);
+    const writeScope = input.writeScope === undefined ? null : await this.resolveWriteScope(workspace, input.writeScope);
     // A role that declares no workspace root (read-thread, compaction, titling) reads memory,
     // not the tree: there is no path for policy to authorize, and asking about one could only
     // ever come back WORKSPACE_NOT_GRANTED — which is why those three could not be launched
@@ -129,7 +131,9 @@ export class ExecutionService {
     // the deny it returns is the right answer rather than an artefact of the question.
     const grantsWorkspace = definition.capabilities.workspace.readRoots.length > 0;
     const approvals: ApprovalRecordV1[] = [];
-    if (grantsWorkspace || input.workspaceMode === "workspace-write") {
+    // A scope is always asked about, even on a read-only launch: the deny it earns there
+    // (`WRITE_SCOPE_ON_READ_ONLY`) is policy's to give, not something to drop on the floor.
+    if (grantsWorkspace || input.workspaceMode === "workspace-write" || writeScope !== null) {
       const decision = decideWith(this.policy, {
         type: "workspace",
         actor: definition.id,
@@ -141,6 +145,7 @@ export class ExecutionService {
           delegated: parent !== "principal",
         },
         ...(input.launch === undefined ? {} : { launch: input.launch }),
+        ...(writeScope === null ? {} : { writeScope }),
       });
       if (decision.kind === "require_approval") {
         approvals.push(await this.settle(decision, input, surface));
@@ -156,10 +161,32 @@ export class ExecutionService {
       workspace,
       workspaceMode: input.workspaceMode,
       approvals,
+      writeScope,
       authorizedAt: this.now().toISOString(),
     });
     this.issued.set(authorization, definition);
     return authorization;
+  }
+
+  /**
+   * Each entry resolved the way the workspace was — through symlinks — so what policy judges
+   * is where writes would really land. A missing entry is refused rather than created: the
+   * scope names what the child may touch, and a launch is not the moment to grow the tree.
+   */
+  private async resolveWriteScope(workspace: string, entries: readonly string[]): Promise<readonly string[]> {
+    if (entries.length === 0) throw new Error("workspace authorization failed: write scope must not be empty (omit it for the whole workspace)");
+    const resolved = new Set<string>();
+    for (const entry of entries) {
+      try {
+        resolved.add(await this.resolveWorkspace(resolve(workspace, entry)));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          throw new Error(`workspace authorization failed (WRITE_SCOPE_NOT_FOUND): write scope entry \`${entry}\` does not exist under \`${workspace}\``);
+        }
+        throw error;
+      }
+    }
+    return [...resolved].sort();
   }
 
   /**
@@ -219,6 +246,7 @@ export class ExecutionService {
       workspace: authorization.workspace,
       workspaceMode: authorization.workspaceMode,
       approvals: authorization.approvals,
+      writeScope: authorization.writeScope,
       ...(input.mode === undefined ? {} : { mode: input.mode }),
       ...(input.modeProfiles === undefined ? {} : { modeProfiles: input.modeProfiles }),
       createdAt,

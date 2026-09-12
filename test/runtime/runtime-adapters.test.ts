@@ -65,6 +65,7 @@ async function fixture(): Promise<{ root: string; project: string; prepared: Pre
       role: "search",
       workspace: project,
       workspaceMode: "read-only",
+      writeScope: null,
       mode: "medium",
       model: "gpt-5.6-terra",
       reasoningEffort: "low",

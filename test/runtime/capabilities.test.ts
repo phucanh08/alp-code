@@ -77,15 +77,24 @@ describe("capabilitiesFor — the measured table", () => {
 
   /**
    * Fail-closed: a cell nobody measured is `none`, never a guess copied from the platform
-   * next door. Codex on Windows and Claude's `writeScope` (P2 measures it) are those cells.
+   * next door. Codex on Windows is that cell.
    */
   it("reports `none` for every cell that has not been measured", () => {
     const codexWindows = capabilitiesFor("codex", "win32");
     expect(codexWindows.writeIsolation).toBe("none");
     expect(codexWindows.writeScope).toBe("none");
     expect(codexWindows.networkEgress).toBe("none");
+  });
+
+  /**
+   * Measured 2026-09-12 (`research/claude-sandbox-precedence.md`, Claude Code 2.1.269):
+   * `denyWrite` beats `allowWrite`, so a scope narrower than the workspace is expressed by
+   * denying its enumerated siblings — refused for what existed at launch, not for an entry
+   * created beside the scope afterwards. That is `partial`, not `enforced` and not `none`.
+   */
+  it("reports `partial` for Claude's write scope on darwin/linux", () => {
     for (const platform of ["darwin", "linux"] as const) {
-      expect(capabilitiesFor("claude", platform).writeScope).toBe("none");
+      expect(capabilitiesFor("claude", platform).writeScope).toBe("partial");
     }
   });
 

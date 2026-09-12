@@ -29,6 +29,8 @@ export interface CreateExecutionPolicyInput {
   readonly createdAt: string;
   /** What the principal said yes to for this launch; `[]` (the default) when nothing was asked. */
   readonly approvals?: readonly ApprovalRecordV1[];
+  /** The approved write scope; absent or `null` means the whole workspace. */
+  readonly writeScope?: readonly string[] | null;
   /** Defaults to the shipped catalog — see `capability-catalog.ts`. */
   readonly catalog?: CapabilityCatalog;
   /**
@@ -116,6 +118,24 @@ function assertThreadBinding(value: ExecutionThreadBinding | null | undefined): 
   return { id: value.id, contextRevision: value.contextRevision, contextDigest: value.contextDigest };
 }
 
+/**
+ * `writeScope` as a persisted snapshot carries it. Absent or `null` is "the whole workspace"
+ * — every `policy.json` written before phase 2 reads that way; anything else must be a
+ * non-empty list of non-empty strings, or the snapshot is not one this code wrote.
+ */
+export function readWriteScope(snapshot: Record<string, unknown>): readonly string[] | null {
+  const value = snapshot.writeScope;
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value)) throw new Error("policy snapshot `writeScope` must be a list of paths or null");
+  if (value.length === 0) throw new Error("policy snapshot `writeScope` must not be empty; use null for the whole workspace");
+  value.forEach((entry, index) => {
+    if (typeof entry !== "string" || entry.length === 0) {
+      throw new Error(`policy snapshot \`writeScope[${index}]\` must be a non-empty path`);
+    }
+  });
+  return Object.freeze([...(value as string[])]);
+}
+
 export function createExecutionPolicy(
   input: CreateExecutionPolicyInput,
 ): ExecutionPolicy {
@@ -159,6 +179,9 @@ export function createExecutionPolicy(
     enforcement: capabilitiesFor(runtime, input.platform ?? process.platform),
     // The principal's answers, inside the hash for the same reason the enforcement row is.
     approvals: (input.approvals ?? []).map((record) => ({ ...record })),
+    // Sorted here as well as at authorization: the hash must not depend on the order a
+    // caller happened to list the same scope in.
+    writeScope: input.writeScope === undefined || input.writeScope === null ? null : [...input.writeScope].sort(),
     workspaceAccess: input.definition.capabilities.workspace.readRoots.length > 0
       ? "granted" as const
       : "none" as const,

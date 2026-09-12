@@ -149,6 +149,47 @@ Bản ghi đi vào `ExecutionPolicy.approvals` của con và vào `policyHash`: 
 workspace vì có người nói "yes" là một identity khác với một execution không phải hỏi.
 `alp thread show` in các approval của từng root.
 
+### `--write-scope`: con chỉ được ghi một phần workspace
+
+`alp delegate worker --write-scope src/parser --write-scope docs -- fix the parser` giao việc
+cho một vai `workspace-write` nhưng chỉ cho nó ghi hai cây con đó. Cờ lặp được; đường dẫn
+tương đối so với `--workspace` hoặc tuyệt đối; bỏ cờ là cả workspace như trước. Scope đi qua
+`PolicyEngine.decide()` **trước** luật `--workspace` ở trên — một scope sai không bao giờ là
+thứ đem đi hỏi principal — và qua đúng thứ tự:
+
+| Scope | Kết quả |
+|---|---|
+| có scope nhưng vai đích `read-only` | `WRITE_SCOPE_ON_READ_ONLY` |
+| entry không tồn tại trên đĩa | `WRITE_SCOPE_NOT_FOUND` — không tạo hộ |
+| entry ngoài workspace sau khi resolve (`..`, tuyệt đối, **symlink trỏ ra ngoài**) | `WRITE_SCOPE_OUTSIDE_WORKSPACE` |
+| entry chạm `~/.alp/executions/` (bằng, chứa, hay nằm trong) — hoặc launch *không* scope mà workspace chứa nó | `WRITE_SCOPE_PROTECTED_ROOT` |
+| cha có scope, con xin rộng hơn (entry ngoài scope cha; hoặc con không scope mà workspace không nằm trong scope cha) | `WRITE_SCOPE_EXCEEDS_PARENT` |
+| danh sách rỗng, entry trống | `INVALID_REQUEST` ở `DelegationService`, trước khi hỏi policy |
+
+Mỗi entry được resolve qua symlink như workspace (`realpath`), rồi sort + bỏ trùng, và đi vào
+`ExecutionPolicy.writeScope` — `null` **tường minh** khi không scope, vì `canonicalize()` bỏ
+key `undefined` và một policy không scope không được trùng hash với policy viết trước P2. Nó
+nằm trong `policyHash` (hook bridge chép lại qua `readWriteScope`, một `policy.json` bị nới
+scope sau khi ký là "invalid or stale"), trong fingerprint của request (cùng task khác scope
+là việc khác), và trong `alp delegation status` (`writeScope` trong kết quả, đọc từ snapshot
+đã ký chứ không từ request). Scope của cha đọc từ chính `policy.json` của cha và đi cùng grant
+(`launch.writeScope`), nên một con không thể xin thứ cha không có.
+
+Runtime nhận scope theo cách nó cưỡng chế được:
+
+- **Codex**: `writable_roots = [<scope...>, <private memory của vai>]` — thay workspace chứ
+  không thêm vào; sandbox của Codex tự từ chối phần còn lại (`enforced`).
+- **Claude (darwin/linux)**: đo trên 2.1.269 (`research/claude-sandbox-precedence.md`)
+  `denyWrite` thắng `allowWrite`, nên không "cho phép" được một cây con — ALP liệt kê **những
+  gì đứng cạnh scope** trên đường từ workspace xuống tới scope và deny từng thứ, ở cả hai mặt:
+  `permissions.deny` `Edit(//path/**)` (Claude áp cùng luật cho Write/NotebookEdit/MultiEdit;
+  `Write(...)` bị bỏ qua) và `sandbox.filesystem.denyWrite`. Cái gì tồn tại lúc phóng thì bị
+  chặn; một entry tạo *sau đó* cạnh scope thì không — đó là `partial`, không phải `enforced`.
+- **Claude (win32)**: chỉ có luật `Edit`, không có sandbox — `declared-only` như trước.
+
+Không cấu hình nào của runtime chứa `~/.alp/executions/` trong danh sách ghi được, và một
+scope bị từ chối không để lại node, file hay process nào.
+
 ### `delegatesTo` cho phép, `reportsTo` chỉ mô tả
 
 Đúng **một** nguồn quyền: `target ∈ parent.delegatesTo`. `reportsTo` nói kết quả đi ngược lên
@@ -410,15 +451,17 @@ Bảng Authority mà một role đọc là *một* lời hứa viết hai lần:
 grant lúc gọi, Codex thì shell là built-in và đọc được mọi path. `src/runtime/capabilities.ts`
 giữ điều đó thành dữ liệu có `measuredOn { platform, runtimeVersion, measuredAt }`, và
 `ExecutionPolicy.enforcement` chụp đúng dòng đã dựa vào **vào `policyHash`** — hai policy
-khác nhau ở mức cưỡng chế là hai identity khác nhau. Ba mức: `enforced` (runtime tự từ chối),
-`declared-only` (ALP nói ra, không ai từ chối), `none` (không cưỡng chế **hoặc chưa đo** — ô
-chưa đo là `none`, không chép từ platform bên cạnh).
+khác nhau ở mức cưỡng chế là hai identity khác nhau. Bốn mức: `enforced` (runtime tự từ chối),
+`partial` (runtime từ chối những gì ALP liệt kê được lúc phóng, không hơn — biên là một danh
+sách chứ không phải một luật, nên thứ xuất hiện sau khi liệt kê không bị chặn), `declared-only`
+(ALP nói ra, không ai từ chối), `none` (không cưỡng chế **hoặc chưa đo** — ô chưa đo là `none`,
+không chép từ platform bên cạnh).
 
 | | toolGrant | readIsolation | writeIsolation | writeScope | networkEgress | nativeDelegationDeny |
 |---|---|---|---|---|---|---|
 | codex · darwin/linux (đo trên 0.154) | declared-only | none | enforced | enforced | enforced | enforced |
 | codex · win32 | declared-only | none | none | none | none | enforced |
-| claude · darwin/linux (đo trên 2.1) | enforced | enforced | enforced | none (P2 đo) | declared-only | enforced |
+| claude · darwin/linux (đo trên 2.1) | enforced | enforced | enforced | partial (đo 2026-09-12 trên 2.1.269) | declared-only | enforced |
 | claude · win32 | enforced | declared-only | none | declared-only | declared-only | enforced |
 
 `describeEnforcement(caps, policy)` sinh dòng giải thích cho bảng của `alp agent test` /
@@ -465,6 +508,7 @@ Cây trả thêm một lớp mã riêng, và chúng đều fail đóng:
 | `INVALID_NODE_TRANSITION` | một chuyển trạng thái mà `ALLOWED_TRANSITIONS` không cho |
 | `EXECUTION_GRAPH_LOCK_TIMEOUT` · `EXECUTION_GRAPH_REVISION_CONFLICT` | không lấy được lease, hoặc phát hiện lost update lúc ghi |
 | `APPROVAL_UNAVAILABLE` · `APPROVAL_DENIED` | policy cần principal trả lời mà không có surface nào hỏi được, hoặc principal đã nói "no" — xem "`--workspace` ngoài grant" ở trên |
+| `WRITE_SCOPE_ON_READ_ONLY` · `WRITE_SCOPE_NOT_FOUND` · `WRITE_SCOPE_OUTSIDE_WORKSPACE` · `WRITE_SCOPE_PROTECTED_ROOT` · `WRITE_SCOPE_EXCEEDS_PARENT` | `--write-scope` không hợp lệ — xem bảng ở "`--write-scope`" ở trên |
 
 Một node chết không đẹp còn mang mã của riêng nó — thứ `tree` in ra sau execution ID:
 `ROOT_START_FAILED` và `CHILD_START_FAILED` (backend từ chối spawn sau khi chỗ đã được giữ),
