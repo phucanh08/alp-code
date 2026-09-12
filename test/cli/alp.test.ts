@@ -9,6 +9,7 @@ import { applyModeSettings, parseModeSettings } from "../../src/agents/mode-sett
 import { DEFAULT_MODE, MODE_PROFILES, modelForMode, reasoningEffortForMode, runtimeForMode } from "../../src/agents/modes";
 import type { AgentDefinition } from "../../src/agents/types";
 import type {
+  ApprovalSurface,
   AuthorizeExecutionInput,
   MaterializeExecutionInput,
 } from "../../src/execution/types";
@@ -194,14 +195,14 @@ const MAIN_DEFINITION = {
 function executionStub(options: {
   events?: string[];
   executionId?: string;
-  onAuthorize?: (input: AuthorizeExecutionInput) => void;
+  onAuthorize?: (input: AuthorizeExecutionInput, surface?: ApprovalSurface) => void;
   onMaterialize?: (input: MaterializeExecutionInput) => void;
   stateFile?: string;
 } = {}) {
   return {
-    async authorize(input: AuthorizeExecutionInput) {
+    async authorize(input: AuthorizeExecutionInput, surface?: ApprovalSurface) {
       options.events?.push(`authorize:${input.parent}->${input.target}:${input.workspace}:${input.workspaceMode}`);
-      options.onAuthorize?.(input);
+      options.onAuthorize?.(input, surface);
       return { ...input, authorizedAt: "2026-09-11T00:00:00.000Z" } as never;
     },
     async materialize(_authorization: never, input: MaterializeExecutionInput) {
@@ -538,6 +539,42 @@ describe("runMainSession", () => {
       interactive: false,
     });
     expect(workspaceMode).toBe("read-only");
+  });
+
+  /**
+   * Phase-1 spec: the approval surface belongs to the root `alp` — the one process with the
+   * principal at its keyboard — and the root's launch is judged against its own cwd inside
+   * the registered project around it. Without a surface dependency the root asks nobody.
+   */
+  it("authorizes the root against its cwd as the grant, with the principal's surface", async () => {
+    let authorized: { input: AuthorizeExecutionInput; surface?: ApprovalSurface } | undefined;
+    const surface: ApprovalSurface = { supportsApproval: true, ask: async () => true };
+    await runMainSession({ cwd: "/project/api" }, {
+      registry: { get: () => MAIN_DEFINITION },
+      selector: { async select() { return { ok: true, mode: "medium", source: "default" }; } },
+      executionService: executionStub({
+        executionId: "exec",
+        onAuthorize: (input, given) => { authorized = { input, surface: given }; },
+      }),
+      graph: graphStub(),
+      threads: threadsStub(),
+      adapters: new Map([["claude", { name: "claude", compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true }, async probe() { return { ok: true, runtime: "claude", message: "ok" }; }, async prepare() { return { command: "fake", args: [], cwd: "/project/api", env: {}, temporaryFiles: [] }; } }]]),
+      backend: {
+        name: "local",
+        async healthCheck() { return { ok: true, message: "ok" }; },
+        async spawn() { return { executionId: "exec", status: "completed" }; },
+        async status(executionId) { return { executionId, status: "completed" }; },
+        async wait(executionId) { return { executionId, status: "completed" }; },
+        async cancel(executionId) { return { executionId, status: "cancelled" }; },
+        async cleanup() {},
+      },
+      executionId: () => "exec",
+      interactive: false,
+      approvalSurface: surface,
+      projectRootOf: async (path) => (path === "/project/api" ? "/project" : null),
+    });
+    expect(authorized?.input.launch).toEqual({ root: "/project/api", project: "/project" });
+    expect(authorized?.surface).toBe(surface);
   });
 
   /**

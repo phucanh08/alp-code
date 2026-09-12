@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { agentRegistry } from "../../src/agents/registry";
 import { DelegationService, InMemoryDelegationExecutionStore } from "../../src/delegation/delegation-service";
-import { cleanupEnvironments, createE2eEnvironment, type E2eEnvironment } from "./harness";
+import { cleanupEnvironments, createE2eEnvironment, createMaterializedRoot, type E2eEnvironment } from "./harness";
 
 const SEARCH_OUTPUT = "Entrypoint located at index.ts:1 — `export const entrypoint`.";
 
@@ -17,10 +17,12 @@ async function delegationService(
   environment: E2eEnvironment,
   options: { readonly parent: string; readonly executionId: string },
 ) {
-  const root = await environment.graph.createRoot({
+  const root = await createMaterializedRoot(environment, {
     agentId: options.parent,
-    thread: null,
     executionId: `exec_root_${options.parent}`,
+    // A specialist standing as a root is a test convenience: its identity is still the one
+    // `main` would have authorized for it.
+    parent: options.parent === "main" ? "principal" : "main",
   });
   const service = new DelegationService({
     registry: agentRegistry,

@@ -4,6 +4,7 @@ import { agentRegistry } from "../../agents/registry";
 import type { AgentRegistry, RuntimeId } from "../../agents/types";
 import { LocalProcessBackend } from "../../backend/local-process-backend";
 import { DelegationService, FileDelegationExecutionStore } from "../../delegation/delegation-service";
+import { ProjectRegistryStore } from "./init";
 import type { DelegationResult } from "../../delegation/types";
 import { ExecutionService } from "../../execution/execution-service";
 import { FileExecutionStore } from "../../execution/execution-store";
@@ -299,6 +300,9 @@ export async function createDefaultDelegationComposition(
     // Bốn biến env, tất-cả-hoặc-không: một nửa binding chỉ dẫn tới việc đoán nốt nửa kia.
     binding: readBindingFromEnvironment(env),
     executionsRoot,
+    // The bound of the one approval rule: a launch outside the parent's workspace is a
+    // question only while it stays inside the registered project around that workspace.
+    projectRootOf: (path) => new ProjectRegistryStore().projectContaining(path),
     runtimeAdapters: new Map<RuntimeId, RuntimeAdapter>([
       ["claude", new ClaudeRuntimeAdapter({ env })],
       ["codex", new CodexRuntimeAdapter({ env })],

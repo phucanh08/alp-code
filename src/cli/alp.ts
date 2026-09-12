@@ -28,6 +28,8 @@ import { createDefaultDelegationComposition, isRenderedOutput, runDelegateComman
 import { codexSandboxProbe } from "../agent-test";
 import { parseAgentCommand, runAgentCommand } from "./commands/agent";
 import { syncIdentityDocuments } from "./commands/identity-sync";
+import { FileSessionApprovals } from "../execution/approvals";
+import { createTtyApprovalSurface } from "./approval-surface";
 import { deinitializeProject, initializeProject, ProjectRegistryStore } from "./commands/init";
 import { ensurePrincipalProfile, openTerminalPrompt, runPrincipalCommand, type PrincipalCommandInput } from "./commands/principal";
 import { continueThreadSession, historySourceFromDisk, runMainSession, type RunMainDependencies, type RunMainInput } from "./commands/run-main";
@@ -288,6 +290,12 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
       workspaceModeFor: async (project) => (await projectRegistry.isRegistered(project))
         ? "workspace-write"
         : "read-only",
+      approvalSurface: createTtyApprovalSurface({
+        stdin: process.stdin,
+        stdout,
+        isTTY: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+      }),
+      projectRootOf: (path) => projectRegistry.projectContaining(path),
     };
   };
   const exitCodeOf = (status: "completed" | "cancelled" | string): number =>
@@ -324,6 +332,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
         write: (text) => stdout.write(text),
         historySource: (executionId) => historySourceFromDisk(executionsDirectory(), executionId),
         launchReceipt: (executionId) => readLaunchReceipt(join(executionsDirectory(), executionId, "context", "launch.json")),
+        sessionApprovals: (executionId) => new FileSessionApprovals(join(executionsDirectory(), executionId, "context", "approvals.json")).list(),
         continueThread: async (input) => {
           const result = await continueThreadSession(
             { threadId: input.threadId, cwd, ...(input.mode ? { mode: input.mode } : {}) },

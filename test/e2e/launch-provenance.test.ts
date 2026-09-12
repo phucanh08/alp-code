@@ -5,7 +5,7 @@ import { agentRegistry } from "../../src/agents/registry";
 import { runMainSession } from "../../src/cli/commands/run-main";
 import { DelegationService, InMemoryDelegationExecutionStore } from "../../src/delegation/delegation-service";
 import { readLaunchReceipt } from "../../src/runtime/launch-provenance";
-import { cleanupEnvironments, createE2eEnvironment, type E2eEnvironment } from "./harness";
+import { cleanupEnvironments, createE2eEnvironment, createMaterializedRoot, type E2eEnvironment } from "./harness";
 
 const FAKE_SECRET = "sk-ant-e2e-secret-3c9a1f";
 
@@ -52,7 +52,7 @@ describe("e2e: launch receipt", () => {
 
   it("writes one for a delegated child too, and the digest names the child's own launch", async () => {
     const environment = await createE2eEnvironment({ output: "found" });
-    const root = await environment.graph.createRoot({ agentId: "main", thread: null, executionId: "exec_root_main" });
+    const root = await createMaterializedRoot(environment, { agentId: "main", executionId: "exec_root_main" });
     const service = new DelegationService({
       registry: agentRegistry,
       policy: environment.policy,

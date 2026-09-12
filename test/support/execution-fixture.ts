@@ -66,6 +66,7 @@ export function policyFixture(overrides: Partial<ExecutionPolicy> = {}): Executi
     reasoningEffort: "low",
     runtime: "claude",
     enforcement: capabilitiesFor("claude", process.platform),
+    approvals: [],
     mode: "medium",
     workspaceAccess: "granted",
     allowedTools: ["Read", "Skill"],

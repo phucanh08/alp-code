@@ -5,6 +5,7 @@ import { rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { AgentRegistry, RuntimeId } from "../agents/types";
 import type { BackendExecutionResult, BackendExecutionStatus, ExecutionBackend } from "../backend/execution-backend";
+import { FileSessionApprovals } from "../execution/approvals";
 import type { ExecutionService } from "../execution/execution-service";
 import { executionArtifactPaths } from "../execution/execution-store";
 import {
@@ -92,6 +93,12 @@ export interface DelegationServiceOptions {
   readonly backend: ExecutionBackend;
   readonly executionStore: DelegationExecutionStore;
   readonly config: DelegationServiceConfig;
+  /**
+   * The registered project a path lies in, or `null`. Bounds the one approval rule: a child
+   * launched outside its parent's workspace is asked about when it stays inside this root,
+   * refused when it does not. Absent, the parent's workspace is its own project.
+   */
+  readonly projectRootOf?: (path: string) => Promise<string | null>;
   readonly ids?: DelegationIds;
   readonly now?: () => Date;
 }
@@ -287,6 +294,7 @@ export class DelegationService {
   private readonly runtimeAdapters: ReadonlyMap<RuntimeId, RuntimeAdapter>;
   private readonly backend: ExecutionBackend;
   private readonly executionStore: DelegationExecutionStore;
+  private readonly projectRootOf: (path: string) => Promise<string | null>;
   private readonly ids: DelegationIds;
   private readonly now: () => Date;
 
@@ -303,6 +311,7 @@ export class DelegationService {
     this.probe = backendProbe(this.backend);
     this.executionStore = options.executionStore;
     this.config = options.config;
+    this.projectRootOf = options.projectRootOf ?? (async () => null);
     this.ids = options.ids ?? defaultIds();
     this.now = options.now ?? (() => new Date());
   }
@@ -322,6 +331,11 @@ export class DelegationService {
 
     // Trước reservation, trước mọi file: một request bị policy từ chối không được phép chiếm
     // một slot đồng thời, dù chỉ trong khoảng thời gian nó mất để bị từ chối.
+    // The grant is the parent's own workspace, read from its signed snapshot — never from
+    // the request, which is the field a caller fills in. No surface: nobody at a child's
+    // keyboard is the principal, so a question here is `APPROVAL_UNAVAILABLE` unless the
+    // root already answered it for this session.
+    const grant = String(this.policySnapshot(parent.node.executionId).workspace ?? "");
     const executionId = this.ids.execution();
     const authorization = await this.executionService.authorize({
       executionId,
@@ -329,6 +343,10 @@ export class DelegationService {
       target: request.targetRole,
       workspace: request.workspace,
       workspaceMode: request.workspaceMode,
+      launch: { root: grant, project: (await this.projectRootOf(grant)) ?? grant },
+      sessionApprovals: new FileSessionApprovals(
+        join(executionArtifactPaths(this.executionsRoot, parent.graph.rootExecutionId).contextDirectory, "approvals.json"),
+      ),
     });
 
     // Trần được tính trên một cây đã đối chiếu với backend. Bỏ bước này thì một cây còn đầy
@@ -606,16 +624,7 @@ export class DelegationService {
     node: ExecutionNode,
   ): DelegationExecutionRecord {
     const paths = executionArtifactPaths(this.executionsRoot, node.executionId);
-    let snapshot: { readonly workspace?: unknown; readonly runtime?: unknown };
-    try {
-      snapshot = JSON.parse(readFileSync(paths.policyFile, "utf8")) as typeof snapshot;
-    } catch (error) {
-      throw new DelegationError(
-        "EXECUTION_NOT_FOUND",
-        `execution \`${node.executionId}\` has no readable policy snapshot`,
-        { cause: error },
-      );
-    }
+    const snapshot = this.policySnapshot(node.executionId);
     const parent = node.parentExecutionId ? findNode(graph, node.parentExecutionId) : null;
     return Object.freeze({
       executionId: node.executionId,
@@ -631,6 +640,20 @@ export class DelegationService {
       executionStateFile: paths.stateFile,
       ...(node.error ? { error: node.error.message } : {}),
     });
+  }
+
+  /** The signed `policy.json` of an execution on disk — the only source for its workspace and runtime. */
+  private policySnapshot(executionId: string): { readonly workspace?: unknown; readonly runtime?: unknown } {
+    const paths = executionArtifactPaths(this.executionsRoot, executionId);
+    try {
+      return JSON.parse(readFileSync(paths.policyFile, "utf8")) as { readonly workspace?: unknown; readonly runtime?: unknown };
+    } catch (error) {
+      throw new DelegationError(
+        "EXECUTION_NOT_FOUND",
+        `execution \`${executionId}\` has no readable policy snapshot`,
+        { cause: error },
+      );
+    }
   }
 
   private childRequest(request: DelegationRequest): ChildRequest {

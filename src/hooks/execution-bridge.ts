@@ -5,6 +5,7 @@ import { loadProjectAgents } from "../agents/loader";
 import { agentRegistry } from "../agents/registry";
 import type { AgentDefinition } from "../agents/types";
 import { loadModeProfiles } from "../cli/settings";
+import { readApprovals } from "../execution/approvals";
 import { createExecutionPolicy, hashAgentDefinition } from "../execution/execution-policy";
 import type { ExecutionPolicy, StoredExecutionState } from "../execution/types";
 import { WorkflowRunner } from "../workflow/workflow-runner";
@@ -92,6 +93,8 @@ async function loadExecution(input: HookExecutionInput): Promise<{
     // Carried too: the enforcement row is signed, and the hook may not run on the platform
     // that prepared the execution.
     ...(policy.enforcement === undefined ? {} : { platform: policy.enforcement.measuredOn.platform }),
+    // And the principal's answers: signed, and nothing here could ask again.
+    approvals: readApprovals(policy as unknown as Record<string, unknown>),
   });
   if (JSON.stringify(expected) !== JSON.stringify(policy)) throw new Error("execution policy snapshot is invalid or stale");
   return { policy, definition, state };

@@ -8,7 +8,7 @@ import { INTERACTIVE_TASK_SENTINEL } from "../../context/continuity";
 import type { ExecutionService } from "../../execution/execution-service";
 import type { ExecutionGraphService } from "../../execution/graph/execution-graph-service";
 import type { RuntimeAdapter } from "../../runtime/runtime-adapter";
-import type { PreparedExecution } from "../../execution/types";
+import type { ApprovalSurface, PreparedExecution } from "../../execution/types";
 import { historySourceOf, type HistoryExecutionSource } from "../../thread/history-bridge";
 import type { ProjectContextInput, ThreadService } from "../../thread/thread-service";
 import { ThreadError } from "../../thread/errors";
@@ -49,6 +49,14 @@ export interface RunMainDependencies {
   readonly workspaceModeFor?: (cwd: string) => Promise<"read-only" | "workspace-write">;
   /** Loadout đã ghép settings của máy/project. Bỏ trống thì chạy đúng bản built-in. */
   readonly modeProfiles?: ModeProfiles;
+  /**
+   * Bàn phím của principal — chỗ duy nhất một `require_approval` được trả lời. Chỉ root
+   * `alp` có nó; bỏ trống (test, script) thì root hỏi không ai, và mọi câu hỏi là
+   * `APPROVAL_UNAVAILABLE`.
+   */
+  readonly approvalSurface?: ApprovalSurface;
+  /** Project đã đăng ký chứa một path, hoặc `null` — biên của quy tắc approval duy nhất. */
+  readonly projectRootOf?: (path: string) => Promise<string | null>;
 }
 
 export async function runMainSession(
@@ -188,13 +196,18 @@ async function runThreadRoot(
   const workspaceMode = definition.capabilities.workspace.writeRoots.length > 0
     ? requestedWorkspaceMode
     : "read-only";
+  // Grant của root là chính cwd nó đứng, project là project đã đăng ký quanh đó. Root chưa
+  // có `--workspace`, nên cwd luôn nằm trong grant và câu hỏi chưa bao giờ tới đây — nhưng
+  // surface và biên đã đứng đúng chỗ cho ngày root được chỉ đi nơi khác.
+  const project = (await dependencies.projectRootOf?.(input.cwd)) ?? input.cwd;
   const authorization = await dependencies.executionService.authorize({
     executionId,
     parent: "principal",
     target: definition.id,
     workspace: input.cwd,
     workspaceMode,
-  });
+    launch: { root: input.cwd, project },
+  }, dependencies.approvalSurface);
   // Binding chốt ở đây và bất biến từ đây: cùng một giá trị đi vào graph node và vào
   // snapshot policy đã hash. Thread lease được nhả trước khi graph được chạm tới.
   const reserved = await dependencies.threads.reserveRoot(thread.id, executionId);

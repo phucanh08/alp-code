@@ -36,7 +36,7 @@ Nguồn sự thật: [roadmap V3](./research/roadmap-v3.md) — đã qua hai lư
 
 | Phase | Tên | Trạng thái |
 |---|---|---|
-| 1 | [Approval hẹp (M3, prepare-time)](./phase-1-approval.md) — độc lập, chạy xen kẽ được | pending |
+| 1 | [Approval hẹp (M3, prepare-time)](./phase-1-approval.md) — độc lập, chạy xen kẽ được | completed (2026-09-12) |
 | 2 | [`writeScope`](./phase-2-write-scope.md) — mở đầu bằng đo precedence sandbox Claude | pending |
 | 3 | [Evidence](./phase-3-evidence.md) — bridge cho child, git baseline, `verify.commands`, evaluator | pending |
 | 4 | [Acceptance](./phase-4-acceptance.md) — `alp delegation accept\|reject`, nguồn thứ hai của projector | pending |

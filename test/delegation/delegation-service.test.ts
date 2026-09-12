@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -31,8 +31,7 @@ import { removeTemporary } from "../support/temporary-root";
  * như `createExecutionPolicy` thật làm: `DelegationService` giờ đọc model/effort/runtime từ
  * snapshot, nên một fake ghim cứng ba giá trị này sẽ biến mọi test loadout thành vô nghĩa.
  */
-function prepared(executionId: string, target = "search", profiles: ModeProfiles = MODE_PROFILES): PreparedExecution {
-  const workspace = process.cwd();
+function prepared(executionId: string, target = "search", profiles: ModeProfiles = MODE_PROFILES, workspace = process.cwd()): PreparedExecution {
   const definition = agentRegistry.get(target);
   return {
     capsule: {
@@ -65,6 +64,7 @@ function prepared(executionId: string, target = "search", profiles: ModeProfiles
       reasoningEffort: reasoningEffortForMode(definition, "medium", profiles),
       runtime: runtimeForMode(definition, "medium", profiles),
       enforcement: capabilitiesFor(runtimeForMode(definition, "medium", profiles), process.platform),
+      approvals: [],
       workspaceAccess: "granted",
       allowedTools: ["Read"],
       skills: [],
@@ -161,6 +161,8 @@ async function graphFixture(root: string) {
     store: new FileExecutionGraphStore({ root: join(root, "execution-graphs") }),
   });
   const parent = await graph.createRoot({ agentId: "main", thread: null, executionId: "exec_parent" });
+  // The root's own snapshot: the grant a child's launch is judged against comes from here.
+  await persist(root, prepared("exec_parent", "main", MODE_PROFILES, process.cwd()));
   return { graph, parent };
 }
 
@@ -190,8 +192,12 @@ function fakeExecutionService(options: {
   authorizeError?: Error;
 }) {
   const tickets = new Map<object, PrepareExecutionInput>();
+  const authorized: Parameters<ExecutionService["authorize"]>[] = [];
   return {
-    async authorize(input: Parameters<ExecutionService["authorize"]>[0]) {
+    authorized,
+    async authorize(...call: Parameters<ExecutionService["authorize"]>) {
+      const [input] = call;
+      authorized.push(call);
       if (options.authorizeError) throw options.authorizeError;
       const ticket = { executionId: input.executionId } as ExecutionAuthorization;
       tickets.set(ticket, { ...input, thread: null, task: "", memoryQueries: [], characterBudget: 0, invariantContext: "", policyContext: "" } as PrepareExecutionInput);
@@ -215,17 +221,20 @@ async function serviceFixture(options: {
   authorizeError?: Error;
   primary?: FakeBackend;
   modeProfiles?: ModeProfiles;
+  projectRootOf?: (path: string) => Promise<string | null>;
 }) {
   const runtime = new FakeRuntime();
   const primary = options.primary ?? new FakeBackend("primary");
   const store = new InMemoryDelegationExecutionStore();
   const { graph, parent } = await graphFixture(options.root);
   let sequence = 0;
+  const executionService = fakeExecutionService(options);
   const service = new DelegationService({
     registry: agentRegistry,
     policy: { authorize: () => ({ allowed: true as const }) },
     memory: { buildContext: async () => { throw new Error("owned by ExecutionService"); } },
-    executionService: fakeExecutionService(options),
+    executionService,
+    ...(options.projectRootOf ? { projectRootOf: options.projectRootOf } : {}),
     graph,
     binding: parent.binding,
     executionsRoot: join(options.root, "executions"),
@@ -238,7 +247,7 @@ async function serviceFixture(options: {
       execution: () => `exec_${sequence}`,
     },
   });
-  return { service, store, runtime, primary, graph, parent };
+  return { service, store, runtime, primary, graph, parent, executionService };
 }
 
 const input = {
@@ -726,5 +735,59 @@ describe("FileDelegationExecutionStore", () => {
     } finally {
       await removeTemporary(root);
     }
+  });
+});
+
+/**
+ * Oracle: phase-1 spec. The grant a child's launch is judged against is the *parent's*
+ * workspace, read from the parent's signed snapshot — not from the request, which is the
+ * field a caller controls. The project around it comes from the registry. No child process
+ * has a principal at its keyboard, so `alp delegate` never carries an approval surface; a
+ * "yes" the root already recorded for this session is the only one it can present.
+ */
+describe("DelegationService — launch scope for the approval rule", () => {
+  let root = "";
+  beforeEach(async () => { root = await mkdtemp(join(tmpdir(), "alp-delegation-")); });
+  afterEach(async () => { await removeTemporary(root); });
+
+  it("authorizes with the parent's workspace as the grant and the registered project around it", async () => {
+    const fixture = await serviceFixture({
+      root,
+      projectRootOf: async (path) => (path === process.cwd() ? "/registered/project" : null),
+    });
+    await fixture.service.delegate(input);
+    expect(fixture.executionService.authorized).toHaveLength(1);
+    const [authorizeInput, surface] = fixture.executionService.authorized[0];
+    expect(authorizeInput.launch).toEqual({ root: process.cwd(), project: "/registered/project" });
+    expect(surface).toBeUndefined();
+  });
+
+  it("falls back to the grant itself as the project when none is registered", async () => {
+    const fixture = await serviceFixture({ root });
+    await fixture.service.delegate(input);
+    const [authorizeInput] = fixture.executionService.authorized[0];
+    expect(authorizeInput.launch).toEqual({ root: process.cwd(), project: process.cwd() });
+  });
+
+  it("presents the root execution's session approvals, kept under its context/", async () => {
+    const fixture = await serviceFixture({ root });
+    const approvalsFile = join(root, "executions", "exec_parent", "context", "approvals.json");
+    await writeFile(approvalsFile, JSON.stringify([{
+      version: 1, rule: "workspace-outside-grant-inside-project", subject: "/project/web",
+      scope: "session", decidedBy: "principal", decidedAt: "2026-09-12T10:00:00.000Z",
+    }]));
+    await fixture.service.delegate(input);
+    const [authorizeInput] = fixture.executionService.authorized[0];
+    expect(await authorizeInput.sessionApprovals?.list()).toEqual([
+      expect.objectContaining({ subject: "/project/web", scope: "session" }),
+    ]);
+  });
+
+  it("refuses to delegate under a parent whose snapshot cannot be read — nothing vouches for a grant", async () => {
+    const fixture = await serviceFixture({ root });
+    await rm(join(root, "executions", "exec_parent", "policy.json"));
+    await expect(fixture.service.delegate(input)).rejects.toMatchObject({ code: "EXECUTION_NOT_FOUND" });
+    expect(fixture.executionService.authorized).toHaveLength(0);
+    expect(fixture.primary.calls).toEqual([]);
   });
 });

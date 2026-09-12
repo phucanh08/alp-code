@@ -70,6 +70,7 @@ async function fixture(): Promise<{ root: string; project: string; prepared: Pre
       reasoningEffort: "low",
       runtime: "codex",
       enforcement: capabilitiesFor("codex", process.platform),
+      approvals: [],
       workspaceAccess: "granted",
       allowedTools: ["Read", "Grep"],
       skills: [],

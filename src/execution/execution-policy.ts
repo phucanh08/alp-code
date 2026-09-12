@@ -4,6 +4,7 @@ import { DEFAULT_MODE, modelForMode, reasoningEffortForMode, runtimeForMode, typ
 import type { AgentDefinition, RuntimeId } from "../agents/types";
 import { RUNTIME_IDS } from "../agents/types";
 import { capabilitiesFor } from "../runtime/capabilities";
+import type { ApprovalRecordV1 } from "./approvals";
 import {
   deepFreezeExecutionValue,
   type ExecutionId,
@@ -26,6 +27,8 @@ export interface CreateExecutionPolicyInput {
    */
   readonly modeProfiles?: ModeProfiles;
   readonly createdAt: string;
+  /** What the principal said yes to for this launch; `[]` (the default) when nothing was asked. */
+  readonly approvals?: readonly ApprovalRecordV1[];
   /** Defaults to the shipped catalog — see `capability-catalog.ts`. */
   readonly catalog?: CapabilityCatalog;
   /**
@@ -154,6 +157,8 @@ export function createExecutionPolicy(
     // two machines whose runtime refuses different things is two different policies, and
     // the evidence later reads this row rather than whatever the table says by then.
     enforcement: capabilitiesFor(runtime, input.platform ?? process.platform),
+    // The principal's answers, inside the hash for the same reason the enforcement row is.
+    approvals: (input.approvals ?? []).map((record) => ({ ...record })),
     workspaceAccess: input.definition.capabilities.workspace.readRoots.length > 0
       ? "granted" as const
       : "none" as const,

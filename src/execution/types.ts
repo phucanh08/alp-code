@@ -15,7 +15,9 @@ import type {
   MemoryKind,
   MemoryQuery,
 } from "../memory/types";
+import type { LaunchScope, PolicyDecision } from "../policy/types";
 import type { RuntimeEnforcementCapabilitiesV1 } from "../runtime/capabilities";
+import type { ApprovalRecordV1, SessionApprovals } from "./approvals";
 import type { ThreadContextHandoff } from "../thread/context-types";
 import type { WorkflowExecutionState } from "../workflow/types";
 import type { WorkflowRunStatus } from "../workflow/types";
@@ -87,6 +89,12 @@ export interface ExecutionPolicy {
    * records what the runtime honours; it grants nothing.
    */
   readonly enforcement: RuntimeEnforcementCapabilitiesV1;
+  /**
+   * What the principal said yes to for this execution — `[]` when nothing was asked. In the
+   * snapshot, and so in the hash: a launch that was widened by a person is a different
+   * identity from one that was not, and the record says which.
+   */
+  readonly approvals: readonly ApprovalRecordV1[];
   /**
    * Whether this role holds any workspace grant at all. `none` for a role that declares no
    * root (read-thread, compaction, titling): it works from memory, the workspace is only
@@ -209,6 +217,8 @@ export interface ExecutionAuthorization {
   /** Workspace đã canonicalize — đúng path policy đã duyệt, không phải path caller đưa vào. */
   readonly workspace: string;
   readonly workspaceMode: "read-only" | "workspace-write";
+  /** The approvals this launch was granted on — carried into the policy by `materialize()`. */
+  readonly approvals: readonly ApprovalRecordV1[];
   readonly authorizedAt: string;
 }
 
@@ -219,7 +229,30 @@ export interface AuthorizeExecutionInput {
   readonly target: AgentId;
   readonly workspace: string;
   readonly workspaceMode: "read-only" | "workspace-write";
+  /**
+   * Where this launch is asked for from — the launcher's own workspace and the project
+   * around it. Absent, the workspace check is identity only and no question is ever asked.
+   */
+  readonly launch?: LaunchScope;
+  /** The session's collected approvals, when the launch runs under a root that keeps them. */
+  readonly sessionApprovals?: SessionApprovals;
 }
+
+/**
+ * Who can answer a `require_approval`. Belongs to the *surface* — the root `alp` on a TTY —
+ * never to a role: a child of the graph has no principal at its keyboard, and the surface it
+ * gets is `NO_APPROVAL_SURFACE`, under which every question is `APPROVAL_UNAVAILABLE`.
+ */
+export interface ApprovalSurface {
+  readonly supportsApproval: boolean;
+  /** `true` for yes. Only called when `supportsApproval` is true. */
+  ask(decision: Extract<PolicyDecision, { kind: "require_approval" }>): Promise<boolean>;
+}
+
+export const NO_APPROVAL_SURFACE: ApprovalSurface = Object.freeze({
+  supportsApproval: false,
+  ask: async () => false,
+});
 
 /**
  * Phần còn lại: nội dung của execution, thứ chỉ có nghĩa sau khi quyền đã xong.

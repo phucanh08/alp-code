@@ -1,4 +1,5 @@
 import { MODE_IDS, parseMode, type ModeId } from "../../agents/modes";
+import type { ApprovalRecordV1 } from "../../execution/approvals";
 import type { LaunchProvenanceV1 } from "../../runtime/launch-provenance";
 import type { HistoryExecutionSource } from "../../thread/history-bridge";
 import { worseCompleteness, type HistoryCompleteness } from "../../thread/history-types";
@@ -34,6 +35,8 @@ export interface ThreadCommandDependencies {
    * không cần đĩa; bỏ trống thì `show` không in cột này.
    */
   readonly launchReceipt?: (executionId: string) => Promise<LaunchProvenanceV1 | null>;
+  /** The approvals a root's session collected — `<root execution>/context/approvals.json`. */
+  readonly sessionApprovals?: (executionId: string) => Promise<readonly ApprovalRecordV1[]>;
 }
 
 /**
@@ -66,7 +69,11 @@ export async function runThreadCommand(
         ? undefined
         : new Map(await Promise.all(thread.executions.map(async (ref) =>
           [ref.executionId, await dependencies.launchReceipt!(ref.executionId).catch(() => null)] as const)));
-      write(renderThreadShow(thread, activity, receipts));
+      const approvals = dependencies.sessionApprovals === undefined
+        ? undefined
+        : new Map(await Promise.all(thread.executions.map(async (ref) =>
+          [ref.executionId, await dependencies.sessionApprovals!(ref.executionId).catch(() => [])] as const)));
+      write(renderThreadShow(thread, activity, receipts, approvals));
       return 0;
     }
     case "continue": {
@@ -173,6 +180,7 @@ export function renderThreadShow(
   thread: ThreadDocumentV1,
   activity: ThreadActivity,
   receipts?: ReadonlyMap<string, LaunchProvenanceV1 | null>,
+  approvals?: ReadonlyMap<string, readonly ApprovalRecordV1[]>,
 ): string[] {
   const context = thread.currentContext;
   const lines = [
@@ -198,6 +206,11 @@ export function renderThreadShow(
     const history = ref.history ? `  history ${renderHistory(ref.history)}` : "";
     const receipt = receipts === undefined ? "" : renderReceipt(receipts.get(ref.executionId) ?? null);
     lines.push(`  #${ref.sequence}  ${ref.executionId}  ${state.padEnd(11)} rev ${ref.contextRevision}  ${ref.reservedAt}${projected}${history}${receipt}`);
+    // What the principal widened under this root, one line each; a root nobody was asked
+    // about prints nothing here.
+    for (const approval of approvals?.get(ref.executionId) ?? []) {
+      lines.push(`      approved ${approval.rule} ${approval.subject} (${approval.scope}) at ${approval.decidedAt}`);
+    }
   }
   lines.push("", `Children of a root: alp delegation tree <execution-id>`);
   if (thread.status === "open" && activity.kind === "idle") lines.push(`Continue:            alp thread continue ${thread.id}`);

@@ -119,6 +119,36 @@ Mỗi bước đứng trước bước sau vì một lý do, và thứ tự đó
 Ví dụ loadout thật: `main → search` và `main → review` được phép; `search → review` bị
 `UnauthorizedDelegation` ngay trong core. Khi deny, backend không được health-check hay spawn.
 
+### `--workspace` ngoài grant: hỏi hay từ chối
+
+`ExecutionService.authorize` không chỉ trả allow/deny — `PolicyEngine.decide()` còn có một
+đáp án thứ ba, `require_approval`, và trong phạm vi hiện tại nó chỉ phát ra cho **một** luật:
+
+| `--workspace` của con nằm ở | Kết quả |
+|---|---|
+| trong workspace của cha (grant) | allow, không hỏi |
+| ngoài grant, **trong** project đã đăng ký (`alp init`) | `require_approval`, scope `session` |
+| ngoài project | `WORKSPACE_SCOPE_MISMATCH` — không hỏi |
+
+Grant là workspace của **cha**, đọc từ `policy.json` đã ký của cha — không phải từ request,
+vì đó là field người gọi tự điền. Project là project đăng ký trong cùng nhất chứa grant
+(`ProjectRegistryStore.projectContaining`); không có thì grant là project của chính nó. "Trong"
+là biên đường dẫn: `mono-x` không nằm trong `mono`.
+
+Câu hỏi là một bước *bên trong* `authorize()`, trước khi có ticket. Ai trả lời được là chuyện
+của surface, và `alp delegate` **không có surface** — process con không có principal ở bàn phím,
+và một lá hỏi được là một lá bị prompt-inject có thể tự chế câu hỏi. Vì thế:
+
+- không có surface ⇒ `APPROVAL_UNAVAILABLE`, deny trước reservation, trước mọi file;
+- principal nói "no" ở root ⇒ `APPROVAL_DENIED`, và "no" **không** được ghi lại;
+- principal nói "yes" ở root ⇒ `ApprovalRecordV1 { rule, subject, scope, decidedBy, decidedAt }`
+  ghi vào `<root>/context/approvals.json` (sống qua dọn `runtime/`), và mọi con dưới root đó
+  hỏi cùng câu — cùng `rule`, cùng `subject` — được trả lời mà không hỏi lại.
+
+Bản ghi đi vào `ExecutionPolicy.approvals` của con và vào `policyHash`: một execution được nới
+workspace vì có người nói "yes" là một identity khác với một execution không phải hỏi.
+`alp thread show` in các approval của từng root.
+
 ### `delegatesTo` cho phép, `reportsTo` chỉ mô tả
 
 Đúng **một** nguồn quyền: `target ∈ parent.delegatesTo`. `reportsTo` nói kết quả đi ngược lên
@@ -434,6 +464,7 @@ Cây trả thêm một lớp mã riêng, và chúng đều fail đóng:
 | `EXECUTION_GRAPH_CORRUPT` | document không đọc được — **không** fallback sang legacy |
 | `INVALID_NODE_TRANSITION` | một chuyển trạng thái mà `ALLOWED_TRANSITIONS` không cho |
 | `EXECUTION_GRAPH_LOCK_TIMEOUT` · `EXECUTION_GRAPH_REVISION_CONFLICT` | không lấy được lease, hoặc phát hiện lost update lúc ghi |
+| `APPROVAL_UNAVAILABLE` · `APPROVAL_DENIED` | policy cần principal trả lời mà không có surface nào hỏi được, hoặc principal đã nói "no" — xem "`--workspace` ngoài grant" ở trên |
 
 Một node chết không đẹp còn mang mã của riêng nó — thứ `tree` in ra sau execution ID:
 `ROOT_START_FAILED` và `CHILD_START_FAILED` (backend từ chối spawn sau khi chỗ đã được giữ),

@@ -309,3 +309,40 @@ export async function createE2eEnvironment(options: {
     },
   };
 }
+
+/**
+ * A root the way a real session leaves one: a graph node *and* a signed `policy.json` on
+ * disk, standing in `workspace`. Delegation reads the parent's grant from that snapshot —
+ * a bare graph node with no identity behind it cannot delegate at all, which is the point.
+ */
+export async function createMaterializedRoot(
+  environment: E2eEnvironment,
+  options: {
+    readonly agentId: string;
+    readonly executionId: string;
+    readonly workspace?: string;
+    /** Who authorized this identity. A role that does not report to the principal names its parent role. */
+    readonly parent?: string;
+  },
+) {
+  const workspace = options.workspace ?? environment.project;
+  const definition = environment.registry.get(options.agentId as never);
+  const authorization = await environment.executionService.authorize({
+    executionId: options.executionId,
+    parent: (options.parent ?? "principal") as "principal",
+    target: definition.id,
+    workspace,
+    workspaceMode: definition.capabilities.workspace.writeRoots.length ? "workspace-write" : "read-only",
+    launch: { root: workspace, project: workspace },
+  });
+  const root = await environment.graph.createRoot({ agentId: definition.id, thread: null, executionId: options.executionId });
+  await environment.executionService.materialize(authorization, {
+    task: "root session",
+    thread: null,
+    memoryQueries: [],
+    characterBudget: 0,
+    invariantContext: "ALP execution policy is authoritative and fails closed.",
+    policyContext: "Direct raw runtime launch is unsupported; use ALP workflows.",
+  });
+  return root;
+}

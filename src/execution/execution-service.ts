@@ -6,13 +6,16 @@ import { renderContinuity } from "../context/continuity";
 import { atomicRuntimeFile } from "../runtime/adapter-files";
 import type { MemoryService } from "../memory/memory-service";
 import type { BuildMemoryContextInput, BuiltMemoryContext } from "../memory/types";
-import type { Authorization, AuthorizationRequest } from "../policy/types";
+import { toAuthorization, type Authorization, type AuthorizationRequest, type PolicyDecision } from "../policy/types";
 import type { WorkflowRunner } from "../workflow/workflow-runner";
+import { matchesDecision, type ApprovalRecordV1 } from "./approvals";
 import { createExecutionPolicy } from "./execution-policy";
 import type { ExecutionStore } from "./execution-store";
 import { createIdentityCapsule } from "./identity-capsule";
 import {
   deepFreezeExecutionValue,
+  NO_APPROVAL_SURFACE,
+  type ApprovalSurface,
   type AuthorizeExecutionInput,
   type ExecutionAuthorization,
   type MaterializeExecutionInput,
@@ -23,6 +26,14 @@ import {
 
 export interface ExecutionAuthorizer {
   authorize(request: AuthorizationRequest): Authorization;
+  /** The three-way answer; an authorizer without one is read as "never asks". */
+  decide?(request: AuthorizationRequest): PolicyDecision;
+}
+
+function decideWith(policy: ExecutionAuthorizer, request: AuthorizationRequest): PolicyDecision {
+  if (policy.decide !== undefined) return policy.decide(request);
+  const authorization = policy.authorize(request);
+  return authorization.allowed ? { kind: "allow" } : { kind: "deny", code: authorization.code, reason: authorization.reason };
 }
 
 export interface ExecutionMemoryService {
@@ -86,7 +97,7 @@ export class ExecutionService {
    * `preparing` vào graph, nên không có lúc nào một execution có thư mục trên đĩa mà cây
    * chưa biết tới nó.
    */
-  async authorize(input: AuthorizeExecutionInput): Promise<ExecutionAuthorization> {
+  async authorize(input: AuthorizeExecutionInput, surface: ApprovalSurface = NO_APPROVAL_SURFACE): Promise<ExecutionAuthorization> {
     let parent: AgentId | "principal" = input.parent;
     if (parent !== "principal") {
       parent = this.registry.get(parent).id;
@@ -117,21 +128,25 @@ export class ExecutionService {
     // at all. A *write* request is still asked, because that is a grant they genuinely lack;
     // the deny it returns is the right answer rather than an artefact of the question.
     const grantsWorkspace = definition.capabilities.workspace.readRoots.length > 0;
+    const approvals: ApprovalRecordV1[] = [];
     if (grantsWorkspace || input.workspaceMode === "workspace-write") {
-      requireAuthorization(
-        "workspace",
-        this.policy.authorize({
-          type: "workspace",
-          actor: definition.id,
-          operation: input.workspaceMode === "workspace-write" ? "write" : "read",
-          path: workspace,
-          execution: {
-            activeWorkspace: workspace,
-            workspaceMode: input.workspaceMode,
-            delegated: parent !== "principal",
-          },
-        }),
-      );
+      const decision = decideWith(this.policy, {
+        type: "workspace",
+        actor: definition.id,
+        operation: input.workspaceMode === "workspace-write" ? "write" : "read",
+        path: workspace,
+        execution: {
+          activeWorkspace: workspace,
+          workspaceMode: input.workspaceMode,
+          delegated: parent !== "principal",
+        },
+        ...(input.launch === undefined ? {} : { launch: input.launch }),
+      });
+      if (decision.kind === "require_approval") {
+        approvals.push(await this.settle(decision, input, surface));
+      } else {
+        requireAuthorization("workspace", toAuthorization(decision));
+      }
     }
 
     const authorization = deepFreezeExecutionValue<ExecutionAuthorization>({
@@ -140,10 +155,41 @@ export class ExecutionService {
       target: definition.id,
       workspace,
       workspaceMode: input.workspaceMode,
+      approvals,
       authorizedAt: this.now().toISOString(),
     });
     this.issued.set(authorization, definition);
     return authorization;
+  }
+
+  /**
+   * Turns a question into a record or a deny. Order: a "yes" the session already holds for
+   * the same rule and subject answers first — that is what `scope: "session"` means, and it
+   * holds even for a surface that cannot ask. Then the surface; none ⇒ `APPROVAL_UNAVAILABLE`,
+   * "no" ⇒ `APPROVAL_DENIED`. A "no" is not remembered; a session-scoped "yes" is.
+   */
+  private async settle(
+    decision: Extract<PolicyDecision, { kind: "require_approval" }>,
+    input: AuthorizeExecutionInput,
+    surface: ApprovalSurface,
+  ): Promise<ApprovalRecordV1> {
+    const remembered = (await input.sessionApprovals?.list())?.find((record) => matchesDecision(record, decision));
+    if (remembered !== undefined) return remembered;
+    if (!surface.supportsApproval) requireAuthorization("workspace", toAuthorization(decision));
+    const approved = await surface.ask(decision);
+    if (!approved) {
+      throw new Error(`workspace authorization failed (APPROVAL_DENIED): the principal declined (${decision.rule}): ${decision.prompt}`);
+    }
+    const record: ApprovalRecordV1 = Object.freeze({
+      version: 1,
+      rule: decision.rule,
+      subject: decision.subject,
+      scope: decision.scope,
+      decidedBy: "principal",
+      decidedAt: this.now().toISOString(),
+    });
+    if (record.scope === "session") await input.sessionApprovals?.record(record);
+    return record;
   }
 
   /**
@@ -172,6 +218,7 @@ export class ExecutionService {
       definition,
       workspace: authorization.workspace,
       workspaceMode: authorization.workspaceMode,
+      approvals: authorization.approvals,
       ...(input.mode === undefined ? {} : { mode: input.mode }),
       ...(input.modeProfiles === undefined ? {} : { modeProfiles: input.modeProfiles }),
       createdAt,

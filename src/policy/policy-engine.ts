@@ -12,11 +12,13 @@ import { MemoryPolicy } from "./memory-policy";
 import {
   ALLOW,
   deny,
+  toAuthorization,
   type Authorization,
   type AuthorizationRequest,
   type PathCanonicalizer,
+  type PolicyDecision,
 } from "./types";
-import { WorkspacePolicy } from "./workspace-policy";
+import { WorkspacePolicy, within } from "./workspace-policy";
 
 function canonicalizePath(value: string): string {
   const absolute = resolve(value);
@@ -42,17 +44,59 @@ export class PolicyEngine {
   private readonly memory = new MemoryPolicy();
   private readonly capability = new CapabilityPolicy();
   private readonly workspace: WorkspacePolicy;
+  private readonly canonicalizePath: PathCanonicalizer;
 
   constructor(options: PolicyEngineOptions) {
     this.registry = options.registry;
     this.delegation = new DelegationPolicy(options.registry);
-    this.workspace = new WorkspacePolicy(
-      options.registry,
-      options.canonicalizePath ?? canonicalizePath,
-    );
+    this.canonicalizePath = options.canonicalizePath ?? canonicalizePath;
+    this.workspace = new WorkspacePolicy(options.registry, this.canonicalizePath);
   }
 
+  /**
+   * The three-way answer. Identity is checked first and its denies are final: a role that
+   * cannot write is never *asked* whether it may write somewhere else. Only a request that
+   * identity allows, and that carries a launch scope, can become a question — and only the
+   * one question phase 1 knows: outside the launcher's grant, inside its project.
+   */
+  decide(request: AuthorizationRequest): PolicyDecision {
+    const identity = this.authorizeIdentity(request);
+    if (!identity.allowed) return { kind: "deny", code: identity.code, reason: identity.reason };
+    if (request.type !== "workspace" || request.launch === undefined) return { kind: "allow" };
+
+    let target: string;
+    let root: string;
+    let project: string;
+    try {
+      target = this.canonicalizePath(request.path);
+      root = this.canonicalizePath(request.launch.root);
+      project = this.canonicalizePath(request.launch.project);
+    } catch (error) {
+      return { kind: "deny", code: "PATH_RESOLUTION_FAILED", reason: `cannot resolve launch scope: ${String(error)}` };
+    }
+    if (within(root, target)) return { kind: "allow" };
+    if (!within(project, target)) {
+      return {
+        kind: "deny",
+        code: "WORKSPACE_SCOPE_MISMATCH",
+        reason: `\`${request.actor}\` cannot be launched at \`${target}\`: outside the granted workspace \`${root}\` and outside the project \`${project}\``,
+      };
+    }
+    return {
+      kind: "require_approval",
+      rule: "workspace-outside-grant-inside-project",
+      scope: "session",
+      subject: target,
+      prompt: `Launch \`${request.actor}\` at \`${target}\`? It is outside the granted workspace \`${root}\` but inside the project \`${project}\`.`,
+    };
+  }
+
+  /** The two-way answer: a question nobody can answer here is a deny (`APPROVAL_UNAVAILABLE`). */
   authorize(request: AuthorizationRequest): Authorization {
+    return toAuthorization(this.decide(request));
+  }
+
+  private authorizeIdentity(request: AuthorizationRequest): Authorization {
     if (!request || typeof request !== "object" || !("actor" in request)) {
       return deny("UNKNOWN_REQUEST", "unrecognized policy request");
     }
