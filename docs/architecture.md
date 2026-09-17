@@ -630,6 +630,14 @@ registry, không có `--backend`, không có fallback (2026-09-03).
   execution trùng).
 - **Result reconciliation**: khi backend báo terminal, service đọc `state.json` — output đã
   validate của ALP thắng, backend result chỉ là fallback khi state không đọc được.
+- **Evidence (2026-09-17)**: `wait()` là nơi duy nhất trong lifecycle thu evidence, ngay sau
+  khi node terminal; `evidence(id)` thu on-demand hoặc thu tiếp phần `unknown`. `status`/
+  `tree`/`cancel`/reconcile không thu. Bộ thu `src/execution/evidence.ts` ghép bốn nguồn —
+  git (baseline chụp lúc `materialize`), history bridge của con (ghi `<execution>/context/
+  history/`, không vào Thread), verify commands đã `alp trust verify`, `state.json.output` —
+  thành `ExecutionEvidenceV1`, mỗi item mang `provenance`; evaluator so với `requiredEvidence`
+  của request. `src/delegation` không import `src/thread/`: registry bridge được truyền vào
+  từ composition root, mặc định `noHistoryBridges()`.
 
 Store có hai bản: `InMemoryDelegationExecutionStore` (test) và `FileDelegationExecutionStore`
 (atomic write, versioned document).
@@ -815,12 +823,14 @@ dùng còn nằm trong đó đều là dữ liệu hẹn ngày mất.
   settings.json              ghi đè loadout ở mức MÁY — người dùng tự viết
   principal.json             tên + xưng hô của principal                 (0600)
   update-check.json          cache kiểm bản mới, TTL 24h                 (0600)
+  trusted-verify.json        khối `verify.commands` đã duyệt, theo project + digest (0600)
   memory/                    scaffold từ `scaffold/memory/`, không theo Git
   agents/<role>.md           cache identity phẳng cho SessionStart hook
   hooks/<tên>.cjs            forwarder có đường dẫn ỔN ĐỊNH → hook của bản cài
   executions/<exec_id>/       MỘT root cho cả phiên root lẫn execution được uỷ
     policy.json                ExecutionPolicy snapshot                  (0600)
     state.json                 StoredExecutionState                      (0600)
+    evidence.json              ExecutionEvidenceV1 — chỉ `wait`/`evidence` ghi  (0600)
     runtime/                   capsule, session-context.md, config, skill-roots
                                + task.md chỉ khi headless
     context/                   sống sót cleanup của runtime/             (0700)
@@ -828,6 +838,8 @@ dùng còn nằm trong đó đều là dữ liệu hẹn ngày mất.
       continuity.md              render Markdown, bounded 24 KiB         (0600)
       compact-events.jsonl       journal append-only, hook ghi           (0600)
       runtime-session.json       session_id/transcript_path native, hook để lại  (0600)
+      baseline.json              git HEAD + dirty của workspace lúc materialize (workspace-write) (0600)
+      history/                   cursor + entries transcript của execution được uỷ, không vào Thread
   execution-graphs/<graph_id>.json   ExecutionGraphDocument: node, trần, deadline (0600)
     by-execution/<exec_id>     index tra ngược execution → cây chứa nó
   threads/<thread_id>/         MỘT VIỆC — chuỗi root, không phải cây                (0700)
@@ -860,6 +872,7 @@ Trong project, `alp init` đã tạo `.alp/`; hai file settings sống ở đó:
 <project>/.alp/
   settings.json              ghi đè loadout của PROJECT — commit được
   settings.local.json        ghi đè của riêng người này — không commit
+                             (cả hai còn mang khối `verify.commands`, xem docs/delegation.md)
   agents/ · skills/          agent và skill của project
 ```
 

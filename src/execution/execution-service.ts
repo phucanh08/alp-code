@@ -5,6 +5,7 @@ import { seedCheckpoint, writeCheckpoint } from "../context/checkpoint";
 import { seedPinsFromSnapshot } from "../thread/context-types";
 import { renderContinuity } from "../context/continuity";
 import { atomicRuntimeFile } from "../runtime/adapter-files";
+import { baselineFile, type GitBaselineV1 } from "./evidence";
 import type { MemoryService } from "../memory/memory-service";
 import type { BuildMemoryContextInput, BuiltMemoryContext } from "../memory/types";
 import { toAuthorization, type Authorization, type AuthorizationRequest, type PolicyDecision } from "../policy/types";
@@ -48,6 +49,12 @@ export interface ExecutionServiceOptions {
   readonly workflowRunner: Pick<WorkflowRunner, "initialize">;
   readonly store: ExecutionStore;
   readonly resolveWorkspace?: (workspace: string) => Promise<string>;
+  /**
+   * Ảnh chụp work tree ngay trước khi runtime chạy — chỉ cho `workspace-write`, vì read-only
+   * không có gì để so. `null` khi workspace không nằm trong repo; không có probe thì không
+   * có baseline, và evidence `change` sau đó chỉ có thể là `unknown` (P3).
+   */
+  readonly baseline?: (workspace: string) => Promise<GitBaselineV1 | null>;
   readonly now?: () => Date;
 }
 
@@ -69,6 +76,7 @@ export class ExecutionService {
   private readonly workflowRunner: Pick<WorkflowRunner, "initialize">;
   private readonly store: ExecutionStore;
   private readonly resolveWorkspace: (workspace: string) => Promise<string>;
+  private readonly baseline: ((workspace: string) => Promise<GitBaselineV1 | null>) | null;
   private readonly now: () => Date;
   /**
    * Những vé chính instance này đã phát, và definition đã được duyệt cùng mỗi vé.
@@ -88,6 +96,7 @@ export class ExecutionService {
     this.workflowRunner = options.workflowRunner;
     this.store = options.store;
     this.resolveWorkspace = options.resolveWorkspace ?? realpath;
+    this.baseline = options.baseline ?? null;
     this.now = options.now ?? (() => new Date());
   }
 
@@ -280,6 +289,17 @@ export class ExecutionService {
       now: () => createdAt,
     }));
     await atomicRuntimeFile(artifacts.continuityFile, renderContinuity(checkpoint));
+
+    // Baseline trước launch, cùng chỗ với các file context khác: có nó thì `change` sau này
+    // là "đã quan sát"; ghi cả `baseline: null` để "không phải repo" phân biệt được với
+    // "chưa từng chụp".
+    if (this.baseline !== null && policy.workspaceMode === "workspace-write") {
+      const baseline = await this.baseline(policy.workspace);
+      await atomicRuntimeFile(
+        baselineFile(artifacts.contextDirectory),
+        `${JSON.stringify({ version: 1, capturedAt: this.now().toISOString(), baseline }, null, 2)}\n`,
+      );
+    }
 
     return deepFreezeExecutionValue({ capsule, policy, state, artifacts, threadContext });
   }

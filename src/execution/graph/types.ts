@@ -124,6 +124,18 @@ export interface ExecutionNode {
   readonly error: ExecutionNodeError | null;
   /** `deadline` khi node bị giết bởi wall clock; `null` ở mọi kết cục khác. */
   readonly terminationReason: "deadline" | null;
+  /**
+   * Bằng chứng cha yêu cầu lúc giao (`change`, `verify:<id>`), đã chuẩn hoá và sắp xếp; cấu
+   * trúc và bất biến — nó nằm trong fingerprint của request. Root và node legacy: `[]`.
+   */
+  readonly requiredEvidence: readonly string[];
+  /** Digest + kết luận của `evidence.json` lần thu gần nhất; `null` khi chưa thu. Chỉ ghi ở node đã dừng. */
+  readonly evidence: ExecutionEvidenceRef | null;
+}
+
+export interface ExecutionEvidenceRef {
+  readonly digest: string;
+  readonly evaluation: "satisfied" | "unsatisfied" | "unknown";
 }
 
 /**
@@ -144,6 +156,7 @@ export interface ExecutionReservation {
   readonly capabilityHash: string;
   readonly createdAt: string;
   readonly expiresAt: string;
+  readonly requiredEvidence: readonly string[];
 }
 
 export interface ExecutionGraphDocument {

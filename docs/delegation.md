@@ -190,6 +190,69 @@ Runtime nhận scope theo cách nó cưỡng chế được:
 Không cấu hình nào của runtime chứa `~/.alp/executions/` trong danh sách ghi được, và một
 scope bị từ chối không để lại node, file hay process nào.
 
+### `--require-evidence`: cha nói trước nó sẽ tin cái gì
+
+Con báo "xong" là **self-reported** — `state.json.output` do chính nó ghi. Từ 2026-09-17 cha
+có thể khai trước thứ nó cần thấy:
+
+```bash
+alp delegate worker --write-scope src/parser \
+  --require-evidence change --require-evidence verify:test -- "Sửa parser"
+alp delegation wait exec_...        # thu evidence ngay khi node terminal
+alp delegation evidence exec_...    # xem lại, hoặc thu tiếp phần còn `unknown`
+alp trust verify                    # duyệt khối `verify.commands` của project này
+```
+
+Hai mục khai được: `change` (con **đã** đổi file, nhìn từ ngoài) và `verify:<id>` (lệnh
+verify `<id>` của project chạy exit 0 sau khi con xong). Mục nào khác ⇒ `INVALID_REQUEST`
+trước khi có node nào. `requiredEvidence` vào fingerprint của request và ở lại trên node,
+nên hai lần gọi cùng task nhưng khác yêu cầu là hai request.
+
+**Evidence được thu ở đúng hai chỗ**: `alp delegation wait` (ngay sau khi node terminal) và
+`alp delegation evidence` (on-demand, hoặc thu lại phần còn `unknown` — ví dụ sau khi
+`alp trust verify`). `status`, `tree`, `cancel`, reconcile **không bao giờ** thu: thu là chạy
+lệnh verify trong workspace của người gọi, một câu hỏi đọc không được kéo `npm test`. Kết
+quả ghi `<execution>/evidence.json` (`ExecutionEvidenceV1`, atomic), digest + verdict lên node
+của cây, và `wait`/`evidence` trả `{ digest, evaluation, missing }`. Thread không nhận gì —
+transcript delta của con nằm ở `<execution>/context/history/`, không vào `messages/`.
+
+Mỗi item ghi **nguồn** và **độ tin** (`observed · derived · self-reported · unknown`):
+
+| Item | Nguồn | `observed` khi | Ghi chú |
+|---|---|---|---|
+| `change` | `git` | không node nào khác có thể đã ghi cùng workspace (`ambiguousWith = []`) **và** `enforcement.writeIsolation = enforced` | `paths` = khác baseline chụp lúc `materialize` (status khác, hoặc hash khác với file dirty sẵn); `outsideScope` chỉ là bằng chứng khi `outsideScopeVerified` |
+| `change`, `tool-call` | `history-bridge` | transcript đọc `complete` | `partial`/`final-only` ⇒ `derived`; `unsupported` ⇒ `unknown` |
+| `verify` / `verify-skipped` | `alp-verifier` | đã chạy | chưa trust ⇒ `verify-skipped untrusted`; timeout ⇒ `timeout`; không cấu hình ⇒ `not-configured` |
+| `output` | `agent-output` | không bao giờ | `self-reported`, không đạt mục nào |
+| `boundary` | `runtime-event` | luôn | |
+
+Runtime chạy thật (`launch.json`) khác version đã đo (`enforcement.measuredOn`) ⇒ mọi
+`observed` của git/bridge/event hạ xuống `derived`; verify do ALP tự chạy nên không hạ.
+`ambiguousWith` liệt kê node khác cùng workspace, khoảng chạy giao nhau, mà có thể ghi được
+(workspace-write với scope không rời, hoặc bất kỳ node nào không có `writeIsolation`
+enforced — root read-only trên Windows luôn nằm trong danh sách). Một node đã kết thúc trước
+khi verify bắt đầu không vào `ambiguousWith` của item `verify`.
+
+Evaluator: mọi mục có item `observed | derived` khớp ⇒ `satisfied`; có mục không item nào ⇒
+`unsatisfied` (`missing` kể tên); còn lại — item `unknown`, verify chưa chạy — ⇒ `unknown`.
+`unknown` không phải đạt: cha thấy `unknown` là biết còn một việc (`alp trust verify`, chờ
+verify) chứ không phải một kết luận.
+
+**`verify.commands` chỉ chạy sau khi principal duyệt.** Khối khai ở `.alp/settings.json` /
+`.alp/settings.local.json` của project (tầng user không được — một lệnh verify thuộc về repo
+chứa nó):
+
+```json
+{ "verify": { "commands": [ { "id": "test", "run": "npm test", "timeoutMs": 600000, "cwd": "." } ] } }
+```
+
+`alp trust verify` in từng lệnh và hỏi trên TTY; đồng ý thì ghi `{ project, verifyDigest }`
+vào `~/.alp/trusted-verify.json` (một record một project, keyed theo realpath). Digest là
+sha256 của `[id, run, timeoutMs, cwd]` sau khi gộp hai file — sửa một ký tự là phải trust
+lại; `--revoke` rút. Lý do trust: lệnh chạy bằng process ALP **ngoài** sandbox runtime, trong
+workspace của con, env chỉ `PATH`+`HOME`; một repo lạ mang `.alp/settings.json` không được
+quyền chạy gì trên máy anh chỉ vì anh đã `alp delegate` vào nó.
+
 ### `delegatesTo` cho phép, `reportsTo` chỉ mô tả
 
 Đúng **một** nguồn quyền: `target ∈ parent.delegatesTo`. `reportsTo` nói kết quả đi ngược lên
@@ -277,12 +340,14 @@ alp delegate search --project /path/to/app --background -- "Tìm auth flow"
 alp delegate review --project /path/to/app -- "Review patch hiện tại"
 alp delegate oracle -- "Phản biện architecture này"
 
-alp delegation tree    exec_...  [--json]
-alp delegation status  exec_...
-alp delegation wait    exec_...
-alp delegation cancel  exec_...
-alp delegation cleanup exec_...
+alp delegation tree     exec_...  [--json]
+alp delegation status   exec_...
+alp delegation wait     exec_...
+alp delegation evidence exec_...  [--json]
+alp delegation cancel   exec_...
+alp delegation cleanup  exec_...
 alp delegation list
+alp trust verify [--project <path>] [--revoke]
 ```
 
 `tree` nhận execution ID của **bất kỳ** node nào và luôn vẽ từ root xuống, đánh dấu `←` vào
@@ -309,7 +374,24 @@ là reservation đã giữ mà chưa thành node — một con số, không ph�
 không phải thứ để in ra.
 
 `tree` không in capability hash, fingerprint của request, hay reservation internals. Nó in
-`requestId` để nối lại với lệnh đã gọi, và không hơn.
+`requestId` để nối lại với lệnh đã gọi, và — khi request có `--require-evidence` — verdict
+đã thu (`evidence satisfied|unsatisfied|unknown`) hoặc `evidence pending` nếu chưa ai `wait`.
+
+`evidence` in kết luận trước, rồi từng mục đã đòi, rồi từng item với nguồn và độ tin:
+
+```text
+evidence exec_worker  ·  satisfied  ·  collected 2026-09-17T02:14:05.000Z
+digest 3f9c…  ·  history complete
+required: change  ·  present
+required: verify:test  ·  present
+
+  change         observed      git  2 path(s)
+  change         observed      history-bridge  2 path(s)
+  tool-call      observed      history-bridge  Write
+  verify         observed      alp-verifier  verify:test exit 0 in 8123 ms
+  output         self-reported agent-output  digest 91a0…
+  boundary       observed      runtime-event  completed · history complete
+```
 
 ### Breaking change: delegate phải có cha
 

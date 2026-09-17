@@ -178,12 +178,40 @@ function assertNodeShape(value: unknown, graphId: string): ExecutionNode {
     assertNonEmpty(node.requestId, `node \`${String(node.executionId)}\`.requestId`);
     assertHash(node.requestFingerprint, `node \`${String(node.executionId)}\`.requestFingerprint`);
   }
-  if (node.thread === undefined) {
-    // Legacy: node ghi trước khi có Thread. Trả bản có key để mọi document ghi ra đều tường minh.
-    return { ...node, thread: null } as unknown as ExecutionNode;
+  if (node.requiredEvidence !== undefined) assertRequiredEvidence(node.requiredEvidence, `node \`${String(node.executionId)}\`.requiredEvidence`);
+  if (node.evidence !== undefined && node.evidence !== null) {
+    assertEvidenceRef(node.evidence, `node \`${String(node.executionId)}\`.evidence`);
+    if (!isTerminalNodeStatus(node.status as ExecutionNodeStatus)) {
+      invalid(`active node \`${String(node.executionId)}\` must not carry evidence`);
+    }
   }
-  assertThreadBinding(node.thread, `node \`${String(node.executionId)}\`.thread`);
+  if (node.thread !== undefined) assertThreadBinding(node.thread, `node \`${String(node.executionId)}\`.thread`);
+  if (node.thread === undefined || node.requiredEvidence === undefined || node.evidence === undefined) {
+    // Legacy: node ghi trước khi có Thread / evidence. Trả bản có đủ key để mọi document ghi
+    // ra đều tường minh.
+    return {
+      ...node,
+      thread: node.thread ?? null,
+      requiredEvidence: node.requiredEvidence ?? [],
+      evidence: node.evidence ?? null,
+    } as unknown as ExecutionNode;
+  }
   return node as unknown as ExecutionNode;
+}
+
+function assertRequiredEvidence(value: unknown, field: string): void {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string" || entry.length === 0)) {
+    invalid(`${field} must be a list of names`);
+  }
+}
+
+function assertEvidenceRef(value: unknown, field: string): void {
+  if (typeof value !== "object" || value === null) invalid(`${field} must be null or an evidence ref`);
+  const ref = value as Record<string, unknown>;
+  assertHash(ref.digest, `${field}.digest`);
+  if (ref.evaluation !== "satisfied" && ref.evaluation !== "unsatisfied" && ref.evaluation !== "unknown") {
+    invalid(`${field}.evaluation must be satisfied, unsatisfied or unknown`);
+  }
 }
 
 function assertReservationShape(value: unknown): ExecutionReservation {
@@ -201,7 +229,8 @@ function assertReservationShape(value: unknown): ExecutionReservation {
   }
   assertTimestamp(reservation.createdAt, "reservation.createdAt");
   assertTimestamp(reservation.expiresAt, "reservation.expiresAt");
-  return reservation as unknown as ExecutionReservation;
+  if (reservation.requiredEvidence !== undefined) assertRequiredEvidence(reservation.requiredEvidence, "reservation.requiredEvidence");
+  return (reservation.requiredEvidence === undefined ? { ...reservation, requiredEvidence: [] } : reservation) as unknown as ExecutionReservation;
 }
 
 /**
@@ -283,7 +312,8 @@ export function assertGraphDocument(value: unknown): ExecutionGraphDocument {
   }
   if (reachable.size !== nodes.length) invalid("execution graph contains an unreachable node or a cycle");
 
-  const reservations = graph.reservations.map(assertReservationShape);
+  const rawReservations: unknown[] = graph.reservations;
+  const reservations = rawReservations.map(assertReservationShape);
   const reservationIds = new Set<string>();
   for (const reservation of reservations) {
     if (reservationIds.has(reservation.reservationId)) {
@@ -305,8 +335,9 @@ export function assertGraphDocument(value: unknown): ExecutionGraphDocument {
 
   // Node legacy (không có key `thread`) đã được normalize thành bản mới; khi đó trả document
   // dựng lại để bản ghi ra đĩa luôn có key. Còn lại trả nguyên input — caller so identity.
-  const normalized = nodes.some((node, index) => node !== rawNodes[index]);
-  return (normalized ? { ...graph, nodes } : graph) as unknown as ExecutionGraphDocument;
+  const normalized = nodes.some((node, index) => node !== rawNodes[index])
+    || reservations.some((reservation, index) => reservation !== rawReservations[index]);
+  return (normalized ? { ...graph, nodes, reservations } : graph) as unknown as ExecutionGraphDocument;
 }
 
 /**
@@ -346,6 +377,9 @@ export function assertStructuralFieldsPreserved(
     }
     if (!sameThreadBinding(before.thread, after.thread)) {
       invalid(`node \`${before.executionId}\`.thread is immutable`);
+    }
+    if (JSON.stringify(before.requiredEvidence) !== JSON.stringify(after.requiredEvidence)) {
+      invalid(`node \`${before.executionId}\`.requiredEvidence is immutable`);
     }
     assertNodeTransition(before.executionId, before.status, after.status);
   }

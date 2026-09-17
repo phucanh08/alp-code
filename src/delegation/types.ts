@@ -57,6 +57,12 @@ export interface DelegationRequestInput {
    * tử trống là `INVALID_REQUEST`.
    */
   readonly writeScope?: readonly string[];
+  /**
+   * Bằng chứng cha đòi khi con kết thúc: `change` (work tree đã đổi) hoặc `verify:<id>` (một
+   * lệnh verify của project đã chạy và thoát 0). Khác thế là `INVALID_REQUEST`. Đi vào
+   * fingerprint và bất biến trên node — đòi thêm sau khi giao là một việc khác.
+   */
+  readonly requiredEvidence?: readonly string[];
   /** Đi vào fingerprint của request, nên hai lần gọi khác metadata là hai việc khác nhau. */
   readonly metadata?: Readonly<Record<string, unknown>>;
   readonly executionOptions?: DelegationExecutionOptions;
@@ -70,6 +76,8 @@ export interface DelegationRequest {
   readonly workspaceMode: "read-only" | "workspace-write";
   /** Đã trim, sort, bỏ trùng — `null` là cả workspace. */
   readonly writeScope: readonly string[] | null;
+  /** Đã trim, sort, bỏ trùng — rỗng là không đòi gì. */
+  readonly requiredEvidence: readonly string[];
   readonly metadata: Readonly<Record<string, unknown>>;
   readonly executionOptions: Required<Pick<DelegationExecutionOptions, "background" | "interactive">> & {
     readonly timeoutMs: number | null;
@@ -118,7 +126,19 @@ export interface DelegationResult {
   readonly error?: Readonly<{ code: string; message: string }>;
   /** The write scope in the execution's signed policy — `null` for the whole workspace; absent for a legacy record. */
   readonly writeScope?: readonly string[] | null;
+  /**
+   * Evidence thu được khi `wait` thấy execution kết thúc — `null` khi execution này không
+   * nằm trong cây (legacy) nên không có gì để thu; vắng khi kết quả không phải từ `wait`.
+   */
+  readonly evidence?: DelegationEvidenceSummary | null;
   readonly metadata: Readonly<{ backend: string; runtime: RuntimeId } & Record<string, unknown>>;
+}
+
+export interface DelegationEvidenceSummary {
+  readonly digest: string;
+  readonly evaluation: "satisfied" | "unsatisfied" | "unknown";
+  /** Những mục đã đòi mà evidence nói rõ là *không* có — rỗng khi `satisfied` hoặc `unknown`. */
+  readonly missing: readonly string[];
 }
 
 export interface DelegationIds {

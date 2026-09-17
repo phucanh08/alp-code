@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -7,8 +7,9 @@ import { applyModeSettings, parseModeSettings } from "../../src/agents/mode-sett
 import { agentRegistry } from "../../src/agents/registry";
 import { DelegationService, FileDelegationExecutionStore, InMemoryDelegationExecutionStore } from "../../src/delegation/delegation-service";
 import { DelegationError } from "../../src/delegation/types";
-import type { ExecutionBackend } from "../../src/backend/execution-backend";
+import type { BackendExecutionResult, ExecutionBackend } from "../../src/backend/execution-backend";
 import type { ExecutionService } from "../../src/execution/execution-service";
+import { evidenceFile } from "../../src/execution/evidence";
 import { executionArtifactPaths } from "../../src/execution/execution-store";
 import {
   childBinding,
@@ -136,7 +137,12 @@ class FakeBackend implements ExecutionBackend {
       ? { executionId, status: "failed" as const, error: this.statusError }
       : { executionId, status: this.reports };
   }
-  async wait(executionId: string) { this.calls.push("wait"); return { executionId, status: "completed" as const, output: `${this.name} output` }; }
+  /** What `wait` comes back with — terminal by default; a test can make it a mere read. */
+  waitResult: BackendExecutionResult | null = null;
+  async wait(executionId: string): Promise<BackendExecutionResult> {
+    this.calls.push("wait");
+    return this.waitResult ?? { executionId, status: "completed" as const, output: `${this.name} output` };
+  }
   readonly cancelled: string[] = [];
   async cancel(executionId: string) {
     this.calls.push("cancel");
@@ -420,6 +426,23 @@ describe("DelegationService", () => {
       status: "failed",
       error: { code: "ExecutionFailed", message: "dừng ở permission prompt" },
     });
+  });
+
+  /**
+   * Oracle: P3 spec, "Điểm kích hoạt" — evidence is collected on `wait` *after the node is
+   * terminal*, and never on a read path. A backend whose `wait` comes back with the run still
+   * going (a foreground timeout that stopped nothing, a bridge that gave up) is a read: the
+   * caller gets the state and no `evidence.json` appears for a run that has not ended.
+   */
+  it("collects no evidence when `wait` returns before the node has ended", async () => {
+    const fixture = await serviceFixture({ root });
+    const spawned = await fixture.service.delegate(input);
+    fixture.primary.waitResult = { executionId: spawned.executionId, status: "running" };
+
+    const waited = await fixture.service.wait(spawned.executionId);
+    expect(waited).toMatchObject({ status: "running" });
+    expect(waited).not.toHaveProperty("evidence");
+    await expect(stat(evidenceFile(join(root, "executions"), spawned.executionId))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("routes validated structured output from execution state when backend capture is empty", async () => {

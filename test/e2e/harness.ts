@@ -6,6 +6,7 @@ import { agentRegistry } from "../../src/agents/registry";
 import type { AgentRegistry, RuntimeId } from "../../src/agents/types";
 import { LocalProcessBackend } from "../../src/backend/local-process-backend";
 import { backendProbe } from "../../src/delegation/delegation-service";
+import { gitBaselineProbe } from "../../src/execution/evidence-baseline";
 import { ExecutionService } from "../../src/execution/execution-service";
 import { FileExecutionStore } from "../../src/execution/execution-store";
 import { ExecutionGraphService } from "../../src/execution/graph/execution-graph-service";
@@ -79,6 +80,39 @@ writeFileSync(join(process.env.ALP_E2E_CAPTURE, ${JSON.stringify(runtime)} + ".j
 // Bản theo execution ID là bản mà một test nhiều tầng đọc được.
 if (process.env.ALP_DELEGATION_EXECUTION_ID) {
   writeFileSync(join(process.env.ALP_E2E_CAPTURE, process.env.ALP_DELEGATION_EXECUTION_ID + ".json"), JSON.stringify(record, null, 2));
+}
+
+// A writing runtime: touch one file inside the workspace, and — when asked — leave behind
+// what a real Claude session leaves: a transcript naming that write under the state dir, and
+// the \`runtime-session.json\` pointer the SessionStart hook records in \`context/\`.
+if (process.env.ALP_E2E_WRITE_FILE) {
+  const { mkdirSync } = require("node:fs");
+  const { dirname } = require("node:path");
+  const target = join(process.cwd(), process.env.ALP_E2E_WRITE_FILE);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, "e2e\\n");
+  if (process.env.ALP_E2E_TRANSCRIPT) {
+    const executionId = process.env.ALP_DELEGATION_EXECUTION_ID;
+    const transcriptDirectory = join(process.env.HOME, ".claude", "projects", "e2e");
+    mkdirSync(transcriptDirectory, { recursive: true });
+    const transcriptPath = join(transcriptDirectory, executionId + ".jsonl");
+    const at = new Date().toISOString();
+    const base = { version: "2.1.269", sessionId: executionId, isMeta: false, isSidechain: false };
+    writeFileSync(transcriptPath, [
+      JSON.stringify({ type: "user", uuid: "u1", parentUuid: null, timestamp: at, ...base, message: { role: "user", content: "Add a parser" } }),
+      JSON.stringify({ type: "assistant", uuid: "a1", parentUuid: "u1", timestamp: at, ...base, message: { role: "assistant", content: [
+        { type: "text", text: "Writing it now." },
+        { type: "tool_use", id: "toolu_1", name: "Write", input: { file_path: target, content: "e2e\\n" } },
+      ] } }),
+      JSON.stringify({ type: "user", uuid: "u2", parentUuid: "a1", timestamp: at, ...base, message: { role: "user", content: [
+        { type: "tool_result", tool_use_id: "toolu_1", content: "ok" },
+      ] } }),
+    ].join("\\n") + "\\n");
+    writeFileSync(
+      join(process.env.ALP_EXECUTION_ROOT, executionId, "context", "runtime-session.json"),
+      JSON.stringify({ v: 1, sessionId: executionId, transcriptPath, recordedAt: at }) + "\\n",
+    );
+  }
 }
 
 if (process.env.ALP_E2E_OUTPUT) {
@@ -241,6 +275,9 @@ export async function createE2eEnvironment(options: {
     memory,
     workflowRunner: new WorkflowRunner(),
     store: new FileExecutionStore({ root: executionsRoot }),
+    // The real composition captures a git baseline before every writable launch; the fake
+    // runtime then writes into the project, and the evidence e2e reads the difference.
+    baseline: (workspace) => gitBaselineProbe().capture(workspace),
   });
   const graph = new ExecutionGraphService({
     store: new FileExecutionGraphStore({ root: graphsRoot }),

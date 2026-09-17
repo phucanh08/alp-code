@@ -6,6 +6,20 @@ import { dirname, join } from "node:path";
 import type { AgentRegistry, RuntimeId } from "../agents/types";
 import type { BackendExecutionResult, BackendExecutionStatus, ExecutionBackend } from "../backend/execution-backend";
 import { FileSessionApprovals } from "../execution/approvals";
+import {
+  collectExecutionEvidence,
+  noHistoryBridges,
+  parseRequiredEvidence,
+  type CollectedEvidence,
+  EvidenceHistorySource,
+  type EvidenceCollectorDependencies,
+  type EvidenceItem,
+  type ExecutionEvidenceV1,
+  type GitBaselineProbe,
+  type Verifier,
+  type VerifySettings,
+} from "../execution/evidence";
+import { gitBaselineProbe, spawnVerifier } from "../execution/evidence-baseline";
 import { readWriteScope } from "../execution/execution-policy";
 import type { ExecutionService } from "../execution/execution-service";
 import { executionArtifactPaths } from "../execution/execution-store";
@@ -19,7 +33,7 @@ import {
   type ProbeStatus,
 } from "../execution/graph/execution-graph-service";
 import { ExecutionGraphError } from "../execution/graph/errors";
-import { findNode, type ExecutionGraphDocument, type ExecutionNode } from "../execution/graph/types";
+import { findNode, isTerminalNodeStatus, type ExecutionGraphDocument, type ExecutionNode } from "../execution/graph/types";
 import type { ExecutionAuthorization, MaterializeExecutionInput, PreparedExecution } from "../execution/types";
 import type { MemoryService } from "../memory/memory-service";
 import type { PolicyEngine } from "../policy/policy-engine";
@@ -71,7 +85,36 @@ export type DelegationGraph = Pick<
   | "findGraphFor"
   | "getGraph"
   | "getExecutionTree"
+  | "recordEvidence"
 >;
+
+/**
+ * Các cửa ra ngoài của việc thu evidence (P3). Mỗi cửa đều có mặc định an toàn: không
+ * bridge nào thì lịch sử là `unsupported`, không settings thì không lệnh verify nào, và
+ * không có sổ tin cậy thì không lệnh nào được chạy.
+ */
+export interface DelegationEvidenceOptions {
+  readonly history?: EvidenceHistorySource;
+  readonly baseline?: GitBaselineProbe;
+  readonly verifier?: Verifier;
+  readonly verifySettings?: (workspace: string) => Promise<VerifySettings>;
+  readonly verifyTrusted?: (project: string, digest: string) => boolean | Promise<boolean>;
+  /** Nguồn `PATH`/`HOME` cho lệnh verify — mặc định `process.env`. */
+  readonly env?: NodeJS.ProcessEnv;
+}
+
+/** Cái `alp delegation evidence` in ra: kết luận trước, chi tiết sau. */
+export interface DelegationEvidenceView {
+  readonly executionId: string;
+  readonly requestId: string;
+  readonly digest: string;
+  readonly evaluation: CollectedEvidence["evaluation"];
+  readonly required: readonly string[];
+  readonly missing: readonly string[];
+  readonly completeness: ExecutionEvidenceV1["completeness"];
+  readonly collectedAt: string;
+  readonly items: readonly EvidenceItem[];
+}
 
 export interface DelegationServiceOptions {
   readonly registry: AgentRegistry;
@@ -100,6 +143,7 @@ export interface DelegationServiceOptions {
    * refused when it does not. Absent, the parent's workspace is its own project.
    */
   readonly projectRootOf?: (path: string) => Promise<string | null>;
+  readonly evidence?: DelegationEvidenceOptions;
   readonly ids?: DelegationIds;
   readonly now?: () => Date;
 }
@@ -139,6 +183,7 @@ function normalizeRequest(input: DelegationRequestInput, ids: DelegationIds): De
     workspace: input.workspace,
     workspaceMode: input.workspaceMode ?? "read-only",
     writeScope: normalizeWriteScope(input.writeScope),
+    requiredEvidence: normalizeRequiredEvidence(input.requiredEvidence),
     metadata: Object.freeze({ ...(input.metadata ?? {}) }),
     executionOptions: Object.freeze({
       background: Boolean(input.executionOptions?.background),
@@ -146,6 +191,18 @@ function normalizeRequest(input: DelegationRequestInput, ids: DelegationIds): De
       timeoutMs,
     }),
   });
+}
+
+function normalizeRequiredEvidence(value: readonly string[] | undefined): readonly string[] {
+  if (value === undefined) return Object.freeze([]);
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    throw new DelegationError("INVALID_REQUEST", "requiredEvidence must be a list of strings");
+  }
+  try {
+    return Object.freeze(parseRequiredEvidence(value));
+  } catch (error) {
+    throw new DelegationError("INVALID_REQUEST", (error as Error).message, { cause: error });
+  }
 }
 
 /**
@@ -314,6 +371,7 @@ export class DelegationService {
   private readonly backend: ExecutionBackend;
   private readonly executionStore: DelegationExecutionStore;
   private readonly projectRootOf: (path: string) => Promise<string | null>;
+  private readonly evidenceDeps: EvidenceCollectorDependencies;
   private readonly ids: DelegationIds;
   private readonly now: () => Date;
 
@@ -333,6 +391,18 @@ export class DelegationService {
     this.projectRootOf = options.projectRootOf ?? (async () => null);
     this.ids = options.ids ?? defaultIds();
     this.now = options.now ?? (() => new Date());
+    const evidence = options.evidence ?? {};
+    this.evidenceDeps = {
+      executionsRoot: this.executionsRoot,
+      graph: this.graph,
+      history: evidence.history ?? noHistoryBridges(),
+      baseline: evidence.baseline ?? gitBaselineProbe(),
+      verifier: evidence.verifier ?? spawnVerifier(),
+      verifySettings: evidence.verifySettings ?? (async (workspace) => ({ project: workspace, commands: [], digest: null })),
+      verifyTrusted: evidence.verifyTrusted ?? (() => false),
+      now: this.now,
+      env: evidence.env ?? process.env,
+    };
   }
 
   /**
@@ -483,12 +553,64 @@ export class DelegationService {
     return result;
   }
 
+  /**
+   * Chờ tới khi execution kết thúc — và chỉ ở đây, thu evidence của nó.
+   *
+   * `status`, `tree`, `cancel` không thu: chúng là câu hỏi, còn thu evidence là chạy lệnh
+   * verify trong workspace của người gọi. Cây được đối chiếu lại sau khi backend trả lời,
+   * vì backend nói "xong" trước khi cây ghi `endedAt`, và bộ thu chỉ nhận node terminal.
+   * Execution legacy không có cây, nên `evidence: null`.
+   */
   async wait(executionId: string, options: { readonly timeoutMs?: number | null } = {}): Promise<DelegationResult> {
     const record = await this.lifecycleRecord(executionId);
     const value = await this.backendResult(executionId, record, () => this.backend.wait(executionId, options));
     const result = this.result(record, value);
     this.rememberLegacyStatus(record, result.status);
-    return result;
+    const graph = await this.graph.findGraphFor(executionId);
+    if (!graph) return Object.freeze({ ...result, evidence: null });
+    const node = findNode(await this.reconcileGraph(graph.graphId), executionId);
+    if (!node || !isTerminalNodeStatus(node.status)) return result;
+    const collected = await this.collectEvidence(graph.graphId, executionId);
+    return Object.freeze({
+      ...result,
+      evidence: Object.freeze({ digest: collected.evidence.digest, evaluation: collected.evaluation, missing: collected.missing }),
+    });
+  }
+
+  /**
+   * Evidence của một execution đã kết thúc: thu (hoặc thu lại phần còn `unknown`) rồi trả.
+   *
+   * Gọi được nhiều lần — sau khi `alp trust verify`, lần gọi tiếp theo là lúc lệnh verify
+   * thực sự chạy. Execution còn chạy là `INVALID_REQUEST`: chưa có gì để kết luận.
+   */
+  async evidence(executionId: string): Promise<DelegationEvidenceView> {
+    const graph = await this.graph.findGraphFor(executionId);
+    if (!graph) {
+      throw new DelegationError("EXECUTION_NOT_FOUND", `execution \`${executionId}\` is not part of an execution graph`);
+    }
+    const node = findNode(await this.reconcileGraph(graph.graphId), executionId);
+    if (!node) throw new DelegationError("EXECUTION_NOT_FOUND", `execution \`${executionId}\` does not exist`);
+    if (!isTerminalNodeStatus(node.status)) {
+      throw new DelegationError("INVALID_REQUEST", `execution \`${executionId}\` is still ${node.status}; evidence is collected once it has ended`);
+    }
+    const collected = await this.collectEvidence(graph.graphId, executionId);
+    return Object.freeze({
+      executionId,
+      requestId: collected.evidence.requestId ?? executionId,
+      digest: collected.evidence.digest,
+      evaluation: collected.evaluation,
+      required: collected.required,
+      missing: collected.missing,
+      completeness: collected.evidence.completeness,
+      collectedAt: collected.evidence.collectedAt,
+      items: collected.evidence.items,
+    });
+  }
+
+  private async collectEvidence(graphId: string, executionId: string): Promise<CollectedEvidence> {
+    const collected = await collectExecutionEvidence({ executionId }, this.evidenceDeps);
+    await this.graph.recordEvidence(graphId, executionId, { digest: collected.evidence.digest, evaluation: collected.evaluation });
+    return collected;
   }
 
   /**
@@ -693,6 +815,7 @@ export class DelegationService {
       workspace: request.workspace,
       workspaceMode: request.workspaceMode,
       writeScope: request.writeScope,
+      ...(request.requiredEvidence.length === 0 ? {} : { requiredEvidence: request.requiredEvidence }),
       // Nấc nằm trong fingerprint vì nấc quyết định model: cùng một câu hỏi ở `puck` và ở
       // `ultra` là hai việc khác nhau, và một retry đổi nấc phải được đẻ ra con mới.
       mode: this.config.mode ?? DEFAULT_MODE,

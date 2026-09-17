@@ -52,6 +52,7 @@ function stubDependencies(overrides: Record<string, unknown> = {}) {
     delegateCommand: async () => 0,
     contextCommand: async () => 0,
     threadCommand: async () => 0,
+    trustCommand: async () => 0,
     maintenanceCommand: async () => 0,
     ...overrides,
   } as never;
@@ -692,6 +693,7 @@ describe("alp delegate", () => {
         async cancel() { throw new Error("unused"); },
         async cleanup() { throw new Error("unused"); },
         listExecutions() { return []; },
+        async evidence() { throw new Error("unused"); },
         async tree() { throw new Error("unused"); },
       },
     });
@@ -731,6 +733,7 @@ describe("alp delegate", () => {
         async cancel() { throw new Error("unused"); },
         async cleanup() { throw new Error("unused"); },
         listExecutions() { return []; },
+        async evidence() { throw new Error("unused"); },
         async tree() { throw new Error("unused"); },
       },
     });
@@ -751,6 +754,7 @@ describe("alp delegate", () => {
       async cancel() { throw new Error("unused"); },
       async cleanup() { throw new Error("unused"); },
       listExecutions() { return []; },
+      async evidence() { throw new Error("unused"); },
       async tree() { throw new Error("unused"); },
     };
     await runDelegateCommand(["worker", "--write-scope", "src/parser", "--write-scope", "docs", "--", "fix", "the", "parser"], { cwd: "/caller/project", env: {}, service });
@@ -776,6 +780,7 @@ describe("alp delegate", () => {
         async cancel() { throw new Error("unused"); },
         async cleanup() { throw new Error("unused"); },
         listExecutions() { return []; },
+        async evidence() { throw new Error("unused"); },
         async tree() { throw new Error("unused"); },
       },
     });
@@ -795,6 +800,7 @@ describe("alp delegate", () => {
         async cancel() { throw new Error("unused"); },
         async cleanup() { throw new Error("unused"); },
         listExecutions() { return []; },
+        async evidence() { throw new Error("unused"); },
         async tree() { throw new Error("unused"); },
       },
     })).rejects.toThrow(/--runtime` không còn tồn tại/);
@@ -840,6 +846,8 @@ function treeNode(overrides: Partial<ExecutionTreeNode> = {}): ExecutionTreeNode
     cancellation: null,
     error: null,
     terminationReason: null,
+    requiredEvidence: [],
+    evidence: null,
     children: [],
     ...overrides,
   };
@@ -896,6 +904,7 @@ function lifecycleService(view: ExecutionTreeView) {
       async cancel() { throw new Error("unused"); },
       async cleanup() { throw new Error("unused"); },
       listExecutions() { return []; },
+      async evidence() { throw new Error("unused"); },
       async tree(executionId: string) { asked.push(executionId); return view; },
     },
   };
@@ -928,6 +937,7 @@ describe("alp delegation tree", () => {
       async cancel() { throw new Error("unused"); },
       async cleanup() { throw new Error("unused"); },
       listExecutions() { return []; },
+      async evidence() { throw new Error("unused"); },
       async tree() { throw new Error("unused"); },
     };
 

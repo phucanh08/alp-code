@@ -17,6 +17,7 @@ import {
   subtreeOf,
   type CancellationReason,
   type CancellationRecord,
+  type ExecutionEvidenceRef,
   type ExecutionGraphDocument,
   type ExecutionGraphId,
   type ExecutionGraphLimits,
@@ -165,6 +166,12 @@ export interface ChildRequest {
   readonly interactive: boolean;
   readonly timeoutMs: number | null;
   readonly metadata: Readonly<Record<string, unknown>>;
+  /**
+   * Bằng chứng cha đòi khi con xong (`change`, `verify:<id>`), đã chuẩn hoá. Đòi bằng chứng
+   * khác là một việc khác — nó vào fingerprint, nhưng chỉ khi có, để fingerprint của mọi
+   * request cũ (không đòi gì) giữ nguyên.
+   */
+  readonly requiredEvidence?: readonly string[];
 }
 
 /** Context string của HMAC. Đổi nó là đổi mọi capability con, nên version nằm trong tên. */
@@ -240,6 +247,7 @@ export function requestFingerprint(
         interactive: request.interactive,
         timeoutMs: request.timeoutMs,
         metadata: request.metadata,
+        requiredEvidence: request.requiredEvidence?.length ? request.requiredEvidence : undefined,
       }),
       "utf8",
     )
@@ -406,6 +414,8 @@ export class ExecutionGraphService {
       cancellation: null,
       error: null,
       terminationReason: null,
+      requiredEvidence: [],
+      evidence: null,
     };
     const graph: ExecutionGraphDocument = {
       version: 1,
@@ -497,6 +507,48 @@ export class ExecutionGraphService {
       const node = this.authenticate(graph, binding);
       if (isTerminalNodeStatus(node.status)) return node;
       return this.settle(lease, graph, node.executionId, outcome);
+    });
+  }
+
+  /**
+   * Gắn tham chiếu evidence vào một node đã terminal.
+   *
+   * Chỉ là *tham chiếu* (digest + evaluation): nội dung nằm ở `evidence.json` dưới thư mục
+   * execution, và graph chỉ cần đủ để `alp delegation tree` trả lời "đã thu chưa, kết quả gì"
+   * mà không mở file. Node còn chạy thì không có gì để gắn — evidence chỉ có nghĩa sau khi
+   * quá trình đã dừng; đó là `INVALID_NODE_TRANSITION`, không phải ghi đè âm thầm.
+   * Ghi lại cùng một ref là no-op để `wait` gọi nhiều lần không đẩy revision vô ích.
+   */
+  async recordEvidence(
+    graphId: ExecutionGraphId,
+    executionId: ExecutionId,
+    ref: ExecutionEvidenceRef,
+  ): Promise<ExecutionNode> {
+    return this.store.withExclusiveLease(graphId, async (lease) => {
+      const graph = await lease.read();
+      const node = findNode(graph, executionId);
+      if (!node) {
+        throw new ExecutionGraphError(
+          "EXECUTION_NODE_NOT_FOUND",
+          `execution \`${executionId}\` is not a node of graph \`${graphId}\``,
+        );
+      }
+      if (!isTerminalNodeStatus(node.status)) {
+        throw new ExecutionGraphError(
+          "INVALID_NODE_TRANSITION",
+          `execution \`${executionId}\` is still \`${node.status}\`; evidence is recorded only after it ends`,
+        );
+      }
+      if (node.evidence?.digest === ref.digest && node.evidence.evaluation === ref.evaluation) return node;
+      const updatedAt = this.now().toISOString();
+      const next = await lease.write(
+        withNode(graph, executionId, (current) => ({
+          ...current,
+          evidence: { digest: ref.digest, evaluation: ref.evaluation },
+          updatedAt,
+        })),
+      );
+      return findNode(next, executionId) as ExecutionNode;
     });
   }
 
@@ -605,6 +657,7 @@ export class ExecutionGraphService {
         capabilityHash: hashCapability(capability),
         createdAt: timestamp,
         expiresAt: new Date(now.getTime() + graph.limits.reservationTtlMs).toISOString(),
+        requiredEvidence: request.requiredEvidence ?? [],
       };
       // Reservation hết hạn bị dọn trong chính lần ghi này: chúng đã không còn tính vào
       // capacity, và để lại thì một request cũ vẫn chặn `requestId` của nó mãi mãi.
@@ -732,6 +785,8 @@ export class ExecutionGraphService {
         cancellation: null,
         error: null,
         terminationReason: null,
+        requiredEvidence: reservation.requiredEvidence,
+        evidence: null,
       };
       const queued = await lease.write({
         ...graph,
@@ -1338,6 +1393,10 @@ export interface ExecutionTreeNode {
   readonly cancellation: CancellationRecord | null;
   readonly error: ExecutionNodeError | null;
   readonly terminationReason: "deadline" | null;
+  /** Bằng chứng cha yêu cầu khi giao việc (P3) — bất biến sau khi tạo node. */
+  readonly requiredEvidence: readonly string[];
+  /** Tham chiếu tới `evidence.json` đã thu, hoặc `null` khi chưa thu. */
+  readonly evidence: ExecutionEvidenceRef | null;
   readonly children: readonly ExecutionTreeNode[];
 }
 
@@ -1415,6 +1474,8 @@ function treeNodeOf(
     cancellation: node.cancellation,
     error: node.error,
     terminationReason: node.terminationReason,
+    requiredEvidence: node.requiredEvidence,
+    evidence: node.evidence,
     children: Object.freeze(
       [...graph.nodes.filter((candidate) =>
         candidate.parentExecutionId === node.executionId && !seen.has(candidate.executionId))]

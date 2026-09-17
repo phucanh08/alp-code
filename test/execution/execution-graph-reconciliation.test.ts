@@ -101,6 +101,8 @@ async function strandQueuedChild(
         cancellation: null,
         error: null,
         terminationReason: null,
+        requiredEvidence: [],
+        evidence: null,
       }],
       reservations: graph.reservations.filter((entry) => entry.reservationId !== reserved.reservationId),
     });

@@ -27,6 +27,7 @@ import { backendProbe } from "../delegation/delegation-service";
 import { createDefaultDelegationComposition, isRenderedOutput, runDelegateCommand, runDelegationLifecycleCommand, sharedBackendStateDirectory, workspaceFromArgs } from "./commands/delegate";
 import { codexSandboxProbe } from "../agent-test";
 import { parseAgentCommand, runAgentCommand } from "./commands/agent";
+import { runTrustVerify } from "./commands/trust-verify";
 import { syncIdentityDocuments } from "./commands/identity-sync";
 import { FileSessionApprovals } from "../execution/approvals";
 import { createTtyApprovalSurface } from "./approval-surface";
@@ -56,6 +57,7 @@ export type AlpCommand =
   | { readonly command: "delegate"; readonly args: readonly string[] }
   | { readonly command: "delegation"; readonly args: readonly string[] }
   | { readonly command: "thread"; readonly args: readonly string[] }
+  | { readonly command: "trust"; readonly args: readonly string[] }
   | { readonly command: "context"; readonly args: readonly string[] }
   | { readonly command: "maintenance"; readonly action: "doctor" | "update" | "uninstall"; readonly args: readonly string[] }
   | { readonly command: "version" }
@@ -142,6 +144,10 @@ export function parseAlpArgs(argv: readonly string[]): AlpCommand {
   if (argv[0] === "delegation") return { command: "delegation", args: Object.freeze(argv.slice(1)) };
   if (argv[0] === "context") return { command: "context", args: Object.freeze(argv.slice(1)) };
   if (argv[0] === "thread") return { command: "thread", args: Object.freeze(argv.slice(1)) };
+  if (argv[0] === "trust") {
+    if (argv[1] !== "verify") throw new Error("usage: alp trust verify [--project <path>] [--revoke]");
+    return { command: "trust", args: Object.freeze(argv.slice(2)) };
+  }
   if (argv[0] === "doctor") {
     if (argv.slice(1).some((value) => value !== "--quiet")) throw new Error("usage: alp doctor [--quiet]");
     return { command: "maintenance", action: "doctor", args: Object.freeze(argv.slice(1)) };
@@ -180,6 +186,7 @@ export interface AlpDependencies {
   readonly delegateCommand: (args: readonly string[]) => Promise<number>;
   readonly contextCommand: (args: readonly string[]) => Promise<number>;
   readonly threadCommand: (args: readonly string[]) => Promise<number>;
+  readonly trustCommand: (args: readonly string[]) => Promise<number>;
   readonly maintenanceCommand: (input: { readonly action: "doctor" | "update" | "uninstall"; readonly args: readonly string[] }) => Promise<number>;
 }
 
@@ -377,6 +384,16 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
       const written = await syncIdentityDocuments({ directory: agentsDirectory() }, { registry: agentRegistry });
       for (const file of written) stdout.write(`IDENTITY ${file}\n`);
     },
+    async trustCommand(args) {
+      // Same shape as `alp agent add`: a person decides in a terminal, or nobody does.
+      return runTrustVerify(args, {
+        cwd,
+        env: process.env,
+        write: (text: string) => { stdout.write(text); },
+        interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+        openPrompt: openTerminalPrompt,
+      });
+    },
     async agentCommand(args) {
       // The same asset root the adapters were built with, so the skills this reports on are
       // the ones a launch would actually resolve.
@@ -507,12 +524,13 @@ function helpText(): string {
     "  alp agent add|show|untrust <id> [--project <path>]",
     "  alp agent list [--project <path>]",
     "  alp principal show|set",
-    "  alp delegate <role> [options] -- <task>",
-    "  alp delegation tree|status|wait|cancel|cleanup <execution-id> [--json]",
+    "  alp delegate <role> [options] [--require-evidence change|verify:<id>]... -- <task>",
+    "  alp delegation tree|status|wait|cancel|cleanup|evidence <execution-id> [--json]",
     "  alp delegation list",
     "  alp context status|validate [execution-id]",
     "  alp context pin <decision|constraint|open-item|next-action> -- <text>",
     "  alp context unpin <pin-id>",
+    "  alp trust verify [--project <path>] [--revoke]",
     "  alp thread list [--all] | show [<thread-id>] | context|reconcile|sync|close|archive <thread-id>",
     `  alp thread continue <thread-id> [--mode ${MODE_IDS.join("|")}]`,
     "  alp doctor",
@@ -560,6 +578,7 @@ export async function main(
   if (command.command === "delegation") return dependencies.delegateCommand(Object.freeze(["__lifecycle", ...command.args]));
   if (command.command === "context") return dependencies.contextCommand(command.args);
   if (command.command === "thread") return dependencies.threadCommand(command.args);
+  if (command.command === "trust") return dependencies.trustCommand(command.args);
   if (command.command === "maintenance") return dependencies.maintenanceCommand({ action: command.action, args: command.args });
   stdout.write(helpText());
   return 0;

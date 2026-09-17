@@ -47,6 +47,8 @@ export function rootNode(overrides: Partial<ExecutionNode> = {}): ExecutionNode 
     cancellation: null,
     error: null,
     terminationReason: null,
+    requiredEvidence: [],
+    evidence: null,
     ...overrides,
   };
 }
@@ -76,6 +78,8 @@ export function childNode(
     cancellation: null,
     error: null,
     terminationReason: null,
+    requiredEvidence: [],
+    evidence: null,
     ...overrides,
   };
 }
@@ -96,6 +100,7 @@ export function reservation(
     capabilityHash: digest(`capability:${reservationId}`),
     createdAt: BASE_TIME,
     expiresAt: at(DEFAULT_EXECUTION_GRAPH_LIMITS.reservationTtlMs),
+    requiredEvidence: [],
     ...overrides,
   };
 }
