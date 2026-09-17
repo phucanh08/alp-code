@@ -1,5 +1,7 @@
 # P6 — Usage telemetry + budget observe-only
 
+<!-- Implement 2026-09-17, xem "Đã làm khác plan" cuối file -->
+
 <!-- Sửa: rà đối kháng lượt 2 (2026-09-12) — usage root cộng dồn trong ThreadExecutionRef, parser dùng pinnedVersion của bridge thay measuredOn -->
 
 **Mục tiêu:** mỗi execution biết tốn bao nhiêu token / bao nhiêu tool call; child khai `budget` được đánh giá **sau** khi chạy; không hook mới, không chặn giữa chừng.
@@ -90,3 +92,17 @@ Hard budget (chặn call thứ N+1) — cần `PreToolUse` hook, Codex không c�
 - `alp delegation tree` in token/tool-call cho mọi node trên cả hai runtime thật; `--budget-tokens` ⇒ `exceeded` đúng.
 - `grep -r PreToolUse src/` không có kết quả mới.
 - `npm test` xanh. **Gate `orchestrator`** đánh dấu trong `plan.md` (cùng P5).
+
+## Đã làm khác plan (implement 2026-09-17)
+
+| Plan nói | Làm thật | Vì sao |
+|---|---|---|
+| `exceeded` vào item `boundary` mở rộng `{budget, usage, status}` | Item **riêng** `{kind: "usage", provenance, source: "history-bridge", usage, budget, status}`; chỉ đẩy khi có số | Boundary là item của policy/enforcement (P5); trộn usage vào là hai nguồn một item. Item riêng có `provenance` của bridge (partial ⇒ `derived`), không có số thì không có item — không fabricate |
+| `ExecutionUsageV1` là contract duy nhất, `DelegationResult.usage: ExecutionUsageV1 \| null` bắt buộc | `UsageCounters` (năm cột) là đơn vị đi qua bridge/graph/thread/CLI; `ExecutionUsageV1` chỉ là file `usage.json`. `DelegationResult.usage?`, `budgetStatus?` **vắng** khi chưa thu (chỉ `wait` trên node terminal có) | Graph node và Thread ref không cần `executionId`/`source`/`collectedAt` lặp lại; `status` sớm không có số thì không được in `within` giả |
+| Graph node `usage: {inputTokens, outputTokens, toolCalls}` | Đủ năm cột; `ExecutionTreeView.usage: {total, partial}` (`ExecutionTreeUsageLike`) | Cache r/w khác nhau giữa runtime là lý do tách cột trong contract — bỏ hai cột ở node là mất thông tin đúng chỗ tree in |
+| Con: bridge chạy "một lần sau settle" ⇒ ghi `usage.json` một lần | Cộng dồn qua mọi lần `collectEvidence` (đọc `usage.json` cũ + `usageDelta`); thêm rule `historyIncomplete`: bridge còn `final-only`/`unsupported` thì lần thu sau chạy lại dù item usage đã có | `evidence()` on-demand và `accept` thu lại; bridge chỉ trả dòng sau cursor nên không cộng dồn là mất số. Item `usage` dùng chung source key `history-bridge`, không có rule riêng thì transcript chưa đọc được sẽ không bao giờ được thử lại |
+| `ThreadExecutionRef.history.usage: ExecutionUsageV1 \| null` | `ThreadExecutionHistory.usage?: UsageCounters \| null` — vắng ở ref ghi trước P6, `null` khi chưa lát nào có số; boundary `usage?` chỉ có khi có số | Ref cũ không được đổi digest; cộng dồn dùng `accumulateUsage(prev ?? null, delta)` nên không cần giá trị khởi tạo; boundary không mang `null` để snapshot không có field rỗng |
+| `test/thread/bridge-usage.test.ts` | `test/runtime/history-usage.test.ts` (parser trên fixture), `test/thread/history-usage.test.ts` (cộng dồn dưới lease), `test/execution/graph/budget-usage.test.ts`, `test/delegation/evidence-usage.test.ts` | Parser nằm ở `src/runtime/history-usage.ts` (dùng chung hai bridge), test đi theo file |
+| CLI chỉ nói "tree/show in usage" | Tree: mỗi node `usage in X out Y cache R/W tools T  ·  budget <status>` (budget chỉ khi khai), header `usage in A · out B · cache r/w R/W · tools T (partial)` hoặc `usage not measured`; `?` cho cột `null`; evidence in `… · budget exceeded · tokens ≤ N · tool calls ≤ N`; `alp thread show` thêm `· usage …` sau history | Chọn format khi implement; `?` thay vì `0` để `null` không đọc nhầm thành "không tốn" |
+| `alp doctor` cảnh báo khi tỷ lệ `unknown` cao | **Chưa làm** | Chưa có dữ liệu thật để biết ngưỡng; ghi nợ |
+| "trên cả hai runtime thật" | Chạy trên fake binary (e2e) + fixture transcript thật đã redact của hai runtime | Cùng nợ với gate governance loop: chưa chạy `main` thật |

@@ -296,6 +296,46 @@ Kết quả ghi ở hai chỗ, cả hai do ALP viết:
 Phán quyết hiện ở mọi chỗ cha nhìn: `tree` thêm `decision accepted|rejected` (hoặc
 `decision undecided` cho con đã kết thúc mà chưa ai quyết), `evidence` in dòng `decision …`,
 và — quan trọng nhất — **Thread context** của lần chạy sau (xem § "Phán quyết vào Thread").
+Cùng dòng `tree` còn có `usage …` và `budget …` của node (xem § "Usage và budget").
+
+### Usage và budget: đếm sau, không chặn giữa chừng
+
+Mỗi execution biết nó tốn bao nhiêu — **đọc từ transcript** qua đúng history bridge đã mở
+cho evidence, không qua hook mới, không qua `-p`/stream-json. Năm cột tách riêng, không
+cộng thành một số "tổng" trong contract vì cache token mỗi runtime đếm khác nhau:
+
+```text
+inputTokens · outputTokens · cacheReadTokens · cacheWriteTokens · toolCalls
+```
+
+Một cột **`null` là "không đếm được"**, không phải 0 — bridge gặp dòng không đọc nổi thì
+đặt cột đó `null` cho cả lát, và `null` lan qua phép cộng (một lát mù ⇒ tổng mù). Claude
+đếm theo `message.id` vì CLI 2.1.268 ghi một API message thành nhiều dòng JSONL cùng `id`
+cùng `usage`; Codex đọc `event_msg`/`token_count`. Version ngoài pin của bridge ⇒
+completeness hạ như entries, không phải số bịa.
+
+- **Con:** `wait()`/`evidence()` chạy bridge, cộng dồn vào `<execution>/usage.json`
+  (`ExecutionUsageV1`) và ghi lên graph node — `alp delegation tree` in từng node và tổng
+  cây không mở file. Lần thu sau chỉ nhận dòng sau cursor, nên bridge chạy hai lần không đếm
+  đôi; bridge còn `final-only`/`unsupported` thì lần thu sau vẫn thử lại.
+- **Root:** `collectHistory` cộng `usageDelta` vào `history.usage` của `ThreadExecutionRef`
+  dưới Thread lease, cùng commit với cursor — hoặc cả hai tiến, hoặc không. `settleRoot`
+  chép sang boundary; `alp thread show` in `usage in … out … cache r/w … tools …`.
+
+`--budget-tokens N` / `--budget-tool-calls N` (số nguyên dương, vào fingerprint request)
+được đánh giá **sau** khi con xong:
+
+| `budgetStatus` | Khi |
+|---|---|
+| `exceeded` | một trần bị vượt bởi số **đã đếm được** (`>` ngặt) |
+| `unknown` | không trần nào bị vượt, nhưng một trần không so được vì cột `null` |
+| `within` | mọi trần so được và không vượt — kể cả khi không khai trần |
+
+`exceeded` là **evidence, không phải lỗi**: nó thành item `usage` trong `evidence.json`
+(`{usage, budget, status}`), in ở `alp delegation evidence` và `tree` (`budget exceeded`),
+cha thấy khi nghiệm thu — nhưng không đổi outcome của con, không đổi `evaluation`, không
+chặn tool call thứ N+1. Chặn giữa chừng cần `PreToolUse` hook (đã bỏ có chủ đích) và Codex
+không có tương đương — đó là ADR riêng, không nằm trong đây.
 
 ### Phán quyết vào Thread: nguồn thứ hai, không phải pin
 
@@ -407,6 +447,7 @@ Direct communication không thay đổi `delegates_to`, memory, tool hay workspa
 alp delegate search --project /path/to/app --background -- "Tìm auth flow"
 alp delegate review --project /path/to/app -- "Review patch hiện tại"
 alp delegate oracle -- "Phản biện architecture này"
+alp delegate worker --budget-tokens 20000 --budget-tool-calls 30 -- "Sửa parser"   # observe-only
 
 alp delegation tree     exec_...  [--json]
 alp delegation status   exec_...
@@ -674,9 +715,10 @@ giữa chừng) và `EXECUTION_INTERRUPTED` (có process, rồi không còn, kh�
 
 Ba thứ hay bị đọc nhầm là đã có:
 
-- **Token budget và tool-call budget.** Không được cưỡng chế. Trần của P0 đếm *execution* —
-  depth, số con, đồng thời, lượt giao việc, wall clock — chứ không đếm token hay lượt gọi
-  tool. Một cây trong trần vẫn tiêu bao nhiêu token tuỳ nó.
+- **Token budget và tool-call budget.** Có **đếm** (2026-09-17, § "Usage và budget") nhưng
+  không cưỡng chế: `--budget-*` chỉ cho `exceeded` sau khi con xong. Trần *cưỡng chế* của
+  P0 đếm *execution* — depth, số con, đồng thời, lượt giao việc, wall clock — chứ không đếm
+  token hay lượt gọi tool. Một cây trong trần vẫn tiêu bao nhiêu token tuỳ nó.
 - **Recursion trong loadout thật.** Cây *cho phép* sâu tới 2, nhưng không vai built-in nào
   dùng tới: `worker.delegatesTo` vẫn `[]`, và mọi specialist cũng vậy. Chỉ `main` giao việc.
   Nested flow `main → worker → search` chỉ tồn tại trong registry của test.

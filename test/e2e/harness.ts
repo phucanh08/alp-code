@@ -98,10 +98,15 @@ if (process.env.ALP_E2E_WRITE_FILE) {
     const transcriptPath = join(transcriptDirectory, executionId + ".jsonl");
     const at = new Date().toISOString();
     const base = { version: "2.1.269", sessionId: executionId, isMeta: false, isSidechain: false };
+    const usage = { input_tokens: 120, output_tokens: 45, cache_read_input_tokens: 900, cache_creation_input_tokens: 30 };
     writeFileSync(transcriptPath, [
       JSON.stringify({ type: "user", uuid: "u1", parentUuid: null, timestamp: at, ...base, message: { role: "user", content: "Add a parser" } }),
-      JSON.stringify({ type: "assistant", uuid: "a1", parentUuid: "u1", timestamp: at, ...base, message: { role: "assistant", content: [
+      // One API message split over two lines, the way Claude 2.1.268 writes it: same
+      // \`message.id\`, same \`usage\` on each — a counter that adds both has double-counted.
+      JSON.stringify({ type: "assistant", uuid: "a1", parentUuid: "u1", timestamp: at, apiBlockIndex: 0, ...base, message: { id: "msg_e2e_1", role: "assistant", usage, content: [
         { type: "text", text: "Writing it now." },
+      ] } }),
+      JSON.stringify({ type: "assistant", uuid: "a1b", parentUuid: "a1", timestamp: at, apiBlockIndex: 1, ...base, message: { id: "msg_e2e_1", role: "assistant", usage, content: [
         { type: "tool_use", id: "toolu_1", name: "Write", input: { file_path: target, content: "e2e\\n" } },
       ] } }),
       JSON.stringify({ type: "user", uuid: "u2", parentUuid: "a1", timestamp: at, ...base, message: { role: "user", content: [

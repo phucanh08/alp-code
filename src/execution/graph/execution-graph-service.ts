@@ -28,6 +28,7 @@ import {
   type ExecutionReservation,
   taskExcerpt,
 } from "./types";
+import { sumUsage, type ExecutionBudget, type UsageCounters } from "../usage";
 
 /**
  * Bốn biến môi trường nói cho một process biết nó là ai trong cây.
@@ -174,6 +175,8 @@ export interface ChildRequest {
    * request cũ (không đòi gì) giữ nguyên.
    */
   readonly requiredEvidence?: readonly string[];
+  /** Trần token / tool call cho con (P6). Đặt trần khác là một việc khác — vào fingerprint chỉ khi có. */
+  readonly budget?: ExecutionBudget | null;
 }
 
 /** Context string của HMAC. Đổi nó là đổi mọi capability con, nên version nằm trong tên. */
@@ -250,6 +253,7 @@ export function requestFingerprint(
         timeoutMs: request.timeoutMs,
         metadata: request.metadata,
         requiredEvidence: request.requiredEvidence?.length ? request.requiredEvidence : undefined,
+        budget: request.budget ?? undefined,
       }),
       "utf8",
     )
@@ -420,6 +424,8 @@ export class ExecutionGraphService {
       evidence: null,
       taskExcerpt: null,
       acceptance: null,
+      budget: null,
+      usage: null,
     };
     const graph: ExecutionGraphDocument = {
       version: 1,
@@ -522,11 +528,13 @@ export class ExecutionGraphService {
    * mà không mở file. Node còn chạy thì không có gì để gắn — evidence chỉ có nghĩa sau khi
    * quá trình đã dừng; đó là `INVALID_NODE_TRANSITION`, không phải ghi đè âm thầm.
    * Ghi lại cùng một ref là no-op để `wait` gọi nhiều lần không đẩy revision vô ích.
+   * `usage` (P6) đi cùng chuyến: cùng lease, cùng điều kiện node đã dừng; vắng = giữ số cũ.
    */
   async recordEvidence(
     graphId: ExecutionGraphId,
     executionId: ExecutionId,
     ref: ExecutionEvidenceRef,
+    usage?: UsageCounters | null,
   ): Promise<ExecutionNode> {
     return this.store.withExclusiveLease(graphId, async (lease) => {
       const graph = await lease.read();
@@ -543,12 +551,15 @@ export class ExecutionGraphService {
           `execution \`${executionId}\` is still \`${node.status}\`; evidence is recorded only after it ends`,
         );
       }
-      if (node.evidence?.digest === ref.digest && node.evidence.evaluation === ref.evaluation) return node;
+      const nextUsage = usage === undefined || usage === null ? node.usage ?? null : usage;
+      const sameUsage = canonicalJson(nextUsage) === canonicalJson(node.usage ?? null);
+      if (node.evidence?.digest === ref.digest && node.evidence.evaluation === ref.evaluation && sameUsage) return node;
       const updatedAt = this.now().toISOString();
       const next = await lease.write(
         withNode(graph, executionId, (current) => ({
           ...current,
           evidence: { digest: ref.digest, evaluation: ref.evaluation },
+          usage: nextUsage,
           updatedAt,
         })),
       );
@@ -691,6 +702,7 @@ export class ExecutionGraphService {
         expiresAt: new Date(now.getTime() + graph.limits.reservationTtlMs).toISOString(),
         requiredEvidence: request.requiredEvidence ?? [],
         taskExcerpt: taskExcerpt(request.task),
+        budget: request.budget ?? null,
       };
       // Reservation hết hạn bị dọn trong chính lần ghi này: chúng đã không còn tính vào
       // capacity, và để lại thì một request cũ vẫn chặn `requestId` của nó mãi mãi.
@@ -822,6 +834,8 @@ export class ExecutionGraphService {
         evidence: null,
         taskExcerpt: reservation.taskExcerpt,
         acceptance: null,
+        budget: reservation.budget,
+        usage: null,
       };
       const queued = await lease.write({
         ...graph,
@@ -1243,6 +1257,7 @@ export class ExecutionGraphService {
         byStatus: Object.freeze(byStatus),
         pending: liveReservations(graph, this.now()).length,
       }),
+      usage: Object.freeze(treeUsage(graph)),
       root: treeNodeOf(graph, root, new Set<ExecutionId>()),
     });
   }
@@ -1467,7 +1482,17 @@ export interface ExecutionTreeNode {
   readonly taskExcerpt: string | null;
   /** Phán quyết của cha (P4), hoặc `null` khi chưa quyết. */
   readonly acceptance: ExecutionAcceptanceRef | null;
+  /** Trần cha đặt (P6); `null` khi không đặt. */
+  readonly budget: ExecutionBudget | null;
+  /** Token / tool call ALP đếm được (P6); `null` khi chưa thu. */
+  readonly usage: UsageCounters | null;
   readonly children: readonly ExecutionTreeNode[];
+}
+
+/** Tổng usage của cả cây, cột nào không biết ở node nào thì `partial` (P6). */
+export interface ExecutionTreeUsage {
+  readonly total: UsageCounters;
+  readonly partial: boolean;
 }
 
 export interface ExecutionTreeSummary {
@@ -1504,7 +1529,15 @@ export interface ExecutionTreeView {
    * Thread — hiển thị `legacy-unthreaded`, không bao giờ backfill một Thread giả.
    */
   readonly thread: ExecutionThreadBinding | null;
+  /** Tổng token / tool call của mọi node đã thu (P6). */
+  readonly usage: ExecutionTreeUsage;
   readonly root: ExecutionTreeNode;
+}
+
+/** Node chưa thu (`usage: null`) làm tổng `partial`; node còn chạy cũng vậy — chúng chưa có số. */
+function treeUsage(graph: ExecutionGraphDocument): ExecutionTreeUsage {
+  const { usage, partial } = sumUsage(graph.nodes.map((node) => node.usage ?? null));
+  return { total: usage, partial };
 }
 
 /**
@@ -1548,6 +1581,8 @@ function treeNodeOf(
     evidence: node.evidence,
     taskExcerpt: node.taskExcerpt,
     acceptance: node.acceptance,
+    budget: node.budget ?? null,
+    usage: node.usage ?? null,
     children: Object.freeze(
       [...graph.nodes.filter((candidate) =>
         candidate.parentExecutionId === node.executionId && !seen.has(candidate.executionId))]

@@ -477,8 +477,8 @@ lúc nào, ai đã huỷ ai. Một `graphId` là một cây và bằng đúng `r
 
 Trần của P0 cố định trong code: depth ≤ 2, 4 con/execution, 2 con đồng thời/execution, 6
 execution sống đồng thời cả cây, 8 lượt giao việc cả đời cây, 2 giờ wall clock. Không có khoá
-config nào mở chúng. Token budget và tool-call budget **không** thuộc P0 — trần ở đây đếm
-execution, không đếm token.
+config nào mở chúng. Token budget và tool-call budget được **đếm** (`src/execution/usage.ts`,
+2026-09-17) nhưng không cưỡng chế — trần ở đây đếm execution, không đếm token.
 
 ### 4.4b `src/thread/` — đơn vị việc, không phải đơn vị quyền
 
@@ -655,6 +655,18 @@ registry, không có `--backend`, không có fallback (2026-09-03).
   `<parent>/acceptance/<requestId>.json` (`AcceptanceRecordV1`, reasons đã redact). Node còn
   active hay root mang `acceptance` ⇒ graph không đọc được. `src/execution/acceptance.ts`
   (`delegationDecision`, `summarizeDelegations`) là chỗ duy nhất Thread hỏi về phán quyết.
+- **Usage + budget observe-only (2026-09-17)**: `src/execution/usage.ts` giữ contract —
+  `UsageCounters` năm cột, mỗi cột `number | null` (`null` = không đếm được, lan qua phép
+  cộng, không bao giờ thành 0), `accumulateUsage`, `sumUsage` (`partial` khi một phần
+  `null`), `evaluateBudget` (`exceeded` > `unknown` > `within`; không trần ⇒ `within`),
+  `parseBudget`, `<execution>/usage.json` (`ExecutionUsageV1`). Số đến từ **history bridge**
+  (`HistoryDelta.usageDelta`, parser trong `src/runtime/history-usage.ts` theo pinned
+  version): con — bộ thu evidence cộng dồn vào `usage.json`, đẩy item `usage` vào
+  `evidence.json` và `graph.recordEvidence(…, usage)` lên node; root — `collectHistory`
+  cộng vào `ThreadExecutionRef.history.usage` cùng commit với cursor, `settleRoot` chép
+  sang boundary. `ChildRequest.budget` vào fingerprint (vắng ⇒ fingerprint cũ giữ nguyên).
+  `exceeded` là evidence, không đổi outcome/evaluation; không hook mới — `src/` không có
+  `PreToolUse`. `src/policy` vẫn không import `usage`.
 
 Store có hai bản: `InMemoryDelegationExecutionStore` (test) và `FileDelegationExecutionStore`
 (atomic write, versioned document).

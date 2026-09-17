@@ -51,6 +51,8 @@ export function rootNode(overrides: Partial<ExecutionNode> = {}): ExecutionNode 
     evidence: null,
     taskExcerpt: null,
     acceptance: null,
+    budget: null,
+    usage: null,
     ...overrides,
   };
 }
@@ -84,6 +86,8 @@ export function childNode(
     evidence: null,
     taskExcerpt: null,
     acceptance: null,
+    budget: null,
+    usage: null,
     ...overrides,
   };
 }
@@ -106,6 +110,7 @@ export function reservation(
     expiresAt: at(DEFAULT_EXECUTION_GRAPH_LIMITS.reservationTtlMs),
     requiredEvidence: [],
     taskExcerpt: null,
+    budget: null,
     ...overrides,
   };
 }

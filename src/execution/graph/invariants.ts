@@ -8,6 +8,7 @@ import {
   type ExecutionReservation,
 } from "./types";
 import type { ExecutionThreadBinding } from "../types";
+import { USAGE_COLUMNS } from "../usage";
 
 const HEX_64 = /^[0-9a-f]{64}$/;
 
@@ -193,9 +194,14 @@ function assertNodeShape(value: unknown, graphId: string): ExecutionNode {
   if (node.taskExcerpt !== undefined && node.taskExcerpt !== null && typeof node.taskExcerpt !== "string") {
     invalid(`node \`${String(node.executionId)}\`.taskExcerpt must be null or a string`);
   }
+  if (node.budget !== undefined && node.budget !== null) assertBudget(node.budget, `node \`${String(node.executionId)}\`.budget`);
+  if (node.usage !== undefined && node.usage !== null) {
+    assertUsage(node.usage, `node \`${String(node.executionId)}\`.usage`);
+    if (!terminal) invalid(`active node \`${String(node.executionId)}\` must not carry usage`);
+  }
   if (node.thread !== undefined) assertThreadBinding(node.thread, `node \`${String(node.executionId)}\`.thread`);
   if (node.thread === undefined || node.requiredEvidence === undefined || node.evidence === undefined
-    || node.taskExcerpt === undefined || node.acceptance === undefined) {
+    || node.taskExcerpt === undefined || node.acceptance === undefined || node.budget === undefined || node.usage === undefined) {
     // Legacy: node ghi trước khi có Thread / evidence / acceptance. Trả bản có đủ key để mọi
     // document ghi ra đều tường minh.
     return {
@@ -205,9 +211,37 @@ function assertNodeShape(value: unknown, graphId: string): ExecutionNode {
       evidence: node.evidence ?? null,
       taskExcerpt: node.taskExcerpt ?? null,
       acceptance: node.acceptance ?? null,
+      budget: node.budget ?? null,
+      usage: node.usage ?? null,
     } as unknown as ExecutionNode;
   }
   return node as unknown as ExecutionNode;
+}
+
+/** Trần: object có ít nhất một trong `tokens`/`toolCalls`, mỗi cái số nguyên ≥ 1. */
+function assertBudget(value: unknown, field: string): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) invalid(`${field} must be null or a budget`);
+  const budget = value as Record<string, unknown>;
+  let ceilings = 0;
+  for (const key of ["tokens", "toolCalls"] as const) {
+    if (budget[key] === undefined) continue;
+    ceilings += 1;
+    if (typeof budget[key] !== "number" || !Number.isInteger(budget[key]) || (budget[key] as number) < 1) {
+      invalid(`${field}.${key} must be a positive integer`);
+    }
+  }
+  if (ceilings === 0) invalid(`${field} names no ceiling`);
+}
+
+/** Năm cột, mỗi cột số nguyên ≥ 0 hoặc `null`. */
+function assertUsage(value: unknown, field: string): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) invalid(`${field} must be null or usage counters`);
+  const usage = value as Record<string, unknown>;
+  for (const column of USAGE_COLUMNS) {
+    const cell = usage[column];
+    if (cell === null) continue;
+    if (typeof cell !== "number" || !Number.isInteger(cell) || cell < 0) invalid(`${field}.${column} must be null or a non-negative integer`);
+  }
 }
 
 function assertAcceptanceRef(value: unknown, field: string): void {
@@ -252,8 +286,14 @@ function assertReservationShape(value: unknown): ExecutionReservation {
   if (reservation.taskExcerpt !== undefined && reservation.taskExcerpt !== null && typeof reservation.taskExcerpt !== "string") {
     invalid("reservation.taskExcerpt must be null or a string");
   }
-  if (reservation.requiredEvidence === undefined || reservation.taskExcerpt === undefined) {
-    return { ...reservation, requiredEvidence: reservation.requiredEvidence ?? [], taskExcerpt: reservation.taskExcerpt ?? null } as unknown as ExecutionReservation;
+  if (reservation.budget !== undefined && reservation.budget !== null) assertBudget(reservation.budget, "reservation.budget");
+  if (reservation.requiredEvidence === undefined || reservation.taskExcerpt === undefined || reservation.budget === undefined) {
+    return {
+      ...reservation,
+      requiredEvidence: reservation.requiredEvidence ?? [],
+      taskExcerpt: reservation.taskExcerpt ?? null,
+      budget: reservation.budget ?? null,
+    } as unknown as ExecutionReservation;
   }
   return reservation as unknown as ExecutionReservation;
 }
@@ -405,6 +445,9 @@ export function assertStructuralFieldsPreserved(
     }
     if (JSON.stringify(before.requiredEvidence) !== JSON.stringify(after.requiredEvidence)) {
       invalid(`node \`${before.executionId}\`.requiredEvidence is immutable`);
+    }
+    if (JSON.stringify(before.budget ?? null) !== JSON.stringify(after.budget ?? null)) {
+      invalid(`node \`${before.executionId}\`.budget is immutable`);
     }
     assertNodeTransition(before.executionId, before.status, after.status);
   }

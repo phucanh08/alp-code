@@ -6,6 +6,8 @@ import { worseCompleteness, type HistoryCompleteness } from "../../thread/histor
 import type { ThreadService } from "../../thread/thread-service";
 import { THREAD_ID_PATTERN, type ThreadActivity, type ThreadDocumentV1, type ThreadSummary } from "../../thread/types";
 import type { ThreadContextSnapshotV1 } from "../../thread/context-types";
+import type { UsageCounters } from "../../execution/usage";
+import { renderUsage } from "../usage-format";
 
 export const THREAD_USAGE = [
   "usage:",
@@ -263,10 +265,12 @@ export function renderThreadHistory(thread: ThreadDocumentV1): string {
   return `${worst} (${thread.messages.length} entries)`;
 }
 
-function renderHistory(history: { readonly completeness: HistoryCompleteness; readonly entryCount: number; readonly skipped: number; readonly pinnedVersion: string | null }): string {
+function renderHistory(history: { readonly completeness: HistoryCompleteness; readonly entryCount: number; readonly skipped: number; readonly pinnedVersion: string | null; readonly usage?: UsageCounters | null }): string {
   const skipped = history.skipped > 0 ? `, ${history.skipped} skipped` : "";
   const pinned = history.pinnedVersion ? ` @${history.pinnedVersion}` : "";
-  return `${history.completeness}${pinned} (${history.entryCount} entries${skipped})`;
+  // Usage cộng dồn qua các lần collect của root này; bridge không đếm được thì không in.
+  const usage = history.usage ? `  ·  usage ${renderUsage(history.usage)}` : "";
+  return `${history.completeness}${pinned} (${history.entryCount} entries${skipped})${usage}`;
 }
 
 function renderActivity(activity: ThreadActivity): string {

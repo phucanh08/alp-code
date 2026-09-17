@@ -524,7 +524,7 @@ function helpText(): string {
     "  alp agent add|show|untrust <id> [--project <path>]",
     "  alp agent list [--project <path>]",
     "  alp principal show|set",
-    "  alp delegate <role> [options] [--require-evidence change|verify:<id>]... -- <task>",
+    "  alp delegate <role> [options] [--require-evidence change|verify:<id>]... [--budget-tokens N] [--budget-tool-calls N] -- <task>",
     "  alp delegation tree|status|wait|cancel|cleanup|evidence <execution-id> [--json]",
     "  alp delegation accept <request-id> [--reason <why>]... [--json]",
     "  alp delegation reject <request-id> --reason <why> [--reason <why>]... [--json]",

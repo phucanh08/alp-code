@@ -105,7 +105,7 @@ function graphWith(children: readonly Partial<ExecutionNode>[]): ThreadGraphRead
     graphId: "exec_1", parentExecutionId: "exec_1", agentId: "worker", thread: null, depth: 1, status: "completed" as ExecutionNodeStatus,
     requestId: "req_x", requestFingerprint: "f".repeat(64), capabilityHash: "c".repeat(64), createdAt: at(1), updatedAt: at(1),
     startedAt: at(1), endedAt: at(2), cancellation: null, error: null, terminationReason: null, requiredEvidence: [], evidence: null,
-    taskExcerpt: "some task", acceptance: null, executionId: "exec_child",
+    taskExcerpt: "some task", acceptance: null, budget: null, usage: null, executionId: "exec_child",
     ...overrides,
   });
   const document = {

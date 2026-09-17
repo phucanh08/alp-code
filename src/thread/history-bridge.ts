@@ -71,12 +71,12 @@ export function unsupportedHistoryBridge(runtime: RuntimeId | null): RuntimeHist
   return {
     runtime: runtime ?? "claude",
     probe: async () => ({ completeness: "unsupported", pinnedVersion: null }),
-    collectDelta: async ({ cursor }) => ({ entries: [], cursor, completeness: "unsupported", pinnedVersion: null, skipped: 0 }),
+    collectDelta: async ({ cursor }) => ({ entries: [], cursor, completeness: "unsupported", pinnedVersion: null, skipped: 0, usageDelta: null }),
   };
 }
 
 export const FINAL_ONLY_DELTA = (cursor: RuntimeHistoryCursor | null, pinnedVersion: string | null): HistoryDelta =>
-  ({ entries: [], cursor, completeness: "final-only", pinnedVersion, skipped: 0 });
+  ({ entries: [], cursor, completeness: "final-only", pinnedVersion, skipped: 0, usageDelta: null });
 
 export type TranscriptOpenResult =
   | { readonly ok: true; readonly path: string; readonly lines: readonly string[]; readonly lineOffset: number }

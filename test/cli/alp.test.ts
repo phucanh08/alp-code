@@ -27,6 +27,7 @@ import type {
   ExecutionTreeView,
 } from "../../src/execution/graph/execution-graph-service";
 import { DEFAULT_EXECUTION_GRAPH_LIMITS } from "../../src/execution/graph/defaults";
+import { NO_USAGE } from "../../src/execution/usage";
 
 const temporaryRoots: string[] = [];
 
@@ -771,6 +772,38 @@ describe("alp delegate", () => {
       .rejects.toThrow(/--write-scope requires a path/);
   });
 
+  /**
+   * Oracle: P6 "Consumer" — `alp delegate --budget-tokens N --budget-tool-calls N` declares
+   * the observe-only budget; absent flags leave the request without one, and a value that is
+   * not a positive integer is refused here, before anything is delegated.
+   */
+  it("passes a budget through only when asked, and refuses one that is not a positive integer", async () => {
+    const calls: { budget?: unknown }[] = [];
+    const service = {
+      async delegate(input: { budget?: unknown }) { calls.push(input); return { executionId: "exec-child", requestId: "req", status: "completed" as const, metadata: { backend: "local", runtime: "codex" as const } }; },
+      async wait() { throw new Error("unused"); },
+      async status() { throw new Error("unused"); },
+      async cancel() { throw new Error("unused"); },
+      async cleanup() { throw new Error("unused"); },
+      listExecutions() { return []; },
+      async evidence() { throw new Error("unused"); },
+      async accept() { throw new Error("unused"); },
+      async reject() { throw new Error("unused"); },
+      async tree() { throw new Error("unused"); },
+    };
+    const deps = { cwd: "/caller/project", env: {}, service };
+    await runDelegateCommand(["worker", "--budget-tokens", "500", "--budget-tool-calls", "3", "--", "fix"], deps);
+    expect(calls[0]).toMatchObject({ budget: { tokens: 500, toolCalls: 3 } });
+    await runDelegateCommand(["worker", "--budget-tokens=20", "--", "fix"], deps);
+    expect(calls[1]).toMatchObject({ budget: { tokens: 20 } });
+    await runDelegateCommand(["worker", "--", "fix"], deps);
+    expect(calls[2]).not.toHaveProperty("budget");
+    for (const argv of [["--budget-tokens", "0"], ["--budget-tokens", "1.5"], ["--budget-tool-calls", "-2"], ["--budget-tool-calls", "many"], ["--budget-tokens"]]) {
+      await expect(runDelegateCommand(["worker", ...argv, "--", "fix"], deps)).rejects.toThrow(/--budget-(tokens|tool-calls)/);
+    }
+    expect(calls).toHaveLength(3);
+  });
+
   /** Tên không có trong registry vẫn đi tiếp: "vai này không tồn tại" là câu của
    * `ExecutionService`, nói bằng đúng mã lỗi, chứ không phải một exception bật ra ở chỗ đang
    * tính quyền workspace. */
@@ -860,6 +893,8 @@ function treeNode(overrides: Partial<ExecutionTreeNode> = {}): ExecutionTreeNode
     evidence: null,
     taskExcerpt: null,
     acceptance: null,
+    budget: null,
+    usage: null,
     children: [],
     ...overrides,
   };
@@ -878,6 +913,7 @@ function treeView(root: ExecutionTreeNode, overrides: Partial<ExecutionTreeView>
     delegation: { used: 2, limit: DEFAULT_EXECUTION_GRAPH_LIMITS.delegationLimit, remaining: 6 },
     summary: { total: 3, active: 2, byStatus: { running: 2, completed: 1 }, pending: 1 },
     thread: null,
+    usage: { total: NO_USAGE, partial: true },
     root,
     ...overrides,
   };
@@ -1039,6 +1075,36 @@ describe("alp delegation tree", () => {
     expect(text).toContain("thread thread_x  ·  context rev 1");
     expect(text).not.toContain("legacy-unthreaded");
     expect(text).not.toContain("a".repeat(64));
+  });
+
+  /**
+   * Oracle: P6 "Consumer" — the tree prints usage per node (four token columns kept apart,
+   * plus tool calls; a null column is a `?`), the budget verdict beside a node that declared
+   * one, and the sum over the tree at the top, marked `partial` while any node has no numbers.
+   */
+  it("prints each node's usage and budget verdict, and the partial sum at the top", () => {
+    const counted = treeNode({
+      executionId: "exec_counted", parentExecutionId: "exec_root", agentId: "worker", depth: 1, status: "completed", requestId: "req_c",
+      endedAt: "2026-09-11T00:15:00.000Z", budget: { tokens: 1000, toolCalls: 3 },
+      usage: { inputTokens: 122, outputTokens: 53, cacheReadTokens: 1110, cacheWriteTokens: 20, toolCalls: 2 },
+    });
+    const holey = treeNode({
+      executionId: "exec_holey", parentExecutionId: "exec_root", agentId: "search", depth: 1, status: "completed", requestId: "req_h",
+      endedAt: "2026-09-11T00:15:00.000Z", budget: { toolCalls: 1 },
+      usage: { inputTokens: 5, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, toolCalls: null },
+    });
+    const root = treeNode({ children: [counted, holey] });
+    const text = renderExecutionTree(treeView(root, {
+      usage: { total: { inputTokens: 127, outputTokens: 54, cacheReadTokens: 1110, cacheWriteTokens: 20, toolCalls: 2 }, partial: true },
+    }));
+    expect(text).toContain("usage in 127  ·  out 54  ·  cache r/w 1110/20  ·  tools 2  (partial)");
+    const lines = text.split("\n");
+    expect(lines.find((line) => line.includes("exec_counted"))).toContain("usage in 122 out 53 cache 1110/20 tools 2  ·  budget exceeded");
+    expect(lines.find((line) => line.includes("exec_holey"))).toContain("usage in 5 out 1 cache 0/0 tools ?  ·  budget unknown");
+    expect(lines.find((line) => line.includes("exec_root"))).not.toContain("usage");
+    const none = renderExecutionTree(sampleView());
+    expect(none).toContain("usage not measured");
+    expect(none).not.toContain("budget");
   });
 
   /** Output của một lệnh đọc không được mang theo capability của execution nào. */

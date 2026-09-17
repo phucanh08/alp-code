@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { RuntimeId } from "../agents/types";
 import type { ContinuityCheckpointV1 } from "../context/types";
 import type { ExecutionThreadBinding } from "../execution/types";
+import { accumulateUsage } from "../execution/usage";
 import { countDelegations, summarizeDelegations, type DelegationCounts, type DelegationSummary } from "../execution/acceptance";
 import type { ExecutionProbe } from "../execution/graph/execution-graph-service";
 import type { ExecutionGraphDocument, ExecutionNode } from "../execution/graph/types";
@@ -346,6 +347,7 @@ export class ThreadService {
       completeness: "final-only" as HistoryCompleteness,
       pinnedVersion: null,
       skipped: 0,
+      usageDelta: null,
     }));
     const delegations = known.settled === null ? null : await this.delegationsOf(source.executionId);
 
@@ -364,6 +366,8 @@ export class ThreadService {
         && !thread.messages.some((message) => message.executionId === source.executionId && message.kind === "boundary");
       const entryCount = (ref.history?.entryCount ?? 0) + fresh.length;
       const skipped = (ref.history?.skipped ?? 0) + delta.skipped;
+      // Usage cộng dồn dưới cùng lease với cursor: lát nào đã tính thì cursor đã qua nó.
+      const usage = accumulateUsage(ref.history?.usage ?? null, delta.usageDelta);
       if (boundaryMissing) {
         const boundary: ThreadExecutionBoundary = {
           version: 1,
@@ -379,10 +383,13 @@ export class ThreadService {
           collected: entryCount,
           skipped,
           ...(delegations === null ? {} : { delegations: delegations.counts }),
+          ...(usage === null ? {} : { usage }),
         };
         fresh.push(boundary);
       }
-      if (fresh.length === 0 && ref.history !== null && ref.history !== undefined && ref.history.completeness === delta.completeness) {
+      // `accumulateUsage` trả đúng object cũ khi lát không mang số — so tham chiếu là đủ.
+      const usageUnchanged = ref.history !== null && ref.history !== undefined && usage === (ref.history.usage ?? null);
+      if (fresh.length === 0 && usageUnchanged && ref.history.completeness === delta.completeness) {
         return thread;
       }
       const messages = thread.messages.slice();
@@ -409,6 +416,7 @@ export class ThreadService {
           entryCount,
           skipped,
           collectedAt: timestamp,
+          usage,
         },
       };
       return lease.commit({ ...thread, revision: thread.revision + 1, messages, executions, updatedAt: timestamp });

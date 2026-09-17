@@ -65,7 +65,7 @@ describe("ThreadService.collectHistory", () => {
     expect(thread.executions[0].history).toEqual({
       completeness: "complete", pinnedVersion: "9.9",
       cursor: { transcriptPath: "/state/claude.jsonl", lineOffset: 3, lastNativeId: "u2" },
-      entryCount: 3, skipped: 0, collectedAt: expect.any(String),
+      entryCount: 3, skipped: 0, collectedAt: expect.any(String), usage: null,
     });
     // Payload bất biến, index chỉ giữ ref + digest — đọc lại phải khớp digest.
     const first = await threads.readEntry(id, thread.messages[0]);

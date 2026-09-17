@@ -19,6 +19,7 @@ import {
   toolSummary,
   type EntryAccumulator,
 } from "./history-bridge-shared";
+import { claudeUsageState, collectClaudeUsage, finishUsage } from "./history-usage";
 
 /**
  * Mirror transcript Claude Code: `$CLAUDE_CONFIG_DIR/projects/<slug>/<session>.jsonl`.
@@ -58,6 +59,7 @@ export class ClaudeHistoryBridge implements RuntimeHistoryBridge {
     const opened = await openTranscript(execution, cursor, this.stateDirectory);
     if (!opened.ok) return FINAL_ONLY_DELTA(cursor, CLAUDE_HISTORY_PINNED_VERSION);
     const acc = accumulator();
+    const usage = claudeUsageState();
     let version: string | null = null;
     for (const line of opened.lines) {
       const record = parseLine(line);
@@ -65,6 +67,7 @@ export class ClaudeHistoryBridge implements RuntimeHistoryBridge {
       const type = stringOf(record.type);
       if (type !== "user" && type !== "assistant") continue;
       version ??= stringOf(record.version);
+      if (type === "assistant" && record.isSidechain !== true) collectClaudeUsage(usage, record, opened.lineOffset > 0);
       if (!collectLine(acc, type, record, execution.workspace)) acc.skipped += 1;
     }
     return {
@@ -73,6 +76,7 @@ export class ClaudeHistoryBridge implements RuntimeHistoryBridge {
       completeness: completenessForVersion(CLAUDE_HISTORY_PINNED_VERSION, version ?? cursorVersionFallback(cursor), acc.skipped),
       pinnedVersion: CLAUDE_HISTORY_PINNED_VERSION,
       skipped: acc.skipped,
+      usageDelta: finishUsage(usage, acc.entries.filter((entry) => entry.kind === "tool").length),
     };
   }
 }

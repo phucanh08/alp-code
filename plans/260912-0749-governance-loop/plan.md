@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: completed
 created: 2026-09-12
 slug: governance-loop
 source: plans/260912-0749-governance-loop/research/roadmap-v3.md
@@ -41,7 +41,7 @@ Nguồn sự thật: [roadmap V3](./research/roadmap-v3.md) — đã qua hai lư
 | 3 | [Evidence](./phase-3-evidence.md) — bridge cho child, git baseline, `verify.commands`, evaluator | completed (2026-09-17) |
 | 4 | [Acceptance](./phase-4-acceptance.md) — `alp delegation accept\|reject`, nguồn thứ hai của projector | completed (2026-09-17) |
 | 5 | [Runtime enforcement capabilities + launch receipt](./phase-5-enforcement-capabilities.md) — `measuredOn`, `launch.json`, agent test tầng 2 | completed (2026-09-12) |
-| 6 | [Usage telemetry + budget observe-only](./phase-6-usage.md) — parse từ transcript bridge đã mở | pending |
+| 6 | [Usage telemetry + budget observe-only](./phase-6-usage.md) — parse từ transcript bridge đã mở | completed (2026-09-17) |
 
 Thứ tự bắt buộc: 2 → 3 → 4 (vòng governance). 1 và 5 độc lập; 5 nên trước 3 vì evaluator đọc `policy.enforcement` + `launch.json`. Ước lượng ≈ 5–6 tuần tuần tự (tham chiếu: graph 5 phase ≈ 1 tuần, Thread 6 phase ≈ 1 tuần). Không phase nào có thao tác khó đảo ngược cần hỏi principal trước khi chạy; `alp trust verify` là hành động của principal, không phải của phase.
 
@@ -50,7 +50,7 @@ Thứ tự bắt buộc: 2 → 3 → 4 (vòng governance). 1 và 5 độc lập;
 | Gate | Điều kiện | Mở gì |
 |---|---|---|
 | Governance loop đóng | Phase 2 + 3 + 4; `main` chạy delegate → wait → evidence → accept trên **cả hai** runtime | README/docs được nói "delegation có kiểm chứng" — **code đóng 2026-09-17** (P2+P3+P4 merged; e2e `test/e2e/acceptance.test.ts` chạy vòng trên fake binary); còn nợ chạy `main` thật trên Claude + Codex trước khi sửa README |
-| `orchestrator` (vision §5.9) | Governance loop + Phase 5 + 6 (observe-only đủ) | Plan riêng cho role `orchestrator` — chỗ duy nhất bật "chặn settle root khi còn `undecided`" |
+| `orchestrator` (vision §5.9) | Governance loop + Phase 5 + 6 (observe-only đủ) | Plan riêng cho role `orchestrator` — chỗ duy nhất bật "chặn settle root khi còn `undecided`" — **điều kiện mở 2026-09-17** (P5 `3bd107a`, P6 hôm nay); cùng nợ với gate trên: chưa chạy `main` thật trên Claude + Codex |
 | Hard budget | ADR §Câu hỏi còn mở #1 | Phase 6b |
 | Supervisor / policy pack | ≥2 project dùng governance loop thật với nhu cầu khác nhau | Roadmap kế tiếp |
 

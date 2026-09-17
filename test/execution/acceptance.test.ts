@@ -220,6 +220,8 @@ describe("summarizeDelegations / countDelegations", () => {
       evidence: null,
       taskExcerpt: `task of ${overrides.executionId}`,
       acceptance: null,
+      budget: null,
+      usage: null,
       ...overrides,
     };
   }

@@ -1,3 +1,4 @@
+import type { ExecutionBudget, UsageCounters } from "../usage";
 import type { AgentId } from "../../agents/types";
 import type { ExecutionId, ExecutionThreadBinding } from "../types";
 
@@ -138,6 +139,13 @@ export interface ExecutionNode {
   readonly taskExcerpt: string | null;
   /** Phán quyết của cha trên `evidence.json`; ghi một lần, chỉ ở node đã dừng. `null` khi chưa quyết. */
   readonly acceptance: ExecutionAcceptanceRef | null;
+  /**
+   * Trần cha đặt lúc giao (P6) — cấu trúc, bất biến, nằm trong fingerprint khi có. Chỉ để so
+   * và báo; ALP không giết con vì nó. `null` ở root, ở con không đặt trần, và ở node legacy.
+   */
+  readonly budget: ExecutionBudget | null;
+  /** Token / tool call ALP đếm được từ transcript của node (P6); ghi cùng lúc với `evidence`, chỉ ở node đã dừng. */
+  readonly usage: UsageCounters | null;
 }
 
 export interface ExecutionEvidenceRef {
@@ -181,6 +189,7 @@ export interface ExecutionReservation {
   readonly expiresAt: string;
   readonly requiredEvidence: readonly string[];
   readonly taskExcerpt: string | null;
+  readonly budget: ExecutionBudget | null;
 }
 
 export interface ExecutionGraphDocument {

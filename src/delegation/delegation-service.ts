@@ -24,6 +24,7 @@ import { gitBaselineProbe, spawnVerifier } from "../execution/evidence-baseline"
 import { readWriteScope } from "../execution/execution-policy";
 import type { ExecutionService } from "../execution/execution-service";
 import { executionArtifactPaths } from "../execution/execution-store";
+import { parseBudget, type ExecutionBudget } from "../execution/usage";
 import {
   PRINCIPAL_REQUESTER,
   assertAcceptable,
@@ -200,6 +201,7 @@ function normalizeRequest(input: DelegationRequestInput, ids: DelegationIds): De
     workspaceMode: input.workspaceMode ?? "read-only",
     writeScope: normalizeWriteScope(input.writeScope),
     requiredEvidence: normalizeRequiredEvidence(input.requiredEvidence),
+    budget: normalizeBudget(input.budget),
     metadata: Object.freeze({ ...(input.metadata ?? {}) }),
     executionOptions: Object.freeze({
       background: Boolean(input.executionOptions?.background),
@@ -216,6 +218,19 @@ function normalizeRequiredEvidence(value: readonly string[] | undefined): readon
   }
   try {
     return Object.freeze(parseRequiredEvidence(value));
+  } catch (error) {
+    throw new DelegationError("INVALID_REQUEST", (error as Error).message, { cause: error });
+  }
+}
+
+/** Một budget nói sai (0, âm, lẻ, chuỗi) là "không nói gì" — lỗi ở đây, trước khi hỏi policy. */
+function normalizeBudget(value: DelegationRequestInput["budget"]): ExecutionBudget | null {
+  if (value === undefined) return null;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new DelegationError("INVALID_REQUEST", "budget must be an object with tokens and/or toolCalls");
+  }
+  try {
+    return parseBudget(value);
   } catch (error) {
     throw new DelegationError("INVALID_REQUEST", (error as Error).message, { cause: error });
   }
@@ -590,6 +605,8 @@ export class DelegationService {
     return Object.freeze({
       ...result,
       evidence: Object.freeze({ digest: collected.evidence.digest, evaluation: collected.evaluation, missing: collected.missing }),
+      usage: collected.usage,
+      budgetStatus: collected.budgetStatus,
     });
   }
 
@@ -676,7 +693,8 @@ export class DelegationService {
 
   private async collectEvidence(graphId: string, executionId: string): Promise<CollectedEvidence> {
     const collected = await collectExecutionEvidence({ executionId }, this.evidenceDeps);
-    await this.graph.recordEvidence(graphId, executionId, { digest: collected.evidence.digest, evaluation: collected.evaluation });
+    // Usage lên node cùng lúc với digest — cây tính tổng mà không mở `usage.json` của từng con.
+    await this.graph.recordEvidence(graphId, executionId, { digest: collected.evidence.digest, evaluation: collected.evaluation }, collected.usage);
     return collected;
   }
 
@@ -883,6 +901,7 @@ export class DelegationService {
       workspaceMode: request.workspaceMode,
       writeScope: request.writeScope,
       ...(request.requiredEvidence.length === 0 ? {} : { requiredEvidence: request.requiredEvidence }),
+      ...(request.budget === null ? {} : { budget: request.budget }),
       // Nấc nằm trong fingerprint vì nấc quyết định model: cùng một câu hỏi ở `puck` và ở
       // `ultra` là hai việc khác nhau, và một retry đổi nấc phải được đẻ ra con mới.
       mode: this.config.mode ?? DEFAULT_MODE,

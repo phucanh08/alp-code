@@ -16,6 +16,8 @@ import {
   type ExecutionTreeView,
 } from "../../execution/graph/execution-graph-service";
 import { FileExecutionGraphStore } from "../../execution/graph/file-execution-graph-store";
+import { evaluateBudget, NO_USAGE, USAGE_COLUMNS, type ExecutionTreeUsageLike } from "../../execution/usage";
+import { renderUsage } from "../usage-format";
 import { MarkdownFileStore } from "../../memory/adapters/markdown-file-store";
 import { MemoryService } from "../../memory/memory-service";
 import { PolicyEngine } from "../../policy/policy-engine";
@@ -68,6 +70,11 @@ function writesWorkspace(registry: Pick<AgentRegistry, "get" | "has">, role: str
   return registry.has(role) && registry.get(role).capabilities.workspace.writeRoots.length > 0;
 }
 
+const BUDGET_FLAGS = [
+  { name: "--budget-tokens", field: "tokens" },
+  { name: "--budget-tool-calls", field: "toolCalls" },
+] as const;
+
 function required(args: readonly string[], index: number, message: string): string {
   const value = args[index];
   if (!value) throw new Error(message);
@@ -85,10 +92,18 @@ export async function runDelegateCommand(
   let workspace = dependencies.cwd;
   const writeScope: string[] = [];
   const requiredEvidence: string[] = [];
+  const budget: { tokens?: number; toolCalls?: number } = {};
   const task: string[] = [];
   for (let index = 1; index < argv.length; index += 1) {
     const value = argv[index];
-    if (value === "--runtime") {
+    const budgetFlag = BUDGET_FLAGS.find((flag) => value === flag.name || value.startsWith(`${flag.name}=`));
+    if (budgetFlag !== undefined) {
+      // Observe-only: a ceiling the parent wants reported against, never one ALP enforces mid-run.
+      const raw = value === budgetFlag.name ? required(argv, ++index, `${budgetFlag.name} requires a positive integer`) : value.slice(budgetFlag.name.length + 1);
+      const parsed = Number(raw);
+      if (!/^\d+$/.test(raw) || !Number.isSafeInteger(parsed) || parsed < 1) throw new Error(`${budgetFlag.name} must be a positive integer, got \`${raw}\``);
+      budget[budgetFlag.field] = parsed;
+    } else if (value === "--runtime") {
       // Nấc quyết định model, model quyết định CLI. Một cờ `--runtime` còn sót trong script
       // cũ sẽ chọn sai CLI cho model của nấc, nên nó dừng ở đây chứ không bị bỏ qua.
       throw new Error("`--runtime` không còn tồn tại; nấc quyết định model và runtime — dùng `alp mode set` hoặc ALP_MODE");
@@ -133,6 +148,7 @@ export async function runDelegateCommand(
     // parser) is where a scope on a read-only role is refused, by policy.
     ...(writeScope.length === 0 ? {} : { writeScope }),
     ...(requiredEvidence.length === 0 ? {} : { requiredEvidence }),
+    ...(Object.keys(budget).length === 0 ? {} : { budget }),
     metadata: {},
     executionOptions: { background, interactive: false, timeoutMs },
   });
@@ -200,6 +216,10 @@ function renderBranch(
     // Phán quyết của cha (P4): có thì in; con đã dừng mà chưa có thì nói "undecided" — đó là
     // việc còn nợ, không phải một chi tiết.
     ...(node.acceptance ? [`decision ${node.acceptance.decision}`] : node.requestId && node.endedAt ? ["decision undecided"] : []),
+    // Cái node đã tốn, như bridge đếm — bốn cột token tách riêng vì mỗi runtime đếm cache
+    // một kiểu. Có khai budget thì nói so ra sao; `exceeded` là để cha *thấy*, không đổi gì.
+    ...(node.usage ? [`usage ${renderUsage(node.usage)}`] : []),
+    ...(node.budget ? [`budget ${evaluateBudget(node.budget, node.usage)}`] : []),
   ].join("  ·  ") + (node.executionId === highlighted ? "  ←" : "");
   // Con nối tiếp dưới thân của cha: một cây thụt lề bằng khoảng trắng không đọc được khi
   // một nhánh dài hơn màn hình.
@@ -230,10 +250,18 @@ export function renderExecutionTree(view: ExecutionTreeView): string {
     `limits: depth ≤ ${limits.maxDepth}  ·  ${limits.maxChildrenPerExecution} children/execution  ·  `
       + `${limits.maxConcurrentChildrenPerExecution} concurrent children  ·  `
       + `${limits.maxConcurrentExecutions} concurrent executions`,
+    renderTreeUsage(view.usage),
     "",
     ...renderBranch(view.root, view.executionId, "", true, true),
     "",
   ].join("\n");
+}
+
+/** Tổng theo cây; `partial` khi có node chưa có số — kể cả node còn chạy. Chưa có số nào thì nói thẳng. */
+function renderTreeUsage(usage: ExecutionTreeUsageLike): string {
+  const { total, partial } = usage;
+  if (partial && USAGE_COLUMNS.every((column) => total[column] === NO_USAGE[column])) return "usage not measured";
+  return `usage in ${total.inputTokens}  ·  out ${total.outputTokens}  ·  cache r/w ${total.cacheReadTokens}/${total.cacheWriteTokens}  ·  tools ${total.toolCalls}${partial ? "  (partial)" : ""}`;
 }
 
 /** Một dòng cho một item: nguồn, độ tin, rồi phần người đọc cần để tự kiểm lại. */
@@ -258,6 +286,10 @@ function renderEvidenceItem(item: DelegationEvidenceView["items"][number]): stri
       return `${head}  digest ${item.digest.slice(0, 12)}`;
     case "boundary":
       return `${head}  ${item.ref.outcome} · history ${item.ref.historyCompleteness}`;
+    case "usage": {
+      const budget = item.budget === null ? "no budget" : `budget ${item.status}${item.budget.tokens === undefined ? "" : ` · tokens ≤ ${item.budget.tokens}`}${item.budget.toolCalls === undefined ? "" : ` · tool calls ≤ ${item.budget.toolCalls}`}`;
+      return `${head}  ${renderUsage(item.usage)} · ${budget}`;
+    }
   }
 }
 

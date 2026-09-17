@@ -1,5 +1,6 @@
 import type { RuntimeId } from "../agents/types";
 import type { BackendExecutionStatus } from "../backend/execution-backend";
+import type { BudgetStatus, ExecutionBudget, UsageCounters } from "../execution/usage";
 
 export type DelegationErrorCode =
   | "INVALID_REQUEST"
@@ -63,6 +64,12 @@ export interface DelegationRequestInput {
    * fingerprint và bất biến trên node — đòi thêm sau khi giao là một việc khác.
    */
   readonly requiredEvidence?: readonly string[];
+  /**
+   * Trần token / tool call cha *mong* con giữ. Observe-only: đánh giá sau khi con chạy xong
+   * (`budgetStatus` trên `wait`), không chặn giữa chừng, không đổi kết cục. Mỗi trần là số
+   * nguyên dương, khác thế là `INVALID_REQUEST`. Đi vào fingerprint.
+   */
+  readonly budget?: ExecutionBudget;
   /** Đi vào fingerprint của request, nên hai lần gọi khác metadata là hai việc khác nhau. */
   readonly metadata?: Readonly<Record<string, unknown>>;
   readonly executionOptions?: DelegationExecutionOptions;
@@ -78,6 +85,8 @@ export interface DelegationRequest {
   readonly writeScope: readonly string[] | null;
   /** Đã trim, sort, bỏ trùng — rỗng là không đòi gì. */
   readonly requiredEvidence: readonly string[];
+  /** Chỉ những trần đã khai, đã kiểm — `null` là không khai. */
+  readonly budget: ExecutionBudget | null;
   readonly metadata: Readonly<Record<string, unknown>>;
   readonly executionOptions: Required<Pick<DelegationExecutionOptions, "background" | "interactive">> & {
     readonly timeoutMs: number | null;
@@ -131,6 +140,13 @@ export interface DelegationResult {
    * nằm trong cây (legacy) nên không có gì để thu; vắng khi kết quả không phải từ `wait`.
    */
   readonly evidence?: DelegationEvidenceSummary | null;
+  /**
+   * Cái con đã tốn, như bridge đếm được — `null` khi không đo được. Chỉ có cùng lúc với
+   * `evidence` từ `wait` trên một execution trong cây.
+   */
+  readonly usage?: UsageCounters | null;
+  /** So `usage` với `budget` của request: `within` khi không khai budget; `unknown` khi thiếu số để so. Không đổi `status`. */
+  readonly budgetStatus?: BudgetStatus;
   readonly metadata: Readonly<{ backend: string; runtime: RuntimeId } & Record<string, unknown>>;
 }
 

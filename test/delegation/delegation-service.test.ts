@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MODE_PROFILES, modelForMode, reasoningEffortForMode, runtimeForMode, type ModeProfiles } from "../../src/agents/modes";
 import { applyModeSettings, parseModeSettings } from "../../src/agents/mode-settings";
 import { agentRegistry } from "../../src/agents/registry";
-import { DelegationService, FileDelegationExecutionStore, InMemoryDelegationExecutionStore } from "../../src/delegation/delegation-service";
+import { DelegationService, FileDelegationExecutionStore, InMemoryDelegationExecutionStore, type DelegationEvidenceOptions } from "../../src/delegation/delegation-service";
 import { DelegationError } from "../../src/delegation/types";
 import type { BackendExecutionResult, ExecutionBackend } from "../../src/backend/execution-backend";
 import type { ExecutionService } from "../../src/execution/execution-service";
@@ -25,6 +25,8 @@ import type {
 } from "../../src/execution/types";
 import { capabilitiesFor } from "../../src/runtime/capabilities";
 import type { RuntimeAdapter, RuntimeLaunchSpec } from "../../src/runtime/runtime-adapter";
+import { HistoryBridgeRegistry, type RuntimeHistoryBridge } from "../../src/thread/history-bridge";
+import type { UsageCounters } from "../../src/execution/usage";
 import { removeTemporary } from "../support/temporary-root";
 
 /**
@@ -229,6 +231,7 @@ async function serviceFixture(options: {
   primary?: FakeBackend;
   modeProfiles?: ModeProfiles;
   projectRootOf?: (path: string) => Promise<string | null>;
+  evidence?: DelegationEvidenceOptions;
 }) {
   const runtime = new FakeRuntime();
   const primary = options.primary ?? new FakeBackend("primary");
@@ -242,6 +245,7 @@ async function serviceFixture(options: {
     memory: { buildContext: async () => { throw new Error("owned by ExecutionService"); } },
     executionService,
     ...(options.projectRootOf ? { projectRootOf: options.projectRootOf } : {}),
+    ...(options.evidence ? { evidence: options.evidence } : {}),
     graph,
     binding: parent.binding,
     executionsRoot: join(options.root, "executions"),
@@ -890,5 +894,82 @@ describe("DelegationService — writeScope", () => {
     const status = await fixture.service.status(unscoped.executionId);
     expect(status).toHaveProperty("writeScope");
     expect(status.writeScope).toBeNull();
+  });
+});
+
+/**
+ * Oracle: P6 spec — `budget?: { tokens?, toolCalls? }` on the request goes into the
+ * fingerprint; `wait()` reports `usage` and `budgetStatus`; `alp delegation tree` sums usage
+ * per node without opening a file; a budget is observe-only ("exceeded không đổi outcome").
+ * Invalid budgets are `INVALID_REQUEST` before anything is authorized.
+ */
+describe("DelegationService — budget and usage", () => {
+  let root = "";
+  beforeEach(async () => { root = await mkdtemp(join(tmpdir(), "alp-delegation-")); });
+  afterEach(async () => { await removeTemporary(root); });
+
+  const COUNTED: UsageCounters = { inputTokens: 70, outputTokens: 30, cacheReadTokens: 400, cacheWriteTokens: 0, toolCalls: 2 };
+  function bridge(usageDelta: UsageCounters | null): RuntimeHistoryBridge {
+    return {
+      runtime: "codex",
+      probe: async () => ({ completeness: "complete", pinnedVersion: "0.154" }),
+      collectDelta: async () => ({ entries: [], cursor: null, completeness: "complete", pinnedVersion: "0.154", skipped: 0, usageDelta }),
+    };
+  }
+  const budgeted = { ...input, budget: { tokens: 100 } };
+
+  it("refuses a budget that is not a positive integer before authorizing anything", async () => {
+    const fixture = await serviceFixture({ root });
+    for (const budget of [{ tokens: 0 }, { toolCalls: -1 }, { tokens: 1.5 }, { tokens: "10" }, { toolCalls: Number.NaN }]) {
+      await expect(fixture.service.delegate({ ...input, budget: budget as never })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    }
+    expect(fixture.executionService.authorized).toHaveLength(0);
+  });
+
+  it("carries the budget onto the child's node and into the fingerprint", async () => {
+    const fixture = await serviceFixture({ root });
+    const spawned = await fixture.service.delegate(budgeted);
+    const tree = await fixture.service.tree(spawned.executionId);
+    expect(tree.root.children[0]).toMatchObject({ executionId: spawned.executionId, budget: { tokens: 100 }, usage: null });
+    // Same request, same budget: the same child. Same request ID, another budget: another piece of work.
+    expect((await fixture.service.delegate(budgeted)).executionId).toBe(spawned.executionId);
+    await expect(fixture.service.delegate({ ...input, budget: { tokens: 101 } })).rejects.toMatchObject({ code: "REQUEST_ID_CONFLICT" });
+    await expect(fixture.service.delegate(input)).rejects.toMatchObject({ code: "REQUEST_ID_CONFLICT" });
+  });
+
+  it("reports usage and an exceeded budget on `wait`, leaves the outcome alone, and sums the tree", async () => {
+    const fixture = await serviceFixture({ root, evidence: { history: new HistoryBridgeRegistry([bridge(COUNTED)]) } });
+    const spawned = await fixture.service.delegate(budgeted);
+    fixture.primary.reports = "completed";
+    const waited = await fixture.service.wait(spawned.executionId);
+    expect(waited).toMatchObject({ status: "completed", usage: COUNTED, budgetStatus: "exceeded" });
+    expect(waited.evidence?.evaluation).toBe("satisfied");
+    const tree = await fixture.service.tree(spawned.executionId);
+    expect(tree.root.children[0]).toMatchObject({ status: "completed", usage: COUNTED });
+    expect(tree.usage).toEqual({ total: COUNTED, partial: true });
+    const view = await fixture.service.evidence(spawned.executionId);
+    // Provenance is the collector's call (no launch receipt here → derived); the item's numbers are what this layer carries.
+    expect(view.items).toContainEqual(expect.objectContaining({ kind: "usage", source: "history-bridge", usage: COUNTED, budget: { tokens: 100 }, status: "exceeded" }));
+  });
+
+  it("says `within` with no budget and `unknown` when the bridge counted nothing under one", async () => {
+    const fixture = await serviceFixture({ root, evidence: { history: new HistoryBridgeRegistry([bridge(null)]) } });
+    fixture.primary.reports = "completed";
+    // No explicit requestId: the fixture mints a fresh execution ID only alongside a fresh request ID.
+    const { requestId: _explicit, ...withoutId } = input;
+    const free = await fixture.service.delegate(withoutId);
+    expect(await fixture.service.wait(free.executionId)).toMatchObject({ usage: null, budgetStatus: "within" });
+    const capped = await fixture.service.delegate({ ...withoutId, task: "other", budget: { toolCalls: 1 } });
+    expect(await fixture.service.wait(capped.executionId)).toMatchObject({ usage: null, budgetStatus: "unknown" });
+    expect((await fixture.service.tree(free.executionId)).usage).toEqual({ total: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, toolCalls: 0 }, partial: true });
+  });
+
+  it("gives a `wait` that returns before the end neither usage nor a budget verdict", async () => {
+    const fixture = await serviceFixture({ root, evidence: { history: new HistoryBridgeRegistry([bridge(COUNTED)]) } });
+    const spawned = await fixture.service.delegate(budgeted);
+    fixture.primary.waitResult = { executionId: spawned.executionId, status: "running" };
+    const waited = await fixture.service.wait(spawned.executionId);
+    expect(waited).not.toHaveProperty("usage");
+    expect(waited).not.toHaveProperty("budgetStatus");
   });
 });

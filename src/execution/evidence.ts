@@ -11,6 +11,16 @@ import { sanitizeText } from "../thread/history-redact";
 import type { CollectedEntry, HistoryCompleteness, HistoryDelta, RuntimeHistoryCursor, ThreadExecutionBoundary, ThreadToolCallRef } from "../thread/history-types";
 import type { ThreadExecutionOutcome } from "../thread/types";
 import { readWriteScope } from "./execution-policy";
+import {
+  accumulateUsage,
+  countersOf,
+  evaluateBudget,
+  readExecutionUsage,
+  writeExecutionUsage,
+  type BudgetStatus,
+  type ExecutionBudget,
+  type UsageCounters,
+} from "./usage";
 import { executionArtifactPaths } from "./execution-store";
 import type { ExecutionGraphService } from "./graph/execution-graph-service";
 import { findNode, isTerminalNodeStatus, type ExecutionNode } from "./graph/types";
@@ -90,13 +100,29 @@ export interface EvidenceBoundaryItem {
   readonly ref: Omit<ThreadExecutionBoundary, "version" | "executionId">;
 }
 
+/**
+ * What the execution cost, as the bridge counted it, next to the budget the request declared
+ * and how the two compare. Observe-only: `exceeded` is something the parent *sees*, never
+ * something that changes the child's outcome or the evaluation of its requirements. Present
+ * only when the bridge had numbers; a missing item means "not measured".
+ */
+export interface EvidenceUsageItem {
+  readonly kind: "usage";
+  readonly provenance: Provenance;
+  readonly source: "history-bridge";
+  readonly usage: UsageCounters;
+  readonly budget: ExecutionBudget | null;
+  readonly status: BudgetStatus;
+}
+
 export type EvidenceItem =
   | EvidenceToolCallItem
   | EvidenceChangeItem
   | EvidenceVerifyItem
   | EvidenceVerifySkippedItem
   | EvidenceOutputItem
-  | EvidenceBoundaryItem;
+  | EvidenceBoundaryItem
+  | EvidenceUsageItem;
 
 export interface ExecutionEvidenceV1 {
   readonly version: 1;
@@ -354,6 +380,16 @@ export interface CollectedEvidence {
   readonly required: readonly string[];
   readonly evaluation: EvidenceEvaluation;
   readonly missing: readonly string[];
+  /** The counters of the `usage` item, or null when nothing was measured. */
+  readonly usage: UsageCounters | null;
+  /** `evaluateBudget` over the node's budget and `usage` — `within` when no budget was declared. */
+  readonly budgetStatus: BudgetStatus;
+}
+
+/** The usage the items carry and how it sits against the node's budget; nothing else decides `budgetStatus`. */
+function usageOf(items: readonly EvidenceItem[], budget: ExecutionBudget | null): Pick<CollectedEvidence, "usage" | "budgetStatus"> {
+  const usage = items.find((item): item is EvidenceUsageItem => item.kind === "usage")?.usage ?? null;
+  return { usage, budgetStatus: evaluateBudget(budget, usage) };
 }
 
 interface PolicyView {
@@ -431,11 +467,12 @@ export async function collectExecutionEvidence(input: { readonly executionId: st
   if (graph === null || node === null) throw new EvidenceError("EXECUTION_NOT_FOUND", `execution \`${executionId}\` is not part of any execution graph`);
   if (!isTerminalNodeStatus(node.status)) throw new EvidenceError("EXECUTION_NOT_TERMINAL", `execution \`${executionId}\` is still ${node.status}; evidence is collected once it has ended`);
   const required = node.requiredEvidence ?? [];
+  const budget = node.budget ?? null;
 
   const existing = await readExecutionEvidence(deps.executionsRoot, executionId);
-  if (existing !== null && !existing.items.some((item) => item.provenance === "unknown")
-    && existing.completeness !== "final-only" && existing.completeness !== "unsupported") {
-    return { evidence: existing, required, ...evaluateEvidence(required, existing.items) };
+  const historyIncomplete = existing !== null && (existing.completeness === "final-only" || existing.completeness === "unsupported");
+  if (existing !== null && !existing.items.some((item) => item.provenance === "unknown") && !historyIncomplete) {
+    return { evidence: existing, required, ...evaluateEvidence(required, existing.items), ...usageOf(existing.items, budget) };
   }
   const stale = new Set(existing?.items.filter((item) => item.provenance === "unknown").map(sourceKey) ?? []);
   const kept = (key: string): readonly EvidenceItem[] => existing?.items.filter((item) => sourceKey(item) === key) ?? [];
@@ -484,7 +521,8 @@ export async function collectExecutionEvidence(input: { readonly executionId: st
   // (2) the runtime's own transcript, mirrored under the child's context — never the Thread.
   let completeness: HistoryCompleteness = existing?.completeness ?? "unsupported";
   let delta: HistoryDelta | null = null;
-  if (refresh("history-bridge")) {
+  // A transcript that could not be read last time is asked for again, whatever was kept.
+  if (refresh("history-bridge") || historyIncomplete) {
     delta = await collectDelta(deps, artifacts.contextDirectory, executionId, policy);
     completeness = delta.completeness;
     const provenance = demote(bridgeProvenance(delta.completeness));
@@ -496,6 +534,15 @@ export async function collectExecutionEvidence(input: { readonly executionId: st
           outsideScope: outsideScope(entry.paths, policy.writeScope, policy.workspace), outsideScopeVerified: scopeVerified, ambiguousWith: [],
         });
       }
+    }
+    // Usage adds onto what earlier passes counted — the bridge only hands back lines past its cursor.
+    const previous = countersOf(await readExecutionUsage(deps.executionsRoot, executionId));
+    const usage = accumulateUsage(previous, delta.usageDelta);
+    if (usage !== null) {
+      if (usage !== previous) {
+        await writeExecutionUsage(deps.executionsRoot, { version: 1, executionId, source: "history-bridge", completeness, collectedAt: now().toISOString(), ...usage });
+      }
+      items.push({ kind: "usage", provenance, source: "history-bridge", usage, budget, status: evaluateBudget(budget, usage) });
     }
   } else items.push(...kept("history-bridge"));
 
@@ -561,7 +608,7 @@ export async function collectExecutionEvidence(input: { readonly executionId: st
     digest: evidenceDigest(items),
   };
   await atomicRuntimeFile(evidenceFile(deps.executionsRoot, executionId), `${JSON.stringify(evidence, null, 2)}\n`);
-  return { evidence, required, ...evaluateEvidence(required, items) };
+  return { evidence, required, ...evaluateEvidence(required, items), ...usageOf(items, budget) };
 }
 
 /** The bridge's delta for this execution, appended to `<context>/history/entries.json`; a bridge that fails is `final-only`. */
@@ -575,7 +622,7 @@ async function collectDelta(deps: EvidenceCollectorDependencies, contextDirector
   try {
     delta = await bridge.collectDelta({ execution: { executionId, runtime: policy.runtime, workspace: policy.workspace, contextDirectory }, cursor });
   } catch {
-    return { entries: [], cursor, completeness: "final-only", pinnedVersion: null, skipped: 0 };
+    return { entries: [], cursor, completeness: "final-only", pinnedVersion: null, skipped: 0, usageDelta: null };
   }
   if (delta.completeness === "unsupported") return delta;
   await mkdir(historyDirectory, { recursive: true, mode: 0o700 });
