@@ -131,11 +131,34 @@ export interface ExecutionNode {
   readonly requiredEvidence: readonly string[];
   /** Digest + kết luận của `evidence.json` lần thu gần nhất; `null` khi chưa thu. Chỉ ghi ở node đã dừng. */
   readonly evidence: ExecutionEvidenceRef | null;
+  /**
+   * 200 ký tự đầu của task lúc giao, cấu trúc và bất biến — để handoff kể *việc gì* đã giao
+   * mà không phải giữ task đầy đủ. `null` ở root và node legacy.
+   */
+  readonly taskExcerpt: string | null;
+  /** Phán quyết của cha trên `evidence.json`; ghi một lần, chỉ ở node đã dừng. `null` khi chưa quyết. */
+  readonly acceptance: ExecutionAcceptanceRef | null;
 }
 
 export interface ExecutionEvidenceRef {
   readonly digest: string;
   readonly evaluation: "satisfied" | "unsatisfied" | "unknown";
+}
+
+export type AcceptanceDecision = "accepted" | "rejected";
+
+export const TASK_EXCERPT_MAX_CHARS = 200;
+
+/** Đầu task, cắt theo ký tự (không cắt giữa một surrogate pair) và bỏ khoảng trắng hai đầu. */
+export function taskExcerpt(task: string): string {
+  return [...task.trim()].slice(0, TASK_EXCERPT_MAX_CHARS).join("");
+}
+
+export interface ExecutionAcceptanceRef {
+  readonly decision: AcceptanceDecision;
+  /** Digest của `evidence.json` mà cha đã nhìn khi quyết. */
+  readonly evidenceDigest: string;
+  readonly decidedAt: string;
 }
 
 /**
@@ -157,6 +180,7 @@ export interface ExecutionReservation {
   readonly createdAt: string;
   readonly expiresAt: string;
   readonly requiredEvidence: readonly string[];
+  readonly taskExcerpt: string | null;
 }
 
 export interface ExecutionGraphDocument {

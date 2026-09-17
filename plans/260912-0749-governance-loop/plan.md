@@ -39,7 +39,7 @@ Nguồn sự thật: [roadmap V3](./research/roadmap-v3.md) — đã qua hai lư
 | 1 | [Approval hẹp (M3, prepare-time)](./phase-1-approval.md) — độc lập, chạy xen kẽ được | completed (2026-09-12) |
 | 2 | [`writeScope`](./phase-2-write-scope.md) — mở đầu bằng đo precedence sandbox Claude | completed (2026-09-12) |
 | 3 | [Evidence](./phase-3-evidence.md) — bridge cho child, git baseline, `verify.commands`, evaluator | completed (2026-09-17) |
-| 4 | [Acceptance](./phase-4-acceptance.md) — `alp delegation accept\|reject`, nguồn thứ hai của projector | pending |
+| 4 | [Acceptance](./phase-4-acceptance.md) — `alp delegation accept\|reject`, nguồn thứ hai của projector | completed (2026-09-17) |
 | 5 | [Runtime enforcement capabilities + launch receipt](./phase-5-enforcement-capabilities.md) — `measuredOn`, `launch.json`, agent test tầng 2 | completed (2026-09-12) |
 | 6 | [Usage telemetry + budget observe-only](./phase-6-usage.md) — parse từ transcript bridge đã mở | pending |
 
@@ -49,7 +49,7 @@ Thứ tự bắt buộc: 2 → 3 → 4 (vòng governance). 1 và 5 độc lập;
 
 | Gate | Điều kiện | Mở gì |
 |---|---|---|
-| Governance loop đóng | Phase 2 + 3 + 4; `main` chạy delegate → wait → evidence → accept trên **cả hai** runtime | README/docs được nói "delegation có kiểm chứng" |
+| Governance loop đóng | Phase 2 + 3 + 4; `main` chạy delegate → wait → evidence → accept trên **cả hai** runtime | README/docs được nói "delegation có kiểm chứng" — **code đóng 2026-09-17** (P2+P3+P4 merged; e2e `test/e2e/acceptance.test.ts` chạy vòng trên fake binary); còn nợ chạy `main` thật trên Claude + Codex trước khi sửa README |
 | `orchestrator` (vision §5.9) | Governance loop + Phase 5 + 6 (observe-only đủ) | Plan riêng cho role `orchestrator` — chỗ duy nhất bật "chặn settle root khi còn `undecided`" |
 | Hard budget | ADR §Câu hỏi còn mở #1 | Phase 6b |
 | Supervisor / policy pack | ≥2 project dùng governance loop thật với nhu cầu khác nhau | Roadmap kế tiếp |

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { agentRegistry } from "../../agents/registry";
 import type { AgentRegistry, RuntimeId } from "../../agents/types";
 import { LocalProcessBackend } from "../../backend/local-process-backend";
-import { DelegationService, FileDelegationExecutionStore, type DelegationEvidenceView } from "../../delegation/delegation-service";
+import { DelegationService, FileDelegationExecutionStore, type DelegationAcceptanceView, type DelegationEvidenceView } from "../../delegation/delegation-service";
 import { ProjectRegistryStore } from "./init";
 import type { DelegationResult } from "../../delegation/types";
 import { gitBaselineProbe } from "../../execution/evidence-baseline";
@@ -37,7 +37,7 @@ export interface RunDelegateDependencies {
   readonly env: NodeJS.ProcessEnv;
   readonly service: Pick<
     DelegationService,
-    "delegate" | "wait" | "status" | "cancel" | "cleanup" | "listExecutions" | "tree" | "evidence"
+    "delegate" | "wait" | "status" | "cancel" | "cleanup" | "listExecutions" | "tree" | "evidence" | "accept" | "reject"
   >;
   /** The project's registry — built-ins plus its trusted agents. Used to read the target's declared write roots. */
   readonly registry?: Pick<AgentRegistry, "get" | "has">;
@@ -197,6 +197,9 @@ function renderBranch(
     // Đã thu evidence thì nói kết luận; chưa thu mà có đòi thì nói "chưa" — cha đọc cây
     // để biết còn phải `alp delegation evidence` hay không.
     ...(node.evidence ? [`evidence ${node.evidence.evaluation}`] : node.requiredEvidence.length > 0 ? ["evidence pending"] : []),
+    // Phán quyết của cha (P4): có thì in; con đã dừng mà chưa có thì nói "undecided" — đó là
+    // việc còn nợ, không phải một chi tiết.
+    ...(node.acceptance ? [`decision ${node.acceptance.decision}`] : node.requestId && node.endedAt ? ["decision undecided"] : []),
   ].join("  ·  ") + (node.executionId === highlighted ? "  ←" : "");
   // Con nối tiếp dưới thân của cha: một cây thụt lề bằng khoảng trắng không đọc được khi
   // một nhánh dài hơn màn hình.
@@ -268,12 +271,43 @@ export function renderEvidence(view: DelegationEvidenceView): string {
   const required = view.required.length === 0
     ? ["required: nothing"]
     : view.required.map((entry) => `required: ${entry}  ·  ${view.missing.includes(entry) ? "missing" : view.evaluation === "unknown" ? "unknown" : "present"}`);
+  const acceptance = view.acceptance === null
+    ? "decision undecided  ·  alp delegation accept|reject <request-id>"
+    : `decision ${view.acceptance.decision}  ·  at ${view.acceptance.decidedAt}${view.acceptance.evidenceDigest === view.digest ? "" : `  ·  on an earlier evidence ${view.acceptance.evidenceDigest.slice(0, 12)}`}`;
   return [
     `evidence ${view.executionId}  ·  ${view.evaluation}  ·  collected ${view.collectedAt}`,
     `digest ${view.digest}  ·  history ${view.completeness}`,
+    acceptance,
     ...required,
     "",
     ...view.items.map(renderEvidenceItem),
+    "",
+  ].join("\n");
+}
+
+/** `--reason <text>` / `--reason=<text>`, lặp được; thứ tự giữ nguyên. */
+function reasonsFrom(argv: readonly string[]): string[] {
+  const reasons: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--reason") {
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith("--")) throw new Error("--reason requires a value");
+      reasons.push(value);
+      index += 1;
+    } else if (arg.startsWith("--reason=")) {
+      reasons.push(arg.slice("--reason=".length));
+    } else if (arg !== "--json") {
+      throw new Error(`unknown option \`${arg}\``);
+    }
+  }
+  return reasons;
+}
+
+export function renderAcceptance(view: DelegationAcceptanceView): string {
+  return [
+    `${view.decision} ${view.requestId}  ·  execution ${view.executionId}  ·  evidence ${view.evaluation} (${view.evidenceDigest.slice(0, 12)})  ·  at ${view.decidedAt}`,
+    ...view.reasons.map((reason) => `  - ${reason}`),
     "",
   ].join("\n");
 }
@@ -295,6 +329,13 @@ export async function runDelegationLifecycleCommand(
   if (command === "evidence") {
     const view = await service.evidence(required(argv, 1, "evidence requires execution ID"));
     return argv.includes("--json") ? view : renderedOutput(renderEvidence(view));
+  }
+  if (command === "accept" || command === "reject") {
+    const requestId = required(argv, 1, `${command} requires a request ID`);
+    const reasons = reasonsFrom(argv.slice(2));
+    if (command === "reject" && reasons.length === 0) throw new Error("reject requires --reason \"<why>\"");
+    const view = command === "accept" ? await service.accept(requestId, { reasons }) : await service.reject(requestId, { reasons });
+    return argv.includes("--json") ? view : renderedOutput(renderAcceptance(view));
   }
   throw new Error(`unknown delegation lifecycle command \`${command ?? ""}\``);
 }

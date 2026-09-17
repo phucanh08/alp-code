@@ -73,7 +73,8 @@ export async function runThreadCommand(
         ? undefined
         : new Map(await Promise.all(thread.executions.map(async (ref) =>
           [ref.executionId, await dependencies.sessionApprovals!(ref.executionId).catch(() => [])] as const)));
-      write(renderThreadShow(thread, activity, receipts, approvals));
+      const snapshot = await dependencies.threads.currentContext(threadId).catch(() => null);
+      write(renderThreadShow(thread, activity, receipts, approvals, snapshot));
       return 0;
     }
     case "continue": {
@@ -181,6 +182,7 @@ export function renderThreadShow(
   activity: ThreadActivity,
   receipts?: ReadonlyMap<string, LaunchProvenanceV1 | null>,
   approvals?: ReadonlyMap<string, readonly ApprovalRecordV1[]>,
+  snapshot?: ThreadContextSnapshotV1 | null,
 ): string[] {
   const context = thread.currentContext;
   const lines = [
@@ -212,6 +214,8 @@ export function renderThreadShow(
       lines.push(`      approved ${approval.rule} ${approval.subject} (${approval.scope}) at ${approval.decidedAt}`);
     }
   }
+  const delegations = renderThreadDelegations(snapshot ?? null);
+  if (delegations.length > 0) lines.push("", ...delegations);
   lines.push("", `Children of a root: alp delegation tree <execution-id>`);
   if (thread.status === "open" && activity.kind === "idle") lines.push(`Continue:            alp thread continue ${thread.id}`);
   return lines;
@@ -231,6 +235,20 @@ export function renderThreadContext(threadId: string, snapshot: ThreadContextSna
     ...section("Next actions", snapshot.nextActions),
     "Outcomes:",
     ...snapshot.outcomes.map((outcome) => `  #${outcome.sequence}  ${outcome.executionId}  ${outcome.outcome}  ${outcome.runtime ?? "no runtime"}  ${outcome.finishedAt}`),
+    ...renderThreadDelegations(snapshot),
+  ];
+}
+
+/** Delegation của execution vừa chiếu, như ALP ghi (P4). Không có thì không in gì. */
+export function renderThreadDelegations(snapshot: ThreadContextSnapshotV1 | null): string[] {
+  const delegations = snapshot?.delegations ?? [];
+  if (delegations.length === 0) return [];
+  return [
+    "Delegations (ALP-recorded):",
+    ...delegations.map((entry) => {
+      const evidence = entry.evidenceDigest === null ? "" : `  (evidence ${entry.evidenceDigest.slice(0, 12)}…)`;
+      return `  - ${entry.requestId} → ${entry.target}: ${entry.decision}${evidence}${entry.task === "" ? "" : `  ${entry.task}`}`;
+    }),
   ];
 }
 

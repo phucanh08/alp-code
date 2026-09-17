@@ -46,6 +46,8 @@ function delegationSection(
     "",
     "Add `--background` to keep working while it runs, then follow it with `alp delegation status <id>` and `alp delegation wait <id>`.",
     "",
+    "When it ends, read `alp delegation evidence <id>` and close the loop yourself: `alp delegation accept <request-id>` or `alp delegation reject <request-id> --reason \"<why>\"`. ALP records the verdict; the next execution of this thread reads it.",
+    "",
     "Pass no identity flag — the call inherits yours, and the roles in the table above are the only ones policy accepts. What comes back is a report to verify, not a result to forward unchecked.",
     "",
   ];
@@ -114,6 +116,35 @@ function threadContextSection(
   ];
 }
 
+/**
+ * What ALP recorded about the previous execution's delegations — after the pins, because
+ * it is the one part of the handoff the agent did not write: request, target, and the
+ * parent's verdict on the evidence, so a run that was rejected is not reported as done.
+ */
+function delegationsSection(
+  policy: ExecutionPolicy,
+  handoff: ThreadContextHandoff | null,
+): readonly string[] {
+  if (policy.thread === null || handoff === null || handoff.snapshot === null) return [];
+  const { snapshot } = handoff;
+  const delegations = snapshot.delegations ?? [];
+  const previous = snapshot.outcomes.at(-1);
+  if (delegations.length === 0 || previous === undefined) return [];
+  return [
+    `## Delegations of E-${previous.sequence} (ALP-recorded)`,
+    "",
+    ...delegations.map((entry) => {
+      const verdict = entry.decision === "accepted" && entry.evidenceDigest !== null
+        ? `accepted (evidence ${entry.evidenceDigest.slice(0, 12)}…)`
+        : entry.decision;
+      return `- ${entry.requestId} → ${entry.target}: ${verdict}${entry.task === "" ? "" : ` — ${entry.task}`}`;
+    }),
+    "",
+    "`undecided` means the previous execution never accepted or rejected that work; treat it as unverified.",
+    "",
+  ];
+}
+
 export function renderSessionContext(
   capsule: IdentityCapsule,
   policy: ExecutionPolicy,
@@ -150,6 +181,7 @@ export function renderSessionContext(
     "That table is the whole of your authority. If something you need is blocked, report it — do not route around it.",
     "",
     ...threadContextSection(policy, threadContext),
+    ...delegationsSection(policy, threadContext),
     ...delegationSection(capsule, policy),
     ...continuitySection(policy),
     "## Invariants",

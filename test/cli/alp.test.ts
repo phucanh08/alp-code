@@ -694,6 +694,8 @@ describe("alp delegate", () => {
         async cleanup() { throw new Error("unused"); },
         listExecutions() { return []; },
         async evidence() { throw new Error("unused"); },
+        async accept() { throw new Error("unused"); },
+        async reject() { throw new Error("unused"); },
         async tree() { throw new Error("unused"); },
       },
     });
@@ -734,6 +736,8 @@ describe("alp delegate", () => {
         async cleanup() { throw new Error("unused"); },
         listExecutions() { return []; },
         async evidence() { throw new Error("unused"); },
+        async accept() { throw new Error("unused"); },
+        async reject() { throw new Error("unused"); },
         async tree() { throw new Error("unused"); },
       },
     });
@@ -755,6 +759,8 @@ describe("alp delegate", () => {
       async cleanup() { throw new Error("unused"); },
       listExecutions() { return []; },
       async evidence() { throw new Error("unused"); },
+        async accept() { throw new Error("unused"); },
+        async reject() { throw new Error("unused"); },
       async tree() { throw new Error("unused"); },
     };
     await runDelegateCommand(["worker", "--write-scope", "src/parser", "--write-scope", "docs", "--", "fix", "the", "parser"], { cwd: "/caller/project", env: {}, service });
@@ -781,6 +787,8 @@ describe("alp delegate", () => {
         async cleanup() { throw new Error("unused"); },
         listExecutions() { return []; },
         async evidence() { throw new Error("unused"); },
+        async accept() { throw new Error("unused"); },
+        async reject() { throw new Error("unused"); },
         async tree() { throw new Error("unused"); },
       },
     });
@@ -801,6 +809,8 @@ describe("alp delegate", () => {
         async cleanup() { throw new Error("unused"); },
         listExecutions() { return []; },
         async evidence() { throw new Error("unused"); },
+        async accept() { throw new Error("unused"); },
+        async reject() { throw new Error("unused"); },
         async tree() { throw new Error("unused"); },
       },
     })).rejects.toThrow(/--runtime` không còn tồn tại/);
@@ -848,6 +858,8 @@ function treeNode(overrides: Partial<ExecutionTreeNode> = {}): ExecutionTreeNode
     terminationReason: null,
     requiredEvidence: [],
     evidence: null,
+    taskExcerpt: null,
+    acceptance: null,
     children: [],
     ...overrides,
   };
@@ -905,6 +917,8 @@ function lifecycleService(view: ExecutionTreeView) {
       async cleanup() { throw new Error("unused"); },
       listExecutions() { return []; },
       async evidence() { throw new Error("unused"); },
+        async accept() { throw new Error("unused"); },
+        async reject() { throw new Error("unused"); },
       async tree(executionId: string) { asked.push(executionId); return view; },
     },
   };
@@ -938,6 +952,8 @@ describe("alp delegation tree", () => {
       async cleanup() { throw new Error("unused"); },
       listExecutions() { return []; },
       async evidence() { throw new Error("unused"); },
+        async accept() { throw new Error("unused"); },
+        async reject() { throw new Error("unused"); },
       async tree() { throw new Error("unused"); },
     };
 

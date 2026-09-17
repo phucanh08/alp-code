@@ -516,6 +516,13 @@ Invariant, theo thứ tự quan trọng:
   canonical. Rev 0 là "chưa có". Nguồn duy nhất là **pin** — projector không đọc transcript.
   Checkpoint mất/hỏng hash → snapshot `degraded`, chỉ kết cục đi tiếp. Snapshot đọc lên lệch
   digest → `THREAD_CONTEXT_TAMPERED`.
+- **Nguồn thứ hai là phán quyết ALP ghi, không phải pin.** `projectContext` đọc graph của root
+  vừa settle (ngoài lease, `summarizeDelegations`) và đưa con trực tiếp vào `delegations`
+  (`{requestId, target, task, decision, evidenceDigest}`, 20 mới nhất) — field vắng khi
+  không có, nên digest snapshot cũ không đổi. Render ra `## Delegations of E-n (ALP-recorded)`;
+  agent không viết được dòng này vì nó chỉ tồn tại khi node có `acceptance`. Cắt: outcomes cũ
+  rớt trước, delegations rớt sau cùng. History boundary của root mang đếm
+  `{accepted, rejected, cancelled, undecided}`.
 - **History là bản ghi, không bịa.** `HistoryBridgeRegistry` hỏi bridge của runtime
   (`ClaudeHistoryBridge` đọc transcript JSONL qua pointer `context/runtime-session.json` mà hook
   `session-boot`/`session-end` để lại; `CodexHistoryBridge` tương tự) — chạy **ngoài** lease,
@@ -638,6 +645,16 @@ registry, không có `--backend`, không có fallback (2026-09-03).
   thành `ExecutionEvidenceV1`, mỗi item mang `provenance`; evaluator so với `requiredEvidence`
   của request. `src/delegation` không import `src/thread/`: registry bridge được truyền vào
   từ composition root, mặc định `noHistoryBridges()`.
+- **Acceptance (2026-09-17)**: `accept(requestId)`/`reject(requestId, {reasons})` là hành động
+  của **cha đã xác thực** (`authenticateParent` trước mọi thứ), trên **con trực tiếp đã
+  terminal**, **một lần** — `ACCEPTANCE_NOT_PARENT | ACCEPTANCE_SUBJECT_RUNNING |
+  ACCEPTANCE_ALREADY_DECIDED` do `assertAcceptable` (pure, `src/execution/graph`) quyết, và
+  service hỏi nó *trước* khi thu evidence để một lệnh sai thẩm quyền không kéo verify. Qua
+  guard, evidence được thu nếu chưa có; `graph.acceptChild` ghi `acceptance {decision,
+  evidenceDigest, decidedAt}` lên node dưới lease (status không đổi), rồi
+  `<parent>/acceptance/<requestId>.json` (`AcceptanceRecordV1`, reasons đã redact). Node còn
+  active hay root mang `acceptance` ⇒ graph không đọc được. `src/execution/acceptance.ts`
+  (`delegationDecision`, `summarizeDelegations`) là chỗ duy nhất Thread hỏi về phán quyết.
 
 Store có hai bản: `InMemoryDelegationExecutionStore` (test) và `FileDelegationExecutionStore`
 (atomic write, versioned document).
@@ -830,7 +847,8 @@ dùng còn nằm trong đó đều là dữ liệu hẹn ngày mất.
   executions/<exec_id>/       MỘT root cho cả phiên root lẫn execution được uỷ
     policy.json                ExecutionPolicy snapshot                  (0600)
     state.json                 StoredExecutionState                      (0600)
-    evidence.json              ExecutionEvidenceV1 — chỉ `wait`/`evidence` ghi  (0600)
+    evidence.json              ExecutionEvidenceV1 — chỉ `wait`/`evidence`/`accept`/`reject` ghi  (0600)
+    acceptance/<requestId>.json  AcceptanceRecordV1 — phán quyết của node NÀY về con của nó  (0600)
     runtime/                   capsule, session-context.md, config, skill-roots
                                + task.md chỉ khi headless
     context/                   sống sót cleanup của runtime/             (0700)

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { RuntimeId } from "../agents/types";
 import type { ContinuityCheckpointV1 } from "../context/types";
 import type { ExecutionThreadBinding } from "../execution/types";
+import { countDelegations, summarizeDelegations, type DelegationCounts, type DelegationSummary } from "../execution/acceptance";
 import type { ExecutionProbe } from "../execution/graph/execution-graph-service";
 import type { ExecutionGraphDocument, ExecutionNode } from "../execution/graph/types";
 import { isActiveNodeStatus, isTerminalNodeStatus, type ExecutionNodeStatus } from "../execution/graph/types";
@@ -78,6 +79,8 @@ export interface ThreadServiceOptions {
   readonly reservationTtlMs?: number;
   /** Bridge đọc transcript theo runtime. Thiếu = mọi runtime `unsupported`. */
   readonly history?: HistoryBridgeRegistry;
+  /** Bao nhiêu delegation gần nhất của E-n đi vào snapshot. Chỉ test đổi. */
+  readonly delegationLimit?: number;
 }
 
 /**
@@ -125,6 +128,7 @@ export class ThreadService {
   private readonly contextMaxBytes: number | undefined;
   private readonly reservationTtlMs: number;
   private readonly history: HistoryBridgeRegistry;
+  private readonly delegationLimit: number | undefined;
 
   constructor(options: ThreadServiceOptions) {
     this.store = options.store;
@@ -133,6 +137,20 @@ export class ThreadService {
     this.contextMaxBytes = options.contextMaxBytes;
     this.reservationTtlMs = options.reservationTtlMs ?? THREAD_RESERVATION_TTL_MS;
     this.history = options.history ?? new HistoryBridgeRegistry();
+    this.delegationLimit = options.delegationLimit;
+  }
+
+  /**
+   * Delegation của một root như cây ghi (P4) — đọc **ngoài** lease Thread, vì graph có lease
+   * riêng và hai lease không bao giờ lồng nhau. Không có cây (execution legacy) = không có gì.
+   */
+  private async delegationsOf(executionId: string): Promise<{ readonly summary: readonly DelegationSummary[]; readonly counts: DelegationCounts } | null> {
+    const graph = await this.graph.findGraphFor(executionId);
+    if (!graph) return null;
+    return {
+      summary: summarizeDelegations(graph, executionId, this.delegationLimit === undefined ? {} : { limit: this.delegationLimit }),
+      counts: countDelegations(graph, executionId),
+    };
   }
 
   async createThread(input: CreateThreadInput): Promise<ThreadDocumentV1> {
@@ -227,6 +245,7 @@ export class ThreadService {
   ): Promise<ThreadDocumentV1> {
     // Một lần chiếu trước đã chết sau khi ghi payload thì tên `context/<N+1>.json` đã bị chiếm.
     await this.store.collectOrphans(threadId);
+    const delegations = await this.delegationsOf(executionId);
     return this.store.withExclusiveLease(threadId, async (lease) => {
       const thread = lease.current();
       const index = thread.executions.findIndex((ref) => ref.executionId === executionId);
@@ -263,6 +282,7 @@ export class ThreadService {
         },
         checkpoint: input.checkpoint,
         createdAt: timestamp,
+        ...(delegations === null ? {} : { delegations: delegations.summary }),
         ...(this.contextMaxBytes === undefined ? {} : { maxBytes: this.contextMaxBytes }),
       });
       const artifact = await lease.writePayload("context", String(snapshot.revision), snapshot);
@@ -327,6 +347,7 @@ export class ThreadService {
       pinnedVersion: null,
       skipped: 0,
     }));
+    const delegations = known.settled === null ? null : await this.delegationsOf(source.executionId);
 
     return this.store.withExclusiveLease(threadId, async (lease) => {
       const thread = lease.current();
@@ -357,6 +378,7 @@ export class ThreadService {
           pinnedVersion: delta.pinnedVersion,
           collected: entryCount,
           skipped,
+          ...(delegations === null ? {} : { delegations: delegations.counts }),
         };
         fresh.push(boundary);
       }

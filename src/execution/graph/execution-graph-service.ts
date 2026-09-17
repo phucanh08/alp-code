@@ -17,6 +17,7 @@ import {
   subtreeOf,
   type CancellationReason,
   type CancellationRecord,
+  type ExecutionAcceptanceRef,
   type ExecutionEvidenceRef,
   type ExecutionGraphDocument,
   type ExecutionGraphId,
@@ -25,6 +26,7 @@ import {
   type ExecutionNodeError,
   type ExecutionNodeStatus,
   type ExecutionReservation,
+  taskExcerpt,
 } from "./types";
 
 /**
@@ -416,6 +418,8 @@ export class ExecutionGraphService {
       terminationReason: null,
       requiredEvidence: [],
       evidence: null,
+      taskExcerpt: null,
+      acceptance: null,
     };
     const graph: ExecutionGraphDocument = {
       version: 1,
@@ -552,6 +556,34 @@ export class ExecutionGraphService {
     });
   }
 
+  /**
+   * Phán quyết của cha trên một con đã dừng — ghi một lần, dưới lease.
+   *
+   * Thứ tự kiểm là thứ tự của bảng guard P4: capability trước (một binding giả không được
+   * biết gì về cây), rồi subject có tồn tại, rồi `assertAcceptable`. Node không đổi trạng
+   * thái: acceptance là lời phán *về* một kết cục, không phải kết cục.
+   */
+  async acceptChild(binding: ExecutionBinding, requestId: string, ref: ExecutionAcceptanceRef): Promise<ExecutionNode> {
+    return this.store.withExclusiveLease(binding.graphId, async (lease) => {
+      const graph = await lease.read();
+      const parent = this.authenticate(graph, binding);
+      const subject = graph.nodes.find((node) => node.requestId === requestId);
+      if (!subject) {
+        throw new ExecutionGraphError("EXECUTION_NODE_NOT_FOUND", `request \`${requestId}\` is not a node of graph \`${binding.graphId}\``);
+      }
+      assertAcceptable(parent, subject);
+      const updatedAt = this.now().toISOString();
+      const next = await lease.write(
+        withNode(graph, subject.executionId, (current) => ({
+          ...current,
+          acceptance: { decision: ref.decision, evidenceDigest: ref.evidenceDigest, decidedAt: ref.decidedAt },
+          updatedAt,
+        })),
+      );
+      return findNode(next, subject.executionId) as ExecutionNode;
+    });
+  }
+
   /** Execution chết trước khi chạm tới backend — vẫn phải là một node terminal đọc được. */
   async failExecution(binding: ExecutionBinding, error: unknown): Promise<ExecutionNode> {
     return this.finishExecution(binding, { status: "failed", error: errorRecord(error, ROOT_START_FAILED) });
@@ -658,6 +690,7 @@ export class ExecutionGraphService {
         createdAt: timestamp,
         expiresAt: new Date(now.getTime() + graph.limits.reservationTtlMs).toISOString(),
         requiredEvidence: request.requiredEvidence ?? [],
+        taskExcerpt: taskExcerpt(request.task),
       };
       // Reservation hết hạn bị dọn trong chính lần ghi này: chúng đã không còn tính vào
       // capacity, và để lại thì một request cũ vẫn chặn `requestId` của nó mãi mãi.
@@ -787,6 +820,8 @@ export class ExecutionGraphService {
         terminationReason: null,
         requiredEvidence: reservation.requiredEvidence,
         evidence: null,
+        taskExcerpt: reservation.taskExcerpt,
+        acceptance: null,
       };
       const queued = await lease.write({
         ...graph,
@@ -1245,6 +1280,37 @@ function assertParentActive(node: ExecutionNode): void {
 }
 
 /**
+ * Ai được nghiệm thu cái gì — thuần, để `DelegationService` hỏi trước khi chạy verify.
+ *
+ * Chỉ cha trực tiếp: một anh em, một ông, hay chính subject đều là `ACCEPTANCE_NOT_PARENT`.
+ * Subject phải đã dừng — kể cả `cancelled`: bị huỷ là một kết cục, cha vẫn được ghi phán
+ * quyết về nó. Và một lần: nghiệm thu không có "đổi ý".
+ */
+export function assertAcceptable(parent: Pick<ExecutionNode, "executionId">, subject: ExecutionNode): void {
+  if (subject.parentExecutionId !== parent.executionId) {
+    throw new ExecutionGraphError(
+      "ACCEPTANCE_NOT_PARENT",
+      `execution \`${parent.executionId}\` is not the parent of \`${subject.executionId}\``,
+      { executionId: subject.executionId },
+    );
+  }
+  if (!isTerminalNodeStatus(subject.status)) {
+    throw new ExecutionGraphError(
+      "ACCEPTANCE_SUBJECT_RUNNING",
+      `execution \`${subject.executionId}\` is still \`${subject.status}\`; acceptance waits for it to end`,
+      { executionId: subject.executionId },
+    );
+  }
+  if (subject.acceptance !== null) {
+    throw new ExecutionGraphError(
+      "ACCEPTANCE_ALREADY_DECIDED",
+      `execution \`${subject.executionId}\` was already ${subject.acceptance.decision} at ${subject.acceptance.decidedAt}`,
+      { executionId: subject.executionId },
+    );
+  }
+}
+
+/**
  * Một tổ tiên đang bị huỷ thì cả nhánh đang bị huỷ.
  *
  * Kiểm cả chuỗi chứ không chỉ cha: lệnh huỷ đánh dấu node bị huỷ rồi mới lan xuống, nên có
@@ -1397,6 +1463,10 @@ export interface ExecutionTreeNode {
   readonly requiredEvidence: readonly string[];
   /** Tham chiếu tới `evidence.json` đã thu, hoặc `null` khi chưa thu. */
   readonly evidence: ExecutionEvidenceRef | null;
+  /** Đầu task lúc giao (P4); `null` ở root. */
+  readonly taskExcerpt: string | null;
+  /** Phán quyết của cha (P4), hoặc `null` khi chưa quyết. */
+  readonly acceptance: ExecutionAcceptanceRef | null;
   readonly children: readonly ExecutionTreeNode[];
 }
 
@@ -1476,6 +1546,8 @@ function treeNodeOf(
     terminationReason: node.terminationReason,
     requiredEvidence: node.requiredEvidence,
     evidence: node.evidence,
+    taskExcerpt: node.taskExcerpt,
+    acceptance: node.acceptance,
     children: Object.freeze(
       [...graph.nodes.filter((candidate) =>
         candidate.parentExecutionId === node.executionId && !seen.has(candidate.executionId))]

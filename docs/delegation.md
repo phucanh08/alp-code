@@ -253,6 +253,74 @@ lại; `--revoke` rút. Lý do trust: lệnh chạy bằng process ALP **ngoài*
 workspace của con, env chỉ `PATH`+`HOME`; một repo lạ mang `.alp/settings.json` không được
 quyền chạy gì trên máy anh chỉ vì anh đã `alp delegate` vào nó.
 
+### `alp delegation accept|reject`: cha nghiệm thu, ALP ghi phán quyết
+
+Evidence trả lời "đã xảy ra gì"; nó chưa trả lời "cha có nhận kết quả này không". Từ
+2026-09-17 cha đóng vòng bằng một hành động **được xác thực**:
+
+```bash
+alp delegation accept req_...  [--reason "..."]...  [--json]
+alp delegation reject req_...   --reason "..."  [--reason "..."]...  [--json]
+```
+
+Khoá là **request ID** (thứ `alp delegate` trả về và `tree` in `req …`), không phải execution
+ID: cha nghiệm thu *việc nó đã giao*, không phải một node nó tình cờ biết ID. Trình tự, theo
+thứ tự từ chối:
+
+1. Binding cha đọc từ env (`readBindingFromEnvironment`) → `graph.authenticateParent`; sai ⇒
+   `CAPABILITY_INVALID`. Không có cách nào nghiệm thu từ ngoài cây.
+2. Request phải là **con trực tiếp** của node cha; cháu, anh em, chính mình, hay request của
+   root khác ⇒ `ACCEPTANCE_NOT_PARENT` (từ CLI thì `EXECUTION_NOT_FOUND` — cây khác không lộ
+   node của nó).
+3. Con phải đã terminal: `queued`/`running` ⇒ `ACCEPTANCE_SUBJECT_RUNNING`. Muốn từ chối một
+   con đang chạy thì `cancel` trước rồi `reject`.
+4. Một request quyết đúng **một** lần: `ACCEPTANCE_ALREADY_DECIDED`. Không có "đổi ý" — đổi
+   ý là giao lại.
+5. `reject` bắt buộc `--reason`; `accept` thì tuỳ. Lý do rỗng ⇒ `INVALID_REQUEST` trước khi
+   động vào gì.
+
+Ba guard trên chạy **trước** khi thu evidence: một lệnh bị từ chối vì thẩm quyền không được
+kéo `npm test`. Qua guard rồi, `accept` lẫn `reject` đều thu evidence nếu chưa có (idempotent
+với `wait`) — phán quyết luôn trỏ tới một `evidence.json` cụ thể qua `evidenceDigest`, kể cả
+khi cha chưa từng `wait`. Evidence thu lỗi ⇒ lệnh lỗi, không có phán quyết mù.
+
+Kết quả ghi ở hai chỗ, cả hai do ALP viết:
+
+- **Node của cây**: `acceptance = { decision, evidenceDigest, decidedAt }`, revision +1, status
+  không đổi (một con `failed` được `accept` vẫn là `failed` — nghiệm thu không viết lại lịch
+  sử). Invariants từ chối graph có `acceptance` trên node còn active hay trên root.
+- **Record**: `<executions>/<parent>/acceptance/<requestId>.json` (`AcceptanceRecordV1`, 0600,
+  atomic) mang thêm `reasons` — mỗi lý do đi qua `history-redact`, cắt ở 2 000 byte. Record nằm
+  dưới thư mục **cha**, vì phán quyết là của cha; `cleanup` con không xoá nó.
+
+Phán quyết hiện ở mọi chỗ cha nhìn: `tree` thêm `decision accepted|rejected` (hoặc
+`decision undecided` cho con đã kết thúc mà chưa ai quyết), `evidence` in dòng `decision …`,
+và — quan trọng nhất — **Thread context** của lần chạy sau (xem § "Phán quyết vào Thread").
+
+### Phán quyết vào Thread: nguồn thứ hai, không phải pin
+
+Projector Thread có đúng hai nguồn: pin của agent (`checkpoint.json`) và **delegations do ALP
+ghi**. Khi root settle, `ThreadService.projectContext` đọc cây của root đó (ngoài lease) và
+đưa mọi con trực tiếp vào snapshot, 20 cái mới nhất theo `createdAt`:
+
+```text
+## Delegations of E-3 (ALP-recorded)
+- req_7 → worker: accepted (evidence 3f9c0a1b2c3d…) — Sửa parser cho input rỗng
+- req_8 → review: rejected (evidence 91a0…) — Review patch parser
+- req_9 → search: undecided — Tìm chỗ gọi parser
+```
+
+Dòng này agent **không viết được**: pin viết "đã accept" chỉ là một pin; mục ở đây chỉ có khi
+graph có `acceptance`. `undecided` được in ra chứ không giấu — con đã xong mà cha chưa quyết
+là một việc còn nợ, và rule của `main` bắt nó đóng mọi delegation bằng `accept`/`reject`.
+`cancelled` cũng là một kết cục (`decision: cancelled`) để lượt sau không giao lại việc đã bị
+huỷ có chủ ý. `alp thread context|show` in cùng danh sách dưới `Delegations (ALP-recorded):`;
+history boundary của root mang đếm `{ accepted, rejected, cancelled, undecided }`.
+
+Cắt tất định khi quá 32 KiB: outcomes cũ rớt **trước**, delegations rớt sau cùng (cũ nhất
+trước) — phán quyết là thứ đắt nhất trong snapshot vì không tái tạo được từ pin. Snapshot không
+có delegation thì không có field: digest của mọi snapshot cũ giữ nguyên.
+
 ### `delegatesTo` cho phép, `reportsTo` chỉ mô tả
 
 Đúng **một** nguồn quyền: `target ∈ parent.delegatesTo`. `reportsTo` nói kết quả đi ngược lên
@@ -344,6 +412,8 @@ alp delegation tree     exec_...  [--json]
 alp delegation status   exec_...
 alp delegation wait     exec_...
 alp delegation evidence exec_...  [--json]
+alp delegation accept   req_...   [--reason "..."]... [--json]
+alp delegation reject   req_...    --reason "..."     [--json]
 alp delegation cancel   exec_...
 alp delegation cleanup  exec_...
 alp delegation list
@@ -376,6 +446,8 @@ không phải thứ để in ra.
 `tree` không in capability hash, fingerprint của request, hay reservation internals. Nó in
 `requestId` để nối lại với lệnh đã gọi, và — khi request có `--require-evidence` — verdict
 đã thu (`evidence satisfied|unsatisfied|unknown`) hoặc `evidence pending` nếu chưa ai `wait`.
+Con đã kết thúc còn mang `decision accepted|rejected`, hoặc `decision undecided` khi cha chưa
+`accept`/`reject`.
 
 `evidence` in kết luận trước, rồi từng mục đã đòi, rồi từng item với nguồn và độ tin:
 
@@ -384,6 +456,7 @@ evidence exec_worker  ·  satisfied  ·  collected 2026-09-17T02:14:05.000Z
 digest 3f9c…  ·  history complete
 required: change  ·  present
 required: verify:test  ·  present
+decision accepted  ·  2026-09-17T02:20:11.000Z
 
   change         observed      git  2 path(s)
   change         observed      history-bridge  2 path(s)

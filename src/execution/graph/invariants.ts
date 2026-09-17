@@ -185,18 +185,37 @@ function assertNodeShape(value: unknown, graphId: string): ExecutionNode {
       invalid(`active node \`${String(node.executionId)}\` must not carry evidence`);
     }
   }
+  if (node.acceptance !== undefined && node.acceptance !== null) {
+    assertAcceptanceRef(node.acceptance, `node \`${String(node.executionId)}\`.acceptance`);
+    if (!terminal) invalid(`active node \`${String(node.executionId)}\` must not carry an acceptance`);
+    if (node.parentExecutionId === null) invalid("the root node has no parent to accept it");
+  }
+  if (node.taskExcerpt !== undefined && node.taskExcerpt !== null && typeof node.taskExcerpt !== "string") {
+    invalid(`node \`${String(node.executionId)}\`.taskExcerpt must be null or a string`);
+  }
   if (node.thread !== undefined) assertThreadBinding(node.thread, `node \`${String(node.executionId)}\`.thread`);
-  if (node.thread === undefined || node.requiredEvidence === undefined || node.evidence === undefined) {
-    // Legacy: node ghi trước khi có Thread / evidence. Trả bản có đủ key để mọi document ghi
-    // ra đều tường minh.
+  if (node.thread === undefined || node.requiredEvidence === undefined || node.evidence === undefined
+    || node.taskExcerpt === undefined || node.acceptance === undefined) {
+    // Legacy: node ghi trước khi có Thread / evidence / acceptance. Trả bản có đủ key để mọi
+    // document ghi ra đều tường minh.
     return {
       ...node,
       thread: node.thread ?? null,
       requiredEvidence: node.requiredEvidence ?? [],
       evidence: node.evidence ?? null,
+      taskExcerpt: node.taskExcerpt ?? null,
+      acceptance: node.acceptance ?? null,
     } as unknown as ExecutionNode;
   }
   return node as unknown as ExecutionNode;
+}
+
+function assertAcceptanceRef(value: unknown, field: string): void {
+  if (typeof value !== "object" || value === null) invalid(`${field} must be null or an acceptance ref`);
+  const ref = value as Record<string, unknown>;
+  if (ref.decision !== "accepted" && ref.decision !== "rejected") invalid(`${field}.decision must be accepted or rejected`);
+  assertHash(ref.evidenceDigest, `${field}.evidenceDigest`);
+  assertTimestamp(ref.decidedAt, `${field}.decidedAt`);
 }
 
 function assertRequiredEvidence(value: unknown, field: string): void {
@@ -230,7 +249,13 @@ function assertReservationShape(value: unknown): ExecutionReservation {
   assertTimestamp(reservation.createdAt, "reservation.createdAt");
   assertTimestamp(reservation.expiresAt, "reservation.expiresAt");
   if (reservation.requiredEvidence !== undefined) assertRequiredEvidence(reservation.requiredEvidence, "reservation.requiredEvidence");
-  return (reservation.requiredEvidence === undefined ? { ...reservation, requiredEvidence: [] } : reservation) as unknown as ExecutionReservation;
+  if (reservation.taskExcerpt !== undefined && reservation.taskExcerpt !== null && typeof reservation.taskExcerpt !== "string") {
+    invalid("reservation.taskExcerpt must be null or a string");
+  }
+  if (reservation.requiredEvidence === undefined || reservation.taskExcerpt === undefined) {
+    return { ...reservation, requiredEvidence: reservation.requiredEvidence ?? [], taskExcerpt: reservation.taskExcerpt ?? null } as unknown as ExecutionReservation;
+  }
+  return reservation as unknown as ExecutionReservation;
 }
 
 /**

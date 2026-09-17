@@ -526,6 +526,8 @@ function helpText(): string {
     "  alp principal show|set",
     "  alp delegate <role> [options] [--require-evidence change|verify:<id>]... -- <task>",
     "  alp delegation tree|status|wait|cancel|cleanup|evidence <execution-id> [--json]",
+    "  alp delegation accept <request-id> [--reason <why>]... [--json]",
+    "  alp delegation reject <request-id> --reason <why> [--reason <why>]... [--json]",
     "  alp delegation list",
     "  alp context status|validate [execution-id]",
     "  alp context pin <decision|constraint|open-item|next-action> -- <text>",

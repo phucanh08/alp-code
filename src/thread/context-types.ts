@@ -30,6 +30,21 @@ export interface ThreadContextOutcome {
   readonly finishedAt: string;
 }
 
+/**
+ * Một delegation của execution nguồn, như ALP ghi nó (P4): request, vai nhận, đầu task, phán
+ * quyết của cha và digest evidence đã nhìn. Không phải pin — agent không viết được dòng này.
+ */
+export interface ThreadContextDelegation {
+  readonly requestId: string;
+  readonly target: string;
+  /** Đầu task lúc giao; rỗng khi node legacy không giữ. */
+  readonly task: string;
+  readonly decision: "accepted" | "rejected" | "cancelled" | "undecided";
+  readonly evidenceDigest: string | null;
+}
+
+export const THREAD_CONTEXT_DELEGATION_DECISIONS: readonly ThreadContextDelegation["decision"][] = Object.freeze(["accepted", "rejected", "cancelled", "undecided"]);
+
 export interface ThreadContextSnapshotV1 {
   readonly version: 1;
   readonly threadId: ThreadId;
@@ -41,6 +56,11 @@ export interface ThreadContextSnapshotV1 {
   readonly openItems: readonly ContextLine[];
   readonly nextActions: readonly ContextLine[];
   readonly outcomes: readonly ThreadContextOutcome[];
+  /**
+   * Delegation của *riêng* execution nguồn, N gần nhất; vắng mặt (không phải `[]`) khi nó
+   * không giao việc gì — để snapshot ghi trước P4 vẫn khớp digest.
+   */
+  readonly delegations?: readonly ThreadContextDelegation[];
   /**
    * `true` khi revision này được chiếu mà không có checkpoint tin được của execution nguồn
    * (mất file, integrity sai): chỉ có outcome, pins của execution đó không bao giờ tới.
@@ -164,6 +184,26 @@ function assertOutcomes(value: unknown): readonly ThreadContextOutcome[] {
   });
 }
 
+function assertDelegations(value: unknown): readonly ThreadContextDelegation[] {
+  if (!Array.isArray(value)) tampered("delegations must be an array");
+  return value.map((entry, index) => {
+    const field = `delegations[${index}]`;
+    if (!isRecord(entry)) tampered(`${field} must be an object`);
+    if (typeof entry.requestId !== "string" || entry.requestId === "") tampered(`${field}.requestId is invalid`);
+    if (typeof entry.target !== "string" || entry.target === "") tampered(`${field}.target is invalid`);
+    if (typeof entry.task !== "string") tampered(`${field}.task is invalid`);
+    if (!THREAD_CONTEXT_DELEGATION_DECISIONS.includes(entry.decision as ThreadContextDelegation["decision"])) tampered(`${field}.decision is invalid`);
+    if (entry.evidenceDigest !== null && (typeof entry.evidenceDigest !== "string" || !HEX_64.test(entry.evidenceDigest))) tampered(`${field}.evidenceDigest is invalid`);
+    return {
+      requestId: entry.requestId,
+      target: entry.target,
+      task: entry.task,
+      decision: entry.decision as ThreadContextDelegation["decision"],
+      evidenceDigest: entry.evidenceDigest as string | null,
+    };
+  });
+}
+
 /**
  * Snapshot đọc từ đĩa phải tự nhất quán **và** khớp digest mà index (hoặc binding) ghi.
  * Lệch ở đâu cũng là `THREAD_CONTEXT_TAMPERED` — không rebuild im lặng, không chấp nhận
@@ -193,6 +233,7 @@ export function assertThreadContextSnapshot(
     openItems: assertLines(value.openItems, "openItems"),
     nextActions: assertLines(value.nextActions, "nextActions"),
     outcomes: assertOutcomes(value.outcomes),
+    ...(value.delegations === undefined ? {} : { delegations: assertDelegations(value.delegations) }),
     degraded: value.degraded,
     createdAt: value.createdAt,
     digest: value.digest,

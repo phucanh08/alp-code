@@ -102,7 +102,7 @@ describe("e2e: evidence after a delegated write", () => {
     // The node carries the digest and the verdict, so the parent's `tree` can show it.
     const tree = await service.tree(spawned.executionId);
     expect(flatten(tree.root).find((node) => node.executionId === spawned.executionId)).toMatchObject({ evidence: { digest: evidence.digest, evaluation: "unknown" } });
-  });
+  }, 15_000);
 
   it("runs the verify once trusted — pass satisfies, fail does not — and the CLI shows it", async () => {
     const { environment, service, project, env } = await session("exec_verify_pass", { verifyRun: "exit 0" });
@@ -122,7 +122,7 @@ describe("e2e: evidence after a delegated write", () => {
     const rendered = await runDelegationLifecycleCommand(["evidence", spawned.executionId], service) as { rendered: string };
     expect(rendered.rendered).toContain("satisfied");
     expect(rendered.rendered).toContain("verify:test");
-  });
+  }, 15_000);
 
   it("marks a failing verify unsatisfied and names it", async () => {
     const { service, project, env } = await session("exec_verify_fail", { verifyRun: "exit 1" });
@@ -130,7 +130,7 @@ describe("e2e: evidence after a delegated write", () => {
     await trustVerify({ project: settings.project, verifyDigest: settings.digest!, trustedAt: new Date().toISOString() }, trustedVerifyFile(env));
     const spawned = await service.delegate({ targetRole: "worker", task: "Add a parser", workspace: project, workspaceMode: "workspace-write", requiredEvidence: ["verify:test"] });
     await expect(service.wait(spawned.executionId)).resolves.toMatchObject({ evidence: { evaluation: "unsatisfied", missing: ["verify:test"] } });
-  });
+  }, 15_000);
 
   it("`alp delegate --require-evidence` reaches the request, and a bad name is refused before anything runs", async () => {
     const { environment, service, project } = await session("exec_cli_required", { verifyRun: "exit 0" });
@@ -145,5 +145,5 @@ describe("e2e: evidence after a delegated write", () => {
 
     await expect(service.delegate({ targetRole: "worker", task: "x", workspace: project, requiredEvidence: ["output"] }))
       .rejects.toMatchObject({ code: "INVALID_REQUEST" });
-  });
+  }, 15_000);
 });

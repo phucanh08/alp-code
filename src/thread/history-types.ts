@@ -82,6 +82,16 @@ export interface ThreadExecutionBoundary extends ThreadEntryBase {
   /** Số entry đã mirror / số dòng bỏ qua vì không parse được. */
   readonly collected: number;
   readonly skipped: number;
+  /**
+   * Root này đã giao bao nhiêu việc và cha đã nói gì về chúng (P4), đếm từ cây lúc settle.
+   * Vắng mặt ở boundary ghi trước P4 và ở execution không có cây.
+   */
+  readonly delegations?: {
+    readonly accepted: number;
+    readonly rejected: number;
+    readonly cancelled: number;
+    readonly undecided: number;
+  };
 }
 
 export type ThreadEntry =

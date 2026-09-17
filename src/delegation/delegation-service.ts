@@ -5,6 +5,7 @@ import { rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { AgentRegistry, RuntimeId } from "../agents/types";
 import type { BackendExecutionResult, BackendExecutionStatus, ExecutionBackend } from "../backend/execution-backend";
+import { readAcceptanceRecord, writeAcceptanceRecord, type AcceptanceRecordV1 } from "../execution/acceptance";
 import { FileSessionApprovals } from "../execution/approvals";
 import {
   collectExecutionEvidence,
@@ -25,6 +26,7 @@ import type { ExecutionService } from "../execution/execution-service";
 import { executionArtifactPaths } from "../execution/execution-store";
 import {
   PRINCIPAL_REQUESTER,
+  assertAcceptable,
   type ChildRequest,
   type ExecutionBinding,
   type ExecutionGraphService,
@@ -33,7 +35,7 @@ import {
   type ProbeStatus,
 } from "../execution/graph/execution-graph-service";
 import { ExecutionGraphError } from "../execution/graph/errors";
-import { findNode, isTerminalNodeStatus, type ExecutionGraphDocument, type ExecutionNode } from "../execution/graph/types";
+import { findNode, isTerminalNodeStatus, type AcceptanceDecision, type ExecutionAcceptanceRef, type ExecutionGraphDocument, type ExecutionNode } from "../execution/graph/types";
 import type { ExecutionAuthorization, MaterializeExecutionInput, PreparedExecution } from "../execution/types";
 import type { MemoryService } from "../memory/memory-service";
 import type { PolicyEngine } from "../policy/policy-engine";
@@ -86,6 +88,7 @@ export type DelegationGraph = Pick<
   | "getGraph"
   | "getExecutionTree"
   | "recordEvidence"
+  | "acceptChild"
 >;
 
 /**
@@ -114,6 +117,19 @@ export interface DelegationEvidenceView {
   readonly completeness: ExecutionEvidenceV1["completeness"];
   readonly collectedAt: string;
   readonly items: readonly EvidenceItem[];
+  /** Phán quyết của cha, nếu đã có (P4). */
+  readonly acceptance: ExecutionAcceptanceRef | null;
+}
+
+/** Cái `alp delegation accept|reject` in ra. */
+export interface DelegationAcceptanceView {
+  readonly requestId: string;
+  readonly executionId: string;
+  readonly decision: AcceptanceDecision;
+  readonly evidenceDigest: string;
+  readonly evaluation: CollectedEvidence["evaluation"];
+  readonly decidedAt: string;
+  readonly reasons: readonly string[];
 }
 
 export interface DelegationServiceOptions {
@@ -604,6 +620,57 @@ export class DelegationService {
       completeness: collected.evidence.completeness,
       collectedAt: collected.evidence.collectedAt,
       items: collected.evidence.items,
+      acceptance: node.acceptance,
+    });
+  }
+
+  /**
+   * Nghiệm thu (P4): cha đọc evidence rồi nói "nhận". Chỉ cha, chỉ khi con đã dừng, chỉ một
+   * lần — cây kiểm cả ba (`assertAcceptable`) và kiểm capability trước đó. Evidence chưa thu
+   * thì thu ngay ở đây: một phán quyết luôn trỏ tới một `evidence.json` có thật.
+   */
+  async accept(requestId: string, options: { readonly reasons?: readonly string[] } = {}): Promise<DelegationAcceptanceView> {
+    return this.decide(requestId, "accepted", options.reasons ?? []);
+  }
+
+  /** Như `accept`, nhưng từ chối thì phải nói vì sao: một lời "không" trống là thứ lần chạy sau không dùng được. */
+  async reject(requestId: string, options: { readonly reasons: readonly string[] }): Promise<DelegationAcceptanceView> {
+    const reasons = options.reasons.filter((reason) => reason.trim() !== "");
+    if (reasons.length === 0) throw new DelegationError("INVALID_REQUEST", "reject requires at least one --reason");
+    return this.decide(requestId, "rejected", reasons);
+  }
+
+  private async decide(requestId: string, decision: AcceptanceDecision, reasons: readonly string[]): Promise<DelegationAcceptanceView> {
+    const binding = this.requireBinding();
+    const parent = await this.graph.authenticateParent(binding);
+    const graph = await this.reconcileGraph(parent.graph.graphId);
+    const subject = graph.nodes.find((node) => node.requestId === requestId);
+    if (!subject) throw new DelegationError("EXECUTION_NOT_FOUND", `request \`${requestId}\` is not a delegation of this execution`);
+    // Guards first, so a stranger or a still-running subject never triggers a verify run.
+    assertAcceptable(parent.node, subject);
+    const collected = await this.collectEvidence(graph.graphId, subject.executionId);
+    const decidedAt = this.now().toISOString();
+    const decided = await this.graph.acceptChild(binding, requestId, { decision, evidenceDigest: collected.evidence.digest, decidedAt });
+    const record: AcceptanceRecordV1 = {
+      version: 1,
+      requestId,
+      subjectExecutionId: decided.executionId,
+      acceptedByExecutionId: parent.node.executionId,
+      decision,
+      evidenceDigest: collected.evidence.digest,
+      reasons,
+      decidedAt,
+    };
+    await writeAcceptanceRecord(this.executionsRoot, record);
+    const written = await readAcceptanceRecord(this.executionsRoot, parent.node.executionId, requestId);
+    return Object.freeze({
+      requestId,
+      executionId: decided.executionId,
+      decision,
+      evidenceDigest: collected.evidence.digest,
+      evaluation: collected.evaluation,
+      decidedAt,
+      reasons: written?.reasons ?? reasons,
     });
   }
 

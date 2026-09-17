@@ -1,5 +1,7 @@
 # P4 — Acceptance
 
+<!-- Implement 2026-09-17, xem "Đã làm khác plan" cuối file -->
+
 <!-- Sửa: rà đối kháng + kiểm chứng lượt 2 (2026-09-12) — accept tự collect evidence, bỏ việc TOOL_CATALOG không tồn tại, decision `cancelled`, test role không có child -->
 
 **Mục tiêu:** cha chấp nhận/từ chối kết quả child bằng hành động được xác thực; quyết định tới Thread context qua `projectContext` như **nguồn thứ hai**, không phải pin.
@@ -108,3 +110,19 @@ Root không có cha ⇒ không ai accept root; root settle qua Thread như hiệ
 - `main` thật: delegate → wait → `alp delegation accept` trên cả Claude và Codex; `alp thread continue` handoff có `## Delegations of E-1`.
 - Import-graph test xanh; `npm test` xanh.
 - **Gate "governance loop đóng"** đánh dấu trong `plan.md`.
+
+## Đã làm khác plan (implement 2026-09-17)
+
+| Plan nói | Làm thật | Vì sao |
+|---|---|---|
+| `projectContext` nhận `acceptances` từ `run-main.ts` (đọc graph trước lease) | `ThreadService.delegationsOf(executionId)` đọc `graph.findGraphFor` **ngoài** lease, gọi từ chính `projectContext` và `collectHistory`; `run-main.ts` không đổi | Root có thể settle từ đường `continue` khi lượt trước còn pending — không đi qua run-main; đặt nguồn thứ hai trong service thì mọi đường settle đều có nó, và không có caller nào "quên truyền" |
+| `task` cắt 200 ký tự lúc chiếu | `taskExcerpt` lưu **trên node** (và reservation) lúc tạo; projector chỉ đọc | Node không giữ task; đọc `runtime/task.md` lúc chiếu là đọc thứ `cleanup` có thể đã xoá, và là đọc tiến trình khác. Cắt theo code point, không cắt đôi surrogate |
+| collect fail ⇒ evidence item `unknown`, vẫn cho quyết | Lỗi thu evidence **lan ra**, không ghi phán quyết | Phán quyết trỏ `evidenceDigest` — không có digest thật thì không có phán quyết. Cha thấy lỗi, sửa, gọi lại |
+| Role không có child gọi accept ⇒ `ACCEPTANCE_NOT_PARENT` | Từ service: request không nằm trong cây của cha ⇒ `EXECUTION_NOT_FOUND`; `ACCEPTANCE_NOT_PARENT` cho cháu/anh em/chính mình trong cùng cây | Cây khác không lộ node của nó, kể cả bằng mã lỗi. Guard graph (`assertAcceptable`) vẫn là pure và trả `NOT_PARENT` như plan |
+| `undecided` derive từ "không có record" | Derive từ `node.acceptance === null` với node terminal; record là bản có `reasons`, không phải nguồn của quyết định | Một nguồn cho graph và thread; record mất (cleanup, copy thiếu) không đổi phán quyết |
+| `recordAcceptance`, `readAcceptances(parent)` | `writeAcceptanceRecord`/`readAcceptanceRecord(root, parent, requestId)`, `delegationDecision(node)`, `summarizeDelegations(graph, parent, {limit})`, `countDelegations` | Không ai cần liệt kê record — cây đã có phán quyết; record đọc theo request khi cần lý do |
+| `delegations: readonly …[]` bắt buộc trong snapshot | Optional, **vắng** khi rỗng | Digest của mọi snapshot đã tồn tại phải giữ nguyên; thêm `[]` là đổi hash của tất cả |
+| Drop `delegations` "sau pins" theo `THREAD_CONTEXT_MAX_BYTES` | `bound()` rớt outcomes cũ trước, delegations **sau cùng** (cũ nhất trước), xoá field khi hết | Phán quyết là thứ duy nhất trong snapshot không tái tạo được từ pin |
+| `alp delegation evidence` không đổi | In thêm dòng `decision …`; `DelegationEvidenceView.acceptance` | Cha nhìn evidence và phán quyết ở một chỗ |
+| In "collecting evidence…" ra stderr khi accept | Không in | `wait` cũng thu mà không in; thêm một dòng stderr riêng cho accept là hai hành vi cho một việc |
+| Guard trước hay sau thu evidence không nói | `assertAcceptable` chạy **trước** `collectEvidence`, graph kiểm lại dưới lease | Lệnh sai thẩm quyền không được kéo `npm test` (mutation M15 chứng minh thứ tự) |
