@@ -60,6 +60,7 @@ function prepared(executionId: string, target = "search", profiles: ModeProfiles
     policy: {
       executionId,
       thread: null,
+      toolchainWritePaths: [],
       role: target,
       workspace,
       workspaceMode: "read-only",

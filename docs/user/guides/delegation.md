@@ -126,6 +126,24 @@ alp trust verify --revoke
 
 Chưa duyệt thì `verify:test` cho `unknown` kèm `verify-skipped untrusted`, không chạy gì.
 
+### Toolchain ghi ngoài workspace
+
+Con read-only hoặc có `--write-scope` chạy trong sandbox thật, và sandbox chặn cả cache mà
+SDK phải ghi để chạy: `flutter test` qua FVM cần `~/fvm`, Gradle cần `~/.gradle`, Xcode cần
+`DerivedData`. Không mở thì test không chạy — và Flutter còn thoát 0 như thể xanh. Khai một
+lần cho **máy** trong `~/.alp/settings.json`:
+
+```json
+{ "toolchain": { "presets": ["flutter", "node"], "writePaths": ["~/fvm"] } }
+```
+
+Preset có sẵn: `flutter`, `node`, `rust`, `jvm`, `xcode`, `python`, `go` — mỗi cái là danh
+sách cache quen thuộc dưới `$HOME`, cái nào không có trên máy thì bỏ qua. `writePaths` là
+đường tuyệt đối hoặc `~/…`, phải tồn tại. Chỉ file của máy đọc khối này: đặt vào
+`.alp/settings.json` của project thì ALP từ chối chạy, vì một repo không được mở thư mục
+ngoài chính nó cho người clone. Đường nào chứa hoặc nằm trong workspace cũng bị từ chối lúc
+giao việc.
+
 ## Trần và hạn của một phiên
 
 Trần là cố định trong ALP, không sửa bằng config:

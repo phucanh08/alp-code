@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import {
   InvalidModeSettings,
@@ -9,9 +9,15 @@ import {
 } from "../agents/mode-settings";
 import { MODE_PROFILES, type ModeProfiles } from "../agents/modes";
 import type { VerifyCommand, VerifySettings } from "../execution/evidence";
+import {
+  InvalidToolchainSettings,
+  defaultHome,
+  parseToolchainBlock,
+  resolveToolchainWritePaths,
+} from "../execution/toolchain";
 import { stateHome } from "../state-paths";
 
-export { InvalidModeSettings };
+export { InvalidModeSettings, InvalidToolchainSettings };
 
 /**
  * Ba file settings, đọc theo thứ tự thắng dần.
@@ -179,4 +185,60 @@ function parseVerifyBlock(raw: unknown, file: string): readonly VerifyCommand[] 
     }
     return Object.freeze({ id, run, timeoutMs: timeoutMs ?? DEFAULT_VERIFY_TIMEOUT_MS, cwd: cwd ?? "." });
   });
+}
+
+/**
+ * Khối `toolchain` của **máy** (GitHub #25) — `~/.alp/settings.json`, và chỉ file đó:
+ *
+ * ```json
+ * { "toolchain": { "presets": ["flutter", "node"], "writePaths": ["~/fvm"] } }
+ * ```
+ *
+ * Ngược với `verify`: khối này mở thư mục *ngoài* workspace cho sandbox của mọi launch trên
+ * máy, nên nó phải là của người sở hữu máy. Hai file project mà có khối này thì **ném** —
+ * một repo không được mở `~/.ssh` cho bất kỳ ai clone nó, và ở đây không có digest nào để
+ * `alp trust` cả. Trả về danh sách đã giải: preset bung ra, `~` thay bằng home, mỗi đường
+ * dẫn canonical qua symlink như workspace, sắp xếp, khử trùng. Không khai gì thì `[]`.
+ */
+export interface LoadedToolchainWritePaths {
+  readonly paths: readonly string[];
+  /** File đã khai, hoặc `null` khi máy không khai gì. */
+  readonly file: string | null;
+}
+
+export async function loadToolchainWritePaths(cwd: string, env: NodeJS.ProcessEnv = process.env): Promise<LoadedToolchainWritePaths> {
+  const machineFile = join(stateHome(env), "settings.json");
+  const project = await projectSettingsRoot(cwd);
+  const parse = async (file: string) => {
+    const text = await readIfPresent(file);
+    if (text === null) return null;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch (error) {
+      throw new InvalidToolchainSettings(`${file}: not valid JSON — ${(error as Error).message}`);
+    }
+    return parseToolchainBlock(raw, file);
+  };
+  // Cùng `Set` như `modeSettingsFiles`: `ALP_STATE_HOME` có thể trỏ vào chính `.alp/` của
+  // project, và khi đó file máy *là* file project — không có gì để cấm.
+  for (const file of [join(project, ".alp", "settings.json"), join(project, ".alp", "settings.local.json")]) {
+    if (file === machineFile) continue;
+    if ((await parse(file)) !== null) {
+      throw new InvalidToolchainSettings(`${file}: \`toolchain\` is a machine setting; move it to ${machineFile} — a project may not open directories outside itself for whoever clones it`);
+    }
+  }
+  const block = await parse(machineFile);
+  if (block === null) return { paths: Object.freeze([]), file: null };
+  const canonical = async (path: string): Promise<string | null> => {
+    try {
+      if (!(await stat(path)).isDirectory()) throw new InvalidToolchainSettings(`${machineFile}: \`toolchain\` entry \`${path}\` is not a directory`);
+      return await realpath(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+  };
+  const paths = await resolveToolchainWritePaths(block, { home: defaultHome(env), stateHome: stateHome(env), canonical, file: machineFile });
+  return { paths, file: machineFile };
 }

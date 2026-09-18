@@ -8,6 +8,22 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thêm
+
+- **Khối `toolchain` trong `~/.alp/settings.json`** (GitHub #25). Con read-only hoặc có
+  `--write-scope` chạy trong sandbox chặn mọi ghi ngoài workspace, nên `flutter test` qua
+  FVM (`~/fvm`), Gradle (`~/.gradle`), Xcode (`DerivedData`)… không chạy nổi — và Flutter còn
+  thoát 0 như thể xanh. Máy khai một lần
+  `{ "toolchain": { "presets": ["flutter", "node"], "writePaths": ["~/fvm"] } }`: preset
+  (`flutter`, `node`, `rust`, `jvm`, `xcode`, `python`, `go`) bung ra cache quen thuộc dưới
+  `$HOME` và bỏ qua cái không tồn tại; `writePaths` phải tồn tại. Đường được canonical, vào
+  `ExecutionPolicy.toolchainWritePaths` (trong `policyHash`; snapshot cũ đọc là `[]`), mở
+  trên Claude (`sandbox.filesystem.allowWrite`) và Codex (entry `"write"` trong profile).
+  Chỉ tầng máy: khối này trong `.alp/settings.json` của project là lỗi — một repo không được
+  mở thư mục ngoài chính nó cho người clone. Launch bị từ chối nếu một đường chứa hoặc nằm
+  trong workspace. `policy.json` có thêm trường, nên execution phóng bởi 0.15 còn chạy dở
+  lúc nâng cấp sẽ trượt tamper check ở hook Stop (như mọi lần thêm trường trước).
+
 ### Sửa
 
 - **`evidence.evaluation` không còn là `satisfied` khi request không đòi gì** (GitHub #23).

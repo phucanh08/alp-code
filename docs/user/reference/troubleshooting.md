@@ -57,6 +57,26 @@ Khoá ngoài `modes` không bị đụng tới — ALP không phải chủ duy n
 alp mode show
 ```
 
+Riêng khối `toolchain` (xem [Giao việc](../guides/delegation/)) chỉ được nằm ở
+`~/.alp/settings.json`; đặt trong file của project thì lệnh dừng với
+`` `toolchain` is a machine setting; move it to … ``. `writePaths` phải tồn tại; `~`, `/`
+và đường nào chạm `~/.alp` bị từ chối.
+
+## Test trong con báo `Operation not permitted` ngoài workspace
+
+**Triệu chứng:** Con read-only hoặc có `--write-scope` chạy `flutter test`, `gradle`,
+`cargo`… và stderr có `…/fvm/versions/stable/bin/cache/…: Operation not permitted`; đôi khi
+lệnh vẫn thoát 0 mà không chạy test nào.
+
+**Cách xử lý:** Sandbox chặn mọi ghi ngoài workspace, kể cả cache của SDK. Khai cache đó
+trong `~/.alp/settings.json`:
+
+```json
+{ "toolchain": { "presets": ["flutter"], "writePaths": ["~/fvm"] } }
+```
+
+rồi giao việc lại — đường mới chỉ vào `policy.json` của execution phóng sau đó.
+
 ## Runtime không có trên máy
 
 **Triệu chứng:** Probe báo Claude Code hoặc Codex CLI không tìm thấy.

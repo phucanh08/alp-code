@@ -12,6 +12,7 @@ import { toAuthorization, type Authorization, type AuthorizationRequest, type Po
 import type { WorkflowRunner } from "../workflow/workflow-runner";
 import { matchesDecision, type ApprovalRecordV1 } from "./approvals";
 import { createExecutionPolicy } from "./execution-policy";
+import { assertToolchainOutsideWorkspace } from "./toolchain";
 import type { ExecutionStore } from "./execution-store";
 import { createIdentityCapsule } from "./identity-capsule";
 import {
@@ -55,6 +56,12 @@ export interface ExecutionServiceOptions {
    * có baseline, và evidence `change` sau đó chỉ có thể là `unknown` (P3).
    */
   readonly baseline?: (workspace: string) => Promise<GitBaselineV1 | null>;
+  /**
+   * The machine's toolchain write paths (GitHub #25), already resolved by the settings
+   * loader: absolute, canonical, existing. Checked against each workspace at `authorize()`
+   * and carried into the policy from the ticket, like the scope. `[]` when none.
+   */
+  readonly toolchainWritePaths?: readonly string[];
   readonly now?: () => Date;
 }
 
@@ -77,6 +84,7 @@ export class ExecutionService {
   private readonly store: ExecutionStore;
   private readonly resolveWorkspace: (workspace: string) => Promise<string>;
   private readonly baseline: ((workspace: string) => Promise<GitBaselineV1 | null>) | null;
+  private readonly toolchainWritePaths: readonly string[];
   private readonly now: () => Date;
   /**
    * Những vé chính instance này đã phát, và definition đã được duyệt cùng mỗi vé.
@@ -97,6 +105,7 @@ export class ExecutionService {
     this.store = options.store;
     this.resolveWorkspace = options.resolveWorkspace ?? realpath;
     this.baseline = options.baseline ?? null;
+    this.toolchainWritePaths = Object.freeze([...new Set(options.toolchainWritePaths ?? [])].sort());
     this.now = options.now ?? (() => new Date());
   }
 
@@ -133,6 +142,10 @@ export class ExecutionService {
 
     const workspace = await this.resolveWorkspace(input.workspace);
     const writeScope = input.writeScope === undefined ? null : await this.resolveWriteScope(workspace, input.writeScope);
+    // A toolchain path is a cache beside the project, never the project: one that contained
+    // this workspace would hand a read-only or scoped role the whole tree through the
+    // machine's settings, and no approval was asked for that.
+    assertToolchainOutsideWorkspace(this.toolchainWritePaths, workspace);
     // A role that declares no workspace root (read-thread, compaction, titling) reads memory,
     // not the tree: there is no path for policy to authorize, and asking about one could only
     // ever come back WORKSPACE_NOT_GRANTED — which is why those three could not be launched
@@ -171,6 +184,7 @@ export class ExecutionService {
       workspaceMode: input.workspaceMode,
       approvals,
       writeScope,
+      toolchainWritePaths: this.toolchainWritePaths,
       authorizedAt: this.now().toISOString(),
     });
     this.issued.set(authorization, definition);
@@ -256,6 +270,7 @@ export class ExecutionService {
       workspaceMode: authorization.workspaceMode,
       approvals: authorization.approvals,
       writeScope: authorization.writeScope,
+      toolchainWritePaths: authorization.toolchainWritePaths,
       ...(input.mode === undefined ? {} : { mode: input.mode }),
       ...(input.modeProfiles === undefined ? {} : { modeProfiles: input.modeProfiles }),
       createdAt,

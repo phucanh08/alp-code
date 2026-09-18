@@ -6,7 +6,7 @@ import { agentRegistry } from "../agents/registry";
 import type { AgentDefinition } from "../agents/types";
 import { loadModeProfiles } from "../cli/settings";
 import { readApprovals } from "../execution/approvals";
-import { createExecutionPolicy, hashAgentDefinition, readWriteScope } from "../execution/execution-policy";
+import { createExecutionPolicy, hashAgentDefinition, readToolchainWritePaths, readWriteScope } from "../execution/execution-policy";
 import type { ExecutionPolicy, StoredExecutionState } from "../execution/types";
 import { WorkflowRunner } from "../workflow/workflow-runner";
 import type { WorkflowExecutionState } from "../workflow/types";
@@ -98,6 +98,9 @@ async function loadExecution(input: HookExecutionInput): Promise<{
     // And the scope: signed for the same reason. A `policy.json` from before scopes existed
     // reads as `null`, which is what it meant.
     writeScope: readWriteScope(policy as unknown as Record<string, unknown>),
+    // And the toolchain paths (GitHub #25): signed, and the machine settings may have moved
+    // since the launch — the snapshot says what this execution was actually given.
+    toolchainWritePaths: readToolchainWritePaths(policy as unknown as Record<string, unknown>),
   });
   if (JSON.stringify(expected) !== JSON.stringify(policy)) throw new Error("execution policy snapshot is invalid or stale");
   return { policy, definition, state };

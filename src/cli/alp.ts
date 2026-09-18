@@ -21,7 +21,7 @@ import { PolicyEngine } from "../policy/policy-engine";
 import { ClaudeRuntimeAdapter } from "../runtime/claude-adapter";
 import { CodexRuntimeAdapter } from "../runtime/codex-adapter";
 import { ModeSelector } from "./mode-selector";
-import { loadModeProfiles } from "./settings";
+import { loadModeProfiles, loadToolchainWritePaths } from "./settings";
 import { WorkflowRunner } from "../workflow/workflow-runner";
 import { runContextCommand } from "./commands/context";
 import { backendProbe } from "../delegation/delegation-service";
@@ -217,6 +217,10 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
    */
   const compositionFor = async (projectRoot: string) => {
     const project = await trustedRegistryFor(projectRoot);
+    // The machine's toolchain caches (GitHub #25): the root session's Codex profile lists
+    // its write roots exactly, so without these `flutter test` in a bare `alp` cannot write
+    // `~/fvm` either.
+    const { paths: toolchainWritePaths } = await loadToolchainWritePaths(projectRoot, process.env);
     // The executions root is where every `policy.json` lives: no launch, scoped or not, may
     // be allowed to write over it.
     const policy = new PolicyEngine({ registry: project.registry, protectedRoots: [executionsDirectory()] });
@@ -233,6 +237,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
         memory,
         workflowRunner: new WorkflowRunner(),
         store: new FileExecutionStore({ root: executionsDirectory() }),
+        toolchainWritePaths,
       }),
     };
   };
@@ -459,6 +464,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
       // Settings đọc theo **workspace của execution**, không theo chỗ đang đứng gõ lệnh:
       // `alp delegate --project <path>` phải chạy đúng loadout của project đó.
       const { profiles } = await loadModeProfiles({ cwd: workspaceRoot, env: process.env });
+      const { paths: toolchainWritePaths } = await loadToolchainWritePaths(workspaceRoot, process.env);
       const composition = await createDefaultDelegationComposition(layout ?? {
         channel: "dev",
         version,
@@ -466,7 +472,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
         stableCommand: join(repoRoot, "scripts", "alp.cjs"),
         installRoot: repoRoot,
         assetRoot: repoRoot,
-      }, process.env, project.registry, profiles);
+      }, process.env, project.registry, profiles, toolchainWritePaths);
       const value = lifecycle
         ? await runDelegationLifecycleCommand(actual, composition.service)
         : await runDelegateCommand(actual, { cwd, env: process.env, service: composition.service, registry: project.registry });
