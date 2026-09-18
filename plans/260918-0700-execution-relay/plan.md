@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: completed
 created: 2026-09-18
 slug: execution-relay
 source: plans/260918-0700-execution-relay/research/alp-inside-sandbox.md
@@ -74,7 +74,7 @@ dir, đóng khi execution settle); không thư mục mới (`src/execution/relay
 | R2 | `c8d859f`, `217633f` | Server, allowlist, `relay/` 0700 trong artifact; mutant S1–S7 bị bắt |
 | R3 | `39cb2b8` | Root + child foreground được phục vụ với binding của chính nó; 8 mutant bị bắt |
 | R4 | `ac25081` | Claude `allowWrite` relay dir; Codex profile `default_permissions="alp"` trên argv, bỏ `-s` và bypass; `capabilities.ts` đo lại 2026-09-18; 8 mutant bị bắt |
-| R5 | (đang) | Docs xong (`docs/delegation.md` § relay, `docs/architecture.md` §3.1/3.2/4.6/4.7/6); `npm run build`; smoke thật 2026-09-18: `codex sandbox` + profile ALP → `alp help` relay về root ok, `alp thread show` exit 2, `--version` in-process; còn nợ RUNBOOK trên hai runtime + gate/README |
+| R5 | `c5f398f` + commit này | Docs (`docs/delegation.md` § relay, `docs/architecture.md` §3.1/3.2/4.6/4.7/6); `npm run build`; smoke `codex sandbox` + profile ALP: `alp help` relay về root, `alp thread show` exit 2, `--version` in-process. RUNBOOK chạy thật 2026-09-18 trên cả hai runtime, trọn vòng delegate → wait → evidence → accept qua relay: Codex root `exec_badef351bcf44565b0f2` / worker `exec_0be83d6234c447fda8ec`; Claude root `exec_e296a125f04649908bfd` / worker `exec_9a7c414d4cf446b79d75`; `relay/` rỗng sau settle. Gate governance-loop mở (Lượt 3 bên đó). Lần Codex 09:31 "no output" là zsh đọc task không nháy chứa `hello():` thành định nghĩa hàm — lỗi harness, runbook đã nháy task; `check.sh` sửa `thread show` cần id và tìm root qua `execution-graphs/by-execution` |
 
 ### Ngoài phạm vi (ghi lại khi làm R3)
 
