@@ -54,6 +54,7 @@ export function executionArtifactPaths(
     policyFile: join(directory, "policy.json"),
     runtimeDirectory: join(directory, "runtime"),
     contextDirectory,
+    relayDirectory: join(directory, "relay"),
     checkpointFile: join(contextDirectory, "checkpoint.json"),
     continuityFile: join(contextDirectory, "continuity.md"),
     compactEventsFile: join(contextDirectory, "compact-events.jsonl"),
@@ -108,6 +109,8 @@ export class FileExecutionStore implements ExecutionStore {
       await mkdir(staging, { mode: 0o700 });
       await mkdir(join(staging, "runtime"), { mode: 0o700 });
       await mkdir(join(staging, "context"), { mode: 0o700 });
+      // Nơi `alp` chạy trong sandbox của runtime gửi lệnh cho process root (relay-server.ts).
+      await mkdir(join(staging, "relay"), { mode: 0o700 });
       await writeSnapshot(join(staging, policyFileName), input.policy);
       await writeSnapshot(join(staging, stateFileName), input.state);
       await rename(staging, directory);

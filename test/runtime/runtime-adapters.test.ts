@@ -98,6 +98,7 @@ async function fixture(): Promise<{ root: string; project: string; prepared: Pre
       policyFile: join(directory, "policy.json"),
       runtimeDirectory,
       contextDirectory,
+      relayDirectory: join(directory, "relay"),
       checkpointFile: join(contextDirectory, "checkpoint.json"),
       continuityFile: join(contextDirectory, "continuity.md"),
       compactEventsFile: join(contextDirectory, "compact-events.jsonl"),

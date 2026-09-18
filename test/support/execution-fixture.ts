@@ -139,6 +139,7 @@ export async function runtimeFixture(
         policyFile: join(directory, "policy.json"),
         runtimeDirectory,
         contextDirectory,
+        relayDirectory: join(directory, "relay"),
         checkpointFile: join(contextDirectory, "checkpoint.json"),
         continuityFile: join(contextDirectory, "continuity.md"),
         compactEventsFile: join(contextDirectory, "compact-events.jsonl"),

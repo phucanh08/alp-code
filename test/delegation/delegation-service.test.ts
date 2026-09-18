@@ -95,6 +95,7 @@ function prepared(executionId: string, target = "search", profiles: ModeProfiles
       policyFile: "/tmp/execution/policy.json",
       runtimeDirectory: "/tmp/execution/runtime",
       contextDirectory: "/tmp/execution/context",
+      relayDirectory: "/tmp/execution/relay",
       checkpointFile: "/tmp/execution/context/checkpoint.json",
       continuityFile: "/tmp/execution/context/continuity.md",
       compactEventsFile: "/tmp/execution/context/compact-events.jsonl",

@@ -185,6 +185,8 @@ export interface ExecutionArtifactPaths {
   readonly runtimeDirectory: string;
   /** `context/`, `0700`, survives `runtime/` cleanup — see plan §7. */
   readonly contextDirectory: string;
+  /** `relay/`: `alp` chạy trong sandbox của runtime gửi lệnh cho process root qua đây. */
+  readonly relayDirectory: string;
   readonly checkpointFile: string;
   readonly continuityFile: string;
   readonly compactEventsFile: string;
