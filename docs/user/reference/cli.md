@@ -3,7 +3,7 @@ title: CLI reference
 description: Public command và option của stable ALP.
 ---
 
-Reference này phản ánh stable `v0.14.0`. Nguồn kiểm chứng: [`src/cli/alp.ts`](https://github.com/phucanh08/alp-code/blob/v0.14.0/src/cli/alp.ts) và [`src/cli/commands/`](https://github.com/phucanh08/alp-code/tree/v0.14.0/src/cli/commands).
+Reference này phản ánh stable `v0.15.0`. Nguồn kiểm chứng: [`src/cli/alp.ts`](https://github.com/phucanh08/alp-code/blob/v0.15.0/src/cli/alp.ts) và [`src/cli/commands/`](https://github.com/phucanh08/alp-code/tree/v0.15.0/src/cli/commands).
 
 Internal hook/supervisor dispatch không thuộc public API và không được liệt kê ở đây.
 
@@ -68,10 +68,6 @@ alp delegate <role> [--write-scope <path>]... [--require-evidence change|verify:
 
 `--project` và `--workspace` là hai spelling của cùng input. Foreground đợi kết quả; `--background` trả execution ID ngay. Task rỗng, timeout không dương hoặc target role thiếu đều bị từ chối.
 
-:::caution[Preview, chưa có trong stable v0.14.0]
-Dòng thứ ba, `alp delegation evidence|accept|reject` và `alp trust verify` — xem [Giao việc](../../guides/delegation/#giao-việc-có-phạm-vi-và-bằng-chứng). `--write-scope` lặp được, đường dẫn tương đối so với workspace; `--require-evidence` nhận đúng hai mục; hai `--budget-*` là số nguyên dương và chỉ được **đếm sau**, không chặn giữa chừng.
-:::
-
 `alp delegate` chỉ chạy bên trong một phiên ALP: gõ từ terminal trần trả `PARENT_EXECUTION_REQUIRED`, vì vai cha đến từ execution đang chạy chứ không từ biến môi trường. Lệnh lifecycle dưới đây không chịu ràng buộc đó — chúng tra theo execution ID và chạy được từ terminal trần.
 
 Lifecycle:
@@ -83,10 +79,10 @@ alp delegation wait <execution-id>
 alp delegation cancel <execution-id>
 alp delegation cleanup <execution-id>
 alp delegation list
-alp delegation evidence <execution-id> [--json]           # preview
-alp delegation accept <request-id> [--reason <why>]...    # preview
-alp delegation reject <request-id> --reason <why>...      # preview
-alp trust verify [--project <path>] [--revoke]            # preview
+alp delegation evidence <execution-id> [--json]
+alp delegation accept <request-id> [--reason <why>]...
+alp delegation reject <request-id> --reason <why>...
+alp trust verify [--project <path>] [--revoke]
 ```
 
 - `tree` nhận ID của **bất kỳ** execution nào trong phiên và luôn vẽ từ gốc xuống, đánh dấu `←` vào execution được hỏi. Header mang revision, hạn của phiên, allowance đã dùng/còn lại, số node sống, số chỗ đã giữ, và trần. Không có `--json` thì CLI tự định dạng — đây là lệnh lifecycle duy nhất làm vậy; `--json` trả nguyên view.

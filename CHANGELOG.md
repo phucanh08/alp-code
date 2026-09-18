@@ -8,6 +8,76 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thêm
+
+- **Delegation có kiểm chứng.** Vòng *giao việc có phạm vi → chạy dưới enforcement đo được →
+  bằng chứng có nguồn gốc → chấp nhận có thẩm quyền* đã chạy thật bằng `main` trên cả Claude và
+  Codex (2026-09-18):
+
+  - `alp delegate … --write-scope <path>` (lặp được): con chỉ ghi được trong các cây con đó của
+    workspace, và đó là sandbox thật của runtime — Claude qua `permissions.deny` +
+    `sandbox.filesystem.denyWrite`, Codex qua permission profile trên argv. Scope phải tồn tại,
+    nằm trong workspace, không rộng hơn scope của cha (`WRITE_SCOPE_NOT_FOUND`,
+    `WRITE_SCOPE_OUTSIDE_WORKSPACE`, `WRITE_SCOPE_EXCEEDS_PARENT`, `WRITE_SCOPE_ON_READ_ONLY`,
+    `WRITE_SCOPE_PROTECTED_ROOT`); scope vào `policyHash` và fingerprint của request.
+  - `--require-evidence change|verify:<id>`: cha khai trước nó sẽ tin cái gì. Sau khi con xong,
+    ALP tự nhìn `git` (so với baseline chụp lúc phóng) và/hoặc chạy lệnh verify của project; kết
+    quả `<execution>/evidence.json` với từng item ghi nguồn và độ tin
+    (`observed · derived · self-reported · unknown`), evaluator trả `satisfied | unsatisfied |
+    unknown`. Evidence chỉ được thu ở `wait`, `evidence` và ngay trước `accept|reject` — không
+    bao giờ ở `status`/`tree`/`cancel`.
+  - `alp delegation evidence <execution-id>` — xem lại hoặc thu tiếp phần còn `unknown`.
+  - `alp delegation accept|reject <request-id> [--reason …]` — cha nghiệm thu *việc nó đã giao*,
+    xác thực qua graph binding: chỉ cha trực tiếp (`ACCEPTANCE_NOT_PARENT`), con đã kết thúc
+    (`ACCEPTANCE_SUBJECT_RUNNING`), mỗi request một lần (`ACCEPTANCE_ALREADY_DECIDED`); `reject`
+    bắt buộc `--reason`. Phán quyết lên node của cây (status của con không đổi), vào record dưới
+    thư mục cha, và vào Thread context của lần chạy sau như nguồn do ALP ghi, tách khỏi pin.
+  - `alp trust verify [--revoke]` — duyệt khối `verify.commands` trong `.alp/settings.json` của
+    project (digest theo nội dung lệnh; sửa là phải duyệt lại). Chưa duyệt thì `verify:<id>`
+    cho `unknown`, không chạy gì.
+  - `--budget-tokens N` / `--budget-tool-calls N`: usage của mỗi execution đọc từ transcript của
+    chính runtime (`inputTokens · outputTokens · cacheReadTokens · cacheWriteTokens · toolCalls`,
+    `null` là "không đếm được"), `alp delegation tree` in từng node và tổng cây, `alp thread
+    show` in usage của root. Budget đánh giá **sau** khi con xong: `exceeded` là evidence cha
+    nhìn thấy khi nghiệm thu, không chặn giữa chừng, không đổi kết quả của con.
+
+- **`alp` chạy được từ trong sandbox của runtime.** Sandbox chặn ghi `~/.alp`, nên `alp delegate`
+  gõ từ trong một execution giờ không thi hành gì cả: thấy `ALP_RELAY_DIR` là chuyển nguyên argv
+  về process root qua `<execution>/relay/` (file request/response, tmp+rename); root chạy lại
+  lệnh với binding của đúng execution đó và chỉ nhận `delegate`, `delegation *`, `context *`,
+  `help`, `--version` — `alp thread show` từ trong con bị từ chối (exit 2). Execution background
+  không có relay.
+
+- **Approval hẹp cho `--workspace` ngoài grant.** `PolicyEngine.decide()` trả thêm
+  `require_approval`; luật duy nhất: workspace ngoài grant nhưng trong project đã đăng ký, scope
+  `session`. Chỉ `alp` root có surface hỏi trên TTY; `alp delegate` không có surface thì dùng câu
+  "yes" đã ghi ở `<root>/context/approvals.json`, còn lại `APPROVAL_UNAVAILABLE` / `APPROVAL_DENIED`.
+  Record duyệt vào `policyHash`.
+
+- **Bảng enforcement có ngày đo + launch receipt.** `src/runtime/capabilities.ts` là bảng
+  `(runtime, platform)` với `measuredOn`; `alp agent test` tầng 2 đo lại `codex sandbox` trên
+  máy đang chạy và báo `DRIFT(...)` khi bảng sai. Backend ghi `<execution>/context/launch.json`
+  trước spawn (version thật của binary, auth method, digest tên biến env). `alp doctor` in
+  `ENFORCEMENT-*`; `alp thread show` in `ran <runtime> <ver> (<auth>)`. Version lệch không chặn
+  launch — evidence hạ `observed` → `derived`.
+
+- Skill dùng chung `test-quality-guard` (oracle độc lập với implementation, RED → GREEN →
+  MUTATE, completion gate chặn "làm xanh bằng mọi giá"); grant cho `worker` và `review`.
+
+### Thay đổi
+
+- **Codex nhận sandbox qua argv, không qua file.** Launch dùng `-c default_permissions="alp"` +
+  `-c permissions.alp.filesystem={…}` + `-c approval_policy="never"`; bỏ `-s` và
+  `--dangerously-bypass-approvals-and-sandbox`. Trước đó scope chỉ nằm trong
+  `codex-config.toml` — file Codex không đọc. Đo lại 2026-09-18 trên Codex 0.154.0.
+- Claude mở đúng một chỗ ghi ngoài workspace: `sandbox.filesystem.allowWrite: [<execution>/relay]`.
+- Phiên interactive bỏ prompt, không bỏ sandbox (`approval_policy="never"` chứ không phải bypass).
+
+### Sửa
+
+- `alp --version` của dev clone và bản npm đọc version từ `package.json` thay vì đóng băng ở
+  giá trị hardcode khi không có `__ALP_BUILD_VERSION__` inject.
+
 ## [0.14.0] - 2026-09-11
 
 ### Thêm

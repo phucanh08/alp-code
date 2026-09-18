@@ -97,9 +97,6 @@ Legacy store từ nay **chỉ còn được đọc**: không record mới nào g
 
 ## Vòng nghiệm thu: bằng chứng có nguồn gốc
 
-:::caution[Preview, chưa có trong stable v0.14.0]
-:::
-
 `state.json.output` của con là **self-reported**. Vòng nghiệm thu (xem [Giao việc](../../guides/delegation/#giao-việc-có-phạm-vi-và-bằng-chứng)) thêm ba thứ ALP tự quan sát, và mỗi thứ đi kèm **nguồn** và **độ tin**:
 
 | Item | Nguồn | Độ tin cao nhất | Điều kiện |
@@ -115,9 +112,6 @@ Runtime thật (`launch.json`) khác version đã đo thì mọi `observed` hạ
 `accept|reject` là hành động được **xác thực** như `delegate`: binding cha từ env, request phải là con trực tiếp (`ACCEPTANCE_NOT_PARENT`), con đã terminal (`ACCEPTANCE_SUBJECT_RUNNING`), quyết đúng một lần (`ACCEPTANCE_ALREADY_DECIDED`). Ba guard chạy trước khi thu evidence. Phán quyết ghi lên node (`acceptance = { decision, evidenceDigest, decidedAt }` — status của con **không** đổi; một con `failed` được `accept` vẫn `failed`) và vào record dưới thư mục **cha**, rồi vào Thread context như nguồn thứ hai, tách khỏi pin của agent: pin là agent viết, phán quyết là ALP viết từ record đã xác thực.
 
 ## `alp` bên trong sandbox: relay về process root
-
-:::caution[Preview, chưa có trong stable v0.14.0]
-:::
 
 Sandbox của runtime chặn ghi `~/.alp`, nên một `alp delegate` gõ từ *trong* execution không thể tự đọc state, giữ lock hay sinh con. Từ 2026-09-18 nó **không thi hành gì cả**: thấy `ALP_RELAY_DIR` là chuyển nguyên argv thành một file request trong `<execution>/relay/` (thư mục duy nhất sandbox mở cho ghi), rồi đợi file response. Process root — thứ đang chạy `alp` thật ngoài sandbox — chạy lại đúng lệnh đó với binding của **execution vừa hỏi**, không phải của root, và chỉ nhận `delegate`, `delegation *`, `context *`, `help`, `--version`.
 

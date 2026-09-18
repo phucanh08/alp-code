@@ -93,10 +93,6 @@ main  ·  exec_main  ·  running
 
 ## Giao việc có phạm vi và bằng chứng
 
-:::caution[Preview, chưa có trong stable v0.14.0]
-Bốn cờ dưới đây và `alp delegation evidence|accept|reject` đã chạy trọn vòng trên cả Claude và Codex (2026-09-18) nhưng chưa vào một bản stable.
-:::
-
 Mặc định con báo "xong" là **tự khai** — `main` chỉ có lời của nó. Bốn cờ để `main` nói trước nó sẽ tin cái gì, và một lệnh để nó chốt:
 
 ```bash
