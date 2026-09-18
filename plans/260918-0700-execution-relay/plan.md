@@ -65,3 +65,20 @@ dir, đóng khi execution settle); không thư mục mới (`src/execution/relay
 | R3 | Nối vào `runThreadRoot` (root) và `DelegationService` (child): đăng ký lúc spawn, đóng lúc settle; `ALP_RELAY_DIR` vào launch env | `test/e2e/relay.test.ts` — fake runtime viết request theo giao thức, root phục vụ với binding của root |
 | R4 | Claude `allowWrite`; Codex profile argv + bỏ bypass; `capabilities.ts` (measuredAt 2026-09-18) | `test/runtime/runtime-adapters.test.ts` — oracle: settings/argv contract đo trong research |
 | R5 | Docs (`docs/delegation.md`, `docs/architecture.md`), gate của governance-loop, `npm run build`, chạy lại RUNBOOK trên cả hai runtime | `check.sh` trên alp-usage-probe |
+
+## Tiến độ
+
+| Phase | Commit | Ghi chú |
+|---|---|---|
+| R1 | `2112f7e` | Client + gating; mutant M1–M5 bị bắt |
+| R2 | `c8d859f`, `217633f` | Server, allowlist, `relay/` 0700 trong artifact; mutant S1–S7 bị bắt |
+| R3 | `39cb2b8` | Root + child foreground được phục vụ với binding của chính nó; 8 mutant bị bắt |
+
+### Ngoài phạm vi (ghi lại khi làm R3)
+
+- Con `--background` không được đăng ký relay: process gọi `alp delegate --background` thoát
+  ngay, không còn ai để trả lời. `alp` trong con đó fail-closed ("no ALP process is serving").
+  Delegation lồng từ một con background sẽ cần supervisor phục vụ relay — chưa làm.
+- Bản dev không có supervisor chạy được trong vitest, nên "không đăng ký background" chứng
+  minh ở unit (`delegation-service.test.ts`), "không server.json ⇒ fail-closed" ở
+  `relay-client.test.ts`; e2e chỉ chạy con foreground.
