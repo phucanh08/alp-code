@@ -4,6 +4,8 @@ import { InMemoryThreadStore } from "../../src/thread/in-memory-thread-store";
 import { HistoryBridgeRegistry, type RuntimeHistoryBridge } from "../../src/thread/history-bridge";
 import { ThreadService, type ThreadGraphReader } from "../../src/thread/thread-service";
 import type { ExecutionGraphDocument, ExecutionNode, ExecutionNodeStatus } from "../../src/execution/graph/types";
+import type { ApprovalRecordV1 } from "../../src/execution/approvals";
+import type { LaunchProvenanceV1 } from "../../src/runtime/launch-provenance";
 import { at } from "../support/thread-fixture";
 
 function graphReader(nodes: Record<string, ExecutionNodeStatus> = {}): ThreadGraphReader {
@@ -36,7 +38,13 @@ function scriptedBridge(runtime: "claude" | "codex", texts: readonly string[], c
   };
 }
 
-function harness(options: { readonly graph?: ThreadGraphReader; readonly env?: NodeJS.ProcessEnv; readonly bridges?: readonly RuntimeHistoryBridge[] } = {}) {
+function harness(options: {
+  readonly graph?: ThreadGraphReader;
+  readonly env?: NodeJS.ProcessEnv;
+  readonly bridges?: readonly RuntimeHistoryBridge[];
+  readonly receipts?: Readonly<Record<string, LaunchProvenanceV1>>;
+  readonly approvals?: Readonly<Record<string, readonly ApprovalRecordV1[]>>;
+} = {}) {
   let tick = 0;
   const now = () => new Date(at(tick++));
   const store = new InMemoryThreadStore({ now });
@@ -53,6 +61,8 @@ function harness(options: { readonly graph?: ThreadGraphReader; readonly env?: N
     cwd: "/project",
     env: options.env ?? {},
     write: (text) => { output.push(text); },
+    ...(options.receipts ? { launchReceipt: async (executionId: string) => options.receipts?.[executionId] ?? null } : {}),
+    ...(options.approvals ? { sessionApprovals: async (executionId: string) => options.approvals?.[executionId] ?? [] } : {}),
   };
   const run = (...args: string[]) => runThreadCommand(args, dependencies);
   const printed = () => output.join("");
@@ -165,6 +175,34 @@ describe("alp thread show", () => {
     expect(printed()).toContain("History:   partial (4 entries)");
   });
 
+  /**
+   * Oracle: P6 "Consumer" — `alp thread show` prints the usage accumulated per root
+   * (`ref.history.usage`), four token columns apart and tool calls; a column the bridge could
+   * not count is `?`; a root the bridge counted nothing for prints no usage at all.
+   */
+  it("prints the usage each root accumulated, with `?` for a column the bridge could not count", async () => {
+    const counting: RuntimeHistoryBridge = {
+      ...scriptedBridge("claude", ["hello"]),
+      collectDelta: async (input) => ({
+        ...(await scriptedBridge("claude", ["hello"]).collectDelta(input)),
+        usageDelta: { inputTokens: 122, outputTokens: 53, cacheReadTokens: 1110, cacheWriteTokens: 20, toolCalls: null },
+      }),
+    };
+    const { threads, run, printed } = harness({ bridges: [counting, scriptedBridge("codex", ["again"])] });
+    const { id } = await threads.createThread({ agentId: "main", workspace: "/project" });
+    await threads.reserveRoot(id, "exec_1");
+    await threads.settleRoot(id, "exec_1", "completed");
+    await threads.collectHistory(id, { executionId: "exec_1", runtime: "claude", workspace: "/project", contextDirectory: "/x" });
+    await threads.projectContext(id, "exec_1", { checkpoint: null, runtime: "claude" });
+    await threads.reserveRoot(id, "exec_2");
+    await threads.settleRoot(id, "exec_2", "completed");
+    await threads.collectHistory(id, { executionId: "exec_2", runtime: "codex", workspace: "/project", contextDirectory: "/x" });
+    await run("show", id);
+    const lines = printed().split("\n");
+    expect(lines.find((line) => line.includes("exec_1"))).toContain("history complete @1.0 (1 entries)  ·  usage in 122 out 53 cache 1110/20 tools ?");
+    expect(lines.find((line) => line.includes("exec_2"))).not.toContain("usage");
+  });
+
   it("shows a live root as running and offers no continue line", async () => {
     const { threads, run, printed } = harness({ graph: graphReader({ exec_1: "running" }) });
     const { id } = await threads.createThread({ agentId: "main", workspace: "/project" });
@@ -173,6 +211,59 @@ describe("alp thread show", () => {
     expect(printed()).toContain("Activity:  running (exec_1)");
     expect(printed()).toMatch(/#1 {2}exec_1 {2}running/);
     expect(printed()).not.toContain("alp thread continue");
+  });
+
+  /**
+   * The receipt is the only record of which binary ran a root; `policy.json` was hashed
+   * before the process existed. Two roots of one Thread can have run on different versions,
+   * and a principal reading E-1 against E-2 needs that on the same line as the outcome.
+   */
+  it("prints the runtime version and auth method each root ran with, from its launch receipt", async () => {
+    const receipt = (executionId: string, runtime: "claude" | "codex", runtimeVersion: string, authMethod: "oauth" | "api-key" | "unknown"): LaunchProvenanceV1 => ({
+      version: 1, executionId, runtime, runtimeVersion, platform: "darwin", authMethod,
+      credentialConfigured: authMethod !== "unknown", launchSpecDigest: "0".repeat(64), launchedAt: at(0),
+    });
+    const { threads, run, printed } = harness({
+      receipts: { exec_1: receipt("exec_1", "codex", "0.154.0", "oauth"), exec_2: receipt("exec_2", "claude", "unknown", "unknown") },
+    });
+    const { id } = await threads.createThread({ agentId: "main", workspace: "/project" });
+    for (const executionId of ["exec_1", "exec_2", "exec_3"]) {
+      await threads.reserveRoot(id, executionId);
+      await threads.settleRoot(id, executionId, "completed");
+      await threads.projectContext(id, executionId, { checkpoint: null, runtime: "claude" });
+    }
+    await run("show", id);
+    const text = printed();
+    expect(text).toMatch(/#1 {2}exec_1 {2}completed.*ran codex 0\.154\.0 \(oauth\)/);
+    expect(text).toMatch(/#2 {2}exec_2 {2}completed.*ran claude unknown \(unknown\)/);
+    // No receipt (an execution from before receipts existed) says so rather than nothing.
+    expect(text).toMatch(/#3 {2}exec_3 {2}completed.*no launch receipt/);
+  });
+
+  /**
+   * Phase-1 spec: a session-scoped "yes" lives at the root's `context/approvals.json` and is
+   * part of what that root ran under. A principal reading the Thread sees what they widened,
+   * per root — and nothing on a root nobody was asked about.
+   */
+  it("prints the approvals each root's session collected", async () => {
+    const { threads, run, printed } = harness({
+      approvals: {
+        exec_1: [{
+          version: 1, rule: "workspace-outside-grant-inside-project", subject: "/project/web",
+          scope: "session", decidedBy: "principal", decidedAt: at(5),
+        }],
+      },
+    });
+    const { id } = await threads.createThread({ agentId: "main", workspace: "/project" });
+    for (const executionId of ["exec_1", "exec_2"]) {
+      await threads.reserveRoot(id, executionId);
+      await threads.settleRoot(id, executionId, "completed");
+      await threads.projectContext(id, executionId, { checkpoint: null, runtime: "claude" });
+    }
+    await run("show", id);
+    const text = printed();
+    expect(text).toMatch(/#1 {2}exec_1 {2}completed[^\n]*\n\s+approved workspace-outside-grant-inside-project \/project\/web \(session\)/);
+    expect(text).not.toMatch(/#2 {2}exec_2 {2}completed[^\n]*\n\s+approved/);
   });
 
   it("reads the thread ID from ALP_THREAD_ID when none is given", async () => {

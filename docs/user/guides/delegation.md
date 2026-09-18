@@ -91,6 +91,45 @@ main  ·  exec_main  ·  running
 
 `--json` trả nguyên view cho script.
 
+## Giao việc có phạm vi và bằng chứng
+
+:::caution[Preview, chưa có trong stable v0.14.0]
+Bốn cờ dưới đây và `alp delegation evidence|accept|reject` đã chạy trọn vòng trên cả Claude và Codex (2026-09-18) nhưng chưa vào một bản stable.
+:::
+
+Mặc định con báo "xong" là **tự khai** — `main` chỉ có lời của nó. Bốn cờ để `main` nói trước nó sẽ tin cái gì, và một lệnh để nó chốt:
+
+```bash
+alp delegate worker --write-scope src/parser \
+  --require-evidence change --require-evidence verify:test \
+  --budget-tokens 200000 --budget-tool-calls 20 \
+  -- 'Sửa parser để nhận số âm. Không sửa gì ngoài src/parser.'
+
+alp delegation wait exec_abc123        # thu evidence ngay khi con kết thúc
+alp delegation evidence exec_abc123    # xem lại, hoặc thu tiếp phần còn `unknown`
+alp delegation tree exec_abc123        # mỗi node: evidence · usage · budget · decision
+alp delegation accept req_xyz          # hoặc: reject req_xyz --reason "sửa ngoài phạm vi"
+```
+
+- **`--write-scope <path>`** (lặp được): con chỉ ghi được trong các cây con đó của workspace. Đây là sandbox thật của runtime, không phải lời dặn — Claude bị chặn bằng `denyWrite`, Codex bằng permission profile. Đường dẫn phải tồn tại, nằm trong workspace, và không rộng hơn scope của cha; sai thì từ chối trước khi có execution nào (`WRITE_SCOPE_NOT_FOUND`, `WRITE_SCOPE_OUTSIDE_WORKSPACE`, `WRITE_SCOPE_EXCEEDS_PARENT`, `WRITE_SCOPE_ON_READ_ONLY`).
+- **`--require-evidence change`**: sau khi con xong, ALP tự nhìn `git` xem workspace có đổi so với lúc phóng không. **`--require-evidence verify:<id>`**: ALP chạy lệnh verify `<id>` của project (khai trong `.alp/settings.json`, xem dưới) và cần exit 0. Kết quả là `satisfied`, `unsatisfied` (kèm mục thiếu) hoặc `unknown` — `unknown` không phải đạt, nó là "còn một việc phải làm".
+- **`--budget-tokens N` / `--budget-tool-calls N`**: đếm **sau** khi con xong, từ transcript của chính runtime. Vượt thì ghi `budget exceeded` vào evidence để cha nhìn thấy khi nghiệm thu; không chặn giữa chừng, không đổi kết quả của con.
+- **`accept` / `reject`** nhận **request ID** (`alp delegate` in ra, `tree` in `req …`), không phải execution ID: cha nghiệm thu *việc nó đã giao*. Chỉ cha trực tiếp mới quyết được, con phải đã kết thúc, mỗi request quyết đúng một lần, `reject` bắt buộc `--reason`. Phán quyết được ALP ghi vào cây và vào context của Thread ở lần chạy sau — `main` mở lại phiên là thấy "đã giao gì, nhận hay từ chối" mà không cần ai nhắc.
+
+Lệnh verify là lệnh của repo, nên chỉ chạy sau khi **bạn** duyệt một lần:
+
+```json
+// .alp/settings.json
+{ "verify": { "commands": [ { "id": "test", "run": "npm test", "timeoutMs": 600000 } ] } }
+```
+
+```bash
+alp trust verify            # in từng lệnh, hỏi trên terminal; sửa một ký tự là phải duyệt lại
+alp trust verify --revoke
+```
+
+Chưa duyệt thì `verify:test` cho `unknown` kèm `verify-skipped untrusted`, không chạy gì.
+
 ## Trần và hạn của một phiên
 
 Trần là cố định trong ALP, không sửa bằng config:

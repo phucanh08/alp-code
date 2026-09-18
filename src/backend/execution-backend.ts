@@ -1,3 +1,4 @@
+import type { RuntimeId } from "../agents/types";
 import type { RuntimeLaunchSpec } from "../runtime/runtime-adapter";
 
 export type BackendExecutionStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
@@ -26,6 +27,15 @@ export interface BackendExecutionResult {
 export interface SpawnExecutionInput {
   readonly executionId: string;
   readonly launchSpec: RuntimeLaunchSpec;
+  /**
+   * Where to write the launch receipt (`<execution>/context/launch.json`) and which runtime
+   * it describes. The backend writes it, not the caller, because the backend is the one
+   * place every launch — root or delegated child — passes through on its way to a process.
+   */
+  readonly receipt?: {
+    readonly file: string;
+    readonly runtime: RuntimeId;
+  };
   readonly lifecycle?: {
     readonly requestId: string;
     readonly parentExecutionId: string | null;

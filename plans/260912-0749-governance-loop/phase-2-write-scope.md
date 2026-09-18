@@ -1,5 +1,7 @@
 # P2 — `writeScope`
 
+<!-- Implement 2026-09-12, xem "Đã làm khác plan" cuối file -->
+
 <!-- Sửa: rà đối kháng lượt 2 (2026-09-12) — assert executions root không ghi được -->
 
 **Mục tiêu:** child `workspace-write` khai được *tập đường dẫn* nó được ghi; ALP cưỡng chế ở mức runtime cho phép và **ghi rõ** mức đó.
@@ -86,3 +88,15 @@ P3 dùng `writeScope` để phân loại change `inScope | outsideScope` và tá
 - Đo thật một lần: `alp delegate worker --write-scope src/foo` ⇒ Codex ghi ngoài `src/foo` bị chặn; Claude theo phương án đã chọn; kết quả + version ghi `research/`.
 - `policy.json` có `writeScope`; `alp delegation tree --json` in scope.
 - `npm test` xanh.
+
+## Đã làm khác plan (implement 2026-09-12)
+
+| Plan nói | Làm thật | Vì sao |
+|---|---|---|
+| Claude phương án (a) `allowWrite: scope` + `denyWrite: [workspace]` ⇒ `enforced` | Đo trên 2.1.269 (`research/claude-sandbox-precedence.md`): `denyWrite` **thắng** `allowWrite`, `Write(path)` rule bị bỏ qua, `Edit(path)` áp cho Write/NotebookEdit/MultiEdit. Làm phương án **liệt kê anh em**: `writeScopeDenyPaths()` đi từ workspace xuống tới từng scope, deny mọi entry không nằm trên đường — vào cả `permissions.deny Edit(//…/**)` lẫn `sandbox.filesystem.denyWrite`. Không bao giờ phát `allowWrite` | (a) không dùng được; (b) thuần rule thì shell ghi được ngoài scope. Liệt kê cho sandbox chặn cả shell, nhưng chỉ chặn thứ tồn tại lúc phóng |
+| Ba mức `enforced / declared-only / none` | Thêm mức **`partial`** (`ENFORCEMENT_LEVELS`, `LEVEL_PHRASES`, `readEnforcement`); Claude darwin/linux `writeScope: partial`. `test/runtime/capabilities.test.ts` đổi kỳ vọng `none` → `partial` — thay đổi oracle theo phép đo, không theo code | "Chặn những gì liệt kê được lúc phóng, không hơn" không phải `enforced` (luật) và không phải `declared-only` (không ai chặn). Nói đúng mức thì evidence P3 mới đọc đúng |
+| Ba code mới | Năm: thêm `WRITE_SCOPE_NOT_FOUND` (entry không tồn tại — không tạo hộ, không scope tới rỗng) và `WRITE_SCOPE_PROTECTED_ROOT` (entry hoặc workspace ghi không scope trùm `~/.alp/executions/`, qua `PolicyEngineOptions.protectedRoots`; `alp.ts` và `delegate.ts` truyền `executionsDirectory()`) | Rủi ro cuối bảng: dùng `WRITE_SCOPE_OUTSIDE_WORKSPACE` cho executions root là nói sai lý do — nó *nằm trong* workspace, chỉ là không được ghi. Mã riêng thì `alp delegate` nói đúng chuyện cho principal |
+| `alp delegation tree --json` in scope | `alp delegation status` (`DelegationResult.writeScope`, đọc từ `policy.json` đã ký); `DelegationExecutionRecord.writeScope` | Cây giữ quan hệ, không giữ bản sao thứ hai của quyền (nguyên tắc `graphRecord`): scope đọc từ snapshot đã băm, như `workspace` và `runtime` |
+| Kiểm ⊆ cha bằng `writeScope` của cha "từ request" | `launch.writeScope` đọc từ `policy.json` **của cha** (`readWriteScope(parentSnapshot)`), `null` tường minh khi cha không scope; con không scope dưới cha có scope ⇒ workspace con phải nằm trong scope cha | Cùng lý do grant đọc từ snapshot cha chứ không từ request: field người gọi tự điền không phải nguồn quyền |
+| Bảng capability "tối thiểu" tạo ở P2 | Bảng đã có từ P5 (làm trước); P2 chỉ đổi một ô và thêm mức | Thứ tự thực thi 1 → 5 → 2 |
+| "Đo thật một lần `alp delegate worker --write-scope`" | Đo precedence sandbox Claude thật (bước 0); e2e `test/e2e/write-scope.test.ts` kiểm config sinh ra cho Codex (`writable_roots`) và Claude (`denyWrite` + `Edit` deny) qua harness với runtime giả | Phép đo thật đã trả lời câu hỏi quyết định thiết kế; chạy end-to-end với CLI thật là việc của `alp agent test` tầng 2 |

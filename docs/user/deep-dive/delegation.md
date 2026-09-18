@@ -95,6 +95,39 @@ Cây **hỏng** thì không rơi về legacy — một fallback che lỗi cây l
 
 Legacy store từ nay **chỉ còn được đọc**: không record mới nào ghi vào đó, không migration, không xoá gì.
 
+## Vòng nghiệm thu: bằng chứng có nguồn gốc
+
+:::caution[Preview, chưa có trong stable v0.14.0]
+:::
+
+`state.json.output` của con là **self-reported**. Vòng nghiệm thu (xem [Giao việc](../../guides/delegation/#giao-việc-có-phạm-vi-và-bằng-chứng)) thêm ba thứ ALP tự quan sát, và mỗi thứ đi kèm **nguồn** và **độ tin**:
+
+| Item | Nguồn | Độ tin cao nhất | Điều kiện |
+|---|---|---|---|
+| `change` | `git` (so với baseline chụp lúc `materialize`) | `observed` | không node nào khác có thể đã ghi cùng workspace **và** runtime cưỡng chế được write isolation |
+| `change`, `tool-call` | transcript của chính runtime | `observed` / `derived` | transcript đọc trọn (`complete`) ⇒ `observed`; đọc thiếu ⇒ `derived` |
+| `verify` | ALP chạy lệnh verify đã được trust | `observed` | chưa trust ⇒ `verify-skipped`, `unknown` |
+| `output` | con tự khai | `self-reported` | không bao giờ thoả mục nào |
+| `usage`, `budget` | transcript | — | cột đếm không được là `null`, không phải 0; `null` lan qua phép cộng |
+
+Runtime thật (`launch.json`) khác version đã đo thì mọi `observed` hạ xuống `derived`. Evidence chỉ được thu ở `wait`, `evidence`, và ngay trước `accept|reject` — không bao giờ ở `status`/`tree`/`cancel`, vì thu là *chạy lệnh verify trong workspace* và một câu hỏi đọc không được kéo `npm test`.
+
+`accept|reject` là hành động được **xác thực** như `delegate`: binding cha từ env, request phải là con trực tiếp (`ACCEPTANCE_NOT_PARENT`), con đã terminal (`ACCEPTANCE_SUBJECT_RUNNING`), quyết đúng một lần (`ACCEPTANCE_ALREADY_DECIDED`). Ba guard chạy trước khi thu evidence. Phán quyết ghi lên node (`acceptance = { decision, evidenceDigest, decidedAt }` — status của con **không** đổi; một con `failed` được `accept` vẫn `failed`) và vào record dưới thư mục **cha**, rồi vào Thread context như nguồn thứ hai, tách khỏi pin của agent: pin là agent viết, phán quyết là ALP viết từ record đã xác thực.
+
+## `alp` bên trong sandbox: relay về process root
+
+:::caution[Preview, chưa có trong stable v0.14.0]
+:::
+
+Sandbox của runtime chặn ghi `~/.alp`, nên một `alp delegate` gõ từ *trong* execution không thể tự đọc state, giữ lock hay sinh con. Từ 2026-09-18 nó **không thi hành gì cả**: thấy `ALP_RELAY_DIR` là chuyển nguyên argv thành một file request trong `<execution>/relay/` (thư mục duy nhất sandbox mở cho ghi), rồi đợi file response. Process root — thứ đang chạy `alp` thật ngoài sandbox — chạy lại đúng lệnh đó với binding của **execution vừa hỏi**, không phải của root, và chỉ nhận `delegate`, `delegation *`, `context *`, `help`, `--version`.
+
+Hệ quả bạn nhìn thấy:
+
+- `alp thread show` hay `alp --mode low` từ trong một phiên bị từ chối (exit 2) — đó là allowlist, không phải lỗi cài đặt.
+- Execution background không có relay: nó sống lâu hơn tiến trình phục vụ nó.
+- Sau khi execution kết thúc, `relay/` rỗng; một `server.json` còn lại nghĩa là root vẫn đang chạy.
+- Trong Codex, lệnh chạy qua `zsh -lc`; task chứa `()` mà không đặt trong dấu nháy sẽ bị zsh đọc thành định nghĩa hàm và `alp` không hề chạy — im lặng, exit 0. Nháy task lại.
+
 ## Kiểm chứng
 
 ```bash
@@ -110,4 +143,4 @@ Spawn thành công **không** đồng nghĩa task hoàn thành: sau `wait`, exec
 - [Execution graph](../execution-graph/) — trần, allowance, huỷ lan xuống
 - [Execution](../execution/) — cái được tạo ra ở bước `materialize`
 - [Policy](../policy/) — vì sao deny xảy ra trước probe và spawn
-- [Giao việc](../../guides/delegation/) — hướng dẫn dùng
+- [Giao việc](../../guides/delegation/) — hướng dẫn dùng, kể cả `--write-scope`, `--require-evidence`, `accept|reject`

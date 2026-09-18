@@ -11,3 +11,12 @@ export {
   type TrustRecord,
   type TrustedAgentsRead,
 } from "./trusted-agents-store";
+export {
+  readTrustedVerify,
+  trustVerify,
+  trustedVerifyFile,
+  untrustVerify,
+  verifyTrusted,
+  type TrustedVerifyRecord,
+  type TrustedVerifyRead,
+} from "./trusted-verify-store";

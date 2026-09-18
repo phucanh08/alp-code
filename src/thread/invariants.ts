@@ -1,4 +1,5 @@
 import { isAbsolute } from "node:path";
+import { USAGE_COLUMNS, type UsageCounters } from "../execution/usage";
 import { ThreadError } from "./errors";
 import {
   EMPTY_THREAD_CONTEXT_DIGEST,
@@ -217,7 +218,18 @@ function assertExecutionHistory(value: unknown, field: string): ThreadExecutionH
   assertNonNegativeInteger(history.entryCount, `${field}.entryCount`);
   assertNonNegativeInteger(history.skipped, `${field}.skipped`);
   assertTimestamp(history.collectedAt, `${field}.collectedAt`);
+  if (history.usage !== undefined && history.usage !== null) assertUsageCounters(history.usage, `${field}.usage`);
   return history as unknown as ThreadExecutionHistory;
+}
+
+/** Năm cột, mỗi cột số nguyên ≥ 0 hoặc `null` (không biết). */
+export function assertUsageCounters(value: unknown, field: string): UsageCounters {
+  const usage = assertObject(value, field);
+  for (const column of USAGE_COLUMNS) {
+    if (usage[column] === null) continue;
+    assertNonNegativeInteger(usage[column], `${field}.${column}`);
+  }
+  return usage as unknown as UsageCounters;
 }
 
 /**

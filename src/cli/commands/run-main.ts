@@ -6,9 +6,10 @@ import type { BackendExecutionResult, ExecutionBackend } from "../../backend/exe
 import { readCheckpoint } from "../../context/checkpoint";
 import { INTERACTIVE_TASK_SENTINEL } from "../../context/continuity";
 import type { ExecutionService } from "../../execution/execution-service";
+import type { RelayServer } from "../../execution/relay-server";
 import type { ExecutionGraphService } from "../../execution/graph/execution-graph-service";
 import type { RuntimeAdapter } from "../../runtime/runtime-adapter";
-import type { PreparedExecution } from "../../execution/types";
+import type { ApprovalSurface, PreparedExecution } from "../../execution/types";
 import { historySourceOf, type HistoryExecutionSource } from "../../thread/history-bridge";
 import type { ProjectContextInput, ThreadService } from "../../thread/thread-service";
 import { ThreadError } from "../../thread/errors";
@@ -49,6 +50,20 @@ export interface RunMainDependencies {
   readonly workspaceModeFor?: (cwd: string) => Promise<"read-only" | "workspace-write">;
   /** Loadout đã ghép settings của máy/project. Bỏ trống thì chạy đúng bản built-in. */
   readonly modeProfiles?: ModeProfiles;
+  /**
+   * Bàn phím của principal — chỗ duy nhất một `require_approval` được trả lời. Chỉ root
+   * `alp` có nó; bỏ trống (test, script) thì root hỏi không ai, và mọi câu hỏi là
+   * `APPROVAL_UNAVAILABLE`.
+   */
+  readonly approvalSurface?: ApprovalSurface;
+  /** Project đã đăng ký chứa một path, hoặc `null` — biên của quy tắc approval duy nhất. */
+  readonly projectRootOf?: (path: string) => Promise<string | null>;
+  /**
+   * Phục vụ `alp …` gõ từ trong sandbox của root, với launch env của root — cái sandbox
+   * không cho `alp` chạy được thì process này chạy hộ. Bỏ trống (test, script) thì `alp`
+   * trong sandbox fail-closed vì không có server.
+   */
+  readonly relay?: Pick<RelayServer, "register">;
 }
 
 export async function runMainSession(
@@ -188,13 +203,18 @@ async function runThreadRoot(
   const workspaceMode = definition.capabilities.workspace.writeRoots.length > 0
     ? requestedWorkspaceMode
     : "read-only";
+  // Grant của root là chính cwd nó đứng, project là project đã đăng ký quanh đó. Root chưa
+  // có `--workspace`, nên cwd luôn nằm trong grant và câu hỏi chưa bao giờ tới đây — nhưng
+  // surface và biên đã đứng đúng chỗ cho ngày root được chỉ đi nơi khác.
+  const project = (await dependencies.projectRootOf?.(input.cwd)) ?? input.cwd;
   const authorization = await dependencies.executionService.authorize({
     executionId,
     parent: "principal",
     target: definition.id,
     workspace: input.cwd,
     workspaceMode,
-  });
+    launch: { root: input.cwd, project },
+  }, dependencies.approvalSurface);
   // Binding chốt ở đây và bất biến từ đây: cùng một giá trị đi vào graph node và vào
   // snapshot policy đã hash. Thread lease được nhả trước khi graph được chạm tới.
   const reserved = await dependencies.threads.reserveRoot(thread.id, executionId);
@@ -251,41 +271,54 @@ async function runThreadRoot(
     });
     const backendHealth = await dependencies.backend.healthCheck();
     if (!backendHealth.ok) throw new Error(backendHealth.message);
-    // Spawn chạy **dưới** lease của graph: nhả lease trước khi backend có record là mở một
-    // cửa sổ mà cây nói "đang chạy" còn process thì chưa tồn tại. `wait` thì ở ngoài — giữ
-    // lease suốt phiên là khoá cả cây lại trong lúc nó đang cần đẻ con.
-    const spawned = await dependencies.graph.startRoot(root.binding, async () =>
-      // The principal is sitting in front of this one, so it must own the terminal: a backend
-      // that tees stdout instead of inheriting it would leave the session with no tty and no
-      // way to type. `interactive` is the only thing that keeps `stdio: "inherit"` here.
-      dependencies.backend.spawn({
-        executionId,
-        launchSpec,
-        lifecycle: {
-          requestId: executionId,
-          parentExecutionId: null,
-          background: false,
-          interactive: true,
-          timeoutMs: null,
-          // Hạn tuyệt đối của cây được chốt đúng một lần, ở root, và mọi process trong cây
-          // nhận lại đúng timestamp đó.
-          deadlineAt: root.binding.deadlineAt,
-        },
-      }));
-    const backendResult = spawned.status === "running"
-      ? await dependencies.backend.wait(executionId)
-      : spawned;
-    const result = await reconcile(backendResult, execution.artifacts?.stateFile);
-    // Kết cục của phiên là kết cục của root. Ghi nó ở đây chứ không ở `finally`: một lần
-    // ném từ phía trên đã được `withRootFailure` ghi là `failed`, và ghi đè lần nữa chỉ đổi
-    // thông điệp lỗi thành một dòng vô nghĩa hơn.
-    await dependencies.graph.finishExecution(root.binding, {
-      status: result.status === "completed" ? "completed"
-        : result.status === "cancelled" ? "cancelled"
-        : "failed",
-      ...(result.error ? { error: { code: result.error.code, message: result.error.message } } : {}),
+    // Đăng ký trước khi có process: lệnh đầu tiên root gõ có thể tới ngay sau SessionStart.
+    const relay = dependencies.relay?.register({
+      executionId,
+      directory: execution.artifacts.relayDirectory,
+      env: launchSpec.env,
     });
-    return result;
+    try {
+      // Spawn chạy **dưới** lease của graph: nhả lease trước khi backend có record là mở một
+      // cửa sổ mà cây nói "đang chạy" còn process thì chưa tồn tại. `wait` thì ở ngoài — giữ
+      // lease suốt phiên là khoá cả cây lại trong lúc nó đang cần đẻ con.
+      const spawned = await dependencies.graph.startRoot(root.binding, async () =>
+        // The principal is sitting in front of this one, so it must own the terminal: a backend
+        // that tees stdout instead of inheriting it would leave the session with no tty and no
+        // way to type. `interactive` is the only thing that keeps `stdio: "inherit"` here.
+        dependencies.backend.spawn({
+          executionId,
+          launchSpec,
+          // In `context/`, not `runtime/`: the receipt has to outlive the launch files.
+          receipt: { file: join(execution.artifacts.contextDirectory, "launch.json"), runtime: execution.policy.runtime },
+          lifecycle: {
+            requestId: executionId,
+            parentExecutionId: null,
+            background: false,
+            interactive: true,
+            timeoutMs: null,
+            // Hạn tuyệt đối của cây được chốt đúng một lần, ở root, và mọi process trong cây
+            // nhận lại đúng timestamp đó.
+            deadlineAt: root.binding.deadlineAt,
+          },
+        }));
+      const backendResult = spawned.status === "running"
+        ? await dependencies.backend.wait(executionId)
+        : spawned;
+      const result = await reconcile(backendResult, execution.artifacts?.stateFile);
+      // Kết cục của phiên là kết cục của root. Ghi nó ở đây chứ không ở `finally`: một lần
+      // ném từ phía trên đã được `withRootFailure` ghi là `failed`, và ghi đè lần nữa chỉ đổi
+      // thông điệp lỗi thành một dòng vô nghĩa hơn.
+      await dependencies.graph.finishExecution(root.binding, {
+        status: result.status === "completed" ? "completed"
+          : result.status === "cancelled" ? "cancelled"
+          : "failed",
+        ...(result.error ? { error: { code: result.error.code, message: result.error.message } } : {}),
+      });
+      return result;
+    } finally {
+      // Process root đã kết thúc: không còn ai để nhận response, và server.json phải biến mất.
+      relay?.close();
+    }
   });
   // Sau khi graph đã terminal, và ngoài mọi lease graph: Thread chép lại kết cục một lần.
   await settle(threadOutcome(result.status));

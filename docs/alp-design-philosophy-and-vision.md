@@ -68,7 +68,7 @@ Doc này chỉ có giá trị nếu nó thành thật về khoảng cách. Tại
 | Agent identity | 8 agent TS, freeze + hash | + custom agent declarative có trần capability; + built-in `orchestrator` | **Chưa có** — §5, §5.9 |
 | Bề mặt của agent | `AgentCapabilities` = tool + memory + workspace | + skill, subagent, MCP server **theo từng agent**, pin trong `ExecutionPolicy` | **Chưa có** — §0, §4.6, §5.5 |
 | Công cụ test agent | `npm test` (unit, registry giả) | `alp agent test`: static → dry-run prepare → deny-path → live, chạy được cả agent built-in | **Chưa có** — §10.3 |
-| Policy | `PolicyEngine` fail-closed, nhị phân allow/deny | + `require_approval` là quyết định của core | **Chưa có** — §6 |
+| Policy | `PolicyEngine.decide()` trả `allow / deny / require_approval`; một luật (`workspace-outside-grant-inside-project`, scope `session`); `authorize()` vẫn nhị phân, fail-closed | + thêm luật khi có nhu cầu thật; scope `once`/`execution` | **Đã có, phạm vi hẹp** — §6 |
 | Delegation | `DelegationService` → policy → backend, deny-first | Giữ nguyên | ✅ Đạt |
 | Tool | `TOOL_CATALOG` hardcode từ vựng Claude Code | Capability là kiểu chính; tên tool sống trong adapter | **Ngược hướng** — §4.5 |
 | Runtime | `ClaudeRuntimeAdapter`, `CodexRuntimeAdapter` | Giữ hai runtime này | ✅ Đạt |
@@ -328,6 +328,7 @@ Tracing tồn tại độc lập với surface. Surface chỉ render hoặc forw
 | Wall clock | Một timestamp tuyệt đối chốt ở root; mọi node kế thừa đúng nó, không gia hạn |
 | Cascade cancellation | Khoá nhánh → thu reservation → tín hiệu từ lá lên; anh em không bị đụng |
 | Không orphan | Reconciliation hỏi backend từng node `active`, đóng node mà process đã mất |
+| Token / tool-call budget | **Có, observe-only** (2026-09-17): usage đọc từ transcript qua history bridge, `--budget-tokens`/`--budget-tool-calls` cho `within \| exceeded \| unknown` sau khi con xong, `exceeded` là evidence cha thấy khi nghiệm thu — không chặn giữa chừng (hard budget là ADR riêng) |
 
 Ba thứ trong đoạn trên vẫn **chưa**: **token budget** và **tool-call budget** không được đếm ở
 đâu cả, và trace ghép `parent → child → tool` mới có hai nấc đầu (cây nối được
@@ -852,7 +853,7 @@ tới khi có nhu cầu thật, vì mỗi thứ đều tự biện minh được
 | Plugin **có code** / registry | Có ≥ 3 extension bên thứ ba thật, **và** có mô hình signing + sandbox |
 | Workflow DSL / engine tổng quát | Có ≥ 2 workflow không diễn đạt được bằng linear workflow |
 | Custom agent được delegate | Có use case thật cần cây sâu 2 tầng (built-in `orchestrator` ở §5.9 là đường khác, không phải cái này) |
-| `orchestrator` (§5.9) | §4.10 xong: budget, cancellation, trace parent→child — cancellation và delegation/wall-clock budget đã xong 2026-09-11; **token/tool-call budget thì chưa**, nên điều kiện chưa mở |
+| `orchestrator` (§5.9) | §4.10 xong: budget, cancellation, trace parent→child — cancellation và delegation/wall-clock budget xong 2026-09-11; token/tool-call budget observe-only xong 2026-09-17 ⇒ **điều kiện đã mở**, plan riêng cho role này còn phải viết |
 | Runtime thứ ba | Có người dùng thật cần |
 | Cloud execution / ALP Cloud | Sau khi trace và budget đã đầy đủ |
 | Tách repo thành `core/ runtime/ extensions/` | Xem §9 |
@@ -962,6 +963,15 @@ Doc này chỉ được coi là đang thành hiện thực khi các mốc sau đ
   chưa chạy.
 - **M3 — Approval.** `require_approval` được PolicyEngine phát ra, phiên tương tác hỏi được, và
   `--background` deny. *Bằng chứng: test cho `supportsApproval: false` ⇒ deny.*
+  **2026-09-12: xong, phạm vi hẹp.** `PolicyEngine.decide()` phát `require_approval` cho đúng một
+  luật — `--workspace` ngoài grant của cha nhưng trong project đã đăng ký; ngoài project vẫn
+  `WORKSPACE_SCOPE_MISMATCH`. Hỏi là một bước *bên trong* `authorize()`, trước khi có ticket: không
+  surface ⇒ `APPROVAL_UNAVAILABLE`, "no" ⇒ `APPROVAL_DENIED`, "yes" ⇒ `ApprovalRecordV1` đi vào
+  `ExecutionPolicy.approvals` và vào `policyHash`. Surface chỉ có ở TTY của `alp` root;
+  `alp delegate` không có surface, chỉ dùng được "yes" phạm vi session mà root đã ghi ở
+  `<root>/context/approvals.json`. Bằng chứng: `test/policy/approval.test.ts`,
+  `test/execution/approval-surface.test.ts`, `test/e2e/approval.test.ts`,
+  `test/cutover/policy-approvals.test.ts`.
 - **M4 — Nợ capability đã trả.** `TOOL_CATALOG` không còn là từ vựng của core;
   `execution-bridge.ts` không còn map `apply_patch` → `Write`. *Bằng chứng: grep sạch.*
 

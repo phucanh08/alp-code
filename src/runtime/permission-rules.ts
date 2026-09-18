@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { TOOL_CATALOG, type AgentId, type ToolId } from "../agents/types";
 import type { ExecutionPolicy } from "../execution/types";
 
@@ -28,9 +28,10 @@ import type { ExecutionPolicy } from "../execution/types";
  * read-only role on Codex cannot change anything or reach the network; it can read and it
  * can run commands.
  *
- * `enforcementNotes` below turns this into something a principal reads before trusting an
- * agent, because a disclosure that lists grants without saying which runtime honours them is
- * the half-truth that matters most at exactly that moment.
+ * These measurements are the table in `capabilities.ts` (`capabilitiesFor`), which is what
+ * `policy.json` snapshots and what `alp agent test` prints and probes — a disclosure that
+ * lists grants without saying which runtime honours them is the half-truth that matters
+ * most at exactly the moment a principal decides to trust an agent.
  * `PolicyEngine` still runs at `prepare` time; only the per-call interception is gone.
  */
 
@@ -56,24 +57,56 @@ export interface RuntimePermissionInput {
    * adapter for why that changes the tool grant rather than the workspace guarantee.
    */
   readonly sandboxed?: boolean;
+  /**
+   * Paths that a scoped `workspace-write` policy must not write although they sit in the
+   * workspace — the enumerated siblings of the scope, from `writeScopeDenyPaths`. Each one
+   * becomes an `Edit` deny rule (the verb Claude Code also applies to Write, NotebookEdit and
+   * MultiEdit). Absent or empty for an unscoped policy.
+   */
+  readonly writeScopeDenyPaths?: readonly string[];
+}
+
+function pathWithin(root: string, target: string): boolean {
+  const relation = relative(root, target);
+  return relation === "" || (!relation.startsWith("..") && !isAbsolute(relation));
 }
 
 /**
- * Per-runtime enforcement, in the terms of *this* policy.
+ * What must be denied so that, inside `workspace`, only `writableRoots` can be written —
+ * measured for Claude Code 2.1.269 (`research/claude-sandbox-precedence.md`): `denyWrite`
+ * beats `allowWrite`, so the scope cannot be *allowed*; its siblings must be *denied*.
  *
- * Lives next to the code that writes the ACL so the two cannot drift: a line here is a claim
- * about what `claudePermissions` and `codexSandboxLines` actually produce, and both are a few
- * lines away.
+ * Every directory on the way from the workspace down to each writable root has its entries
+ * listed, and each entry that is not itself on the way to some writable root is denied. A
+ * writable root outside the workspace (private memory) contributes nothing: it is outside
+ * the tree being confined. The result is sorted and duplicate-free so the same scope on the
+ * same tree yields the same config.
+ *
+ * Partial by construction — hence `writeScope: "partial"` for Claude in the capability
+ * table: an entry created *after* this list was generated, beside the scope, is not in it.
  */
-export function enforcementNotes(policy: ExecutionPolicy): readonly string[] {
-  const holdsBash = policy.allowedTools.includes("Bash");
-  const readsWorkspace = policy.workspaceAccess === "granted";
-  return Object.freeze([
-    "claude: the tool grant, the skill names and the read roots are ACL rules the runtime refuses at call time",
-    `codex: the shell is built in and cannot be withheld${holdsBash ? "" : " — this role holds no `Bash`, and a command can still run"}`,
-    `codex: the read-only sandbox permits reading any path${readsWorkspace ? ", so `workspace.readRoots` is instruction-level here" : ", so the memory-only boundary is instruction-level here"}`,
-    `codex: writes outside the writable roots and network egress are refused by the sandbox`,
-  ]);
+export async function writeScopeDenyPaths(
+  workspace: string,
+  writableRoots: readonly string[],
+  listDirectory: (directory: string) => Promise<readonly string[]>,
+): Promise<readonly string[]> {
+  const roots = writableRoots.filter((root) => pathWithin(workspace, root));
+  const onTheWay = (path: string): boolean => roots.some((root) => pathWithin(path, root) || pathWithin(root, path));
+  const ancestors = new Set<string>();
+  for (const root of roots) {
+    for (let directory = dirname(root); pathWithin(workspace, directory); directory = dirname(directory)) {
+      ancestors.add(directory);
+      if (directory === workspace || dirname(directory) === directory) break;
+    }
+  }
+  const denied = new Set<string>();
+  for (const directory of ancestors) {
+    for (const entry of await listDirectory(directory)) {
+      const path = join(directory, entry);
+      if (!onTheWay(path)) denied.add(path);
+    }
+  }
+  return Object.freeze([...denied].sort());
 }
 
 export interface ClaudePermissions {
@@ -135,6 +168,10 @@ export function claudePermissions(input: RuntimePermissionInput): ClaudePermissi
       const directory = join(input.memoryRoot, "private", role);
       return [absoluteRule("Read", directory), absoluteRule("Edit", directory)];
     });
+  // Inside a scoped workspace, what stands beside the scope is denied by name. `Edit` is
+  // the verb: Claude Code reads it for Write, NotebookEdit and MultiEdit too, while a
+  // `Write(...)` rule is ignored (measured 2026-09-12).
+  for (const path of input.writeScopeDenyPaths ?? []) deny.push(absoluteRule("Edit", path));
 
   // Tools outside the policy are denied by bare name, and tools inside it are allowed the
   // same way — without this half, a `workspace-write` role had no CLI bypass (see the Claude
@@ -213,9 +250,9 @@ function tomlStringArray(values: readonly string[]): string {
  */
 export function codexSandboxLines(input: RuntimePermissionInput): readonly string[] {
   const { policy } = input;
-  const writableRoots = policy.workspaceMode === "workspace-write"
-    ? [policy.workspace, join(input.memoryRoot, "private", policy.role)]
-    : [];
+  // The scope replaces the workspace as what Codex may write — never widens it. Codex
+  // enforces `writable_roots` in its own sandbox, so this line alone is the enforcement.
+  const writableRoots = codexWriteRoots(input);
   return Object.freeze([
     // Nothing in a delegated execution should need an approval prompt: the policy already
     // decided what is allowed, and a prompt in a background pane just hangs forever.
@@ -235,6 +272,59 @@ export function codexSandboxLines(input: RuntimePermissionInput): readonly strin
     `prefix = ["paseo"]`,
     "allow = false",
     "",
+  ]);
+}
+
+/** Name of the one permission profile ALP hands Codex on argv. */
+export const CODEX_PERMISSION_PROFILE = "alp";
+
+/**
+ * Write roots of a launch, the same list `codexSandboxLines` records: the scope (or the
+ * whole workspace) plus the role's private memory, and nothing for a read-only role.
+ */
+function codexWriteRoots(input: RuntimePermissionInput): readonly string[] {
+  const { policy } = input;
+  return policy.workspaceMode === "workspace-write"
+    ? [...(policy.writeScope ?? [policy.workspace]), join(input.memoryRoot, "private", policy.role)]
+    : [];
+}
+
+/**
+ * The Codex sandbox, as `-c` overrides — the only form Codex reads from ALP (the config
+ * file the adapter writes is ALP's own record; measured 2026-09-18 on codex-cli 0.154.0,
+ * `plans/260918-0700-execution-relay/research/alp-inside-sandbox.md`).
+ *
+ * A `default_permissions` profile wins over `sandbox_mode` outright, and under it a path is
+ * writable only when listed: the relay directory (where `alp` inside the sandbox leaves its
+ * request — the one opening under the executions root), the write roots, and for a
+ * `workspace-write` role the temp directories Codex's own mode opens. `.git`, `.agents` and
+ * `.codex` under each write root stay read-only, again as Codex's own mode keeps them. An
+ * entry created *beside* a scope is refused too, which is what makes `writeScope` `enforced`
+ * on this runtime. `approval_policy = "never"`: the policy already decided, and a prompt in
+ * a background pane hangs forever — the interactive session runs the same profile, with only
+ * the prompts gone.
+ */
+export function codexPermissionOverrides(input: RuntimePermissionInput & {
+  readonly relayDirectory: string;
+  readonly tmpdir: string | undefined;
+}): readonly string[] {
+  const writeRoots = codexWriteRoots(input);
+  type Entry = readonly [path: string, access: "read" | "write"];
+  const entries: readonly Entry[] = [
+    [":root", "read"],
+    [input.relayDirectory, "write"],
+    ...(input.policy.workspaceMode === "workspace-write"
+      ? [["/tmp", "write"] satisfies Entry, ...(input.tmpdir ? [[input.tmpdir, "write"] satisfies Entry] : [])]
+      : []),
+    ...writeRoots.map((root): Entry => [root, "write"]),
+    ...writeRoots.flatMap((root): Entry[] =>
+      [".git", ".agents", ".codex"].map((protectedName): Entry => [join(root, protectedName), "read"])),
+  ];
+  const table = `{${entries.map(([path, access]) => `${tomlString(path)}=${tomlString(access)}`).join(",")}}`;
+  return Object.freeze([
+    "-c", `default_permissions=${tomlString(CODEX_PERMISSION_PROFILE)}`,
+    "-c", `permissions.${CODEX_PERMISSION_PROFILE}.filesystem=${table}`,
+    "-c", `approval_policy="never"`,
   ]);
 }
 

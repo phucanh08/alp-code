@@ -252,12 +252,15 @@ describe("ExecutionService", () => {
     await expect((await import("node:fs/promises")).readdir(join(root, "executions", "exec_immutable"))).resolves.toEqual([
       "context",
       "policy.json",
+      // `relay/`: kênh duy nhất từ trong sandbox tới process root (plans/260918-0700-execution-relay).
+      "relay",
       "runtime",
       "state.json",
     ]);
 
     const contextDirectory = join(root, "executions", "exec_immutable", "context");
     await expectPosixMode(contextDirectory, 0o700);
+    await expectPosixMode(join(root, "executions", "exec_immutable", "relay"), 0o700);
     const checkpointPath = join(contextDirectory, "checkpoint.json");
     const continuityPath = join(contextDirectory, "continuity.md");
     await expectPosixMode(checkpointPath, 0o600);

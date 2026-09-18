@@ -3,11 +3,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { defineAgent } from "../../src/agents/agent-definition";
 import { renderAgentTestReport, testAgent } from "../../src/agent-test";
-import { enforcementNotes } from "../../src/runtime/permission-rules";
 import { agentRegistry, createAgentRegistry } from "../../src/agents/registry";
 import type { AgentDefinition, AgentId } from "../../src/agents/types";
 import { parseAgentCommand, runAgentCommand, type AgentCommand } from "../../src/cli/commands/agent";
 import { parseAlpArgs } from "../../src/cli/alp";
+import { ENFORCEMENT_FIELDS } from "../../src/runtime/capabilities";
 import { cleanupDryRuns } from "../support/agent-dry-run";
 import { agentProject, cleanupAgentProjects, VALID_AGENT_FILE } from "../support/agent-file";
 
@@ -55,12 +55,6 @@ function probe(overrides: Partial<AgentDefinition<unknown>> = {}): AgentDefiniti
 
 const customAgentProject = (source: string): Promise<string> => agentProject({ migrator: source });
 
-/** Only the fields `enforcementNotes` reads; the rest of a policy is irrelevant to it. */
-const POLICY_SHAPE = {
-  allowedTools: ["Read"],
-  workspaceAccess: "granted",
-} as unknown as Parameters<typeof enforcementNotes>[0];
-
 afterEach(cleanupDryRuns);
 afterEach(cleanupAgentProjects);
 
@@ -85,13 +79,19 @@ describe("alp agent test — tiers 1–3 on the shipped roles", () => {
     expect(report.disclosure?.authority.some((row) => row.startsWith("| Tools |"))).toBe(true);
     expect(report.disclosure?.egress.join("\n")).toContain("no MCP server granted");
     // The table alone reads as one promise and it is two — §A of the 2026-09-10 live run.
-    const enforcement = report.disclosure?.enforcement.join("\n") ?? "";
-    expect(enforcement).toContain("claude: the tool grant");
-    expect(enforcement).toContain("the shell is built in and cannot be withheld");
+    const enforcement = report.disclosure?.enforcement ?? [];
+    // One row per runtime, every field of the measured table named with its level.
+    expect(enforcement.filter((line) => line.startsWith("claude: "))).toHaveLength(ENFORCEMENT_FIELDS.length);
+    expect(enforcement.filter((line) => line.startsWith("codex: "))).toHaveLength(ENFORCEMENT_FIELDS.length);
+    const joined = enforcement.join("\n");
+    expect(joined).toContain("claude: toolGrant enforced");
+    expect(joined).toContain("codex: toolGrant declared-only");
+    expect(joined).toContain("the shell is built in and cannot be withheld");
     // `review` holds `Bash`, so the caveat about running one anyway is correctly absent —
     // the note describes this policy, not a generic warning.
-    expect(enforcement).not.toContain("holds no `Bash`");
-    expect(enforcement).toContain("permits reading any path");
+    expect(joined).not.toContain("holds no `Bash`");
+    expect(joined).toContain("codex: readIsolation none");
+    expect(joined).toContain("permits reading any path");
     expect(report.disclosure?.cost.join("\n")).toContain("mode `medium` runs this role on");
     expect(Object.keys(report.disclosure?.launch ?? {})).toEqual(["claude", "codex"]);
   }, 30_000);
@@ -305,31 +305,5 @@ describe("runAgentCommand — test", () => {
     expect(code).toBe(0);
     expect(output).toContain("AGENT-FILE migrator");
     expect(output).toContain("RESULT   ");
-  });
-});
-
-describe("enforcementNotes", () => {
-  /**
-   * The note has to describe *this* policy, not a generic warning: telling a role that holds
-   * `Bash` that "a command can still run" says nothing, and a reader who sees the same
-   * paragraph on every agent stops reading it.
-   */
-  it("drops the `Bash` caveat for a role that was granted it", () => {
-    const withBash = enforcementNotes({ ...POLICY_SHAPE, allowedTools: ["Read", "Bash"] });
-    const withoutBash = enforcementNotes({ ...POLICY_SHAPE, allowedTools: ["Read"] });
-
-    expect(withBash.join("\n")).not.toContain("holds no `Bash`");
-    expect(withoutBash.join("\n")).toContain("holds no `Bash`");
-    expect(withBash.join("\n")).toContain("the shell is built in and cannot be withheld");
-  });
-
-  it("names what the sandbox does hold", () => {
-    expect(enforcementNotes(POLICY_SHAPE).join("\n"))
-      .toContain("writes outside the writable roots and network egress are refused by the sandbox");
-  });
-
-  it("says the boundary is instruction-level for a memory-only role", () => {
-    expect(enforcementNotes({ ...POLICY_SHAPE, workspaceAccess: "none" }).join("\n"))
-      .toContain("the memory-only boundary is instruction-level here");
   });
 });

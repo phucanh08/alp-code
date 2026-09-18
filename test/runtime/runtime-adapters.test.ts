@@ -4,6 +4,7 @@ import { basename, delimiter, dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ClaudeRuntimeAdapter } from "../../src/runtime/claude-adapter";
 import { CodexRuntimeAdapter } from "../../src/runtime/codex-adapter";
+import { capabilitiesFor } from "../../src/runtime/capabilities";
 import { absoluteRule } from "../../src/runtime/permission-rules";
 import type { PreparedExecution } from "../../src/execution/types";
 import type { RuntimeLaunchSpec } from "../../src/runtime/runtime-adapter";
@@ -27,6 +28,22 @@ function runtimeFile(launch: RuntimeLaunchSpec, name: string): string {
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => removeTemporary(root)));
 });
+
+/**
+ * The filesystem profile Codex will read, parsed back from argv the way Codex parses it: an
+ * inline TOML table of `"path" = "access"` after `-c permissions.alp.filesystem=`.
+ */
+function codexFilesystemProfile(launch: RuntimeLaunchSpec): Record<string, string> {
+  const index = launch.args.findIndex((argument) => argument.startsWith("permissions.alp.filesystem="));
+  if (index < 0 || launch.args[index - 1] !== "-c") throw new Error(`no -c permissions.alp.filesystem in ${launch.args.join(" ")}`);
+  const table = launch.args[index]!.slice("permissions.alp.filesystem=".length);
+  if (!table.startsWith("{") || !table.endsWith("}")) throw new Error(`not an inline table: ${table}`);
+  const profile: Record<string, string> = {};
+  for (const match of table.slice(1, -1).matchAll(/"((?:[^"\\]|\\.)*)"\s*=\s*"([a-z]+)"/gu)) {
+    profile[JSON.parse(`"${match[1]}"`)] = match[2]!;
+  }
+  return profile;
+}
 
 async function fixture(): Promise<{ root: string; project: string; prepared: PreparedExecution }> {
   const root = await mkdtemp(join(tmpdir(), "alp-runtime-adapter-"));
@@ -64,10 +81,13 @@ async function fixture(): Promise<{ root: string; project: string; prepared: Pre
       role: "search",
       workspace: project,
       workspaceMode: "read-only",
+      writeScope: null,
       mode: "medium",
       model: "gpt-5.6-terra",
       reasoningEffort: "low",
       runtime: "codex",
+      enforcement: capabilitiesFor("codex", process.platform),
+      approvals: [],
       workspaceAccess: "granted",
       allowedTools: ["Read", "Grep"],
       skills: [],
@@ -94,6 +114,7 @@ async function fixture(): Promise<{ root: string; project: string; prepared: Pre
       policyFile: join(directory, "policy.json"),
       runtimeDirectory,
       contextDirectory,
+      relayDirectory: join(directory, "relay"),
       checkpointFile: join(contextDirectory, "checkpoint.json"),
       continuityFile: join(contextDirectory, "continuity.md"),
       compactEventsFile: join(contextDirectory, "compact-events.jsonl"),
@@ -175,11 +196,14 @@ describe("runtime adapters", () => {
       enabled: true,
       failIfUnavailable: true,
       allowUnsandboxedCommands: false,
-      filesystem: { denyWrite: [project] },
+      // The one opening outside the workspace: where `alp` inside the sandbox leaves its
+      // relay request (measured 2026-09-18: a write beside the workspace is refused unless
+      // its directory is in `allowWrite`). The execution directory itself stays closed.
+      filesystem: { denyWrite: [project], allowWrite: [prepared.artifacts.relayDirectory] },
     });
   });
 
-  it("bypasses permission prompts only for the interactive session, on both runtimes", async () => {
+  it("skips prompts only for the interactive session, and keeps the sandbox on both runtimes", async () => {
     const { root, prepared } = await fixture();
     const options = { execution: prepared, model: "m", reasoningEffort: "high" } as const;
     const env = { HOME: root, ALP_REPO_ROOT: root };
@@ -198,12 +222,66 @@ describe("runtime adapters", () => {
     const codexLive = await codex.prepare({ ...options, interactive: true });
     const codexDelegated = await codex.prepare({ ...options, interactive: false });
 
-    expect(codexLive.args).toContain("--dangerously-bypass-approvals-and-sandbox");
-    // `-s` is dropped rather than left alongside: Codex accepts both and silently lets the
-    // bypass win, so keeping it would leave an argument that misstates the running mode.
-    expect(codexLive.args).not.toContain("-s");
-    expect(codexDelegated.args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
-    expect(codexDelegated.args).toContain("-s");
+    // Measured 2026-09-18 (codex-cli 0.154.0, `research/alp-inside-sandbox.md`): the only
+    // sandbox configuration Codex reads from ALP is what rides on argv, and a
+    // `default_permissions` profile wins over `sandbox_mode`/`-s` outright. So both launches
+    // carry the profile, neither carries `-s` (a dead argument misstating the mode), and the
+    // interactive session no longer runs with no sandbox at all: like Claude's
+    // `--dangerously-skip-permissions`, only the prompts go.
+    for (const launch of [codexLive, codexDelegated]) {
+      expect(launch.args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+      expect(launch.args).not.toContain("-s");
+      expect(launch.args).toContain('default_permissions="alp"');
+      expect(launch.args).toContain('approval_policy="never"');
+      expect(launch.args[launch.args.indexOf('default_permissions="alp"') - 1]).toBe("-c");
+    }
+  });
+
+  /**
+   * Oracle: `research/alp-inside-sandbox.md` (codex-cli 0.154.0, 2026-09-18) — under a
+   * permission profile, a path is writable only when listed `"write"`; `/tmp` and `.git`
+   * included. Codex's own `workspace-write` opens `/tmp`/`$TMPDIR` and keeps `.git`,
+   * `.agents`, `.codex` read-only under every writable root, so the profile says the same.
+   */
+  it("puts the Codex sandbox on argv as a permission profile that opens only the relay directory and the write roots", async () => {
+    const { root, project, prepared } = await fixture();
+    const env = { HOME: root, ALP_REPO_ROOT: root, TMPDIR: join(root, "tmpdir") };
+    const codex = new CodexRuntimeAdapter({ platform: "linux", env });
+    const relay = prepared.artifacts.relayDirectory;
+
+    const readOnly = await codex.prepare({ execution: prepared, model: "m", reasoningEffort: "high", interactive: false });
+    expect(codexFilesystemProfile(readOnly)).toEqual({ ":root": "read", [relay]: "write" });
+
+    const scope = join(project, "src", "parser");
+    const scoped = { ...prepared, policy: { ...prepared.policy, workspaceMode: "workspace-write" as const, writeScope: [scope] } };
+    const launch = await codex.prepare({ execution: scoped, model: "m", reasoningEffort: "high", interactive: false });
+    const privateMemory = join(root, ".alp", "memory", "private", "search");
+    expect(codexFilesystemProfile(launch)).toEqual({
+      ":root": "read",
+      [relay]: "write",
+      "/tmp": "write",
+      [join(root, "tmpdir")]: "write",
+      [scope]: "write",
+      [privateMemory]: "write",
+      [join(scope, ".git")]: "read",
+      [join(scope, ".agents")]: "read",
+      [join(scope, ".codex")]: "read",
+      [join(privateMemory, ".git")]: "read",
+      [join(privateMemory, ".agents")]: "read",
+      [join(privateMemory, ".codex")]: "read",
+    });
+    // The workspace itself is not a write root once a scope narrows it.
+    expect(codexFilesystemProfile(launch)).not.toHaveProperty(project);
+
+    // Whole workspace: the workspace is the write root, and nothing under the executions
+    // root but the relay directory is ever writable.
+    const whole = { ...prepared, policy: { ...prepared.policy, workspaceMode: "workspace-write" as const } };
+    const wholeLaunch = await codex.prepare({ execution: whole, model: "m", reasoningEffort: "high", interactive: true });
+    const profile = codexFilesystemProfile(wholeLaunch);
+    expect(profile[project]).toBe("write");
+    expect(profile[join(project, ".git")]).toBe("read");
+    const executionsRoot = join(root, "executions");
+    expect(Object.entries(profile).filter(([path, access]) => path.startsWith(executionsRoot) && access === "write")).toEqual([[relay, "write"]]);
   });
 
   it("still denies a delegated role its siblings' private memory when main runs unrestricted", async () => {
@@ -303,7 +381,11 @@ describe("runtime adapters", () => {
     expect(launch.args.slice(0, 2)).toEqual(["exec", "--skip-git-repo-check"]);
     expect(launch.args).toContain("-C");
     expect(launch.args).toContain(project);
-    expect(launch.args).toContain("read-only");
+    // Read-only is now said by the permission profile, not `-s`: the workspace is in no
+    // `"write"` entry, and the profile is what Codex reads.
+    expect(launch.args).not.toContain("-s");
+    expect(launch.args).toContain('default_permissions="alp"');
+    expect(codexFilesystemProfile(launch)).toEqual({ ":root": "read", [prepared.artifacts.relayDirectory]: "write" });
     expect(launch.args).toContain("gpt-test");
     expect(launch.args).toContain('model_reasoning_effort="xhigh"');
     expect(launch.args.at(-1)).toMatch(/^ALP task is in .+task\.md; execute it\.$/);
@@ -451,7 +533,7 @@ describe.each([
   ["claude", (env: NodeJS.ProcessEnv) => new ClaudeRuntimeAdapter({ platform: "linux", env })],
   ["codex", (env: NodeJS.ProcessEnv) => new CodexRuntimeAdapter({ platform: "linux", env })],
 ] as const)("%s adapter conformance", (_name, build) => {
-  async function launch(interactive: boolean): Promise<{ spec: RuntimeLaunchSpec; capsuleTask: string }> {
+  async function launch(interactive: boolean): Promise<{ spec: RuntimeLaunchSpec; capsuleTask: string; relayDirectory: string }> {
     const { root, prepared } = await fixture();
     const spec = await build({ HOME: root, ALP_REPO_ROOT: root }).prepare({
       execution: prepared,
@@ -459,8 +541,16 @@ describe.each([
       reasoningEffort: "high",
       interactive,
     });
-    return { spec, capsuleTask: prepared.capsule.task };
+    return { spec, capsuleTask: prepared.capsule.task, relayDirectory: prepared.artifacts.relayDirectory };
   }
+
+  it("hands the runtime its relay directory on both execution modes", async () => {
+    // Nơi duy nhất `alp` trong sandbox nói được với process root (plans/260918-0700-execution-relay).
+    for (const interactive of [true, false]) {
+      const { spec, relayDirectory } = await launch(interactive);
+      expect(spec.env.ALP_RELAY_DIR).toBe(relayDirectory);
+    }
+  });
 
   it("injects session context on both execution modes", async () => {
     for (const interactive of [true, false]) {

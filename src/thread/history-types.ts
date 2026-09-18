@@ -1,5 +1,6 @@
 import type { RuntimeId } from "../agents/types";
 import type { ExecutionId } from "../execution/types";
+import type { UsageCounters } from "../execution/usage";
 import type { ThreadExecutionOutcome } from "./types";
 
 /**
@@ -82,6 +83,18 @@ export interface ThreadExecutionBoundary extends ThreadEntryBase {
   /** Số entry đã mirror / số dòng bỏ qua vì không parse được. */
   readonly collected: number;
   readonly skipped: number;
+  /**
+   * Root này đã giao bao nhiêu việc và cha đã nói gì về chúng (P4), đếm từ cây lúc settle.
+   * Vắng mặt ở boundary ghi trước P4 và ở execution không có cây.
+   */
+  readonly delegations?: {
+    readonly accepted: number;
+    readonly rejected: number;
+    readonly cancelled: number;
+    readonly undecided: number;
+  };
+  /** Token / tool call root này đã dùng tới lúc boundary được ghi (P6). Vắng mặt khi chưa lát nào có số. */
+  readonly usage?: UsageCounters;
 }
 
 export type ThreadEntry =
@@ -109,6 +122,12 @@ export interface HistoryDelta {
   readonly pinnedVersion: string | null;
   /** Dòng bỏ qua trong lần đọc này (lạ / hỏng). */
   readonly skipped: number;
+  /**
+   * Token / tool call của riêng lát này (P6). `null` = không có số mới: transcript không đọc
+   * được, runtime không có bridge, hay không có dòng mới. Một cột `null` bên trong = có dòng
+   * mới nhưng cột đó không đọc được. Vắng mặt (bridge cũ) ≡ `null`.
+   */
+  readonly usageDelta?: UsageCounters | null;
 }
 
 /**
@@ -122,6 +141,8 @@ export interface ThreadExecutionHistory {
   readonly entryCount: number;
   readonly skipped: number;
   readonly collectedAt: string;
+  /** Cộng dồn `usageDelta` của mọi lần collect (P6); vắng mặt ở ref ghi trước P6, `null` khi chưa có lát nào có số. */
+  readonly usage?: UsageCounters | null;
 }
 
 /** Trần text một entry giữ lại sau redaction — phần còn lại cắt, không copy. */

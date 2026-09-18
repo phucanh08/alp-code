@@ -383,12 +383,30 @@ thì không phân biệt được với một lỗi của ALP.
 ```bash
 alp delegate search --project /path/to/app --background -- "Find auth entrypoint"
 alp delegate review --project /path/to/app -- "Review the current diff"
+alp delegate worker --write-scope src/foo --require-evidence change \
+    --budget-tokens 200000 --budget-tool-calls 20 -- 'Tạo src/foo/hello.ts …'
 
 alp delegation status exec_...
 alp delegation wait exec_...
+alp delegation tree exec_...            # cây con + evidence + usage
+alp delegation accept|reject req_...    # chỉ cha của request đó, xác thực qua graph binding
 alp delegation cancel exec_...
 alp delegation cleanup exec_...
 ```
+
+**Delegation có kiểm chứng** — vòng *giao việc có phạm vi → chạy dưới enforcement đo được → bằng
+chứng có nguồn gốc → chấp nhận có thẩm quyền* đã chạy thật bằng `main` trên cả Claude 2.1.275 và
+Codex 0.154.0 (2026-09-18; plan `260912-0749-governance-loop`, gate mở ở Lượt 3). `--write-scope`
+thành sandbox thật của runtime (Claude `denyWrite`/`allowWrite`, Codex permission profile trên
+argv); `--require-evidence` sinh `evidence.json` với từng item ghi `observed | derived |
+self-reported | unknown`; `accept|reject` được ghi vào Thread handoff như nguồn do ALP sinh, tách
+khỏi pins. Budget là observe-only: vượt thì ghi `exceeded`, cha tự quyết reject.
+
+`alp` gọi từ *trong* sandbox không thi hành gì cả: sandbox chặn ghi `~/.alp`, nên `dispatchEntry`
+thấy `ALP_RELAY_DIR` là chuyển nguyên argv về process root qua `<execution>/relay/` (file
+request/response, tmp+rename); root chạy lại lệnh với binding của chính execution đó và chỉ nhận
+`delegate`, `delegation *`, `context *`, `help`, `--version` — `alp thread show` từ trong con bị
+từ chối exit 2. Chi tiết ở [`docs/delegation.md`](docs/delegation.md).
 
 Luồng bắt buộc:
 

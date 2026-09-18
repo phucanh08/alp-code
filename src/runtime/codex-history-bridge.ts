@@ -19,6 +19,7 @@ import {
   toolSummary,
   type EntryAccumulator,
 } from "./history-bridge-shared";
+import { codexUsageState, collectCodexUsage, finishUsage } from "./history-usage";
 
 /**
  * Mirror rollout Codex CLI: `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<ts>-<session>.jsonl`.
@@ -56,6 +57,7 @@ export class CodexHistoryBridge implements RuntimeHistoryBridge {
     const opened = await openTranscript(execution, cursor, this.stateDirectory);
     if (!opened.ok) return FINAL_ONLY_DELTA(cursor, CODEX_HISTORY_PINNED_VERSION);
     const acc = accumulator();
+    const usage = codexUsageState();
     let version: string | null = cursor === null ? null : CODEX_HISTORY_PINNED_VERSION;
     for (const line of opened.lines) {
       const record = parseLine(line);
@@ -66,6 +68,7 @@ export class CodexHistoryBridge implements RuntimeHistoryBridge {
         version = (payload === null ? null : stringOf(payload.cli_version)) ?? "unknown";
         continue;
       }
+      if (type === "event_msg") { if (payload !== null) collectCodexUsage(usage, payload); continue; }
       if (type !== "response_item") continue;
       if (payload === null || !collectItem(acc, payload, stringOf(record.timestamp), execution.workspace)) acc.skipped += 1;
     }
@@ -75,6 +78,7 @@ export class CodexHistoryBridge implements RuntimeHistoryBridge {
       completeness: completenessForVersion(CODEX_HISTORY_PINNED_VERSION, version, acc.skipped),
       pinnedVersion: CODEX_HISTORY_PINNED_VERSION,
       skipped: acc.skipped,
+      usageDelta: finishUsage(usage, acc.entries.filter((entry) => entry.kind === "tool").length),
     };
   }
 }

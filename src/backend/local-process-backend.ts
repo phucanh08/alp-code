@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { DelegationError } from "../delegation/types";
 import { resolveRuntimeCommand } from "../runtime/adapter-files";
+import { buildLaunchProvenance, createRuntimeVersionReader, macKeychainHas, writeLaunchReceipt } from "../runtime/launch-provenance";
 import { resolveSpawnCommand } from "../runtime/windows-shim";
 import type { BackendExecutionResult, ExecutionBackend, SpawnExecutionInput } from "./execution-backend";
 import {
@@ -53,6 +54,9 @@ export interface LocalProcessBackendOptions {
   readonly killProcess?: (pid: number, signal: NodeJS.Signals) => void;
   /** Injected so a health check can be asserted without the runtimes installed. */
   readonly probeRuntimes?: () => Promise<readonly string[]>;
+  /** `<command> --version` for the launch receipt; defaults to the budgeted, cached reader. */
+  readonly runtimeVersion?: (command: string) => Promise<string>;
+  readonly now?: () => Date;
 }
 
 interface InFlight {
@@ -163,6 +167,8 @@ export class LocalProcessBackend implements ExecutionBackend {
   private readonly platform: NodeJS.Platform;
   private readonly killProcess: NonNullable<LocalProcessBackendOptions["killProcess"]>;
   private readonly probeRuntimes: NonNullable<LocalProcessBackendOptions["probeRuntimes"]>;
+  private readonly runtimeVersion: NonNullable<LocalProcessBackendOptions["runtimeVersion"]>;
+  private readonly now: () => Date;
   /** Handles for executions this process started, so it need not poll its own children. */
   private readonly inFlight = new Map<string, InFlight>();
 
@@ -190,6 +196,11 @@ export class LocalProcessBackend implements ExecutionBackend {
     };
     this.platform = options.platform ?? process.platform;
     this.killProcess = options.killProcess ?? ((pid, signal) => process.kill(pid, signal));
+    // Looked up in the launch environment: the runtime the receipt names is the one the
+    // process will find on *its* PATH, which the harness and a principal's shell may set
+    // differently from ours.
+    this.runtimeVersion = options.runtimeVersion ?? createRuntimeVersionReader({ env: this.env, platform: this.platform });
+    this.now = options.now ?? (() => new Date());
     this.probeRuntimes = options.probeRuntimes ?? (async () => {
       const found: string[] = [];
       for (const runtime of ["claude", "codex"]) {
@@ -229,6 +240,22 @@ export class LocalProcessBackend implements ExecutionBackend {
         "WALL_CLOCK_EXCEEDED",
         `execution \`${input.executionId}\` was not started: its deadline (${deadlineAt}) has already passed`,
       );
+    }
+    // The receipt precedes the process: a receipt written after `spawn` returned is one a
+    // crashed spawn never writes, and the receipt is the only record of which binary was
+    // asked to run.
+    if (input.receipt !== undefined) {
+      await writeLaunchReceipt(input.receipt.file, await buildLaunchProvenance({
+        executionId: input.executionId,
+        runtime: input.receipt.runtime,
+        launchSpec: input.launchSpec,
+        platform: this.platform,
+        env: { ...this.env, ...input.launchSpec.env },
+        launchedAt: this.now().toISOString(),
+        versionOf: this.runtimeVersion,
+        exists: existsSync,
+        keychainHas: macKeychainHas,
+      }));
     }
     return input.lifecycle?.background === true
       ? this.spawnDetached(input)

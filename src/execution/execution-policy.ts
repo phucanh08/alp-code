@@ -3,6 +3,8 @@ import { capabilityCatalog, type CapabilityCatalog } from "../agents/capability-
 import { DEFAULT_MODE, modelForMode, reasoningEffortForMode, runtimeForMode, type ModeId, type ModeProfiles } from "../agents/modes";
 import type { AgentDefinition, RuntimeId } from "../agents/types";
 import { RUNTIME_IDS } from "../agents/types";
+import { capabilitiesFor } from "../runtime/capabilities";
+import type { ApprovalRecordV1 } from "./approvals";
 import {
   deepFreezeExecutionValue,
   type ExecutionId,
@@ -25,8 +27,18 @@ export interface CreateExecutionPolicyInput {
    */
   readonly modeProfiles?: ModeProfiles;
   readonly createdAt: string;
+  /** What the principal said yes to for this launch; `[]` (the default) when nothing was asked. */
+  readonly approvals?: readonly ApprovalRecordV1[];
+  /** The approved write scope; absent or `null` means the whole workspace. */
+  readonly writeScope?: readonly string[] | null;
   /** Defaults to the shipped catalog — see `capability-catalog.ts`. */
   readonly catalog?: CapabilityCatalog;
+  /**
+   * The platform the enforcement row is looked up for. Defaults to the process preparing the
+   * execution; a re-derivation (the hook bridge) carries the snapshot's own value instead,
+   * because the row is part of what was signed.
+   */
+  readonly platform?: NodeJS.Platform;
 }
 
 function canonicalize(value: unknown): unknown {
@@ -106,6 +118,24 @@ function assertThreadBinding(value: ExecutionThreadBinding | null | undefined): 
   return { id: value.id, contextRevision: value.contextRevision, contextDigest: value.contextDigest };
 }
 
+/**
+ * `writeScope` as a persisted snapshot carries it. Absent or `null` is "the whole workspace"
+ * — every `policy.json` written before phase 2 reads that way; anything else must be a
+ * non-empty list of non-empty strings, or the snapshot is not one this code wrote.
+ */
+export function readWriteScope(snapshot: Record<string, unknown>): readonly string[] | null {
+  const value = snapshot.writeScope;
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value)) throw new Error("policy snapshot `writeScope` must be a list of paths or null");
+  if (value.length === 0) throw new Error("policy snapshot `writeScope` must not be empty; use null for the whole workspace");
+  value.forEach((entry, index) => {
+    if (typeof entry !== "string" || entry.length === 0) {
+      throw new Error(`policy snapshot \`writeScope[${index}]\` must be a non-empty path`);
+    }
+  });
+  return Object.freeze([...(value as string[])]);
+}
+
 export function createExecutionPolicy(
   input: CreateExecutionPolicyInput,
 ): ExecutionPolicy {
@@ -130,6 +160,7 @@ export function createExecutionPolicy(
   // lại bảng nấc; với settings thì "tra lại" nghĩa là có thể tra ra kết quả khác cái đã ký,
   // và `policy.json` sẽ mô tả một execution khác execution đang chạy.
   const model = modelForMode(input.definition, mode, input.modeProfiles);
+  const runtime = runtimeForMode(input.definition, mode, input.modeProfiles);
   const snapshot = {
     executionId: input.executionId,
     thread: assertThreadBinding(input.thread),
@@ -141,7 +172,16 @@ export function createExecutionPolicy(
     mode,
     model,
     reasoningEffort: reasoningEffortForMode(input.definition, mode, input.modeProfiles),
-    runtime: runtimeForMode(input.definition, mode, input.modeProfiles),
+    runtime,
+    // The measured row this execution is judged against, inside the hash: the same role on
+    // two machines whose runtime refuses different things is two different policies, and
+    // the evidence later reads this row rather than whatever the table says by then.
+    enforcement: capabilitiesFor(runtime, input.platform ?? process.platform),
+    // The principal's answers, inside the hash for the same reason the enforcement row is.
+    approvals: (input.approvals ?? []).map((record) => ({ ...record })),
+    // Sorted here as well as at authorization: the hash must not depend on the order a
+    // caller happened to list the same scope in.
+    writeScope: input.writeScope === undefined || input.writeScope === null ? null : [...input.writeScope].sort(),
     workspaceAccess: input.definition.capabilities.workspace.readRoots.length > 0
       ? "granted" as const
       : "none" as const,

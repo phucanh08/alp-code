@@ -6,6 +6,7 @@ import { agentRegistry } from "../../src/agents/registry";
 import type { AgentRegistry, RuntimeId } from "../../src/agents/types";
 import { LocalProcessBackend } from "../../src/backend/local-process-backend";
 import { backendProbe } from "../../src/delegation/delegation-service";
+import { gitBaselineProbe } from "../../src/execution/evidence-baseline";
 import { ExecutionService } from "../../src/execution/execution-service";
 import { FileExecutionStore } from "../../src/execution/execution-store";
 import { ExecutionGraphService } from "../../src/execution/graph/execution-graph-service";
@@ -31,6 +32,12 @@ const { readFileSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 
 const argv = process.argv.slice(2);
+// The launch receipt asks the binary for its version before spawning the real launch — the
+// fake answers in the same shape the real CLIs print (\`2.1.269 (Claude Code)\`, \`codex-cli 0.154.0\`).
+if (argv[0] === "--version") {
+  process.stdout.write(${JSON.stringify(runtime)} === "claude" ? "9.9.9 (Claude Code)\\n" : "codex-cli 9.9.9\\n");
+  process.exit(0);
+}
 // The two channels, captured separately because the whole point is that they are separate:
 // session context always arrives via env for the SessionStart hook to read, while a task
 // only exists as a positional argument, and only for a headless run.
@@ -68,11 +75,73 @@ if (process.env.ALP_E2E_COMPACT_FIXTURES) {
   record.reinjected = parsed.hookSpecificOutput.additionalContext;
 }
 
+// Relay mode: đứng vai một model gõ \`alp …\` từ trong sandbox. Viết đúng giao thức v1
+// (plans/260918-0700-execution-relay/plan.md) chứ không import client — bản ghi là oracle độc lập.
+if (process.env.ALP_E2E_RELAY_ARGV) {
+  const { renameSync, existsSync } = require("node:fs");
+  const relayDirectory = process.env.ALP_RELAY_DIR || "";
+  const id = require("node:crypto").randomBytes(16).toString("hex");
+  const request = { v: 1, id, argv: JSON.parse(process.env.ALP_E2E_RELAY_ARGV), cwd: process.cwd(), requestedAt: new Date().toISOString() };
+  record.relay = { directory: relayDirectory, request, response: null, error: null };
+  try {
+    const server = existsSync(join(relayDirectory, "server.json")) ? JSON.parse(readFileSync(join(relayDirectory, "server.json"), "utf8")) : null;
+    record.relay.server = server;
+    if (!server) throw new Error("no server.json");
+    writeFileSync(join(relayDirectory, id + ".request.json.tmp"), JSON.stringify(request));
+    renameSync(join(relayDirectory, id + ".request.json.tmp"), join(relayDirectory, id + ".request.json"));
+    const deadline = Date.now() + Number(process.env.ALP_E2E_RELAY_TIMEOUT_MS || 4000);
+    const responseFile = join(relayDirectory, id + ".response.json");
+    while (Date.now() < deadline && !existsSync(responseFile)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    if (existsSync(responseFile)) record.relay.response = JSON.parse(readFileSync(responseFile, "utf8"));
+    else record.relay.error = "timeout";
+  } catch (error) {
+    record.relay.error = String(error && error.message || error);
+  }
+}
+
 writeFileSync(join(process.env.ALP_E2E_CAPTURE, ${JSON.stringify(runtime)} + ".json"), JSON.stringify(record, null, 2));
 // Cùng một runtime chạy cho nhiều nấc trong một cây, nên bản ghi theo tên runtime bị đè.
 // Bản theo execution ID là bản mà một test nhiều tầng đọc được.
 if (process.env.ALP_DELEGATION_EXECUTION_ID) {
   writeFileSync(join(process.env.ALP_E2E_CAPTURE, process.env.ALP_DELEGATION_EXECUTION_ID + ".json"), JSON.stringify(record, null, 2));
+}
+
+// A writing runtime: touch one file inside the workspace, and — when asked — leave behind
+// what a real Claude session leaves: a transcript naming that write under the state dir, and
+// the \`runtime-session.json\` pointer the SessionStart hook records in \`context/\`.
+if (process.env.ALP_E2E_WRITE_FILE) {
+  const { mkdirSync } = require("node:fs");
+  const { dirname } = require("node:path");
+  const target = join(process.cwd(), process.env.ALP_E2E_WRITE_FILE);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, "e2e\\n");
+  if (process.env.ALP_E2E_TRANSCRIPT) {
+    const executionId = process.env.ALP_DELEGATION_EXECUTION_ID;
+    const transcriptDirectory = join(process.env.HOME, ".claude", "projects", "e2e");
+    mkdirSync(transcriptDirectory, { recursive: true });
+    const transcriptPath = join(transcriptDirectory, executionId + ".jsonl");
+    const at = new Date().toISOString();
+    const base = { version: "2.1.269", sessionId: executionId, isMeta: false, isSidechain: false };
+    const usage = { input_tokens: 120, output_tokens: 45, cache_read_input_tokens: 900, cache_creation_input_tokens: 30 };
+    writeFileSync(transcriptPath, [
+      JSON.stringify({ type: "user", uuid: "u1", parentUuid: null, timestamp: at, ...base, message: { role: "user", content: "Add a parser" } }),
+      // One API message split over two lines, the way Claude 2.1.268 writes it: same
+      // \`message.id\`, same \`usage\` on each — a counter that adds both has double-counted.
+      JSON.stringify({ type: "assistant", uuid: "a1", parentUuid: "u1", timestamp: at, apiBlockIndex: 0, ...base, message: { id: "msg_e2e_1", role: "assistant", usage, content: [
+        { type: "text", text: "Writing it now." },
+      ] } }),
+      JSON.stringify({ type: "assistant", uuid: "a1b", parentUuid: "a1", timestamp: at, apiBlockIndex: 1, ...base, message: { id: "msg_e2e_1", role: "assistant", usage, content: [
+        { type: "tool_use", id: "toolu_1", name: "Write", input: { file_path: target, content: "e2e\\n" } },
+      ] } }),
+      JSON.stringify({ type: "user", uuid: "u2", parentUuid: "a1", timestamp: at, ...base, message: { role: "user", content: [
+        { type: "tool_result", tool_use_id: "toolu_1", content: "ok" },
+      ] } }),
+    ].join("\\n") + "\\n");
+    writeFileSync(
+      join(process.env.ALP_EXECUTION_ROOT, executionId, "context", "runtime-session.json"),
+      JSON.stringify({ v: 1, sessionId: executionId, transcriptPath, recordedAt: at }) + "\\n",
+    );
+  }
 }
 
 if (process.env.ALP_E2E_OUTPUT) {
@@ -139,6 +208,14 @@ export interface RuntimeCapture {
   /** Set only in compact-bridge mode: the `additionalContext` from a second, simulated
    * `SessionStart(source="compact")` fired after the fixture pre/post events. */
   readonly reinjected?: string;
+  /** Set only in relay mode (`ALP_E2E_RELAY_ARGV`): what the fake sent and what came back. */
+  readonly relay?: {
+    readonly directory: string;
+    readonly server: { readonly v: number; readonly pid: number; readonly executionId: string } | null;
+    readonly request: { readonly v: number; readonly id: string; readonly argv: readonly string[]; readonly cwd: string };
+    readonly response: { readonly v: number; readonly id: string; readonly exitCode: number; readonly stdout: string; readonly stderr: string; readonly finishedAt: string } | null;
+    readonly error: string | null;
+  };
 }
 
 /** One fixture pre/post payload the fake runtime feeds straight into `compact-record.cjs`. */
@@ -176,6 +253,8 @@ export async function createE2eEnvironment(options: {
    * dựng registry của riêng nó chứ không nới định nghĩa built-in.
    */
   readonly registry?: AgentRegistry;
+  /** Extra variables for the backend's environment — e.g. a fake credential the receipt must classify but never copy. */
+  readonly extraEnv?: Readonly<Record<string, string>>;
 } = {}): Promise<E2eEnvironment> {
   const registry = options.registry ?? agentRegistry;
   // Canonical from the start: the execution service realpaths every workspace it prepares.
@@ -233,6 +312,9 @@ export async function createE2eEnvironment(options: {
     memory,
     workflowRunner: new WorkflowRunner(),
     store: new FileExecutionStore({ root: executionsRoot }),
+    // The real composition captures a git baseline before every writable launch; the fake
+    // runtime then writes into the project, and the evidence e2e reads the difference.
+    baseline: (workspace) => gitBaselineProbe().capture(workspace),
   });
   const graph = new ExecutionGraphService({
     store: new FileExecutionGraphStore({ root: graphsRoot }),
@@ -266,6 +348,7 @@ export async function createE2eEnvironment(options: {
     ...(options.holdMs === undefined ? {} : { ALP_E2E_HOLD_MS: String(options.holdMs) }),
     ...(options.holdRoles === undefined ? {} : { ALP_E2E_HOLD_ROLES: options.holdRoles.join(",") }),
     ...(compactFixturesFile === undefined ? {} : { ALP_E2E_COMPACT_FIXTURES: compactFixturesFile }),
+    ...options.extraEnv,
   };
 
   const backend = new LocalProcessBackend({ env: runtimeEnv, stdio: "pipe" });
@@ -299,4 +382,41 @@ export async function createE2eEnvironment(options: {
       return JSON.parse(await readFile(join(captureDirectory, `${executionId}.json`), "utf8")) as RuntimeCapture;
     },
   };
+}
+
+/**
+ * A root the way a real session leaves one: a graph node *and* a signed `policy.json` on
+ * disk, standing in `workspace`. Delegation reads the parent's grant from that snapshot —
+ * a bare graph node with no identity behind it cannot delegate at all, which is the point.
+ */
+export async function createMaterializedRoot(
+  environment: E2eEnvironment,
+  options: {
+    readonly agentId: string;
+    readonly executionId: string;
+    readonly workspace?: string;
+    /** Who authorized this identity. A role that does not report to the principal names its parent role. */
+    readonly parent?: string;
+  },
+) {
+  const workspace = options.workspace ?? environment.project;
+  const definition = environment.registry.get(options.agentId as never);
+  const authorization = await environment.executionService.authorize({
+    executionId: options.executionId,
+    parent: (options.parent ?? "principal") as "principal",
+    target: definition.id,
+    workspace,
+    workspaceMode: definition.capabilities.workspace.writeRoots.length ? "workspace-write" : "read-only",
+    launch: { root: workspace, project: workspace },
+  });
+  const root = await environment.graph.createRoot({ agentId: definition.id, thread: null, executionId: options.executionId });
+  await environment.executionService.materialize(authorization, {
+    task: "root session",
+    thread: null,
+    memoryQueries: [],
+    characterBudget: 0,
+    invariantContext: "ALP execution policy is authoritative and fails closed.",
+    policyContext: "Direct raw runtime launch is unsupported; use ALP workflows.",
+  });
+  return root;
 }

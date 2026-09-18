@@ -3,8 +3,10 @@ import { join } from "node:path";
 import { agentRegistry } from "../../agents/registry";
 import type { AgentRegistry, RuntimeId } from "../../agents/types";
 import { LocalProcessBackend } from "../../backend/local-process-backend";
-import { DelegationService, FileDelegationExecutionStore } from "../../delegation/delegation-service";
+import { DelegationService, FileDelegationExecutionStore, type DelegationAcceptanceView, type DelegationEvidenceView } from "../../delegation/delegation-service";
+import { ProjectRegistryStore } from "./init";
 import type { DelegationResult } from "../../delegation/types";
+import { gitBaselineProbe } from "../../execution/evidence-baseline";
 import { ExecutionService } from "../../execution/execution-service";
 import { FileExecutionStore } from "../../execution/execution-store";
 import {
@@ -14,14 +16,22 @@ import {
   type ExecutionTreeView,
 } from "../../execution/graph/execution-graph-service";
 import { FileExecutionGraphStore } from "../../execution/graph/file-execution-graph-store";
+import { evaluateBudget, NO_USAGE, USAGE_COLUMNS, type ExecutionTreeUsageLike } from "../../execution/usage";
+import { renderUsage } from "../usage-format";
 import { MarkdownFileStore } from "../../memory/adapters/markdown-file-store";
 import { MemoryService } from "../../memory/memory-service";
 import { PolicyEngine } from "../../policy/policy-engine";
 import { ClaudeRuntimeAdapter } from "../../runtime/claude-adapter";
+import { ClaudeHistoryBridge } from "../../runtime/claude-history-bridge";
 import { CodexRuntimeAdapter } from "../../runtime/codex-adapter";
+import { CodexHistoryBridge } from "../../runtime/codex-history-bridge";
+import { HistoryBridgeRegistry } from "../../thread/history-bridge";
+import { trustedVerifyFile, verifyTrusted } from "../../trust";
+import { loadVerifyCommands } from "../settings";
 import type { RuntimeAdapter } from "../../runtime/runtime-adapter";
 import { WorkflowRunner } from "../../workflow/workflow-runner";
 import type { InstallLayout } from "../../install-layout";
+import { RelayServer, spawnRelayExecutor } from "../../execution/relay-server";
 import { loadDelegationConfig } from "../../install/config";
 import { executionGraphsDirectory, executionsDirectory, memoryRoot } from "../../install/paths";
 
@@ -30,7 +40,7 @@ export interface RunDelegateDependencies {
   readonly env: NodeJS.ProcessEnv;
   readonly service: Pick<
     DelegationService,
-    "delegate" | "wait" | "status" | "cancel" | "cleanup" | "listExecutions" | "tree"
+    "delegate" | "wait" | "status" | "cancel" | "cleanup" | "listExecutions" | "tree" | "evidence" | "accept" | "reject"
   >;
   /** The project's registry — built-ins plus its trusted agents. Used to read the target's declared write roots. */
   readonly registry?: Pick<AgentRegistry, "get" | "has">;
@@ -61,6 +71,11 @@ function writesWorkspace(registry: Pick<AgentRegistry, "get" | "has">, role: str
   return registry.has(role) && registry.get(role).capabilities.workspace.writeRoots.length > 0;
 }
 
+const BUDGET_FLAGS = [
+  { name: "--budget-tokens", field: "tokens" },
+  { name: "--budget-tool-calls", field: "toolCalls" },
+] as const;
+
 function required(args: readonly string[], index: number, message: string): string {
   const value = args[index];
   if (!value) throw new Error(message);
@@ -76,10 +91,20 @@ export async function runDelegateCommand(
   let background = false;
   let timeoutMs: number | null = null;
   let workspace = dependencies.cwd;
+  const writeScope: string[] = [];
+  const requiredEvidence: string[] = [];
+  const budget: { tokens?: number; toolCalls?: number } = {};
   const task: string[] = [];
   for (let index = 1; index < argv.length; index += 1) {
     const value = argv[index];
-    if (value === "--runtime") {
+    const budgetFlag = BUDGET_FLAGS.find((flag) => value === flag.name || value.startsWith(`${flag.name}=`));
+    if (budgetFlag !== undefined) {
+      // Observe-only: a ceiling the parent wants reported against, never one ALP enforces mid-run.
+      const raw = value === budgetFlag.name ? required(argv, ++index, `${budgetFlag.name} requires a positive integer`) : value.slice(budgetFlag.name.length + 1);
+      const parsed = Number(raw);
+      if (!/^\d+$/.test(raw) || !Number.isSafeInteger(parsed) || parsed < 1) throw new Error(`${budgetFlag.name} must be a positive integer, got \`${raw}\``);
+      budget[budgetFlag.field] = parsed;
+    } else if (value === "--runtime") {
       // Nấc quyết định model, model quyết định CLI. Một cờ `--runtime` còn sót trong script
       // cũ sẽ chọn sai CLI cho model của nấc, nên nó dừng ở đây chứ không bị bỏ qua.
       throw new Error("`--runtime` không còn tồn tại; nấc quyết định model và runtime — dùng `alp mode set` hoặc ALP_MODE");
@@ -89,6 +114,12 @@ export async function runDelegateCommand(
       if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("--timeout-ms must be positive");
     } else if (WORKSPACE_FLAGS.includes(value)) {
       workspace = required(argv, ++index, `${value} requires a path`);
+    } else if (value === "--write-scope") {
+      // Repeatable: each flag names one subtree of the workspace the child may write.
+      writeScope.push(required(argv, ++index, "--write-scope requires a path"));
+    } else if (value === "--require-evidence") {
+      // Repeatable: `change` or `verify:<id>`; the service validates the spelling.
+      requiredEvidence.push(required(argv, ++index, "--require-evidence requires `change` or `verify:<id>`"));
     } else if (value === "--parent-role" || value === "--role" || value === "--kind") {
       throw new Error(`unsupported identity-aware raw-runtime shortcut \`${value}\``);
     } else if (value === "--backend") {
@@ -114,6 +145,11 @@ export async function runDelegateCommand(
     // cầm bút. Hỏi đúng definition thì cả hai chuyện đó tự hết, và PolicyEngine vẫn là chốt
     // cuối: một vai không khai write root mà xin ghi thì bị chặn ở đó chứ không ở đây.
     workspaceMode: writesWorkspace(registry, targetRole) ? "workspace-write" : "read-only",
+    // Only when asked for: absent means the whole workspace, and the service (not this
+    // parser) is where a scope on a read-only role is refused, by policy.
+    ...(writeScope.length === 0 ? {} : { writeScope }),
+    ...(requiredEvidence.length === 0 ? {} : { requiredEvidence }),
+    ...(Object.keys(budget).length === 0 ? {} : { budget }),
     metadata: {},
     executionOptions: { background, interactive: false, timeoutMs },
   });
@@ -175,6 +211,16 @@ function renderBranch(
     node.status,
     ...(node.requestId ? [`req ${node.requestId}`] : []),
     ...(annotation ? [annotation] : []),
+    // Đã thu evidence thì nói kết luận; chưa thu mà có đòi thì nói "chưa" — cha đọc cây
+    // để biết còn phải `alp delegation evidence` hay không.
+    ...(node.evidence ? [`evidence ${node.evidence.evaluation}`] : node.requiredEvidence.length > 0 ? ["evidence pending"] : []),
+    // Phán quyết của cha (P4): có thì in; con đã dừng mà chưa có thì nói "undecided" — đó là
+    // việc còn nợ, không phải một chi tiết.
+    ...(node.acceptance ? [`decision ${node.acceptance.decision}`] : node.requestId && node.endedAt ? ["decision undecided"] : []),
+    // Cái node đã tốn, như bridge đếm — bốn cột token tách riêng vì mỗi runtime đếm cache
+    // một kiểu. Có khai budget thì nói so ra sao; `exceeded` là để cha *thấy*, không đổi gì.
+    ...(node.usage ? [`usage ${renderUsage(node.usage)}`] : []),
+    ...(node.budget ? [`budget ${evaluateBudget(node.budget, node.usage)}`] : []),
   ].join("  ·  ") + (node.executionId === highlighted ? "  ←" : "");
   // Con nối tiếp dưới thân của cha: một cây thụt lề bằng khoảng trắng không đọc được khi
   // một nhánh dài hơn màn hình.
@@ -205,8 +251,96 @@ export function renderExecutionTree(view: ExecutionTreeView): string {
     `limits: depth ≤ ${limits.maxDepth}  ·  ${limits.maxChildrenPerExecution} children/execution  ·  `
       + `${limits.maxConcurrentChildrenPerExecution} concurrent children  ·  `
       + `${limits.maxConcurrentExecutions} concurrent executions`,
+    renderTreeUsage(view.usage),
     "",
     ...renderBranch(view.root, view.executionId, "", true, true),
+    "",
+  ].join("\n");
+}
+
+/** Tổng theo cây; `partial` khi có node chưa có số — kể cả node còn chạy. Chưa có số nào thì nói thẳng. */
+function renderTreeUsage(usage: ExecutionTreeUsageLike): string {
+  const { total, partial } = usage;
+  if (partial && USAGE_COLUMNS.every((column) => total[column] === NO_USAGE[column])) return "usage not measured";
+  return `usage in ${total.inputTokens}  ·  out ${total.outputTokens}  ·  cache r/w ${total.cacheReadTokens}/${total.cacheWriteTokens}  ·  tools ${total.toolCalls}${partial ? "  (partial)" : ""}`;
+}
+
+/** Một dòng cho một item: nguồn, độ tin, rồi phần người đọc cần để tự kiểm lại. */
+function renderEvidenceItem(item: DelegationEvidenceView["items"][number]): string {
+  const head = `  ${item.kind.padEnd(14)} ${item.provenance.padEnd(13)} ${item.source}`;
+  switch (item.kind) {
+    case "change": {
+      const paths = item.paths.length === 0 ? "no path changed" : `${item.paths.length} path(s)${item.commit ? `, commit ${item.commit.slice(0, 12)}` : ""}`;
+      const outside = item.outsideScope.length === 0 ? "" : `  · ${item.outsideScope.length} outside scope${item.outsideScopeVerified ? "" : " (unverified)"}`;
+      const ambiguous = item.ambiguousWith.length === 0 ? "" : `  · ambiguous with ${item.ambiguousWith.join(", ")}`;
+      return `${head}  ${paths}${outside}${ambiguous}`;
+    }
+    case "verify": {
+      const ambiguous = item.ambiguousWith.length === 0 ? "" : `  · ambiguous with ${item.ambiguousWith.join(", ")}`;
+      return `${head}  verify:${item.commandId} exit ${item.exitCode} in ${item.durationMs} ms${ambiguous}`;
+    }
+    case "verify-skipped":
+      return `${head}  verify:${item.commandId} skipped: ${item.reason}${item.reason === "untrusted" ? " — run `alp trust verify` in the project" : ""}`;
+    case "tool-call":
+      return `${head}  ${item.ref.name}`;
+    case "output":
+      return `${head}  digest ${item.digest.slice(0, 12)}`;
+    case "boundary":
+      return `${head}  ${item.ref.outcome} · history ${item.ref.historyCompleteness}`;
+    case "usage": {
+      const budget = item.budget === null ? "no budget" : `budget ${item.status}${item.budget.tokens === undefined ? "" : ` · tokens ≤ ${item.budget.tokens}`}${item.budget.toolCalls === undefined ? "" : ` · tool calls ≤ ${item.budget.toolCalls}`}`;
+      return `${head}  ${renderUsage(item.usage)} · ${budget}`;
+    }
+  }
+}
+
+/**
+ * Evidence cho người đọc: kết luận trước, rồi từng mục đã đòi, rồi item.
+ *
+ * Kết luận đứng đầu vì đó là câu hỏi duy nhất cha mang tới: "đã đủ chưa". Phần dưới là để
+ * cha không phải tin câu trả lời đó — mỗi item nói nó đến từ đâu và tin được tới đâu.
+ */
+export function renderEvidence(view: DelegationEvidenceView): string {
+  const required = view.required.length === 0
+    ? ["required: nothing"]
+    : view.required.map((entry) => `required: ${entry}  ·  ${view.missing.includes(entry) ? "missing" : view.evaluation === "unknown" ? "unknown" : "present"}`);
+  const acceptance = view.acceptance === null
+    ? "decision undecided  ·  alp delegation accept|reject <request-id>"
+    : `decision ${view.acceptance.decision}  ·  at ${view.acceptance.decidedAt}${view.acceptance.evidenceDigest === view.digest ? "" : `  ·  on an earlier evidence ${view.acceptance.evidenceDigest.slice(0, 12)}`}`;
+  return [
+    `evidence ${view.executionId}  ·  ${view.evaluation}  ·  collected ${view.collectedAt}`,
+    `digest ${view.digest}  ·  history ${view.completeness}`,
+    acceptance,
+    ...required,
+    "",
+    ...view.items.map(renderEvidenceItem),
+    "",
+  ].join("\n");
+}
+
+/** `--reason <text>` / `--reason=<text>`, lặp được; thứ tự giữ nguyên. */
+function reasonsFrom(argv: readonly string[]): string[] {
+  const reasons: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--reason") {
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith("--")) throw new Error("--reason requires a value");
+      reasons.push(value);
+      index += 1;
+    } else if (arg.startsWith("--reason=")) {
+      reasons.push(arg.slice("--reason=".length));
+    } else if (arg !== "--json") {
+      throw new Error(`unknown option \`${arg}\``);
+    }
+  }
+  return reasons;
+}
+
+export function renderAcceptance(view: DelegationAcceptanceView): string {
+  return [
+    `${view.decision} ${view.requestId}  ·  execution ${view.executionId}  ·  evidence ${view.evaluation} (${view.evidenceDigest.slice(0, 12)})  ·  at ${view.decidedAt}`,
+    ...view.reasons.map((reason) => `  - ${reason}`),
     "",
   ].join("\n");
 }
@@ -224,6 +358,17 @@ export async function runDelegationLifecycleCommand(
   if (command === "tree") {
     const view = await service.tree(required(argv, 1, "tree requires execution ID"));
     return argv.includes("--json") ? view : renderedOutput(renderExecutionTree(view));
+  }
+  if (command === "evidence") {
+    const view = await service.evidence(required(argv, 1, "evidence requires execution ID"));
+    return argv.includes("--json") ? view : renderedOutput(renderEvidence(view));
+  }
+  if (command === "accept" || command === "reject") {
+    const requestId = required(argv, 1, `${command} requires a request ID`);
+    const reasons = reasonsFrom(argv.slice(2));
+    if (command === "reject" && reasons.length === 0) throw new Error("reject requires --reason \"<why>\"");
+    const view = command === "accept" ? await service.accept(requestId, { reasons }) : await service.reject(requestId, { reasons });
+    return argv.includes("--json") ? view : renderedOutput(renderAcceptance(view));
   }
   throw new Error(`unknown delegation lifecycle command \`${command ?? ""}\``);
 }
@@ -269,7 +414,10 @@ export async function createDefaultDelegationComposition(
       supervisorInvocation: { executable: layout.selfExecutable, args: ["__internal", "supervisor"] },
     }),
   });
-  const policy = new PolicyEngine({ registry });
+  // `~/.alp/executions/` holds every `policy.json` and evidence file: no launch may ever be
+  // handed a scope, or a whole workspace, that can write there.
+  const executionsRoot = executionsDirectory(env);
+  const policy = new PolicyEngine({ registry, protectedRoots: [executionsRoot] });
   const memory = new MemoryService({
     store: new MarkdownFileStore({ root: memoryRoot(env) }),
     policy,
@@ -278,13 +426,14 @@ export async function createDefaultDelegationComposition(
   // `~/.alp/executions/<id>/` — cùng chỗ với phiên root. Hai root khác nhau từng là một
   // câu hỏi mở trong `docs/architecture.md`: doctor, hook và `alp context` đều đọc một nơi,
   // nên artifact của con nằm ở nơi kia là artifact không ai tìm thấy.
-  const executionsRoot = executionsDirectory(env);
   const executionService = new ExecutionService({
     registry,
     policy,
     memory,
     workflowRunner: new WorkflowRunner(),
     store: new FileExecutionStore({ root: executionsRoot }),
+    // Ảnh chụp work tree trước mỗi launch ghi được: không có nó, `change` chỉ có thể là `unknown`.
+    baseline: (workspace) => gitBaselineProbe().capture(workspace),
   });
   const service = new DelegationService({
     registry,
@@ -299,17 +448,31 @@ export async function createDefaultDelegationComposition(
     // Bốn biến env, tất-cả-hoặc-không: một nửa binding chỉ dẫn tới việc đoán nốt nửa kia.
     binding: readBindingFromEnvironment(env),
     executionsRoot,
+    // The bound of the one approval rule: a launch outside the parent's workspace is a
+    // question only while it stays inside the registered project around that workspace.
+    projectRootOf: (path) => new ProjectRegistryStore().projectContaining(path),
     runtimeAdapters: new Map<RuntimeId, RuntimeAdapter>([
       ["claude", new ClaudeRuntimeAdapter({ env })],
       ["codex", new CodexRuntimeAdapter({ env })],
     ]),
     backend,
+    // Con foreground gõ `alp delegate` trong sandbox của nó: process này trả lời, bằng cùng
+    // `alp` mà terminal gọi, với binding của con.
+    relay: new RelayServer({ execute: spawnRelayExecutor({ stableCommand: layout.stableCommand }) }),
     executionStore: new FileDelegationExecutionStore({ file: join(config.stateDir, "code-native-executions.json") }),
     // Con kế thừa nấc của cha: một phiên `ultra` mà subagent lặng lẽ tụt về `medium` thì
     // nấc chỉ còn đúng ở ghế ngoài cùng.
     config: {
       ...(env.ALP_MODE ? { mode: parseMode(env.ALP_MODE) } : {}),
       ...(modeProfiles ? { modeProfiles } : {}),
+    },
+    // Evidence đọc lịch sử qua cùng hai bridge mà Thread dùng, và chỉ chạy lệnh verify của
+    // khối đã `alp trust verify`.
+    evidence: {
+      history: new HistoryBridgeRegistry([new ClaudeHistoryBridge({ env }), new CodexHistoryBridge({ env })]),
+      verifySettings: (workspace) => loadVerifyCommands(workspace, env),
+      verifyTrusted: (project, digest) => verifyTrusted(project, digest, trustedVerifyFile(env)),
+      env,
     },
   });
   return { service, config: { stateDir: config.stateDir } };

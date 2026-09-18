@@ -14,7 +14,8 @@ interface CanonicalWorkspaceGrants {
   readonly writeRoots: readonly string[];
 }
 
-function within(root: string, target: string): boolean {
+/** `target` is `root` or below it — a path boundary, not a string prefix. */
+export function within(root: string, target: string): boolean {
   const relation = relative(root, target);
   return relation === "" || (!relation.startsWith("..") && !isAbsolute(relation));
 }

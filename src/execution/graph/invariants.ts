@@ -8,6 +8,7 @@ import {
   type ExecutionReservation,
 } from "./types";
 import type { ExecutionThreadBinding } from "../types";
+import { USAGE_COLUMNS } from "../usage";
 
 const HEX_64 = /^[0-9a-f]{64}$/;
 
@@ -178,12 +179,92 @@ function assertNodeShape(value: unknown, graphId: string): ExecutionNode {
     assertNonEmpty(node.requestId, `node \`${String(node.executionId)}\`.requestId`);
     assertHash(node.requestFingerprint, `node \`${String(node.executionId)}\`.requestFingerprint`);
   }
-  if (node.thread === undefined) {
-    // Legacy: node ghi trước khi có Thread. Trả bản có key để mọi document ghi ra đều tường minh.
-    return { ...node, thread: null } as unknown as ExecutionNode;
+  if (node.requiredEvidence !== undefined) assertRequiredEvidence(node.requiredEvidence, `node \`${String(node.executionId)}\`.requiredEvidence`);
+  if (node.evidence !== undefined && node.evidence !== null) {
+    assertEvidenceRef(node.evidence, `node \`${String(node.executionId)}\`.evidence`);
+    if (!isTerminalNodeStatus(node.status as ExecutionNodeStatus)) {
+      invalid(`active node \`${String(node.executionId)}\` must not carry evidence`);
+    }
   }
-  assertThreadBinding(node.thread, `node \`${String(node.executionId)}\`.thread`);
+  if (node.acceptance !== undefined && node.acceptance !== null) {
+    assertAcceptanceRef(node.acceptance, `node \`${String(node.executionId)}\`.acceptance`);
+    if (!terminal) invalid(`active node \`${String(node.executionId)}\` must not carry an acceptance`);
+    if (node.parentExecutionId === null) invalid("the root node has no parent to accept it");
+  }
+  if (node.taskExcerpt !== undefined && node.taskExcerpt !== null && typeof node.taskExcerpt !== "string") {
+    invalid(`node \`${String(node.executionId)}\`.taskExcerpt must be null or a string`);
+  }
+  if (node.budget !== undefined && node.budget !== null) assertBudget(node.budget, `node \`${String(node.executionId)}\`.budget`);
+  if (node.usage !== undefined && node.usage !== null) {
+    assertUsage(node.usage, `node \`${String(node.executionId)}\`.usage`);
+    if (!terminal) invalid(`active node \`${String(node.executionId)}\` must not carry usage`);
+  }
+  if (node.thread !== undefined) assertThreadBinding(node.thread, `node \`${String(node.executionId)}\`.thread`);
+  if (node.thread === undefined || node.requiredEvidence === undefined || node.evidence === undefined
+    || node.taskExcerpt === undefined || node.acceptance === undefined || node.budget === undefined || node.usage === undefined) {
+    // Legacy: node ghi trước khi có Thread / evidence / acceptance. Trả bản có đủ key để mọi
+    // document ghi ra đều tường minh.
+    return {
+      ...node,
+      thread: node.thread ?? null,
+      requiredEvidence: node.requiredEvidence ?? [],
+      evidence: node.evidence ?? null,
+      taskExcerpt: node.taskExcerpt ?? null,
+      acceptance: node.acceptance ?? null,
+      budget: node.budget ?? null,
+      usage: node.usage ?? null,
+    } as unknown as ExecutionNode;
+  }
   return node as unknown as ExecutionNode;
+}
+
+/** Trần: object có ít nhất một trong `tokens`/`toolCalls`, mỗi cái số nguyên ≥ 1. */
+function assertBudget(value: unknown, field: string): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) invalid(`${field} must be null or a budget`);
+  const budget = value as Record<string, unknown>;
+  let ceilings = 0;
+  for (const key of ["tokens", "toolCalls"] as const) {
+    if (budget[key] === undefined) continue;
+    ceilings += 1;
+    if (typeof budget[key] !== "number" || !Number.isInteger(budget[key]) || (budget[key] as number) < 1) {
+      invalid(`${field}.${key} must be a positive integer`);
+    }
+  }
+  if (ceilings === 0) invalid(`${field} names no ceiling`);
+}
+
+/** Năm cột, mỗi cột số nguyên ≥ 0 hoặc `null`. */
+function assertUsage(value: unknown, field: string): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) invalid(`${field} must be null or usage counters`);
+  const usage = value as Record<string, unknown>;
+  for (const column of USAGE_COLUMNS) {
+    const cell = usage[column];
+    if (cell === null) continue;
+    if (typeof cell !== "number" || !Number.isInteger(cell) || cell < 0) invalid(`${field}.${column} must be null or a non-negative integer`);
+  }
+}
+
+function assertAcceptanceRef(value: unknown, field: string): void {
+  if (typeof value !== "object" || value === null) invalid(`${field} must be null or an acceptance ref`);
+  const ref = value as Record<string, unknown>;
+  if (ref.decision !== "accepted" && ref.decision !== "rejected") invalid(`${field}.decision must be accepted or rejected`);
+  assertHash(ref.evidenceDigest, `${field}.evidenceDigest`);
+  assertTimestamp(ref.decidedAt, `${field}.decidedAt`);
+}
+
+function assertRequiredEvidence(value: unknown, field: string): void {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string" || entry.length === 0)) {
+    invalid(`${field} must be a list of names`);
+  }
+}
+
+function assertEvidenceRef(value: unknown, field: string): void {
+  if (typeof value !== "object" || value === null) invalid(`${field} must be null or an evidence ref`);
+  const ref = value as Record<string, unknown>;
+  assertHash(ref.digest, `${field}.digest`);
+  if (ref.evaluation !== "satisfied" && ref.evaluation !== "unsatisfied" && ref.evaluation !== "unknown") {
+    invalid(`${field}.evaluation must be satisfied, unsatisfied or unknown`);
+  }
 }
 
 function assertReservationShape(value: unknown): ExecutionReservation {
@@ -201,6 +282,19 @@ function assertReservationShape(value: unknown): ExecutionReservation {
   }
   assertTimestamp(reservation.createdAt, "reservation.createdAt");
   assertTimestamp(reservation.expiresAt, "reservation.expiresAt");
+  if (reservation.requiredEvidence !== undefined) assertRequiredEvidence(reservation.requiredEvidence, "reservation.requiredEvidence");
+  if (reservation.taskExcerpt !== undefined && reservation.taskExcerpt !== null && typeof reservation.taskExcerpt !== "string") {
+    invalid("reservation.taskExcerpt must be null or a string");
+  }
+  if (reservation.budget !== undefined && reservation.budget !== null) assertBudget(reservation.budget, "reservation.budget");
+  if (reservation.requiredEvidence === undefined || reservation.taskExcerpt === undefined || reservation.budget === undefined) {
+    return {
+      ...reservation,
+      requiredEvidence: reservation.requiredEvidence ?? [],
+      taskExcerpt: reservation.taskExcerpt ?? null,
+      budget: reservation.budget ?? null,
+    } as unknown as ExecutionReservation;
+  }
   return reservation as unknown as ExecutionReservation;
 }
 
@@ -283,7 +377,8 @@ export function assertGraphDocument(value: unknown): ExecutionGraphDocument {
   }
   if (reachable.size !== nodes.length) invalid("execution graph contains an unreachable node or a cycle");
 
-  const reservations = graph.reservations.map(assertReservationShape);
+  const rawReservations: unknown[] = graph.reservations;
+  const reservations = rawReservations.map(assertReservationShape);
   const reservationIds = new Set<string>();
   for (const reservation of reservations) {
     if (reservationIds.has(reservation.reservationId)) {
@@ -305,8 +400,9 @@ export function assertGraphDocument(value: unknown): ExecutionGraphDocument {
 
   // Node legacy (không có key `thread`) đã được normalize thành bản mới; khi đó trả document
   // dựng lại để bản ghi ra đĩa luôn có key. Còn lại trả nguyên input — caller so identity.
-  const normalized = nodes.some((node, index) => node !== rawNodes[index]);
-  return (normalized ? { ...graph, nodes } : graph) as unknown as ExecutionGraphDocument;
+  const normalized = nodes.some((node, index) => node !== rawNodes[index])
+    || reservations.some((reservation, index) => reservation !== rawReservations[index]);
+  return (normalized ? { ...graph, nodes, reservations } : graph) as unknown as ExecutionGraphDocument;
 }
 
 /**
@@ -346,6 +442,12 @@ export function assertStructuralFieldsPreserved(
     }
     if (!sameThreadBinding(before.thread, after.thread)) {
       invalid(`node \`${before.executionId}\`.thread is immutable`);
+    }
+    if (JSON.stringify(before.requiredEvidence) !== JSON.stringify(after.requiredEvidence)) {
+      invalid(`node \`${before.executionId}\`.requiredEvidence is immutable`);
+    }
+    if (JSON.stringify(before.budget ?? null) !== JSON.stringify(after.budget ?? null)) {
+      invalid(`node \`${before.executionId}\`.budget is immutable`);
     }
     assertNodeTransition(before.executionId, before.status, after.status);
   }

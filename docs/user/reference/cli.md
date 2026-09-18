@@ -62,9 +62,15 @@ alp agent list [--project <path>] [--json]
 ```text
 alp delegate <role> [--background] [--timeout-ms <positive>] [--project <path>] -- <task>
 alp delegate <role> [--background] [--timeout-ms <positive>] [--workspace <path>] -- <task>
+alp delegate <role> [--write-scope <path>]... [--require-evidence change|verify:<id>]...
+                    [--budget-tokens N] [--budget-tool-calls N] -- <task>
 ```
 
 `--project` và `--workspace` là hai spelling của cùng input. Foreground đợi kết quả; `--background` trả execution ID ngay. Task rỗng, timeout không dương hoặc target role thiếu đều bị từ chối.
+
+:::caution[Preview, chưa có trong stable v0.14.0]
+Dòng thứ ba, `alp delegation evidence|accept|reject` và `alp trust verify` — xem [Giao việc](../../guides/delegation/#giao-việc-có-phạm-vi-và-bằng-chứng). `--write-scope` lặp được, đường dẫn tương đối so với workspace; `--require-evidence` nhận đúng hai mục; hai `--budget-*` là số nguyên dương và chỉ được **đếm sau**, không chặn giữa chừng.
+:::
 
 `alp delegate` chỉ chạy bên trong một phiên ALP: gõ từ terminal trần trả `PARENT_EXECUTION_REQUIRED`, vì vai cha đến từ execution đang chạy chứ không từ biến môi trường. Lệnh lifecycle dưới đây không chịu ràng buộc đó — chúng tra theo execution ID và chạy được từ terminal trần.
 
@@ -77,11 +83,18 @@ alp delegation wait <execution-id>
 alp delegation cancel <execution-id>
 alp delegation cleanup <execution-id>
 alp delegation list
+alp delegation evidence <execution-id> [--json]           # preview
+alp delegation accept <request-id> [--reason <why>]...    # preview
+alp delegation reject <request-id> --reason <why>...      # preview
+alp trust verify [--project <path>] [--revoke]            # preview
 ```
 
 - `tree` nhận ID của **bất kỳ** execution nào trong phiên và luôn vẽ từ gốc xuống, đánh dấu `←` vào execution được hỏi. Header mang revision, hạn của phiên, allowance đã dùng/còn lại, số node sống, số chỗ đã giữ, và trần. Không có `--json` thì CLI tự định dạng — đây là lệnh lifecycle duy nhất làm vậy; `--json` trả nguyên view.
 - `cancel` dừng execution và mọi execution nó đã giao xuống; nhánh khác không bị đụng.
 - `cleanup` chỉ dọn file tạm, log và record process của backend. Node và kết quả lịch sử ở lại. Nó từ chối execution còn `queued`/`running` (`INVALID_REQUEST`); một backend đã quên execution thì được coi là đã dọn xong, không phải lỗi.
+- `evidence` thu (hoặc thu lại phần còn `unknown`) bằng chứng của một execution đã kết thúc và in `evaluation`, từng item với nguồn/độ tin, `usage`, `budget`, `decision`. `wait` cũng thu; `status`/`tree`/`cancel` không bao giờ thu.
+- `accept|reject` nhận **request ID**, chỉ từ cha trực tiếp, trong một phiên ALP; con phải đã kết thúc; mỗi request quyết một lần. `reject` bắt buộc `--reason`.
+- `trust verify` duyệt khối `verify.commands` của project trên terminal — điều kiện để `verify:<id>` chạy.
 - Cả năm lệnh hỏi cây trước và chỉ dùng record cũ khi cây không có node nào cho ID đó. Cây hỏng thì lệnh **lỗi**, không lặng lẽ trả lời bằng record cũ. `tree` không có đường lui đó: execution trước-execution-graph trả `EXECUTION_NOT_FOUND`.
 
 ### Lỗi hay gặp của delegation
@@ -94,6 +107,8 @@ alp delegation list
 | `GRAPH_CONCURRENCY_LIMIT_EXCEEDED` | Cả phiên đã có 6 execution sống | Như trên, nhìn cột `active` |
 | `DELEGATION_LIMIT_EXCEEDED` | Hết 8 lượt của cả đời phiên | Mở phiên mới |
 | `WALL_CLOCK_EXCEEDED` | Phiên quá hạn 2 giờ | Mở phiên mới; hạn không gia hạn được |
+| `WRITE_SCOPE_NOT_FOUND` · `WRITE_SCOPE_OUTSIDE_WORKSPACE` · `WRITE_SCOPE_EXCEEDS_PARENT` · `WRITE_SCOPE_ON_READ_ONLY` | `--write-scope` trỏ vào chỗ không có, ngoài workspace, rộng hơn scope của cha, hay vai đích không ghi được | Sửa đường dẫn; scope phải tồn tại sẵn, ALP không tạo hộ |
+| `ACCEPTANCE_NOT_PARENT` · `ACCEPTANCE_SUBJECT_RUNNING` · `ACCEPTANCE_ALREADY_DECIDED` | Nghiệm thu một request không phải của mình, con còn chạy, hay đã quyết rồi | Chỉ cha trực tiếp quyết; `cancel` rồi `reject` nếu muốn dừng; đổi ý là giao lại |
 | `EXECUTION_GRAPH_CORRUPT` · `EXECUTION_GRAPH_LOCK_TIMEOUT` | Không đọc/khoá được file cây | Xem [Xử lý sự cố](../troubleshooting/#cây-execution-hỏng-hoặc-bị-khoá) |
 
 ## Thread

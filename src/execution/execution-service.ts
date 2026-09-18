@@ -1,18 +1,23 @@
 import { realpath } from "node:fs/promises";
+import { resolve } from "node:path";
 import type { AgentDefinition, AgentId, AgentRegistry } from "../agents/types";
 import { seedCheckpoint, writeCheckpoint } from "../context/checkpoint";
 import { seedPinsFromSnapshot } from "../thread/context-types";
 import { renderContinuity } from "../context/continuity";
 import { atomicRuntimeFile } from "../runtime/adapter-files";
+import { baselineFile, type GitBaselineV1 } from "./evidence";
 import type { MemoryService } from "../memory/memory-service";
 import type { BuildMemoryContextInput, BuiltMemoryContext } from "../memory/types";
-import type { Authorization, AuthorizationRequest } from "../policy/types";
+import { toAuthorization, type Authorization, type AuthorizationRequest, type PolicyDecision } from "../policy/types";
 import type { WorkflowRunner } from "../workflow/workflow-runner";
+import { matchesDecision, type ApprovalRecordV1 } from "./approvals";
 import { createExecutionPolicy } from "./execution-policy";
 import type { ExecutionStore } from "./execution-store";
 import { createIdentityCapsule } from "./identity-capsule";
 import {
   deepFreezeExecutionValue,
+  NO_APPROVAL_SURFACE,
+  type ApprovalSurface,
   type AuthorizeExecutionInput,
   type ExecutionAuthorization,
   type MaterializeExecutionInput,
@@ -23,6 +28,14 @@ import {
 
 export interface ExecutionAuthorizer {
   authorize(request: AuthorizationRequest): Authorization;
+  /** The three-way answer; an authorizer without one is read as "never asks". */
+  decide?(request: AuthorizationRequest): PolicyDecision;
+}
+
+function decideWith(policy: ExecutionAuthorizer, request: AuthorizationRequest): PolicyDecision {
+  if (policy.decide !== undefined) return policy.decide(request);
+  const authorization = policy.authorize(request);
+  return authorization.allowed ? { kind: "allow" } : { kind: "deny", code: authorization.code, reason: authorization.reason };
 }
 
 export interface ExecutionMemoryService {
@@ -36,6 +49,12 @@ export interface ExecutionServiceOptions {
   readonly workflowRunner: Pick<WorkflowRunner, "initialize">;
   readonly store: ExecutionStore;
   readonly resolveWorkspace?: (workspace: string) => Promise<string>;
+  /**
+   * Ảnh chụp work tree ngay trước khi runtime chạy — chỉ cho `workspace-write`, vì read-only
+   * không có gì để so. `null` khi workspace không nằm trong repo; không có probe thì không
+   * có baseline, và evidence `change` sau đó chỉ có thể là `unknown` (P3).
+   */
+  readonly baseline?: (workspace: string) => Promise<GitBaselineV1 | null>;
   readonly now?: () => Date;
 }
 
@@ -57,6 +76,7 @@ export class ExecutionService {
   private readonly workflowRunner: Pick<WorkflowRunner, "initialize">;
   private readonly store: ExecutionStore;
   private readonly resolveWorkspace: (workspace: string) => Promise<string>;
+  private readonly baseline: ((workspace: string) => Promise<GitBaselineV1 | null>) | null;
   private readonly now: () => Date;
   /**
    * Những vé chính instance này đã phát, và definition đã được duyệt cùng mỗi vé.
@@ -76,6 +96,7 @@ export class ExecutionService {
     this.workflowRunner = options.workflowRunner;
     this.store = options.store;
     this.resolveWorkspace = options.resolveWorkspace ?? realpath;
+    this.baseline = options.baseline ?? null;
     this.now = options.now ?? (() => new Date());
   }
 
@@ -86,7 +107,7 @@ export class ExecutionService {
    * `preparing` vào graph, nên không có lúc nào một execution có thư mục trên đĩa mà cây
    * chưa biết tới nó.
    */
-  async authorize(input: AuthorizeExecutionInput): Promise<ExecutionAuthorization> {
+  async authorize(input: AuthorizeExecutionInput, surface: ApprovalSurface = NO_APPROVAL_SURFACE): Promise<ExecutionAuthorization> {
     let parent: AgentId | "principal" = input.parent;
     if (parent !== "principal") {
       parent = this.registry.get(parent).id;
@@ -111,27 +132,35 @@ export class ExecutionService {
     }
 
     const workspace = await this.resolveWorkspace(input.workspace);
+    const writeScope = input.writeScope === undefined ? null : await this.resolveWriteScope(workspace, input.writeScope);
     // A role that declares no workspace root (read-thread, compaction, titling) reads memory,
     // not the tree: there is no path for policy to authorize, and asking about one could only
     // ever come back WORKSPACE_NOT_GRANTED — which is why those three could not be launched
     // at all. A *write* request is still asked, because that is a grant they genuinely lack;
     // the deny it returns is the right answer rather than an artefact of the question.
     const grantsWorkspace = definition.capabilities.workspace.readRoots.length > 0;
-    if (grantsWorkspace || input.workspaceMode === "workspace-write") {
-      requireAuthorization(
-        "workspace",
-        this.policy.authorize({
-          type: "workspace",
-          actor: definition.id,
-          operation: input.workspaceMode === "workspace-write" ? "write" : "read",
-          path: workspace,
-          execution: {
-            activeWorkspace: workspace,
-            workspaceMode: input.workspaceMode,
-            delegated: parent !== "principal",
-          },
-        }),
-      );
+    const approvals: ApprovalRecordV1[] = [];
+    // A scope is always asked about, even on a read-only launch: the deny it earns there
+    // (`WRITE_SCOPE_ON_READ_ONLY`) is policy's to give, not something to drop on the floor.
+    if (grantsWorkspace || input.workspaceMode === "workspace-write" || writeScope !== null) {
+      const decision = decideWith(this.policy, {
+        type: "workspace",
+        actor: definition.id,
+        operation: input.workspaceMode === "workspace-write" ? "write" : "read",
+        path: workspace,
+        execution: {
+          activeWorkspace: workspace,
+          workspaceMode: input.workspaceMode,
+          delegated: parent !== "principal",
+        },
+        ...(input.launch === undefined ? {} : { launch: input.launch }),
+        ...(writeScope === null ? {} : { writeScope }),
+      });
+      if (decision.kind === "require_approval") {
+        approvals.push(await this.settle(decision, input, surface));
+      } else {
+        requireAuthorization("workspace", toAuthorization(decision));
+      }
     }
 
     const authorization = deepFreezeExecutionValue<ExecutionAuthorization>({
@@ -140,10 +169,63 @@ export class ExecutionService {
       target: definition.id,
       workspace,
       workspaceMode: input.workspaceMode,
+      approvals,
+      writeScope,
       authorizedAt: this.now().toISOString(),
     });
     this.issued.set(authorization, definition);
     return authorization;
+  }
+
+  /**
+   * Each entry resolved the way the workspace was — through symlinks — so what policy judges
+   * is where writes would really land. A missing entry is refused rather than created: the
+   * scope names what the child may touch, and a launch is not the moment to grow the tree.
+   */
+  private async resolveWriteScope(workspace: string, entries: readonly string[]): Promise<readonly string[]> {
+    if (entries.length === 0) throw new Error("workspace authorization failed: write scope must not be empty (omit it for the whole workspace)");
+    const resolved = new Set<string>();
+    for (const entry of entries) {
+      try {
+        resolved.add(await this.resolveWorkspace(resolve(workspace, entry)));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          throw new Error(`workspace authorization failed (WRITE_SCOPE_NOT_FOUND): write scope entry \`${entry}\` does not exist under \`${workspace}\``);
+        }
+        throw error;
+      }
+    }
+    return [...resolved].sort();
+  }
+
+  /**
+   * Turns a question into a record or a deny. Order: a "yes" the session already holds for
+   * the same rule and subject answers first — that is what `scope: "session"` means, and it
+   * holds even for a surface that cannot ask. Then the surface; none ⇒ `APPROVAL_UNAVAILABLE`,
+   * "no" ⇒ `APPROVAL_DENIED`. A "no" is not remembered; a session-scoped "yes" is.
+   */
+  private async settle(
+    decision: Extract<PolicyDecision, { kind: "require_approval" }>,
+    input: AuthorizeExecutionInput,
+    surface: ApprovalSurface,
+  ): Promise<ApprovalRecordV1> {
+    const remembered = (await input.sessionApprovals?.list())?.find((record) => matchesDecision(record, decision));
+    if (remembered !== undefined) return remembered;
+    if (!surface.supportsApproval) requireAuthorization("workspace", toAuthorization(decision));
+    const approved = await surface.ask(decision);
+    if (!approved) {
+      throw new Error(`workspace authorization failed (APPROVAL_DENIED): the principal declined (${decision.rule}): ${decision.prompt}`);
+    }
+    const record: ApprovalRecordV1 = Object.freeze({
+      version: 1,
+      rule: decision.rule,
+      subject: decision.subject,
+      scope: decision.scope,
+      decidedBy: "principal",
+      decidedAt: this.now().toISOString(),
+    });
+    if (record.scope === "session") await input.sessionApprovals?.record(record);
+    return record;
   }
 
   /**
@@ -172,6 +254,8 @@ export class ExecutionService {
       definition,
       workspace: authorization.workspace,
       workspaceMode: authorization.workspaceMode,
+      approvals: authorization.approvals,
+      writeScope: authorization.writeScope,
       ...(input.mode === undefined ? {} : { mode: input.mode }),
       ...(input.modeProfiles === undefined ? {} : { modeProfiles: input.modeProfiles }),
       createdAt,
@@ -205,6 +289,17 @@ export class ExecutionService {
       now: () => createdAt,
     }));
     await atomicRuntimeFile(artifacts.continuityFile, renderContinuity(checkpoint));
+
+    // Baseline trước launch, cùng chỗ với các file context khác: có nó thì `change` sau này
+    // là "đã quan sát"; ghi cả `baseline: null` để "không phải repo" phân biệt được với
+    // "chưa từng chụp".
+    if (this.baseline !== null && policy.workspaceMode === "workspace-write") {
+      const baseline = await this.baseline(policy.workspace);
+      await atomicRuntimeFile(
+        baselineFile(artifacts.contextDirectory),
+        `${JSON.stringify({ version: 1, capturedAt: this.now().toISOString(), baseline }, null, 2)}\n`,
+      );
+    }
 
     return deepFreezeExecutionValue({ capsule, policy, state, artifacts, threadContext });
   }

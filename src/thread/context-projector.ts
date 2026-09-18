@@ -9,6 +9,7 @@ import {
   threadContextDigest,
   type ContextLine,
   type ContextPinSection,
+  type ThreadContextDelegation,
   type ThreadContextOutcome,
   type ThreadContextSnapshotV1,
 } from "./context-types";
@@ -35,6 +36,11 @@ export interface ProjectContextInput {
    */
   readonly checkpoint: ContinuityCheckpointV1 | null;
   readonly createdAt: string;
+  /**
+   * Delegation của E-n như ALP ghi trong cây (P4) — của riêng E-n, không cộng dồn; caller
+   * đã cắt còn N gần nhất. Bỏ trống hoặc `[]` thì snapshot không mang field.
+   */
+  readonly delegations?: readonly ThreadContextDelegation[];
   /** Trần bytes; mặc định `THREAD_CONTEXT_MAX_BYTES`. Chỉ test đổi. */
   readonly maxBytes?: number;
 }
@@ -95,6 +101,7 @@ export function projectThreadContext(input: ProjectContextInput): ProjectContext
     objective: input.title ?? previous?.objective ?? null,
     ...sections,
     outcomes,
+    ...(input.delegations?.length ? { delegations: input.delegations } : {}),
     degraded: input.checkpoint === null,
     createdAt: input.createdAt,
   };
@@ -133,7 +140,8 @@ function mergeLines(previous: readonly ContextLine[], added: readonly ContextLin
 /**
  * Cắt cho tới khi lọt trần, theo thứ tự: `openItems` cũ nhất → `decisions`/`constraints`
  * cũ nhất (dòng của execution vừa chiếu không bao giờ rơi — nó là thứ mới nhất và là lý do
- * revision này tồn tại) → `outcomes` cũ nhất, giữ tối thiểu `MIN_RETAINED_OUTCOMES`.
+ * revision này tồn tại) → `outcomes` cũ nhất, giữ tối thiểu `MIN_RETAINED_OUTCOMES` →
+ * `delegations` cũ nhất, sau cùng vì chúng là điều ALP nói về chính execution vừa chiếu.
  * Dừng khi không còn gì cắt được, kể cả khi vẫn quá trần — một snapshot to hơn dự tính
  * vẫn tốt hơn một snapshot rỗng.
  */
@@ -157,6 +165,11 @@ function bound(
   while (oversize() && (dropOldest("decisions") || dropOldest("constraints"))) { /* rồi decisions/constraints */ }
   while (oversize() && current.outcomes.length > MIN_RETAINED_OUTCOMES) {
     current = { ...current, outcomes: current.outcomes.slice(1) };
+    droppedCount += 1;
+  }
+  while (oversize() && current.delegations !== undefined && current.delegations.length > 0) {
+    const { delegations, ...rest } = current;
+    current = delegations.length === 1 ? rest : { ...rest, delegations: delegations.slice(1) };
     droppedCount += 1;
   }
   return { body: current, droppedCount };

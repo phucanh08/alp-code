@@ -1,5 +1,5 @@
 ---
-status: draft
+status: completed
 created: 2026-09-12
 slug: governance-loop
 source: plans/260912-0749-governance-loop/research/roadmap-v3.md
@@ -36,12 +36,12 @@ Nguồn sự thật: [roadmap V3](./research/roadmap-v3.md) — đã qua hai lư
 
 | Phase | Tên | Trạng thái |
 |---|---|---|
-| 1 | [Approval hẹp (M3, prepare-time)](./phase-1-approval.md) — độc lập, chạy xen kẽ được | pending |
-| 2 | [`writeScope`](./phase-2-write-scope.md) — mở đầu bằng đo precedence sandbox Claude | pending |
-| 3 | [Evidence](./phase-3-evidence.md) — bridge cho child, git baseline, `verify.commands`, evaluator | pending |
-| 4 | [Acceptance](./phase-4-acceptance.md) — `alp delegation accept\|reject`, nguồn thứ hai của projector | pending |
-| 5 | [Runtime enforcement capabilities + launch receipt](./phase-5-enforcement-capabilities.md) — `measuredOn`, `launch.json`, agent test tầng 2 | pending |
-| 6 | [Usage telemetry + budget observe-only](./phase-6-usage.md) — parse từ transcript bridge đã mở | pending |
+| 1 | [Approval hẹp (M3, prepare-time)](./phase-1-approval.md) — độc lập, chạy xen kẽ được | completed (2026-09-12) |
+| 2 | [`writeScope`](./phase-2-write-scope.md) — mở đầu bằng đo precedence sandbox Claude | completed (2026-09-12) |
+| 3 | [Evidence](./phase-3-evidence.md) — bridge cho child, git baseline, `verify.commands`, evaluator | completed (2026-09-17) |
+| 4 | [Acceptance](./phase-4-acceptance.md) — `alp delegation accept\|reject`, nguồn thứ hai của projector | completed (2026-09-17) |
+| 5 | [Runtime enforcement capabilities + launch receipt](./phase-5-enforcement-capabilities.md) — `measuredOn`, `launch.json`, agent test tầng 2 | completed (2026-09-12) |
+| 6 | [Usage telemetry + budget observe-only](./phase-6-usage.md) — parse từ transcript bridge đã mở | completed (2026-09-17) |
 
 Thứ tự bắt buộc: 2 → 3 → 4 (vòng governance). 1 và 5 độc lập; 5 nên trước 3 vì evaluator đọc `policy.enforcement` + `launch.json`. Ước lượng ≈ 5–6 tuần tuần tự (tham chiếu: graph 5 phase ≈ 1 tuần, Thread 6 phase ≈ 1 tuần). Không phase nào có thao tác khó đảo ngược cần hỏi principal trước khi chạy; `alp trust verify` là hành động của principal, không phải của phase.
 
@@ -49,8 +49,8 @@ Thứ tự bắt buộc: 2 → 3 → 4 (vòng governance). 1 và 5 độc lập;
 
 | Gate | Điều kiện | Mở gì |
 |---|---|---|
-| Governance loop đóng | Phase 2 + 3 + 4; `main` chạy delegate → wait → evidence → accept trên **cả hai** runtime | README/docs được nói "delegation có kiểm chứng" |
-| `orchestrator` (vision §5.9) | Governance loop + Phase 5 + 6 (observe-only đủ) | Plan riêng cho role `orchestrator` — chỗ duy nhất bật "chặn settle root khi còn `undecided`" |
+| Governance loop đóng | Phase 2 + 3 + 4; `main` chạy delegate → wait → evidence → accept trên **cả hai** runtime | README/docs được nói "delegation có kiểm chứng" — **code đóng 2026-09-17** (P2+P3+P4 merged; e2e `test/e2e/acceptance.test.ts` chạy vòng trên fake binary); **mở 2026-09-18**: `main` thật chạy trọn vòng trên Codex 0.154.0 (root `exec_badef351bcf44565b0f2` → worker `exec_0be83d6234c447fda8ec`, `req_dde9cfda0b2a4f8f8b10` accepted) và Claude 2.1.275 (root `exec_e296a125f04649908bfd` → worker `exec_9a7c414d4cf446b79d75`, `req_01406d72a88e443a86d1` accepted) — xem Lượt 3 |
+| `orchestrator` (vision §5.9) | Governance loop + Phase 5 + 6 (observe-only đủ) | Plan riêng cho role `orchestrator` — chỗ duy nhất bật "chặn settle root khi còn `undecided`" — **điều kiện mở 2026-09-17** (P5 `3bd107a`, P6 hôm nay); nợ chạy `main` thật đã trả 2026-09-18 (Lượt 3) — gate **mở**, plan `orchestrator` có thể bắt đầu |
 | Hard budget | ADR §Câu hỏi còn mở #1 | Phase 6b |
 | Supervisor / policy pack | ≥2 project dùng governance loop thật với nhu cầu khác nhau | Roadmap kế tiếp |
 
@@ -126,6 +126,23 @@ Lượt 2 — 2026-09-12, tự rà bốn lăng kính (kẻ tấn công, failure,
 | [Phạm vi] P7 launch provenance? | a. gộp vào P5 · b. giữ riêng · c. bỏ | **a** | Cùng nguồn `runtimeVersion`; consumer yếu không đáng một phase | P5, xoá P7 |
 | [Giả định] Child background mà cha không `wait` — evidence lấy lúc nào? | a. `accept\|reject` tự collect trước khi ghi · b. `settleRoot` collect mọi child thiếu · c. digest rỗng như plan | **a** | Record luôn có digest thật; b kéo verify vào đường settle root | P3, P4 |
 | [Phạm vi] Plan `adapter-no-synthetic-turn` `in-progress`? | a. đổi `completed`, P3 tầm nhìn để nguyên · b. giữ, ghi `blocks/blockedBy` hai chiều | **a** | P0–P2 xong 09-03, P3 chưa mở khoá — không có việc đang chạy để chặn | plan adapter |
+
+### Lượt 3 — 2026-09-18 (chạy `main` thật trên hai runtime)
+
+**Vì sao kiểm chứng:** hai gate ở trên chỉ mới đóng bằng e2e trên fake binary. Lần chạy thật đầu tiên (2026-09-17) lộ ra `alp` gọi từ trong sandbox không chạy được — cả hai runtime chặn ghi `~/.alp` — nên phải mở plan `260918-0700-execution-relay` (R1–R5) trước khi trả nợ này. Harness: `alp-usage-probe/RUNBOOK.md` + `check.sh`, dist build từ `ac25081`.
+
+| Runtime | Root | Worker / request | Kết quả | Usage root |
+|---|---|---|---|---|
+| Codex 0.154.0 (oauth) | `exec_badef351bcf44565b0f2` · thread `thread_977409e6d0a74399853d` · 01:24Z | `exec_0be83d6234c447fda8ec` · `req_dde9cfda0b2a4f8f8b10` | `alp delegate … --require-evidence change` qua relay → `wait` → evidence `satisfied` → `tree` → **accepted**; diff đúng một file `src/hello.ts`; budget within (in 23824 / out 1007 / tools 4) | in 26765 out 4681 cache 447744/0 tools 15 |
+| Claude 2.1.275 (oauth) | `exec_e296a125f04649908bfd` · thread `thread_1e09a0d9e4114762af25` · 02:28Z | `exec_9a7c414d4cf446b79d75` · `req_01406d72a88e443a86d1` | Cùng vòng, **accepted**; budget **exceeded** đúng như thiết kế của runbook (cap 3000/4, thực in 8 / out 678 / cache 103117+16579 / tools 3) — observe-only, không chặn | in 24 out 3565 cache 475386/47169 tools 11 |
+
+Điều chứng minh được, không phải suy ra:
+
+- Profile sandbox thật sự là thứ runtime chạy: cả hai rollout Codex in `<permission_profile type="managed">` với `:root` read + `relay` write (root) và thêm workspace write, private memory write, `.git/.agents/.codex` read (worker). Claude: PreToolUse hook ghi 0 file ngoài scope.
+- Allowlist relay giữ đúng ranh giới: từ trong execution, `alp thread show` và `alp --mode low` bị từ chối exit 2; `alp help`, `alp delegate`, `alp delegation *` đi về root.
+- Sau settle, `relay/` của cả root và child rỗng — không rác request/response, `server.json` được unlink.
+
+Sự cố **không phải lỗi ALP**, ghi để không chẩn đoán lại: phiên Codex 09:31 (root `exec_93c2e7f70de34eeea660`) dán nguyên task không nháy vào `zsh -lc`; vì task chứa `hello():`, zsh đọc cả dòng `alp delegate … hello(): string …` thành *định nghĩa hàm nhiều tên* (`whence -w alp` → `function`), exit 0, không output, `alp` chưa hề chạy. Runbook đã đổi prompt sang task trong nháy đơn.
 
 ## Câu hỏi còn mở
 

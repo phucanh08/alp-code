@@ -5,6 +5,7 @@ import {
   type ExecutionBinding,
 } from "../execution/graph/execution-graph-service";
 import type { ExecutionArtifactPaths, ExecutionPolicy, ExecutionThreadBinding, IdentityCapsule, PreparedExecution } from "../execution/types";
+import { RELAY_DIRECTORY_ENV } from "../execution/relay-protocol";
 import { runtimeSessionFile } from "../hooks/runtime-session";
 import { renderSessionContext } from "./render-session-context";
 import { renderTaskInput } from "./render-task-input";
@@ -123,7 +124,7 @@ export function taskArguments(
 export function baseRuntimeEnvironment(
   capsule: IdentityCapsule,
   files: RuntimeContextFiles,
-  artifacts: Pick<ExecutionArtifactPaths, "continuityFile" | "compactEventsFile" | "contextDirectory">,
+  artifacts: Pick<ExecutionArtifactPaths, "continuityFile" | "compactEventsFile" | "contextDirectory" | "relayDirectory">,
   binding?: ExecutionBinding | null,
   thread?: ExecutionThreadBinding | null,
 ): Record<string, string> {
@@ -160,6 +161,10 @@ export function baseRuntimeEnvironment(
     // `session_id`/`transcript_path` so the Thread history bridge can find the transcript
     // after this process is gone.
     ALP_RUNTIME_SESSION: runtimeSessionFile(artifacts.contextDirectory),
+    // Read by `alp` (`dispatchEntry`) inside the sandbox: instead of running the command
+    // itself it hands it to the ALP process that launched this execution, which answers with
+    // this execution's own binding. Set on both modes — the sandbox is what makes it needed.
+    [RELAY_DIRECTORY_ENV]: artifacts.relayDirectory,
   };
 }
 

@@ -4,6 +4,7 @@ import type { AgentId, AgentRegistry } from "../agents/types";
 import { dryRunAgent, removeDryRun } from "./dry-run";
 import { runTier1 } from "./tier1";
 import { runTier2 } from "./tier2";
+import type { SandboxProbe } from "./sandbox-probe";
 import { runTier3 } from "./tier3";
 import { AGENT_TEST_TIERS, type AgentTestCheck, type AgentTestDisclosure, type AgentTestReport, type AgentTestTier } from "./types";
 
@@ -22,6 +23,9 @@ export interface AgentTestOptions {
   readonly modeProfiles?: ModeProfiles;
   /** Defaults to every tier. Tier 4 (live) is not run from here — it costs a model call. */
   readonly tiers?: readonly AgentTestTier[];
+  /** Tier 2's sandbox measurement — see `Tier2Input.probe`. Absent, nothing is probed. */
+  readonly probe?: SandboxProbe;
+  readonly platform?: NodeJS.Platform;
 }
 
 /**
@@ -72,6 +76,8 @@ export async function testAgent(options: AgentTestOptions): Promise<AgentTestRep
         mode,
         ...(options.modeProfiles ? { modeProfiles: options.modeProfiles } : {}),
         skillsRoot: options.skillsRoot,
+        ...(options.probe ? { probe: options.probe } : {}),
+        ...(options.platform ? { platform: options.platform } : {}),
       });
       checks.push(...tier2.checks);
       disclosure = tier2.disclosure;

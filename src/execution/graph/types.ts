@@ -1,3 +1,4 @@
+import type { ExecutionBudget, UsageCounters } from "../usage";
 import type { AgentId } from "../../agents/types";
 import type { ExecutionId, ExecutionThreadBinding } from "../types";
 
@@ -124,6 +125,48 @@ export interface ExecutionNode {
   readonly error: ExecutionNodeError | null;
   /** `deadline` khi node bị giết bởi wall clock; `null` ở mọi kết cục khác. */
   readonly terminationReason: "deadline" | null;
+  /**
+   * Bằng chứng cha yêu cầu lúc giao (`change`, `verify:<id>`), đã chuẩn hoá và sắp xếp; cấu
+   * trúc và bất biến — nó nằm trong fingerprint của request. Root và node legacy: `[]`.
+   */
+  readonly requiredEvidence: readonly string[];
+  /** Digest + kết luận của `evidence.json` lần thu gần nhất; `null` khi chưa thu. Chỉ ghi ở node đã dừng. */
+  readonly evidence: ExecutionEvidenceRef | null;
+  /**
+   * 200 ký tự đầu của task lúc giao, cấu trúc và bất biến — để handoff kể *việc gì* đã giao
+   * mà không phải giữ task đầy đủ. `null` ở root và node legacy.
+   */
+  readonly taskExcerpt: string | null;
+  /** Phán quyết của cha trên `evidence.json`; ghi một lần, chỉ ở node đã dừng. `null` khi chưa quyết. */
+  readonly acceptance: ExecutionAcceptanceRef | null;
+  /**
+   * Trần cha đặt lúc giao (P6) — cấu trúc, bất biến, nằm trong fingerprint khi có. Chỉ để so
+   * và báo; ALP không giết con vì nó. `null` ở root, ở con không đặt trần, và ở node legacy.
+   */
+  readonly budget: ExecutionBudget | null;
+  /** Token / tool call ALP đếm được từ transcript của node (P6); ghi cùng lúc với `evidence`, chỉ ở node đã dừng. */
+  readonly usage: UsageCounters | null;
+}
+
+export interface ExecutionEvidenceRef {
+  readonly digest: string;
+  readonly evaluation: "satisfied" | "unsatisfied" | "unknown";
+}
+
+export type AcceptanceDecision = "accepted" | "rejected";
+
+export const TASK_EXCERPT_MAX_CHARS = 200;
+
+/** Đầu task, cắt theo ký tự (không cắt giữa một surrogate pair) và bỏ khoảng trắng hai đầu. */
+export function taskExcerpt(task: string): string {
+  return [...task.trim()].slice(0, TASK_EXCERPT_MAX_CHARS).join("");
+}
+
+export interface ExecutionAcceptanceRef {
+  readonly decision: AcceptanceDecision;
+  /** Digest của `evidence.json` mà cha đã nhìn khi quyết. */
+  readonly evidenceDigest: string;
+  readonly decidedAt: string;
 }
 
 /**
@@ -144,6 +187,9 @@ export interface ExecutionReservation {
   readonly capabilityHash: string;
   readonly createdAt: string;
   readonly expiresAt: string;
+  readonly requiredEvidence: readonly string[];
+  readonly taskExcerpt: string | null;
+  readonly budget: ExecutionBudget | null;
 }
 
 export interface ExecutionGraphDocument {

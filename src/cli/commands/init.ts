@@ -79,6 +79,22 @@ export class ProjectRegistryStore {
     return current.projects.some((entry) => entry.path === canonical);
   }
 
+  /**
+   * The innermost registered project `path` lies in, or `null`. Bounds the approval rule:
+   * "inside the project root" means inside this. Containment is a path boundary — `mono-x`
+   * is not inside `mono`.
+   */
+  async projectContaining(path: string): Promise<string | null> {
+    const canonical = await realpath(path);
+    const current = await this.read();
+    let innermost: string | null = null;
+    for (const entry of current.projects) {
+      if (!within(entry.path, canonical)) continue;
+      if (innermost === null || within(innermost, entry.path)) innermost = entry.path;
+    }
+    return innermost;
+  }
+
   private async write(value: ProjectRegistryDocument): Promise<void> {
     const directory = dirname(this.file);
     await mkdir(directory, { recursive: true, mode: 0o700 });

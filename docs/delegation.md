@@ -65,6 +65,50 @@ còn `active` có process thật không, và đóng những node mà process đ�
 này thì một lần reboot để lại cây đầy node `running` ma, và mọi lần giao việc sau đó bị trần
 đồng thời từ chối.
 
+## `alp` trong sandbox: relay qua process root
+
+Vai đang chạy *trong* sandbox gõ `alp delegate worker …` — nhưng process `alp` đó không thể
+là process thi hành delegation: nó không ghi được `~/.alp` (Codex read-only, Claude
+`denyWrite`), và một worker nó spawn sẽ thừa kế sandbox của nó. Đo đầy đủ ngày 2026-09-18
+trên cả hai runtime, cùng lý do loại từng phương án khác (unix socket bị `EPERM` ở cả hai,
+`excludedCommands` rò rỉ `&&`/`;`, Codex không escalate được dưới `approval_policy=never`):
+`plans/260918-0700-execution-relay/research/alp-inside-sandbox.md`.
+
+Quyết định: **process root `alp` là process duy nhất thi hành lệnh ALP thay cho một
+execution.** `alp` trong sandbox chỉ là *client*.
+
+```text
+<execution>/relay/server.json            { v:1, pid, executionId, registeredAt }   ← root ghi lúc đăng ký
+<execution>/relay/<id>.request.json      { v:1, id, argv, cwd, requestedAt }       ← client ghi (tmp + rename)
+<execution>/relay/<id>.response.json     { v:1, id, exitCode, stdout, stderr, finishedAt }
+```
+
+- **Client** (`src/cli/relay-client.ts`, gate trong `dispatchEntry`): thấy `ALP_RELAY_DIR`
+  là đi relay — không `ensureState`, không load full CLI. Chỉ `--version`, `hook` và
+  `__internal` còn chạy in-process. Poll 50 → 500 ms, mỗi vòng kiểm `kill(pid, 0)` và
+  `ALP_EXECUTION_DEADLINE_AT`; thiếu `server.json`, pid chết hay hết hạn ⇒ lỗi rõ, không im
+  lặng.
+- **Server** (`src/execution/relay-server.ts`): root `register({ executionId, directory,
+  env })` khi phóng, `close()` khi settle. Với mỗi request nó spawn `layout.stableCommand
+  <argv>` với env = env của root ⊕ launch env của execution, **bỏ** `ALP_RELAY_DIR` — cùng
+  code path như gõ từ terminal, nên `alp delegate` không có semantics thứ hai.
+- **Allowlist server-side, fail-closed**: `delegate`, `delegation *`, `context *`, `help`,
+  `--version` — đúng bằng những gì session context bảo vai gõ. Mọi thứ khác exit 2.
+- **Binding là của thư mục, không của request.** Request là input untrusted từ model; env
+  mà server ghép vào là env ALP gắn cho execution đó lúc đăng ký. Con A không mượn được
+  binding của root hay của con B.
+
+Ai đăng ký: `runThreadRoot` cho phiên root; `DelegationService` cho con **foreground** —
+đăng ký *trước* khi spawn (không có cửa sổ con chạy mà chưa ai phục vụ), đóng khi `wait`
+terminal, spawn hỏng hay `cancel`. Con `--background` **không** được đăng ký: process gọi
+`alp delegate --background` thoát ngay, không còn ai để trả lời — `alp` trong con đó
+fail-closed ("no ALP process is serving"). Delegation lồng từ con background cần supervisor
+phục vụ relay; chưa làm.
+
+Sandbox mở đúng một chỗ cho kênh này: Claude `sandbox.filesystem.allowWrite:
+[<execution>/relay]`; Codex một entry `"write"` cho `<execution>/relay` trong profile.
+`relay/` là `0700`, nằm ngoài workspace, sống cùng execution dir.
+
 ## Contract trung lập runtime
 
 ```text
@@ -118,6 +162,251 @@ Mỗi bước đứng trước bước sau vì một lý do, và thứ tự đó
 
 Ví dụ loadout thật: `main → search` và `main → review` được phép; `search → review` bị
 `UnauthorizedDelegation` ngay trong core. Khi deny, backend không được health-check hay spawn.
+
+### `--workspace` ngoài grant: hỏi hay từ chối
+
+`ExecutionService.authorize` không chỉ trả allow/deny — `PolicyEngine.decide()` còn có một
+đáp án thứ ba, `require_approval`, và trong phạm vi hiện tại nó chỉ phát ra cho **một** luật:
+
+| `--workspace` của con nằm ở | Kết quả |
+|---|---|
+| trong workspace của cha (grant) | allow, không hỏi |
+| ngoài grant, **trong** project đã đăng ký (`alp init`) | `require_approval`, scope `session` |
+| ngoài project | `WORKSPACE_SCOPE_MISMATCH` — không hỏi |
+
+Grant là workspace của **cha**, đọc từ `policy.json` đã ký của cha — không phải từ request,
+vì đó là field người gọi tự điền. Project là project đăng ký trong cùng nhất chứa grant
+(`ProjectRegistryStore.projectContaining`); không có thì grant là project của chính nó. "Trong"
+là biên đường dẫn: `mono-x` không nằm trong `mono`.
+
+Câu hỏi là một bước *bên trong* `authorize()`, trước khi có ticket. Ai trả lời được là chuyện
+của surface, và `alp delegate` **không có surface** — process con không có principal ở bàn phím,
+và một lá hỏi được là một lá bị prompt-inject có thể tự chế câu hỏi. Vì thế:
+
+- không có surface ⇒ `APPROVAL_UNAVAILABLE`, deny trước reservation, trước mọi file;
+- principal nói "no" ở root ⇒ `APPROVAL_DENIED`, và "no" **không** được ghi lại;
+- principal nói "yes" ở root ⇒ `ApprovalRecordV1 { rule, subject, scope, decidedBy, decidedAt }`
+  ghi vào `<root>/context/approvals.json` (sống qua dọn `runtime/`), và mọi con dưới root đó
+  hỏi cùng câu — cùng `rule`, cùng `subject` — được trả lời mà không hỏi lại.
+
+Bản ghi đi vào `ExecutionPolicy.approvals` của con và vào `policyHash`: một execution được nới
+workspace vì có người nói "yes" là một identity khác với một execution không phải hỏi.
+`alp thread show` in các approval của từng root.
+
+### `--write-scope`: con chỉ được ghi một phần workspace
+
+`alp delegate worker --write-scope src/parser --write-scope docs -- fix the parser` giao việc
+cho một vai `workspace-write` nhưng chỉ cho nó ghi hai cây con đó. Cờ lặp được; đường dẫn
+tương đối so với `--workspace` hoặc tuyệt đối; bỏ cờ là cả workspace như trước. Scope đi qua
+`PolicyEngine.decide()` **trước** luật `--workspace` ở trên — một scope sai không bao giờ là
+thứ đem đi hỏi principal — và qua đúng thứ tự:
+
+| Scope | Kết quả |
+|---|---|
+| có scope nhưng vai đích `read-only` | `WRITE_SCOPE_ON_READ_ONLY` |
+| entry không tồn tại trên đĩa | `WRITE_SCOPE_NOT_FOUND` — không tạo hộ |
+| entry ngoài workspace sau khi resolve (`..`, tuyệt đối, **symlink trỏ ra ngoài**) | `WRITE_SCOPE_OUTSIDE_WORKSPACE` |
+| entry chạm `~/.alp/executions/` (bằng, chứa, hay nằm trong) — hoặc launch *không* scope mà workspace chứa nó | `WRITE_SCOPE_PROTECTED_ROOT` |
+| cha có scope, con xin rộng hơn (entry ngoài scope cha; hoặc con không scope mà workspace không nằm trong scope cha) | `WRITE_SCOPE_EXCEEDS_PARENT` |
+| danh sách rỗng, entry trống | `INVALID_REQUEST` ở `DelegationService`, trước khi hỏi policy |
+
+Mỗi entry được resolve qua symlink như workspace (`realpath`), rồi sort + bỏ trùng, và đi vào
+`ExecutionPolicy.writeScope` — `null` **tường minh** khi không scope, vì `canonicalize()` bỏ
+key `undefined` và một policy không scope không được trùng hash với policy viết trước P2. Nó
+nằm trong `policyHash` (hook bridge chép lại qua `readWriteScope`, một `policy.json` bị nới
+scope sau khi ký là "invalid or stale"), trong fingerprint của request (cùng task khác scope
+là việc khác), và trong `alp delegation status` (`writeScope` trong kết quả, đọc từ snapshot
+đã ký chứ không từ request). Scope của cha đọc từ chính `policy.json` của cha và đi cùng grant
+(`launch.writeScope`), nên một con không thể xin thứ cha không có.
+
+Runtime nhận scope theo cách nó cưỡng chế được:
+
+- **Codex**: profile trên argv liệt kê `"write"` cho `[<scope...>, <private memory của vai>]`
+  — thay workspace chứ không thêm vào; sandbox của Codex tự từ chối phần còn lại
+  (`enforced`, đo lại 2026-09-18 trên chính dạng launch dùng). Trước đó scope chỉ nằm trong
+  `codex-config.toml` — file Codex **không đọc** — nên cell này từng được đo trên cơ chế chứ
+  không trên launch; xem § "Runtime cưỡng chế được gì".
+- **Claude (darwin/linux)**: đo trên 2.1.269 (`research/claude-sandbox-precedence.md`)
+  `denyWrite` thắng `allowWrite`, nên không "cho phép" được một cây con — ALP liệt kê **những
+  gì đứng cạnh scope** trên đường từ workspace xuống tới scope và deny từng thứ, ở cả hai mặt:
+  `permissions.deny` `Edit(//path/**)` (Claude áp cùng luật cho Write/NotebookEdit/MultiEdit;
+  `Write(...)` bị bỏ qua) và `sandbox.filesystem.denyWrite`. Cái gì tồn tại lúc phóng thì bị
+  chặn; một entry tạo *sau đó* cạnh scope thì không — đó là `partial`, không phải `enforced`.
+- **Claude (win32)**: chỉ có luật `Edit`, không có sandbox — `declared-only` như trước.
+
+Không cấu hình nào của runtime chứa `~/.alp/executions/` trong danh sách ghi được, và một
+scope bị từ chối không để lại node, file hay process nào.
+
+### `--require-evidence`: cha nói trước nó sẽ tin cái gì
+
+Con báo "xong" là **self-reported** — `state.json.output` do chính nó ghi. Từ 2026-09-17 cha
+có thể khai trước thứ nó cần thấy:
+
+```bash
+alp delegate worker --write-scope src/parser \
+  --require-evidence change --require-evidence verify:test -- "Sửa parser"
+alp delegation wait exec_...        # thu evidence ngay khi node terminal
+alp delegation evidence exec_...    # xem lại, hoặc thu tiếp phần còn `unknown`
+alp trust verify                    # duyệt khối `verify.commands` của project này
+```
+
+Hai mục khai được: `change` (con **đã** đổi file, nhìn từ ngoài) và `verify:<id>` (lệnh
+verify `<id>` của project chạy exit 0 sau khi con xong). Mục nào khác ⇒ `INVALID_REQUEST`
+trước khi có node nào. `requiredEvidence` vào fingerprint của request và ở lại trên node,
+nên hai lần gọi cùng task nhưng khác yêu cầu là hai request.
+
+**Evidence được thu ở đúng hai chỗ**: `alp delegation wait` (ngay sau khi node terminal) và
+`alp delegation evidence` (on-demand, hoặc thu lại phần còn `unknown` — ví dụ sau khi
+`alp trust verify`). `status`, `tree`, `cancel`, reconcile **không bao giờ** thu: thu là chạy
+lệnh verify trong workspace của người gọi, một câu hỏi đọc không được kéo `npm test`. Kết
+quả ghi `<execution>/evidence.json` (`ExecutionEvidenceV1`, atomic), digest + verdict lên node
+của cây, và `wait`/`evidence` trả `{ digest, evaluation, missing }`. Thread không nhận gì —
+transcript delta của con nằm ở `<execution>/context/history/`, không vào `messages/`.
+
+Mỗi item ghi **nguồn** và **độ tin** (`observed · derived · self-reported · unknown`):
+
+| Item | Nguồn | `observed` khi | Ghi chú |
+|---|---|---|---|
+| `change` | `git` | không node nào khác có thể đã ghi cùng workspace (`ambiguousWith = []`) **và** `enforcement.writeIsolation = enforced` | `paths` = khác baseline chụp lúc `materialize` (status khác, hoặc hash khác với file dirty sẵn); `outsideScope` chỉ là bằng chứng khi `outsideScopeVerified` |
+| `change`, `tool-call` | `history-bridge` | transcript đọc `complete` | `partial`/`final-only` ⇒ `derived`; `unsupported` ⇒ `unknown` |
+| `verify` / `verify-skipped` | `alp-verifier` | đã chạy | chưa trust ⇒ `verify-skipped untrusted`; timeout ⇒ `timeout`; không cấu hình ⇒ `not-configured` |
+| `output` | `agent-output` | không bao giờ | `self-reported`, không đạt mục nào |
+| `boundary` | `runtime-event` | luôn | |
+
+Runtime chạy thật (`launch.json`) khác version đã đo (`enforcement.measuredOn`) ⇒ mọi
+`observed` của git/bridge/event hạ xuống `derived`; verify do ALP tự chạy nên không hạ.
+`ambiguousWith` liệt kê node khác cùng workspace, khoảng chạy giao nhau, mà có thể ghi được
+(workspace-write với scope không rời, hoặc bất kỳ node nào không có `writeIsolation`
+enforced — root read-only trên Windows luôn nằm trong danh sách). Một node đã kết thúc trước
+khi verify bắt đầu không vào `ambiguousWith` của item `verify`.
+
+Evaluator: mọi mục có item `observed | derived` khớp ⇒ `satisfied`; có mục không item nào ⇒
+`unsatisfied` (`missing` kể tên); còn lại — item `unknown`, verify chưa chạy — ⇒ `unknown`.
+`unknown` không phải đạt: cha thấy `unknown` là biết còn một việc (`alp trust verify`, chờ
+verify) chứ không phải một kết luận.
+
+**`verify.commands` chỉ chạy sau khi principal duyệt.** Khối khai ở `.alp/settings.json` /
+`.alp/settings.local.json` của project (tầng user không được — một lệnh verify thuộc về repo
+chứa nó):
+
+```json
+{ "verify": { "commands": [ { "id": "test", "run": "npm test", "timeoutMs": 600000, "cwd": "." } ] } }
+```
+
+`alp trust verify` in từng lệnh và hỏi trên TTY; đồng ý thì ghi `{ project, verifyDigest }`
+vào `~/.alp/trusted-verify.json` (một record một project, keyed theo realpath). Digest là
+sha256 của `[id, run, timeoutMs, cwd]` sau khi gộp hai file — sửa một ký tự là phải trust
+lại; `--revoke` rút. Lý do trust: lệnh chạy bằng process ALP **ngoài** sandbox runtime, trong
+workspace của con, env chỉ `PATH`+`HOME`; một repo lạ mang `.alp/settings.json` không được
+quyền chạy gì trên máy anh chỉ vì anh đã `alp delegate` vào nó.
+
+### `alp delegation accept|reject`: cha nghiệm thu, ALP ghi phán quyết
+
+Evidence trả lời "đã xảy ra gì"; nó chưa trả lời "cha có nhận kết quả này không". Từ
+2026-09-17 cha đóng vòng bằng một hành động **được xác thực**:
+
+```bash
+alp delegation accept req_...  [--reason "..."]...  [--json]
+alp delegation reject req_...   --reason "..."  [--reason "..."]...  [--json]
+```
+
+Khoá là **request ID** (thứ `alp delegate` trả về và `tree` in `req …`), không phải execution
+ID: cha nghiệm thu *việc nó đã giao*, không phải một node nó tình cờ biết ID. Trình tự, theo
+thứ tự từ chối:
+
+1. Binding cha đọc từ env (`readBindingFromEnvironment`) → `graph.authenticateParent`; sai ⇒
+   `CAPABILITY_INVALID`. Không có cách nào nghiệm thu từ ngoài cây.
+2. Request phải là **con trực tiếp** của node cha; cháu, anh em, chính mình, hay request của
+   root khác ⇒ `ACCEPTANCE_NOT_PARENT` (từ CLI thì `EXECUTION_NOT_FOUND` — cây khác không lộ
+   node của nó).
+3. Con phải đã terminal: `queued`/`running` ⇒ `ACCEPTANCE_SUBJECT_RUNNING`. Muốn từ chối một
+   con đang chạy thì `cancel` trước rồi `reject`.
+4. Một request quyết đúng **một** lần: `ACCEPTANCE_ALREADY_DECIDED`. Không có "đổi ý" — đổi
+   ý là giao lại.
+5. `reject` bắt buộc `--reason`; `accept` thì tuỳ. Lý do rỗng ⇒ `INVALID_REQUEST` trước khi
+   động vào gì.
+
+Ba guard trên chạy **trước** khi thu evidence: một lệnh bị từ chối vì thẩm quyền không được
+kéo `npm test`. Qua guard rồi, `accept` lẫn `reject` đều thu evidence nếu chưa có (idempotent
+với `wait`) — phán quyết luôn trỏ tới một `evidence.json` cụ thể qua `evidenceDigest`, kể cả
+khi cha chưa từng `wait`. Evidence thu lỗi ⇒ lệnh lỗi, không có phán quyết mù.
+
+Kết quả ghi ở hai chỗ, cả hai do ALP viết:
+
+- **Node của cây**: `acceptance = { decision, evidenceDigest, decidedAt }`, revision +1, status
+  không đổi (một con `failed` được `accept` vẫn là `failed` — nghiệm thu không viết lại lịch
+  sử). Invariants từ chối graph có `acceptance` trên node còn active hay trên root.
+- **Record**: `<executions>/<parent>/acceptance/<requestId>.json` (`AcceptanceRecordV1`, 0600,
+  atomic) mang thêm `reasons` — mỗi lý do đi qua `history-redact`, cắt ở 2 000 byte. Record nằm
+  dưới thư mục **cha**, vì phán quyết là của cha; `cleanup` con không xoá nó.
+
+Phán quyết hiện ở mọi chỗ cha nhìn: `tree` thêm `decision accepted|rejected` (hoặc
+`decision undecided` cho con đã kết thúc mà chưa ai quyết), `evidence` in dòng `decision …`,
+và — quan trọng nhất — **Thread context** của lần chạy sau (xem § "Phán quyết vào Thread").
+Cùng dòng `tree` còn có `usage …` và `budget …` của node (xem § "Usage và budget").
+
+### Usage và budget: đếm sau, không chặn giữa chừng
+
+Mỗi execution biết nó tốn bao nhiêu — **đọc từ transcript** qua đúng history bridge đã mở
+cho evidence, không qua hook mới, không qua `-p`/stream-json. Năm cột tách riêng, không
+cộng thành một số "tổng" trong contract vì cache token mỗi runtime đếm khác nhau:
+
+```text
+inputTokens · outputTokens · cacheReadTokens · cacheWriteTokens · toolCalls
+```
+
+Một cột **`null` là "không đếm được"**, không phải 0 — bridge gặp dòng không đọc nổi thì
+đặt cột đó `null` cho cả lát, và `null` lan qua phép cộng (một lát mù ⇒ tổng mù). Claude
+đếm theo `message.id` vì CLI 2.1.268 ghi một API message thành nhiều dòng JSONL cùng `id`
+cùng `usage`; Codex đọc `event_msg`/`token_count`. Version ngoài pin của bridge ⇒
+completeness hạ như entries, không phải số bịa.
+
+- **Con:** `wait()`/`evidence()` chạy bridge, cộng dồn vào `<execution>/usage.json`
+  (`ExecutionUsageV1`) và ghi lên graph node — `alp delegation tree` in từng node và tổng
+  cây không mở file. Lần thu sau chỉ nhận dòng sau cursor, nên bridge chạy hai lần không đếm
+  đôi; bridge còn `final-only`/`unsupported` thì lần thu sau vẫn thử lại.
+- **Root:** `collectHistory` cộng `usageDelta` vào `history.usage` của `ThreadExecutionRef`
+  dưới Thread lease, cùng commit với cursor — hoặc cả hai tiến, hoặc không. `settleRoot`
+  chép sang boundary; `alp thread show` in `usage in … out … cache r/w … tools …`.
+
+`--budget-tokens N` / `--budget-tool-calls N` (số nguyên dương, vào fingerprint request)
+được đánh giá **sau** khi con xong:
+
+| `budgetStatus` | Khi |
+|---|---|
+| `exceeded` | một trần bị vượt bởi số **đã đếm được** (`>` ngặt) |
+| `unknown` | không trần nào bị vượt, nhưng một trần không so được vì cột `null` |
+| `within` | mọi trần so được và không vượt — kể cả khi không khai trần |
+
+`exceeded` là **evidence, không phải lỗi**: nó thành item `usage` trong `evidence.json`
+(`{usage, budget, status}`), in ở `alp delegation evidence` và `tree` (`budget exceeded`),
+cha thấy khi nghiệm thu — nhưng không đổi outcome của con, không đổi `evaluation`, không
+chặn tool call thứ N+1. Chặn giữa chừng cần `PreToolUse` hook (đã bỏ có chủ đích) và Codex
+không có tương đương — đó là ADR riêng, không nằm trong đây.
+
+### Phán quyết vào Thread: nguồn thứ hai, không phải pin
+
+Projector Thread có đúng hai nguồn: pin của agent (`checkpoint.json`) và **delegations do ALP
+ghi**. Khi root settle, `ThreadService.projectContext` đọc cây của root đó (ngoài lease) và
+đưa mọi con trực tiếp vào snapshot, 20 cái mới nhất theo `createdAt`:
+
+```text
+## Delegations of E-3 (ALP-recorded)
+- req_7 → worker: accepted (evidence 3f9c0a1b2c3d…) — Sửa parser cho input rỗng
+- req_8 → review: rejected (evidence 91a0…) — Review patch parser
+- req_9 → search: undecided — Tìm chỗ gọi parser
+```
+
+Dòng này agent **không viết được**: pin viết "đã accept" chỉ là một pin; mục ở đây chỉ có khi
+graph có `acceptance`. `undecided` được in ra chứ không giấu — con đã xong mà cha chưa quyết
+là một việc còn nợ, và rule của `main` bắt nó đóng mọi delegation bằng `accept`/`reject`.
+`cancelled` cũng là một kết cục (`decision: cancelled`) để lượt sau không giao lại việc đã bị
+huỷ có chủ ý. `alp thread context|show` in cùng danh sách dưới `Delegations (ALP-recorded):`;
+history boundary của root mang đếm `{ accepted, rejected, cancelled, undecided }`.
+
+Cắt tất định khi quá 32 KiB: outcomes cũ rớt **trước**, delegations rớt sau cùng (cũ nhất
+trước) — phán quyết là thứ đắt nhất trong snapshot vì không tái tạo được từ pin. Snapshot không
+có delegation thì không có field: digest của mọi snapshot cũ giữ nguyên.
 
 ### `delegatesTo` cho phép, `reportsTo` chỉ mô tả
 
@@ -205,13 +494,18 @@ Direct communication không thay đổi `delegates_to`, memory, tool hay workspa
 alp delegate search --project /path/to/app --background -- "Tìm auth flow"
 alp delegate review --project /path/to/app -- "Review patch hiện tại"
 alp delegate oracle -- "Phản biện architecture này"
+alp delegate worker --budget-tokens 20000 --budget-tool-calls 30 -- "Sửa parser"   # observe-only
 
-alp delegation tree    exec_...  [--json]
-alp delegation status  exec_...
-alp delegation wait    exec_...
-alp delegation cancel  exec_...
-alp delegation cleanup exec_...
+alp delegation tree     exec_...  [--json]
+alp delegation status   exec_...
+alp delegation wait     exec_...
+alp delegation evidence exec_...  [--json]
+alp delegation accept   req_...   [--reason "..."]... [--json]
+alp delegation reject   req_...    --reason "..."     [--json]
+alp delegation cancel   exec_...
+alp delegation cleanup  exec_...
 alp delegation list
+alp trust verify [--project <path>] [--revoke]
 ```
 
 `tree` nhận execution ID của **bất kỳ** node nào và luôn vẽ từ root xuống, đánh dấu `←` vào
@@ -238,7 +532,27 @@ là reservation đã giữ mà chưa thành node — một con số, không ph�
 không phải thứ để in ra.
 
 `tree` không in capability hash, fingerprint của request, hay reservation internals. Nó in
-`requestId` để nối lại với lệnh đã gọi, và không hơn.
+`requestId` để nối lại với lệnh đã gọi, và — khi request có `--require-evidence` — verdict
+đã thu (`evidence satisfied|unsatisfied|unknown`) hoặc `evidence pending` nếu chưa ai `wait`.
+Con đã kết thúc còn mang `decision accepted|rejected`, hoặc `decision undecided` khi cha chưa
+`accept`/`reject`.
+
+`evidence` in kết luận trước, rồi từng mục đã đòi, rồi từng item với nguồn và độ tin:
+
+```text
+evidence exec_worker  ·  satisfied  ·  collected 2026-09-17T02:14:05.000Z
+digest 3f9c…  ·  history complete
+required: change  ·  present
+required: verify:test  ·  present
+decision accepted  ·  2026-09-17T02:20:11.000Z
+
+  change         observed      git  2 path(s)
+  change         observed      history-bridge  2 path(s)
+  tool-call      observed      history-bridge  Write
+  verify         observed      alp-verifier  verify:test exit 0 in 8123 ms
+  output         self-reported agent-output  digest 91a0…
+  boundary       observed      runtime-event  completed · history complete
+```
 
 ### Breaking change: delegate phải có cha
 
@@ -374,6 +688,58 @@ memory.
 Role phụ luôn `read-only` theo ALP guard/policy. `main` chỉ được `workspace-write` tại
 alp-code hoặc workspace đã có trong `workspaces.write`; cwd lạ vẫn read-only.
 
+### Runtime cưỡng chế được gì — bảng đo, không phải lời hứa
+
+Bảng Authority mà một role đọc là *một* lời hứa viết hai lần: Claude từ chối tool ngoài
+grant lúc gọi, Codex thì shell là built-in và đọc được mọi path. `src/runtime/capabilities.ts`
+giữ điều đó thành dữ liệu có `measuredOn { platform, runtimeVersion, measuredAt }`, và
+`ExecutionPolicy.enforcement` chụp đúng dòng đã dựa vào **vào `policyHash`** — hai policy
+khác nhau ở mức cưỡng chế là hai identity khác nhau. Bốn mức: `enforced` (runtime tự từ chối),
+`partial` (runtime từ chối những gì ALP liệt kê được lúc phóng, không hơn — biên là một danh
+sách chứ không phải một luật, nên thứ xuất hiện sau khi liệt kê không bị chặn), `declared-only`
+(ALP nói ra, không ai từ chối), `none` (không cưỡng chế **hoặc chưa đo** — ô chưa đo là `none`,
+không chép từ platform bên cạnh).
+
+| | toolGrant | readIsolation | writeIsolation | writeScope | networkEgress | nativeDelegationDeny |
+|---|---|---|---|---|---|---|
+| codex · darwin/linux (đo trên 0.154, 2026-09-18) | declared-only | none | enforced | enforced | enforced | enforced |
+| codex · win32 | declared-only | none | none | none | none | enforced |
+| claude · darwin/linux (đo trên 2.1) | enforced | enforced | enforced | partial (đo 2026-09-12 trên 2.1.269) | declared-only | enforced |
+| claude · win32 | enforced | declared-only | none | declared-only | declared-only | enforced |
+
+**Sandbox của Codex đi trên argv, không qua file.** Adapter vẫn ghi `codex-config.toml`
+(model, hooks, rules — là file *của ALP*, để `alp doctor`/debug đọc), nhưng Codex không load
+nó: mọi thứ phải bind đều đi bằng `-c`. Từ 2026-09-18 launch mang `-c
+default_permissions="alp"` + `-c permissions.alp.filesystem={…}` với `":root"="read"`,
+`<execution>/relay` write, write roots (scope hoặc workspace + private memory của vai),
+`/tmp`/`$TMPDIR` khi `workspace-write`, và `.git`/`.agents`/`.codex` dưới mỗi write root là
+`read` — đúng hình `workspace_write` của Codex tự dựng; cộng `approval_policy="never"`. Không
+`-s <mode>` (profile thắng `sandbox_mode` trọn vẹn), và phiên interactive không còn
+`--dangerously-bypass-approvals-and-sandbox`. Profile không có mục `network` ⇒ Codex chặn
+mạng kể cả khi vai được grant `WebFetch` — grant đó trước giờ cũng chưa từng mở được mạng
+trên Codex; mở nó cần `[permissions.alp.network]`, chưa làm.
+
+`describeEnforcement(caps, policy)` sinh dòng giải thích cho bảng của `alp agent test` /
+`alp agent add` từ chính dữ liệu này, nên không thể lệch với nó. Tầng 2 của `alp agent test`
+còn *đo lại* trên máy đang chạy: `codex sandbox` ghi một file ngoài writable roots (dưới
+`$HOME/.alp/`, không phải `/tmp` — Codex cho ghi `/tmp` mặc định) và đọc một file ngoài
+workspace ở `read-only`; sai với bảng ⇒ `DRIFT(<runtime> <field>: table says X, measured Y)`
+và exit ≠ 0. Claude không probe được ngoài phiên model; Windows không có dòng nào để probe.
+
+### Launch receipt — binary nào đã thật sự chạy
+
+Backend ghi `<execution>/context/launch.json` (`LaunchProvenanceV1`) **trước** khi spawn,
+nên process crash vẫn để lại receipt; nằm trong `context/` để sống qua dọn `runtime/`.
+`runtimeVersion` lấy từ `<runtime> --version` với budget 2s, cache theo path + mtime của
+binary, hỏng ⇒ `"unknown"`. `authMethod` chỉ nhìn *sự tồn tại* của env/file (Claude:
+`ANTHROPIC_API_KEY` → `api-key`; `CLAUDE_CODE_OAUTH_TOKEN`, `.credentials.json` hoặc item
+keychain macOS → `oauth`. Codex: `OPENAI_API_KEY` → `api-key`; `~/.codex/auth.json` →
+`oauth`), không bao giờ đọc giá trị. `launchSpecDigest` băm command/args/cwd và **tên** biến
+env — giá trị có thể là secret. Receipt không vào `policyHash`: nó là sự kiện, không phải
+quyết định. Version lệch `measuredOn` **không chặn** launch — chặn là ALP chết mỗi lần CLI
+update; `alp doctor` in "not re-measured for <version>" và `alp thread show` in
+`ran <runtime> <version> (<auth>)` cho từng execution.
+
 ## Error và failure behavior
 
 Core chỉ trả các lỗi trung lập runtime:
@@ -396,6 +762,8 @@ Cây trả thêm một lớp mã riêng, và chúng đều fail đóng:
 | `EXECUTION_GRAPH_CORRUPT` | document không đọc được — **không** fallback sang legacy |
 | `INVALID_NODE_TRANSITION` | một chuyển trạng thái mà `ALLOWED_TRANSITIONS` không cho |
 | `EXECUTION_GRAPH_LOCK_TIMEOUT` · `EXECUTION_GRAPH_REVISION_CONFLICT` | không lấy được lease, hoặc phát hiện lost update lúc ghi |
+| `APPROVAL_UNAVAILABLE` · `APPROVAL_DENIED` | policy cần principal trả lời mà không có surface nào hỏi được, hoặc principal đã nói "no" — xem "`--workspace` ngoài grant" ở trên |
+| `WRITE_SCOPE_ON_READ_ONLY` · `WRITE_SCOPE_NOT_FOUND` · `WRITE_SCOPE_OUTSIDE_WORKSPACE` · `WRITE_SCOPE_PROTECTED_ROOT` · `WRITE_SCOPE_EXCEEDS_PARENT` | `--write-scope` không hợp lệ — xem bảng ở "`--write-scope`" ở trên |
 
 Một node chết không đẹp còn mang mã của riêng nó — thứ `tree` in ra sau execution ID:
 `ROOT_START_FAILED` và `CHILD_START_FAILED` (backend từ chối spawn sau khi chỗ đã được giữ),
@@ -406,9 +774,10 @@ giữa chừng) và `EXECUTION_INTERRUPTED` (có process, rồi không còn, kh�
 
 Ba thứ hay bị đọc nhầm là đã có:
 
-- **Token budget và tool-call budget.** Không được cưỡng chế. Trần của P0 đếm *execution* —
-  depth, số con, đồng thời, lượt giao việc, wall clock — chứ không đếm token hay lượt gọi
-  tool. Một cây trong trần vẫn tiêu bao nhiêu token tuỳ nó.
+- **Token budget và tool-call budget.** Có **đếm** (2026-09-17, § "Usage và budget") nhưng
+  không cưỡng chế: `--budget-*` chỉ cho `exceeded` sau khi con xong. Trần *cưỡng chế* của
+  P0 đếm *execution* — depth, số con, đồng thời, lượt giao việc, wall clock — chứ không đếm
+  token hay lượt gọi tool. Một cây trong trần vẫn tiêu bao nhiêu token tuỳ nó.
 - **Recursion trong loadout thật.** Cây *cho phép* sâu tới 2, nhưng không vai built-in nào
   dùng tới: `worker.delegatesTo` vẫn `[]`, và mọi specialist cũng vậy. Chỉ `main` giao việc.
   Nested flow `main → worker → search` chỉ tồn tại trong registry của test.
@@ -424,6 +793,10 @@ trùng — và vì không còn nơi nào khác để retry sang.
 alp delegation list
 alp doctor
 ```
+
+Doctor in `ENFORCEMENT-CLAUDE` / `ENFORCEMENT-CODEX`: version binary trên PATH, auth method
+sẽ dùng, dòng bảng enforcement của platform này, và cảnh báo khi bảng đo trên version khác —
+luôn là observation, không phải finding, vì version mới không phải cài đặt hỏng.
 
 Doctor báo `ORPHAN-EXECUTION` cho execution state còn sót lại, kèm lệnh dọn cụ thể.
 `LocalProcessBackend.orphanExecutions()` là thứ trả lời câu hỏi đó: execution còn ghi

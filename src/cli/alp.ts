@@ -7,6 +7,7 @@ import { agentRegistry } from "../agents/registry";
 import { LocalProcessBackend } from "../backend/local-process-backend";
 import { ExecutionService } from "../execution/execution-service";
 import { FileExecutionStore } from "../execution/execution-store";
+import { RelayServer, spawnRelayExecutor } from "../execution/relay-server";
 import { ExecutionGraphService } from "../execution/graph/execution-graph-service";
 import { FileExecutionGraphStore } from "../execution/graph/file-execution-graph-store";
 import { FileThreadStore } from "../thread/file-thread-store";
@@ -25,13 +26,18 @@ import { WorkflowRunner } from "../workflow/workflow-runner";
 import { runContextCommand } from "./commands/context";
 import { backendProbe } from "../delegation/delegation-service";
 import { createDefaultDelegationComposition, isRenderedOutput, runDelegateCommand, runDelegationLifecycleCommand, sharedBackendStateDirectory, workspaceFromArgs } from "./commands/delegate";
+import { codexSandboxProbe } from "../agent-test";
 import { parseAgentCommand, runAgentCommand } from "./commands/agent";
+import { runTrustVerify } from "./commands/trust-verify";
 import { syncIdentityDocuments } from "./commands/identity-sync";
+import { FileSessionApprovals } from "../execution/approvals";
+import { createTtyApprovalSurface } from "./approval-surface";
 import { deinitializeProject, initializeProject, ProjectRegistryStore } from "./commands/init";
 import { ensurePrincipalProfile, openTerminalPrompt, runPrincipalCommand, type PrincipalCommandInput } from "./commands/principal";
 import { continueThreadSession, historySourceFromDisk, runMainSession, type RunMainDependencies, type RunMainInput } from "./commands/run-main";
 import { runThreadCommand } from "./commands/thread";
 import { runModeCommand, type ModeCommandInput } from "./commands/mode";
+import { readLaunchReceipt } from "../runtime/launch-provenance";
 import { agentsDirectory, executionGraphsDirectory, executionsDirectory, memoryRoot, threadsDirectory } from "../state-paths";
 import { checkForUpdate, FileUpdateCheckStore, spawnNativeBackgroundUpdateCheck } from "./update-check";
 import type { InstallLayout } from "../install-layout";
@@ -52,6 +58,7 @@ export type AlpCommand =
   | { readonly command: "delegate"; readonly args: readonly string[] }
   | { readonly command: "delegation"; readonly args: readonly string[] }
   | { readonly command: "thread"; readonly args: readonly string[] }
+  | { readonly command: "trust"; readonly args: readonly string[] }
   | { readonly command: "context"; readonly args: readonly string[] }
   | { readonly command: "maintenance"; readonly action: "doctor" | "update" | "uninstall"; readonly args: readonly string[] }
   | { readonly command: "version" }
@@ -138,6 +145,10 @@ export function parseAlpArgs(argv: readonly string[]): AlpCommand {
   if (argv[0] === "delegation") return { command: "delegation", args: Object.freeze(argv.slice(1)) };
   if (argv[0] === "context") return { command: "context", args: Object.freeze(argv.slice(1)) };
   if (argv[0] === "thread") return { command: "thread", args: Object.freeze(argv.slice(1)) };
+  if (argv[0] === "trust") {
+    if (argv[1] !== "verify") throw new Error("usage: alp trust verify [--project <path>] [--revoke]");
+    return { command: "trust", args: Object.freeze(argv.slice(2)) };
+  }
   if (argv[0] === "doctor") {
     if (argv.slice(1).some((value) => value !== "--quiet")) throw new Error("usage: alp doctor [--quiet]");
     return { command: "maintenance", action: "doctor", args: Object.freeze(argv.slice(1)) };
@@ -176,6 +187,7 @@ export interface AlpDependencies {
   readonly delegateCommand: (args: readonly string[]) => Promise<number>;
   readonly contextCommand: (args: readonly string[]) => Promise<number>;
   readonly threadCommand: (args: readonly string[]) => Promise<number>;
+  readonly trustCommand: (args: readonly string[]) => Promise<number>;
   readonly maintenanceCommand: (input: { readonly action: "doctor" | "update" | "uninstall"; readonly args: readonly string[] }) => Promise<number>;
 }
 
@@ -205,7 +217,9 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
    */
   const compositionFor = async (projectRoot: string) => {
     const project = await trustedRegistryFor(projectRoot);
-    const policy = new PolicyEngine({ registry: project.registry });
+    // The executions root is where every `policy.json` lives: no launch, scoped or not, may
+    // be allowed to write over it.
+    const policy = new PolicyEngine({ registry: project.registry, protectedRoots: [executionsDirectory()] });
     const memory = new MemoryService({
       store: new MarkdownFileStore({ root: memoryRoot() }),
       policy,
@@ -256,6 +270,11 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
   const graph = new ExecutionGraphService({
     store: new FileExecutionGraphStore({ root: executionGraphsDirectory() }),
   });
+  // `alp delegate` gõ từ trong sandbox của root chạy ở đây, bằng đúng `alp` mà terminal gọi
+  // (nên nó thấy đúng cây, đúng state dir) — chỉ khác là mang launch env của root.
+  const relay = new RelayServer({
+    execute: spawnRelayExecutor({ stableCommand: layout?.stableCommand ?? join(repoRoot, "scripts", "alp.cjs") }),
+  });
   const threads = new ThreadService({
     store: new FileThreadStore({ root: threadsDirectory() }),
     graph: threadGraphReader(graph, backendProbe(backend)),
@@ -281,11 +300,18 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
       announce: (line) => stderr.write(`${line}\n`),
       adapters,
       backend,
+      relay,
       executionId: () => `exec_${randomUUID().replaceAll("-", "").slice(0, 20)}`,
       interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
       workspaceModeFor: async (project) => (await projectRegistry.isRegistered(project))
         ? "workspace-write"
         : "read-only",
+      approvalSurface: createTtyApprovalSurface({
+        stdin: process.stdin,
+        stdout,
+        isTTY: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+      }),
+      projectRootOf: (path) => projectRegistry.projectContaining(path),
     };
   };
   const exitCodeOf = (status: "completed" | "cancelled" | string): number =>
@@ -321,6 +347,8 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
         env: process.env,
         write: (text) => stdout.write(text),
         historySource: (executionId) => historySourceFromDisk(executionsDirectory(), executionId),
+        launchReceipt: (executionId) => readLaunchReceipt(join(executionsDirectory(), executionId, "context", "launch.json")),
+        sessionApprovals: (executionId) => new FileSessionApprovals(join(executionsDirectory(), executionId, "context", "approvals.json")).list(),
         continueThread: async (input) => {
           const result = await continueThreadSession(
             { threadId: input.threadId, cwd, ...(input.mode ? { mode: input.mode } : {}) },
@@ -363,6 +391,16 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
       const written = await syncIdentityDocuments({ directory: agentsDirectory() }, { registry: agentRegistry });
       for (const file of written) stdout.write(`IDENTITY ${file}\n`);
     },
+    async trustCommand(args) {
+      // Same shape as `alp agent add`: a person decides in a terminal, or nobody does.
+      return runTrustVerify(args, {
+        cwd,
+        env: process.env,
+        write: (text: string) => { stdout.write(text); },
+        interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+        openPrompt: openTerminalPrompt,
+      });
+    },
     async agentCommand(args) {
       // The same asset root the adapters were built with, so the skills this reports on are
       // the ones a launch would actually resolve.
@@ -378,6 +416,8 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
         modeProfiles: profiles,
         ...(layout ? { stableCommand: layout.stableCommand } : {}),
         env: process.env,
+        // Tier 2 measures the Codex sandbox here rather than trusting the table for it.
+        probe: codexSandboxProbe({ env: process.env, platform: process.platform }),
         write: (text: string) => { stdout.write(text); },
         // Trust is a decision a person makes, so `alp agent add` needs a real terminal to
         // ask in — and refuses rather than assuming when it does not have one.
@@ -491,12 +531,15 @@ function helpText(): string {
     "  alp agent add|show|untrust <id> [--project <path>]",
     "  alp agent list [--project <path>]",
     "  alp principal show|set",
-    "  alp delegate <role> [options] -- <task>",
-    "  alp delegation tree|status|wait|cancel|cleanup <execution-id> [--json]",
+    "  alp delegate <role> [options] [--require-evidence change|verify:<id>]... [--budget-tokens N] [--budget-tool-calls N] -- <task>",
+    "  alp delegation tree|status|wait|cancel|cleanup|evidence <execution-id> [--json]",
+    "  alp delegation accept <request-id> [--reason <why>]... [--json]",
+    "  alp delegation reject <request-id> --reason <why> [--reason <why>]... [--json]",
     "  alp delegation list",
     "  alp context status|validate [execution-id]",
     "  alp context pin <decision|constraint|open-item|next-action> -- <text>",
     "  alp context unpin <pin-id>",
+    "  alp trust verify [--project <path>] [--revoke]",
     "  alp thread list [--all] | show [<thread-id>] | context|reconcile|sync|close|archive <thread-id>",
     `  alp thread continue <thread-id> [--mode ${MODE_IDS.join("|")}]`,
     "  alp doctor",
@@ -544,6 +587,7 @@ export async function main(
   if (command.command === "delegation") return dependencies.delegateCommand(Object.freeze(["__lifecycle", ...command.args]));
   if (command.command === "context") return dependencies.contextCommand(command.args);
   if (command.command === "thread") return dependencies.threadCommand(command.args);
+  if (command.command === "trust") return dependencies.trustCommand(command.args);
   if (command.command === "maintenance") return dependencies.maintenanceCommand({ action: command.action, args: command.args });
   stdout.write(helpText());
   return 0;

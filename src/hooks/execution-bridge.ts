@@ -5,7 +5,8 @@ import { loadProjectAgents } from "../agents/loader";
 import { agentRegistry } from "../agents/registry";
 import type { AgentDefinition } from "../agents/types";
 import { loadModeProfiles } from "../cli/settings";
-import { createExecutionPolicy, hashAgentDefinition } from "../execution/execution-policy";
+import { readApprovals } from "../execution/approvals";
+import { createExecutionPolicy, hashAgentDefinition, readWriteScope } from "../execution/execution-policy";
 import type { ExecutionPolicy, StoredExecutionState } from "../execution/types";
 import { WorkflowRunner } from "../workflow/workflow-runner";
 import type { WorkflowExecutionState } from "../workflow/types";
@@ -89,6 +90,14 @@ async function loadExecution(input: HookExecutionInput): Promise<{
     mode: policy.mode,
     modeProfiles,
     createdAt: policy.createdAt,
+    // Carried too: the enforcement row is signed, and the hook may not run on the platform
+    // that prepared the execution.
+    ...(policy.enforcement === undefined ? {} : { platform: policy.enforcement.measuredOn.platform }),
+    // And the principal's answers: signed, and nothing here could ask again.
+    approvals: readApprovals(policy as unknown as Record<string, unknown>),
+    // And the scope: signed for the same reason. A `policy.json` from before scopes existed
+    // reads as `null`, which is what it meant.
+    writeScope: readWriteScope(policy as unknown as Record<string, unknown>),
   });
   if (JSON.stringify(expected) !== JSON.stringify(policy)) throw new Error("execution policy snapshot is invalid or stale");
   return { policy, definition, state };

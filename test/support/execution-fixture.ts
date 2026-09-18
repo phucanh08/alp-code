@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentDefinition, AgentId } from "../../src/agents/types";
 import type { ExecutionPolicy, PreparedExecution } from "../../src/execution/types";
+import { capabilitiesFor } from "../../src/runtime/capabilities";
 import { removeTemporary } from "./temporary-root";
 
 /**
@@ -61,9 +62,12 @@ export function policyFixture(overrides: Partial<ExecutionPolicy> = {}): Executi
     role: "probe",
     workspace: "/workspace",
     workspaceMode: "read-only",
+    writeScope: null,
     model: "claude-haiku-4-5",
     reasoningEffort: "low",
     runtime: "claude",
+    enforcement: capabilitiesFor("claude", process.platform),
+    approvals: [],
     mode: "medium",
     workspaceAccess: "granted",
     allowedTools: ["Read", "Skill"],
@@ -135,6 +139,7 @@ export async function runtimeFixture(
         policyFile: join(directory, "policy.json"),
         runtimeDirectory,
         contextDirectory,
+        relayDirectory: join(directory, "relay"),
         checkpointFile: join(contextDirectory, "checkpoint.json"),
         continuityFile: join(contextDirectory, "continuity.md"),
         compactEventsFile: join(contextDirectory, "compact-events.jsonl"),

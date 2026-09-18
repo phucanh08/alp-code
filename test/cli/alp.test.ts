@@ -9,6 +9,7 @@ import { applyModeSettings, parseModeSettings } from "../../src/agents/mode-sett
 import { DEFAULT_MODE, MODE_PROFILES, modelForMode, reasoningEffortForMode, runtimeForMode } from "../../src/agents/modes";
 import type { AgentDefinition } from "../../src/agents/types";
 import type {
+  ApprovalSurface,
   AuthorizeExecutionInput,
   MaterializeExecutionInput,
 } from "../../src/execution/types";
@@ -26,6 +27,7 @@ import type {
   ExecutionTreeView,
 } from "../../src/execution/graph/execution-graph-service";
 import { DEFAULT_EXECUTION_GRAPH_LIMITS } from "../../src/execution/graph/defaults";
+import { NO_USAGE } from "../../src/execution/usage";
 
 const temporaryRoots: string[] = [];
 
@@ -51,6 +53,7 @@ function stubDependencies(overrides: Record<string, unknown> = {}) {
     delegateCommand: async () => 0,
     contextCommand: async () => 0,
     threadCommand: async () => 0,
+    trustCommand: async () => 0,
     maintenanceCommand: async () => 0,
     ...overrides,
   } as never;
@@ -194,14 +197,14 @@ const MAIN_DEFINITION = {
 function executionStub(options: {
   events?: string[];
   executionId?: string;
-  onAuthorize?: (input: AuthorizeExecutionInput) => void;
+  onAuthorize?: (input: AuthorizeExecutionInput, surface?: ApprovalSurface) => void;
   onMaterialize?: (input: MaterializeExecutionInput) => void;
   stateFile?: string;
 } = {}) {
   return {
-    async authorize(input: AuthorizeExecutionInput) {
+    async authorize(input: AuthorizeExecutionInput, surface?: ApprovalSurface) {
       options.events?.push(`authorize:${input.parent}->${input.target}:${input.workspace}:${input.workspaceMode}`);
-      options.onAuthorize?.(input);
+      options.onAuthorize?.(input, surface);
       return { ...input, authorizedAt: "2026-09-11T00:00:00.000Z" } as never;
     },
     async materialize(_authorization: never, input: MaterializeExecutionInput) {
@@ -541,6 +544,42 @@ describe("runMainSession", () => {
   });
 
   /**
+   * Phase-1 spec: the approval surface belongs to the root `alp` — the one process with the
+   * principal at its keyboard — and the root's launch is judged against its own cwd inside
+   * the registered project around it. Without a surface dependency the root asks nobody.
+   */
+  it("authorizes the root against its cwd as the grant, with the principal's surface", async () => {
+    let authorized: { input: AuthorizeExecutionInput; surface?: ApprovalSurface } | undefined;
+    const surface: ApprovalSurface = { supportsApproval: true, ask: async () => true };
+    await runMainSession({ cwd: "/project/api" }, {
+      registry: { get: () => MAIN_DEFINITION },
+      selector: { async select() { return { ok: true, mode: "medium", source: "default" }; } },
+      executionService: executionStub({
+        executionId: "exec",
+        onAuthorize: (input, given) => { authorized = { input, surface: given }; },
+      }),
+      graph: graphStub(),
+      threads: threadsStub(),
+      adapters: new Map([["claude", { name: "claude", compact: { preCompact: true, postCompact: true, sessionStartAfterCompact: true }, async probe() { return { ok: true, runtime: "claude", message: "ok" }; }, async prepare() { return { command: "fake", args: [], cwd: "/project/api", env: {}, temporaryFiles: [] }; } }]]),
+      backend: {
+        name: "local",
+        async healthCheck() { return { ok: true, message: "ok" }; },
+        async spawn() { return { executionId: "exec", status: "completed" }; },
+        async status(executionId) { return { executionId, status: "completed" }; },
+        async wait(executionId) { return { executionId, status: "completed" }; },
+        async cancel(executionId) { return { executionId, status: "cancelled" }; },
+        async cleanup() {},
+      },
+      executionId: () => "exec",
+      interactive: false,
+      approvalSurface: surface,
+      projectRootOf: async (path) => (path === "/project/api" ? "/project" : null),
+    });
+    expect(authorized?.input.launch).toEqual({ root: "/project/api", project: "/project" });
+    expect(authorized?.surface).toBe(surface);
+  });
+
+  /**
    * Một root `preparing` vĩnh viễn là một cây không lệnh nào dọn được: nó vẫn tính vào trần
    * đồng thời và vẫn hiện ra trong `alp delegation tree`, mà không có process nào để giết.
    * Phiên chết ở đâu cũng phải để lại một node terminal — và lỗi gốc vẫn là thứ ném lên.
@@ -655,6 +694,9 @@ describe("alp delegate", () => {
         async cancel() { throw new Error("unused"); },
         async cleanup() { throw new Error("unused"); },
         listExecutions() { return []; },
+        async evidence() { throw new Error("unused"); },
+        async accept() { throw new Error("unused"); },
+        async reject() { throw new Error("unused"); },
         async tree() { throw new Error("unused"); },
       },
     });
@@ -694,11 +736,72 @@ describe("alp delegate", () => {
         async cancel() { throw new Error("unused"); },
         async cleanup() { throw new Error("unused"); },
         listExecutions() { return []; },
+        async evidence() { throw new Error("unused"); },
+        async accept() { throw new Error("unused"); },
+        async reject() { throw new Error("unused"); },
         async tree() { throw new Error("unused"); },
       },
     });
 
     expect(calls[0]?.workspaceMode).toBe(expected);
+  });
+
+  /**
+   * Oracle: P2 spec — "`alp delegate --write-scope <path>` lặp được". Each occurrence adds one
+   * entry; the flag never leaks into the task; without it the request carries no scope at all.
+   */
+  it("collects every `--write-scope` into the request and keeps it out of the task", async () => {
+    const calls: { writeScope?: readonly string[]; task?: string }[] = [];
+    const service = {
+      async delegate(input: { writeScope?: readonly string[]; task: string }) { calls.push(input); return { executionId: "exec-child", requestId: "req", status: "completed" as const, metadata: { backend: "local", runtime: "codex" as const } }; },
+      async wait() { throw new Error("unused"); },
+      async status() { throw new Error("unused"); },
+      async cancel() { throw new Error("unused"); },
+      async cleanup() { throw new Error("unused"); },
+      listExecutions() { return []; },
+      async evidence() { throw new Error("unused"); },
+        async accept() { throw new Error("unused"); },
+        async reject() { throw new Error("unused"); },
+      async tree() { throw new Error("unused"); },
+    };
+    await runDelegateCommand(["worker", "--write-scope", "src/parser", "--write-scope", "docs", "--", "fix", "the", "parser"], { cwd: "/caller/project", env: {}, service });
+    expect(calls[0]).toMatchObject({ writeScope: ["src/parser", "docs"], task: "fix the parser" });
+    await runDelegateCommand(["worker", "--", "fix", "the", "parser"], { cwd: "/caller/project", env: {}, service });
+    expect(calls[1]).not.toHaveProperty("writeScope");
+    await expect(runDelegateCommand(["worker", "--", "fix", "--write-scope"], { cwd: "/caller/project", env: {}, service }))
+      .rejects.toThrow(/--write-scope requires a path/);
+  });
+
+  /**
+   * Oracle: P6 "Consumer" — `alp delegate --budget-tokens N --budget-tool-calls N` declares
+   * the observe-only budget; absent flags leave the request without one, and a value that is
+   * not a positive integer is refused here, before anything is delegated.
+   */
+  it("passes a budget through only when asked, and refuses one that is not a positive integer", async () => {
+    const calls: { budget?: unknown }[] = [];
+    const service = {
+      async delegate(input: { budget?: unknown }) { calls.push(input); return { executionId: "exec-child", requestId: "req", status: "completed" as const, metadata: { backend: "local", runtime: "codex" as const } }; },
+      async wait() { throw new Error("unused"); },
+      async status() { throw new Error("unused"); },
+      async cancel() { throw new Error("unused"); },
+      async cleanup() { throw new Error("unused"); },
+      listExecutions() { return []; },
+      async evidence() { throw new Error("unused"); },
+      async accept() { throw new Error("unused"); },
+      async reject() { throw new Error("unused"); },
+      async tree() { throw new Error("unused"); },
+    };
+    const deps = { cwd: "/caller/project", env: {}, service };
+    await runDelegateCommand(["worker", "--budget-tokens", "500", "--budget-tool-calls", "3", "--", "fix"], deps);
+    expect(calls[0]).toMatchObject({ budget: { tokens: 500, toolCalls: 3 } });
+    await runDelegateCommand(["worker", "--budget-tokens=20", "--", "fix"], deps);
+    expect(calls[1]).toMatchObject({ budget: { tokens: 20 } });
+    await runDelegateCommand(["worker", "--", "fix"], deps);
+    expect(calls[2]).not.toHaveProperty("budget");
+    for (const argv of [["--budget-tokens", "0"], ["--budget-tokens", "1.5"], ["--budget-tool-calls", "-2"], ["--budget-tool-calls", "many"], ["--budget-tokens"]]) {
+      await expect(runDelegateCommand(["worker", ...argv, "--", "fix"], deps)).rejects.toThrow(/--budget-(tokens|tool-calls)/);
+    }
+    expect(calls).toHaveLength(3);
   });
 
   /** Tên không có trong registry vẫn đi tiếp: "vai này không tồn tại" là câu của
@@ -716,6 +819,9 @@ describe("alp delegate", () => {
         async cancel() { throw new Error("unused"); },
         async cleanup() { throw new Error("unused"); },
         listExecutions() { return []; },
+        async evidence() { throw new Error("unused"); },
+        async accept() { throw new Error("unused"); },
+        async reject() { throw new Error("unused"); },
         async tree() { throw new Error("unused"); },
       },
     });
@@ -735,6 +841,9 @@ describe("alp delegate", () => {
         async cancel() { throw new Error("unused"); },
         async cleanup() { throw new Error("unused"); },
         listExecutions() { return []; },
+        async evidence() { throw new Error("unused"); },
+        async accept() { throw new Error("unused"); },
+        async reject() { throw new Error("unused"); },
         async tree() { throw new Error("unused"); },
       },
     })).rejects.toThrow(/--runtime` không còn tồn tại/);
@@ -780,6 +889,12 @@ function treeNode(overrides: Partial<ExecutionTreeNode> = {}): ExecutionTreeNode
     cancellation: null,
     error: null,
     terminationReason: null,
+    requiredEvidence: [],
+    evidence: null,
+    taskExcerpt: null,
+    acceptance: null,
+    budget: null,
+    usage: null,
     children: [],
     ...overrides,
   };
@@ -798,6 +913,7 @@ function treeView(root: ExecutionTreeNode, overrides: Partial<ExecutionTreeView>
     delegation: { used: 2, limit: DEFAULT_EXECUTION_GRAPH_LIMITS.delegationLimit, remaining: 6 },
     summary: { total: 3, active: 2, byStatus: { running: 2, completed: 1 }, pending: 1 },
     thread: null,
+    usage: { total: NO_USAGE, partial: true },
     root,
     ...overrides,
   };
@@ -836,6 +952,9 @@ function lifecycleService(view: ExecutionTreeView) {
       async cancel() { throw new Error("unused"); },
       async cleanup() { throw new Error("unused"); },
       listExecutions() { return []; },
+      async evidence() { throw new Error("unused"); },
+        async accept() { throw new Error("unused"); },
+        async reject() { throw new Error("unused"); },
       async tree(executionId: string) { asked.push(executionId); return view; },
     },
   };
@@ -868,6 +987,9 @@ describe("alp delegation tree", () => {
       async cancel() { throw new Error("unused"); },
       async cleanup() { throw new Error("unused"); },
       listExecutions() { return []; },
+      async evidence() { throw new Error("unused"); },
+        async accept() { throw new Error("unused"); },
+        async reject() { throw new Error("unused"); },
       async tree() { throw new Error("unused"); },
     };
 
@@ -953,6 +1075,36 @@ describe("alp delegation tree", () => {
     expect(text).toContain("thread thread_x  ·  context rev 1");
     expect(text).not.toContain("legacy-unthreaded");
     expect(text).not.toContain("a".repeat(64));
+  });
+
+  /**
+   * Oracle: P6 "Consumer" — the tree prints usage per node (four token columns kept apart,
+   * plus tool calls; a null column is a `?`), the budget verdict beside a node that declared
+   * one, and the sum over the tree at the top, marked `partial` while any node has no numbers.
+   */
+  it("prints each node's usage and budget verdict, and the partial sum at the top", () => {
+    const counted = treeNode({
+      executionId: "exec_counted", parentExecutionId: "exec_root", agentId: "worker", depth: 1, status: "completed", requestId: "req_c",
+      endedAt: "2026-09-11T00:15:00.000Z", budget: { tokens: 1000, toolCalls: 3 },
+      usage: { inputTokens: 122, outputTokens: 53, cacheReadTokens: 1110, cacheWriteTokens: 20, toolCalls: 2 },
+    });
+    const holey = treeNode({
+      executionId: "exec_holey", parentExecutionId: "exec_root", agentId: "search", depth: 1, status: "completed", requestId: "req_h",
+      endedAt: "2026-09-11T00:15:00.000Z", budget: { toolCalls: 1 },
+      usage: { inputTokens: 5, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, toolCalls: null },
+    });
+    const root = treeNode({ children: [counted, holey] });
+    const text = renderExecutionTree(treeView(root, {
+      usage: { total: { inputTokens: 127, outputTokens: 54, cacheReadTokens: 1110, cacheWriteTokens: 20, toolCalls: 2 }, partial: true },
+    }));
+    expect(text).toContain("usage in 127  ·  out 54  ·  cache r/w 1110/20  ·  tools 2  (partial)");
+    const lines = text.split("\n");
+    expect(lines.find((line) => line.includes("exec_counted"))).toContain("usage in 122 out 53 cache 1110/20 tools 2  ·  budget exceeded");
+    expect(lines.find((line) => line.includes("exec_holey"))).toContain("usage in 5 out 1 cache 0/0 tools ?  ·  budget unknown");
+    expect(lines.find((line) => line.includes("exec_root"))).not.toContain("usage");
+    const none = renderExecutionTree(sampleView());
+    expect(none).toContain("usage not measured");
+    expect(none).not.toContain("budget");
   });
 
   /** Output của một lệnh đọc không được mang theo capability của execution nào. */

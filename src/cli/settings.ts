@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import {
   InvalidModeSettings,
   applyModeSettings,
@@ -7,7 +8,10 @@ import {
   type ModeSettingsLayer,
 } from "../agents/mode-settings";
 import { MODE_PROFILES, type ModeProfiles } from "../agents/modes";
+import type { VerifyCommand, VerifySettings } from "../execution/evidence";
 import { stateHome } from "../state-paths";
+
+export { InvalidModeSettings };
 
 /**
  * Ba file settings, đọc theo thứ tự thắng dần.
@@ -98,4 +102,81 @@ export async function loadModeProfiles(options: LoadModeProfilesOptions): Promis
     profiles: applyModeSettings(options.base ?? MODE_PROFILES, layers),
     files: layers.map((layer) => layer.file),
   };
+}
+
+/**
+ * Khối `verify` của một project (P3):
+ *
+ * ```json
+ * { "verify": { "commands": [ { "id": "test", "run": "npm test", "timeoutMs": 600000, "cwd": "." } ] } }
+ * ```
+ *
+ * Chỉ hai file **của project** — `settings.json` và `settings.local.json` — không có tầng máy:
+ * lệnh verify chạy bằng process ALP trong workspace của project, và một lệnh ở `~/.alp` len
+ * vào evidence của mọi project là chính cái lỗ mà `alp trust verify` tồn tại để bịt. File
+ * local đè theo `id`. Digest băm đúng danh sách đã ghép — đó là thứ được trust, nên hai
+ * project cùng một khối có cùng một digest, và sửa một ký tự là một khối khác.
+ */
+export const DEFAULT_VERIFY_TIMEOUT_MS = 600_000;
+
+export async function loadVerifyCommands(cwd: string, env: NodeJS.ProcessEnv = process.env): Promise<VerifySettings> {
+  // `env` đứng đây cho cùng chữ ký với `loadModeProfiles`, và để nói rõ: tầng máy
+  // (`stateHome(env)`) *cố ý* không được đọc.
+  void env;
+  const project = await projectSettingsRoot(cwd);
+  const byId = new Map<string, VerifyCommand>();
+  let declared = false;
+  for (const file of [join(project, ".alp", "settings.json"), join(project, ".alp", "settings.local.json")]) {
+    const text = await readIfPresent(file);
+    if (text === null) continue;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch (error) {
+      throw new InvalidModeSettings(`${file}: not valid JSON — ${(error as Error).message}`);
+    }
+    const block = parseVerifyBlock(raw, file);
+    if (block === null) continue;
+    declared = true;
+    for (const command of block) byId.set(command.id, command);
+  }
+  const commands = [...byId.values()].sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+  const digest = declared
+    ? createHash("sha256").update(JSON.stringify(commands.map((command) => [command.id, command.run, command.timeoutMs, command.cwd]))).digest("hex")
+    : null;
+  return { project, commands, digest };
+}
+
+const VERIFY_ID = /^[a-z0-9][a-z0-9._-]*$/;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** `null` khi file không nói gì về verify; ném khi nó nói sai. */
+function parseVerifyBlock(raw: unknown, file: string): readonly VerifyCommand[] | null {
+  if (!isPlainObject(raw)) throw new InvalidModeSettings(`${file}: settings must be a JSON object`);
+  if (raw.verify === undefined) return null;
+  if (!isPlainObject(raw.verify) || !Array.isArray(raw.verify.commands)) {
+    throw new InvalidModeSettings(`${file}: \`verify\` must be an object with a \`commands\` list`);
+  }
+  const seen = new Set<string>();
+  return raw.verify.commands.map((entry, index) => {
+    const where = `${file}: \`verify.commands[${index}]\``;
+    if (!isPlainObject(entry)) throw new InvalidModeSettings(`${where} must be an object`);
+    const { id, run, timeoutMs, cwd } = entry;
+    if (typeof id !== "string" || !VERIFY_ID.test(id)) {
+      throw new InvalidModeSettings(`${where}.id must match ${VERIFY_ID}`);
+    }
+    if (seen.has(id)) throw new InvalidModeSettings(`${where}.id \`${id}\` is listed twice`);
+    seen.add(id);
+    if (typeof run !== "string" || run.trim() === "") throw new InvalidModeSettings(`${where}.run must be a non-empty command line`);
+    if (timeoutMs !== undefined && (typeof timeoutMs !== "number" || !Number.isInteger(timeoutMs) || timeoutMs <= 0)) {
+      throw new InvalidModeSettings(`${where}.timeoutMs must be a positive integer`);
+    }
+    if (cwd !== undefined && (typeof cwd !== "string" || cwd === "" || isAbsolute(cwd) || normalize(cwd).split(/[\\/]/).includes(".."))) {
+      throw new InvalidModeSettings(`${where}.cwd must be a relative path inside the workspace`);
+    }
+    return Object.freeze({ id, run, timeoutMs: timeoutMs ?? DEFAULT_VERIFY_TIMEOUT_MS, cwd: cwd ?? "." });
+  });
 }

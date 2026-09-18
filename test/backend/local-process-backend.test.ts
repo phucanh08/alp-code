@@ -1,10 +1,12 @@
 import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { LocalProcessBackend, type LocalSpawnOptions } from "../../src/backend/local-process-backend";
 import { DelegationError } from "../../src/delegation/types";
+import { readLaunchReceipt } from "../../src/runtime/launch-provenance";
 import type { RuntimeLaunchSpec } from "../../src/runtime/runtime-adapter";
 import { expectPosixMode } from "../support/file-mode";
 import { removeTemporary } from "../support/temporary-root";
@@ -593,5 +595,60 @@ describe("LocalProcessBackend", () => {
     // Không phải một execution hỏng: nó bị dừng, và một `error` ở đây sẽ bị in ra như lỗi
     // của agent.
     expect(adopted.error).toBeUndefined();
+  });
+
+  /**
+   * The receipt is the record of the launch *event*: which binary, which version, how it
+   * authenticated. It has to exist before the process does — a receipt written after
+   * `spawn` returns is a receipt a crashed spawn never writes — and it lives in `context/`,
+   * which outlives the `runtime/` cleanup.
+   */
+  describe("launch receipt", () => {
+    it("writes context/launch.json before the process is spawned, foreground and background", async () => {
+      for (const background of [false, true]) {
+        const root = await temporaryRoot();
+        const file = join(root, "context", "launch.json");
+        const child = new FakeChild(process.pid);
+        let existedAtSpawn: boolean | null = null;
+        const backend = new LocalProcessBackend({
+          stateDir: root,
+          stdio: "inherit",
+          env: { ANTHROPIC_API_KEY: "sk-ant-secret-value" },
+          spawnProcess() {
+            existedAtSpawn = existsSync(file);
+            return child;
+          },
+          supervisorScript: "/supervisor.js",
+          runtimeVersion: async () => "2.1.269",
+        });
+
+        await backend.spawn({
+          executionId: `exec_receipt_${background}`,
+          launchSpec: launchSpec({ command: "claude" }),
+          receipt: { file, runtime: "claude" },
+          lifecycle: { requestId: "req", parentExecutionId: null, background, interactive: false, timeoutMs: null, deadlineAt: null },
+        });
+
+        expect(existedAtSpawn).toBe(true);
+        const receipt = await readLaunchReceipt(file);
+        expect(receipt).toMatchObject({
+          version: 1,
+          executionId: `exec_receipt_${background}`,
+          runtime: "claude",
+          runtimeVersion: "2.1.269",
+          platform: process.platform,
+          authMethod: "api-key",
+          credentialConfigured: true,
+        });
+        expect(await readFile(file, "utf8")).not.toContain("sk-ant-secret-value");
+        if (!background) child.emit("close", 0, null);
+      }
+    });
+
+    it("spawns without a receipt when the caller passes none", async () => {
+      const child = new FakeChild();
+      const backend = new LocalProcessBackend({ stdio: "inherit", spawnProcess: () => child });
+      await expect(backend.spawn({ executionId: "exec_plain", launchSpec: launchSpec() })).resolves.toMatchObject({ status: "running" });
+    });
   });
 });

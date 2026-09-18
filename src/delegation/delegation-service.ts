@@ -5,10 +5,29 @@ import { rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { AgentRegistry, RuntimeId } from "../agents/types";
 import type { BackendExecutionResult, BackendExecutionStatus, ExecutionBackend } from "../backend/execution-backend";
+import { readAcceptanceRecord, writeAcceptanceRecord, type AcceptanceRecordV1 } from "../execution/acceptance";
+import { FileSessionApprovals } from "../execution/approvals";
+import {
+  collectExecutionEvidence,
+  noHistoryBridges,
+  parseRequiredEvidence,
+  type CollectedEvidence,
+  EvidenceHistorySource,
+  type EvidenceCollectorDependencies,
+  type EvidenceItem,
+  type ExecutionEvidenceV1,
+  type GitBaselineProbe,
+  type Verifier,
+  type VerifySettings,
+} from "../execution/evidence";
+import { gitBaselineProbe, spawnVerifier } from "../execution/evidence-baseline";
+import { readWriteScope } from "../execution/execution-policy";
 import type { ExecutionService } from "../execution/execution-service";
 import { executionArtifactPaths } from "../execution/execution-store";
+import { parseBudget, type ExecutionBudget } from "../execution/usage";
 import {
   PRINCIPAL_REQUESTER,
+  assertAcceptable,
   type ChildRequest,
   type ExecutionBinding,
   type ExecutionGraphService,
@@ -17,10 +36,11 @@ import {
   type ProbeStatus,
 } from "../execution/graph/execution-graph-service";
 import { ExecutionGraphError } from "../execution/graph/errors";
-import { findNode, type ExecutionGraphDocument, type ExecutionNode } from "../execution/graph/types";
+import { findNode, isTerminalNodeStatus, type AcceptanceDecision, type ExecutionAcceptanceRef, type ExecutionGraphDocument, type ExecutionNode } from "../execution/graph/types";
 import type { ExecutionAuthorization, MaterializeExecutionInput, PreparedExecution } from "../execution/types";
 import type { MemoryService } from "../memory/memory-service";
 import type { PolicyEngine } from "../policy/policy-engine";
+import type { RelayHandle, RelayServer } from "../execution/relay-server";
 import type { RuntimeAdapter, RuntimeLaunchSpec } from "../runtime/runtime-adapter";
 import {
   DelegationError,
@@ -69,7 +89,50 @@ export type DelegationGraph = Pick<
   | "findGraphFor"
   | "getGraph"
   | "getExecutionTree"
+  | "recordEvidence"
+  | "acceptChild"
 >;
+
+/**
+ * Các cửa ra ngoài của việc thu evidence (P3). Mỗi cửa đều có mặc định an toàn: không
+ * bridge nào thì lịch sử là `unsupported`, không settings thì không lệnh verify nào, và
+ * không có sổ tin cậy thì không lệnh nào được chạy.
+ */
+export interface DelegationEvidenceOptions {
+  readonly history?: EvidenceHistorySource;
+  readonly baseline?: GitBaselineProbe;
+  readonly verifier?: Verifier;
+  readonly verifySettings?: (workspace: string) => Promise<VerifySettings>;
+  readonly verifyTrusted?: (project: string, digest: string) => boolean | Promise<boolean>;
+  /** Nguồn `PATH`/`HOME` cho lệnh verify — mặc định `process.env`. */
+  readonly env?: NodeJS.ProcessEnv;
+}
+
+/** Cái `alp delegation evidence` in ra: kết luận trước, chi tiết sau. */
+export interface DelegationEvidenceView {
+  readonly executionId: string;
+  readonly requestId: string;
+  readonly digest: string;
+  readonly evaluation: CollectedEvidence["evaluation"];
+  readonly required: readonly string[];
+  readonly missing: readonly string[];
+  readonly completeness: ExecutionEvidenceV1["completeness"];
+  readonly collectedAt: string;
+  readonly items: readonly EvidenceItem[];
+  /** Phán quyết của cha, nếu đã có (P4). */
+  readonly acceptance: ExecutionAcceptanceRef | null;
+}
+
+/** Cái `alp delegation accept|reject` in ra. */
+export interface DelegationAcceptanceView {
+  readonly requestId: string;
+  readonly executionId: string;
+  readonly decision: AcceptanceDecision;
+  readonly evidenceDigest: string;
+  readonly evaluation: CollectedEvidence["evaluation"];
+  readonly decidedAt: string;
+  readonly reasons: readonly string[];
+}
 
 export interface DelegationServiceOptions {
   readonly registry: AgentRegistry;
@@ -92,6 +155,19 @@ export interface DelegationServiceOptions {
   readonly backend: ExecutionBackend;
   readonly executionStore: DelegationExecutionStore;
   readonly config: DelegationServiceConfig;
+  /**
+   * The registered project a path lies in, or `null`. Bounds the one approval rule: a child
+   * launched outside its parent's workspace is asked about when it stays inside this root,
+   * refused when it does not. Absent, the parent's workspace is its own project.
+   */
+  readonly projectRootOf?: (path: string) => Promise<string | null>;
+  readonly evidence?: DelegationEvidenceOptions;
+  /**
+   * Phục vụ `alp …` gõ từ trong sandbox của con, với launch env của con. Chỉ có ý nghĩa khi
+   * process này còn sống để trả lời — tức con chạy foreground và process này `wait` nó; con
+   * `--background` không được đăng ký, và `alp` trong nó fail-closed vì không có server.
+   */
+  readonly relay?: Pick<RelayServer, "register">;
   readonly ids?: DelegationIds;
   readonly now?: () => Date;
 }
@@ -130,6 +206,9 @@ function normalizeRequest(input: DelegationRequestInput, ids: DelegationIds): De
     task: input.task.trim(),
     workspace: input.workspace,
     workspaceMode: input.workspaceMode ?? "read-only",
+    writeScope: normalizeWriteScope(input.writeScope),
+    requiredEvidence: normalizeRequiredEvidence(input.requiredEvidence),
+    budget: normalizeBudget(input.budget),
     metadata: Object.freeze({ ...(input.metadata ?? {}) }),
     executionOptions: Object.freeze({
       background: Boolean(input.executionOptions?.background),
@@ -137,6 +216,48 @@ function normalizeRequest(input: DelegationRequestInput, ids: DelegationIds): De
       timeoutMs,
     }),
   });
+}
+
+function normalizeRequiredEvidence(value: readonly string[] | undefined): readonly string[] {
+  if (value === undefined) return Object.freeze([]);
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    throw new DelegationError("INVALID_REQUEST", "requiredEvidence must be a list of strings");
+  }
+  try {
+    return Object.freeze(parseRequiredEvidence(value));
+  } catch (error) {
+    throw new DelegationError("INVALID_REQUEST", (error as Error).message, { cause: error });
+  }
+}
+
+/** Một budget nói sai (0, âm, lẻ, chuỗi) là "không nói gì" — lỗi ở đây, trước khi hỏi policy. */
+function normalizeBudget(value: DelegationRequestInput["budget"]): ExecutionBudget | null {
+  if (value === undefined) return null;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new DelegationError("INVALID_REQUEST", "budget must be an object with tokens and/or toolCalls");
+  }
+  try {
+    return parseBudget(value);
+  } catch (error) {
+    throw new DelegationError("INVALID_REQUEST", (error as Error).message, { cause: error });
+  }
+}
+
+/**
+ * Một scope là một *tập*: trim, sort, bỏ trùng, để cùng một scope viết hai kiểu vẫn là một
+ * fingerprint. Rỗng hay có phần tử trống là lỗi ở đây — trước khi hỏi policy — vì đó không
+ * phải "không được phép" mà là "không nói gì cả".
+ */
+function normalizeWriteScope(value: readonly string[] | undefined): readonly string[] | null {
+  if (value === undefined) return null;
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new DelegationError("INVALID_REQUEST", "writeScope must list at least one path (omit it for the whole workspace)");
+  }
+  const entries = value.map((entry) => (typeof entry === "string" ? entry.trim() : ""));
+  if (entries.some((entry) => entry === "")) {
+    throw new DelegationError("INVALID_REQUEST", "writeScope entries must be non-empty paths");
+  }
+  return Object.freeze([...new Set(entries)].sort());
 }
 
 /** Trạng thái node quy về từ vựng của backend, cho những caller chỉ biết từ vựng đó. */
@@ -287,10 +408,15 @@ export class DelegationService {
   private readonly runtimeAdapters: ReadonlyMap<RuntimeId, RuntimeAdapter>;
   private readonly backend: ExecutionBackend;
   private readonly executionStore: DelegationExecutionStore;
+  private readonly projectRootOf: (path: string) => Promise<string | null>;
+  private readonly evidenceDeps: EvidenceCollectorDependencies;
+  private readonly relay: Pick<RelayServer, "register"> | null;
+  private readonly relays = new Map<string, RelayHandle>();
   private readonly ids: DelegationIds;
   private readonly now: () => Date;
 
   constructor(options: DelegationServiceOptions) {
+    this.relay = options.relay ?? null;
     this.registry = options.registry;
     this.policy = options.policy;
     this.memory = options.memory;
@@ -303,8 +429,21 @@ export class DelegationService {
     this.probe = backendProbe(this.backend);
     this.executionStore = options.executionStore;
     this.config = options.config;
+    this.projectRootOf = options.projectRootOf ?? (async () => null);
     this.ids = options.ids ?? defaultIds();
     this.now = options.now ?? (() => new Date());
+    const evidence = options.evidence ?? {};
+    this.evidenceDeps = {
+      executionsRoot: this.executionsRoot,
+      graph: this.graph,
+      history: evidence.history ?? noHistoryBridges(),
+      baseline: evidence.baseline ?? gitBaselineProbe(),
+      verifier: evidence.verifier ?? spawnVerifier(),
+      verifySettings: evidence.verifySettings ?? (async (workspace) => ({ project: workspace, commands: [], digest: null })),
+      verifyTrusted: evidence.verifyTrusted ?? (() => false),
+      now: this.now,
+      env: evidence.env ?? process.env,
+    };
   }
 
   /**
@@ -322,6 +461,12 @@ export class DelegationService {
 
     // Trước reservation, trước mọi file: một request bị policy từ chối không được phép chiếm
     // một slot đồng thời, dù chỉ trong khoảng thời gian nó mất để bị từ chối.
+    // The grant is the parent's own workspace, read from its signed snapshot — never from
+    // the request, which is the field a caller fills in. No surface: nobody at a child's
+    // keyboard is the principal, so a question here is `APPROVAL_UNAVAILABLE` unless the
+    // root already answered it for this session.
+    const parentSnapshot = this.policySnapshot(parent.node.executionId);
+    const grant = String(parentSnapshot.workspace ?? "");
     const executionId = this.ids.execution();
     const authorization = await this.executionService.authorize({
       executionId,
@@ -329,6 +474,18 @@ export class DelegationService {
       target: request.targetRole,
       workspace: request.workspace,
       workspaceMode: request.workspaceMode,
+      ...(request.writeScope === null ? {} : { writeScope: request.writeScope }),
+      // The parent's own scope rides along, from the same signed snapshot as the grant: a
+      // child may only be handed a piece of what its launcher may write. `null` out loud
+      // when the parent is unscoped, so "no constraint" is a value and not an omission.
+      launch: {
+        root: grant,
+        project: (await this.projectRootOf(grant)) ?? grant,
+        writeScope: readWriteScope(parentSnapshot as Record<string, unknown>),
+      },
+      sessionApprovals: new FileSessionApprovals(
+        join(executionArtifactPaths(this.executionsRoot, parent.graph.rootExecutionId).contextDirectory, "approvals.json"),
+      ),
     });
 
     // Trần được tính trên một cây đã đối chiếu với backend. Bỏ bước này thì một cây còn đầy
@@ -389,11 +546,18 @@ export class DelegationService {
       throw error;
     }
 
+    // Đăng ký trước khi có process: lệnh đầu tiên con gõ có thể tới ngay sau SessionStart.
+    // Env đăng ký là env của launch — binding của con, không phải thứ request nói.
+    const relay = !request.executionOptions.background && this.relay
+      ? this.relay.register({ executionId, directory: execution.artifacts.relayDirectory, env: (launchSpec as RuntimeLaunchSpec).env })
+      : null;
+    if (relay) this.relays.set(executionId, relay);
     try {
       const spawned = await this.graph.startReservedChild(reservation, async () =>
         this.backend.spawn({
           executionId,
           launchSpec: launchSpec as RuntimeLaunchSpec,
+          receipt: { file: join(execution.artifacts.contextDirectory, "launch.json"), runtime: execution.policy.runtime },
           lifecycle: {
             requestId: request.requestId,
             parentExecutionId: parent.node.executionId,
@@ -423,9 +587,15 @@ export class DelegationService {
       );
     } catch (error) {
       // Cây đã ghi node là `failed` dưới lease của nó; ở đây chỉ còn rác trên đĩa.
+      this.closeRelay(executionId);
       await removeTemporaryFiles(launchSpec).catch(() => undefined);
       throw error;
     }
+  }
+
+  private closeRelay(executionId: string): void {
+    this.relays.get(executionId)?.close();
+    this.relays.delete(executionId);
   }
 
   async status(executionId: string): Promise<DelegationResult> {
@@ -436,12 +606,120 @@ export class DelegationService {
     return result;
   }
 
+  /**
+   * Chờ tới khi execution kết thúc — và chỉ ở đây, thu evidence của nó.
+   *
+   * `status`, `tree`, `cancel` không thu: chúng là câu hỏi, còn thu evidence là chạy lệnh
+   * verify trong workspace của người gọi. Cây được đối chiếu lại sau khi backend trả lời,
+   * vì backend nói "xong" trước khi cây ghi `endedAt`, và bộ thu chỉ nhận node terminal.
+   * Execution legacy không có cây, nên `evidence: null`.
+   */
   async wait(executionId: string, options: { readonly timeoutMs?: number | null } = {}): Promise<DelegationResult> {
     const record = await this.lifecycleRecord(executionId);
     const value = await this.backendResult(executionId, record, () => this.backend.wait(executionId, options));
+    // Process con đã kết thúc (hay hết thời gian chờ): không còn ai để nhận response.
+    if (value.status !== "running") this.closeRelay(executionId);
     const result = this.result(record, value);
     this.rememberLegacyStatus(record, result.status);
-    return result;
+    const graph = await this.graph.findGraphFor(executionId);
+    if (!graph) return Object.freeze({ ...result, evidence: null });
+    const node = findNode(await this.reconcileGraph(graph.graphId), executionId);
+    if (!node || !isTerminalNodeStatus(node.status)) return result;
+    const collected = await this.collectEvidence(graph.graphId, executionId);
+    return Object.freeze({
+      ...result,
+      evidence: Object.freeze({ digest: collected.evidence.digest, evaluation: collected.evaluation, missing: collected.missing }),
+      usage: collected.usage,
+      budgetStatus: collected.budgetStatus,
+    });
+  }
+
+  /**
+   * Evidence của một execution đã kết thúc: thu (hoặc thu lại phần còn `unknown`) rồi trả.
+   *
+   * Gọi được nhiều lần — sau khi `alp trust verify`, lần gọi tiếp theo là lúc lệnh verify
+   * thực sự chạy. Execution còn chạy là `INVALID_REQUEST`: chưa có gì để kết luận.
+   */
+  async evidence(executionId: string): Promise<DelegationEvidenceView> {
+    const graph = await this.graph.findGraphFor(executionId);
+    if (!graph) {
+      throw new DelegationError("EXECUTION_NOT_FOUND", `execution \`${executionId}\` is not part of an execution graph`);
+    }
+    const node = findNode(await this.reconcileGraph(graph.graphId), executionId);
+    if (!node) throw new DelegationError("EXECUTION_NOT_FOUND", `execution \`${executionId}\` does not exist`);
+    if (!isTerminalNodeStatus(node.status)) {
+      throw new DelegationError("INVALID_REQUEST", `execution \`${executionId}\` is still ${node.status}; evidence is collected once it has ended`);
+    }
+    const collected = await this.collectEvidence(graph.graphId, executionId);
+    return Object.freeze({
+      executionId,
+      requestId: collected.evidence.requestId ?? executionId,
+      digest: collected.evidence.digest,
+      evaluation: collected.evaluation,
+      required: collected.required,
+      missing: collected.missing,
+      completeness: collected.evidence.completeness,
+      collectedAt: collected.evidence.collectedAt,
+      items: collected.evidence.items,
+      acceptance: node.acceptance,
+    });
+  }
+
+  /**
+   * Nghiệm thu (P4): cha đọc evidence rồi nói "nhận". Chỉ cha, chỉ khi con đã dừng, chỉ một
+   * lần — cây kiểm cả ba (`assertAcceptable`) và kiểm capability trước đó. Evidence chưa thu
+   * thì thu ngay ở đây: một phán quyết luôn trỏ tới một `evidence.json` có thật.
+   */
+  async accept(requestId: string, options: { readonly reasons?: readonly string[] } = {}): Promise<DelegationAcceptanceView> {
+    return this.decide(requestId, "accepted", options.reasons ?? []);
+  }
+
+  /** Như `accept`, nhưng từ chối thì phải nói vì sao: một lời "không" trống là thứ lần chạy sau không dùng được. */
+  async reject(requestId: string, options: { readonly reasons: readonly string[] }): Promise<DelegationAcceptanceView> {
+    const reasons = options.reasons.filter((reason) => reason.trim() !== "");
+    if (reasons.length === 0) throw new DelegationError("INVALID_REQUEST", "reject requires at least one --reason");
+    return this.decide(requestId, "rejected", reasons);
+  }
+
+  private async decide(requestId: string, decision: AcceptanceDecision, reasons: readonly string[]): Promise<DelegationAcceptanceView> {
+    const binding = this.requireBinding();
+    const parent = await this.graph.authenticateParent(binding);
+    const graph = await this.reconcileGraph(parent.graph.graphId);
+    const subject = graph.nodes.find((node) => node.requestId === requestId);
+    if (!subject) throw new DelegationError("EXECUTION_NOT_FOUND", `request \`${requestId}\` is not a delegation of this execution`);
+    // Guards first, so a stranger or a still-running subject never triggers a verify run.
+    assertAcceptable(parent.node, subject);
+    const collected = await this.collectEvidence(graph.graphId, subject.executionId);
+    const decidedAt = this.now().toISOString();
+    const decided = await this.graph.acceptChild(binding, requestId, { decision, evidenceDigest: collected.evidence.digest, decidedAt });
+    const record: AcceptanceRecordV1 = {
+      version: 1,
+      requestId,
+      subjectExecutionId: decided.executionId,
+      acceptedByExecutionId: parent.node.executionId,
+      decision,
+      evidenceDigest: collected.evidence.digest,
+      reasons,
+      decidedAt,
+    };
+    await writeAcceptanceRecord(this.executionsRoot, record);
+    const written = await readAcceptanceRecord(this.executionsRoot, parent.node.executionId, requestId);
+    return Object.freeze({
+      requestId,
+      executionId: decided.executionId,
+      decision,
+      evidenceDigest: collected.evidence.digest,
+      evaluation: collected.evaluation,
+      decidedAt,
+      reasons: written?.reasons ?? reasons,
+    });
+  }
+
+  private async collectEvidence(graphId: string, executionId: string): Promise<CollectedEvidence> {
+    const collected = await collectExecutionEvidence({ executionId }, this.evidenceDeps);
+    // Usage lên node cùng lúc với digest — cây tính tổng mà không mở `usage.json` của từng con.
+    await this.graph.recordEvidence(graphId, executionId, { digest: collected.evidence.digest, evaluation: collected.evaluation }, collected.usage);
+    return collected;
   }
 
   /**
@@ -459,6 +737,7 @@ export class DelegationService {
     const graph = await this.graph.findGraphFor(executionId);
     if (!graph) {
       const value = await this.backend.cancel(executionId);
+      this.closeRelay(executionId);
       this.rememberLegacyStatus(record, value.status);
       return this.result(record, value);
     }
@@ -473,6 +752,7 @@ export class DelegationService {
       },
       async (target: string) => {
         await this.backend.cancel(target);
+        this.closeRelay(target);
       },
     );
     // Hỏi lại backend sau khi tín hiệu đã bay đi: node nào backend đã ghi terminal thì cây
@@ -605,16 +885,7 @@ export class DelegationService {
     node: ExecutionNode,
   ): DelegationExecutionRecord {
     const paths = executionArtifactPaths(this.executionsRoot, node.executionId);
-    let snapshot: { readonly workspace?: unknown; readonly runtime?: unknown };
-    try {
-      snapshot = JSON.parse(readFileSync(paths.policyFile, "utf8")) as typeof snapshot;
-    } catch (error) {
-      throw new DelegationError(
-        "EXECUTION_NOT_FOUND",
-        `execution \`${node.executionId}\` has no readable policy snapshot`,
-        { cause: error },
-      );
-    }
+    const snapshot = this.policySnapshot(node.executionId);
     const parent = node.parentExecutionId ? findNode(graph, node.parentExecutionId) : null;
     return Object.freeze({
       executionId: node.executionId,
@@ -627,9 +898,24 @@ export class DelegationService {
       backend: this.backend.name,
       createdAt: node.createdAt,
       status: backendStatusOf(node.status),
+      writeScope: readWriteScope(snapshot as Record<string, unknown>),
       executionStateFile: paths.stateFile,
       ...(node.error ? { error: node.error.message } : {}),
     });
+  }
+
+  /** The signed `policy.json` of an execution on disk — the only source for its workspace and runtime. */
+  private policySnapshot(executionId: string): { readonly workspace?: unknown; readonly runtime?: unknown; readonly writeScope?: unknown } {
+    const paths = executionArtifactPaths(this.executionsRoot, executionId);
+    try {
+      return JSON.parse(readFileSync(paths.policyFile, "utf8")) as { readonly workspace?: unknown; readonly runtime?: unknown; readonly writeScope?: unknown };
+    } catch (error) {
+      throw new DelegationError(
+        "EXECUTION_NOT_FOUND",
+        `execution \`${executionId}\` has no readable policy snapshot`,
+        { cause: error },
+      );
+    }
   }
 
   private childRequest(request: DelegationRequest): ChildRequest {
@@ -639,6 +925,9 @@ export class DelegationService {
       task: request.task,
       workspace: request.workspace,
       workspaceMode: request.workspaceMode,
+      writeScope: request.writeScope,
+      ...(request.requiredEvidence.length === 0 ? {} : { requiredEvidence: request.requiredEvidence }),
+      ...(request.budget === null ? {} : { budget: request.budget }),
       // Nấc nằm trong fingerprint vì nấc quyết định model: cùng một câu hỏi ở `puck` và ở
       // `ultra` là hai việc khác nhau, và một retry đổi nấc phải được đẻ ra con mới.
       mode: this.config.mode ?? DEFAULT_MODE,
@@ -708,6 +997,8 @@ export class DelegationService {
       ...(value.exitCode === undefined ? {} : { exitCode: value.exitCode }),
       ...(value.signal === undefined ? {} : { signal: value.signal }),
       ...(value.error === undefined ? {} : { error: value.error }),
+      // From the signed snapshot, not the request: what the child *ran* under.
+      ...(record.writeScope === undefined ? {} : { writeScope: record.writeScope }),
       metadata: Object.freeze({ ...(value.metadata ?? {}), backend: record.backend, runtime: record.runtime }),
     });
   }

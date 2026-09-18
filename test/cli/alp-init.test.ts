@@ -151,3 +151,28 @@ describe("alp init", () => {
     expect(JSON.parse(await readFile(join(home, ".alp", "projects.json"), "utf8"))).toEqual({ version: 1, projects: [] });
   });
 });
+
+/**
+ * Oracle: phase-1 spec — the approval rule is bounded by "the project root hiện tại", which is
+ * the registered project a path lies in. Containment is a path boundary, and the innermost
+ * registered project wins when they nest.
+ */
+describe("ProjectRegistryStore.projectContaining", () => {
+  it("answers the innermost registered project a path lies in, or null", async () => {
+    const root = await mkdtemp(join(tmpdir(), "alp-registry-"));
+    roots.push(root);
+    const outer = await realpath(root);
+    await mkdir(join(outer, "mono", "packages", "api", "src"), { recursive: true });
+    await mkdir(join(outer, "mono-other"), { recursive: true });
+    const store = new ProjectRegistryStore({ file: join(outer, "projects.json") });
+    await store.register({ path: join(outer, "mono")});
+    await store.register({ path: join(outer, "mono", "packages", "api")});
+
+    expect(await store.projectContaining(join(outer, "mono", "packages", "api", "src"))).toBe(join(outer, "mono", "packages", "api"));
+    expect(await store.projectContaining(join(outer, "mono", "packages"))).toBe(join(outer, "mono"));
+    expect(await store.projectContaining(join(outer, "mono"))).toBe(join(outer, "mono"));
+    // A string prefix is not containment.
+    expect(await store.projectContaining(join(outer, "mono-other"))).toBeNull();
+    expect(await store.projectContaining(outer)).toBeNull();
+  });
+});

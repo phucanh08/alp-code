@@ -6,8 +6,12 @@ import { readInstallManifest } from "../install-layout";
 import { loadDelegationConfig } from "./config";
 import { executionsDirectory, installRecord, memoryRoot } from "./paths";
 import { hostBinaryTarget } from "./targets";
+import { RUNTIME_IDS, type RuntimeId } from "../agents/types";
+import { resolveRuntimeCommand } from "../runtime/adapter-files";
+import { ENFORCEMENT_FIELDS, capabilitiesFor, versionMatchesMeasured } from "../runtime/capabilities";
 import { ClaudeRuntimeAdapter } from "../runtime/claude-adapter";
 import { CodexRuntimeAdapter } from "../runtime/codex-adapter";
+import { createRuntimeVersionReader, detectAuthMethod, macKeychainHas } from "../runtime/launch-provenance";
 
 export interface DoctorFinding { readonly tag: string; readonly message: string; readonly remediation?: string }
 
@@ -64,6 +68,45 @@ export function inspectInstallation(layout: InstallLayout, env: NodeJS.ProcessEn
   return Object.freeze({ observations: Object.freeze(observations), findings: Object.freeze(findings) });
 }
 
+export interface InspectRuntimesInput {
+  readonly env: NodeJS.ProcessEnv;
+  readonly platform: NodeJS.Platform;
+  /** `<command> --version`, budgeted — see `createRuntimeVersionReader`. */
+  readonly versionOf: (command: string) => Promise<string>;
+  readonly exists: (path: string) => boolean;
+  readonly keychainHas?: (service: string) => boolean;
+}
+
+/**
+ * Per runtime: the version the binary answers, how it will authenticate (presence only),
+ * and the enforcement row `policy.json` would snapshot here — with a warning when that row
+ * was measured on another version. Always observations: a moved version is not a broken
+ * install, and a doctor that went red on every CLI update would be ignored by the second.
+ */
+export async function inspectRuntimes(input: InspectRuntimesInput): Promise<readonly DoctorFinding[]> {
+  const observations: DoctorFinding[] = [];
+  for (const runtime of RUNTIME_IDS) {
+    const tag = `ENFORCEMENT-${runtime.toUpperCase()}`;
+    const command = await resolveRuntimeCommand(runtime, input.platform, input.env) ?? runtime;
+    const version = await input.versionOf(command);
+    const auth = detectAuthMethod(runtime, input.env, input.exists, input.keychainHas);
+    let message = `${runtime} ${version === "unknown" ? "version unknown" : version} · auth ${auth}`;
+    try {
+      const row = capabilitiesFor(runtime, input.platform);
+      const cells = ENFORCEMENT_FIELDS.map((field) => `${field} ${row[field]}`).join(", ");
+      const measured = `measured on ${row.measuredOn.runtimeVersion} (${row.measuredOn.measuredAt})`;
+      const drift = versionMatchesMeasured(row.measuredOn.runtimeVersion, version)
+        ? ""
+        : ` — not re-measured for ${version === "unknown" ? "this version" : version}`;
+      message += ` · table ${measured}${drift}: ${cells}`;
+    } catch (error) {
+      message += ` · ${(error as Error).message}`;
+    }
+    observations.push({ tag, message });
+  }
+  return Object.freeze(observations);
+}
+
 export async function renderDoctor(layout: InstallLayout, env: NodeJS.ProcessEnv, quiet = false): Promise<{ output: string; exitCode: number }> {
   try {
     const report = inspectInstallation(layout, env);
@@ -81,6 +124,13 @@ export async function renderDoctor(layout: InstallLayout, env: NodeJS.ProcessEnv
         findings.push({ tag, message: (error as Error).message, remediation: `install ${adapter.name} CLI and ensure it is on PATH` });
       }
     }
+    observations.push(...await inspectRuntimes({
+      env,
+      platform: process.platform,
+      versionOf: createRuntimeVersionReader({ env }),
+      exists: existsSync,
+      keychainHas: macKeychainHas,
+    }));
     const lines = [
       ...(quiet ? [] : observations.map((item) => `${item.tag.padEnd(20)} ${item.message}`)),
       ...findings.map((item) => `${item.tag.padEnd(20)} ${item.message}${item.remediation ? `\n${" ".repeat(20)} → fix: ${item.remediation}` : ""}`),

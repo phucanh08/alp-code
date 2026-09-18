@@ -1,9 +1,13 @@
 import { MODE_IDS, parseMode, type ModeId } from "../../agents/modes";
+import type { ApprovalRecordV1 } from "../../execution/approvals";
+import type { LaunchProvenanceV1 } from "../../runtime/launch-provenance";
 import type { HistoryExecutionSource } from "../../thread/history-bridge";
 import { worseCompleteness, type HistoryCompleteness } from "../../thread/history-types";
 import type { ThreadService } from "../../thread/thread-service";
 import { THREAD_ID_PATTERN, type ThreadActivity, type ThreadDocumentV1, type ThreadSummary } from "../../thread/types";
 import type { ThreadContextSnapshotV1 } from "../../thread/context-types";
+import type { UsageCounters } from "../../execution/usage";
+import { renderUsage } from "../usage-format";
 
 export const THREAD_USAGE = [
   "usage:",
@@ -28,6 +32,13 @@ export interface ThreadCommandDependencies {
   /** `ALP_THREAD_ID` — nhãn root process nhận, để `show` không đối số hoạt động từ trong phiên. */
   readonly env: NodeJS.ProcessEnv;
   readonly write: (text: string) => unknown;
+  /**
+   * `context/launch.json` của một root — version và auth thật lúc phóng. Tuỳ chọn để suite
+   * không cần đĩa; bỏ trống thì `show` không in cột này.
+   */
+  readonly launchReceipt?: (executionId: string) => Promise<LaunchProvenanceV1 | null>;
+  /** The approvals a root's session collected — `<root execution>/context/approvals.json`. */
+  readonly sessionApprovals?: (executionId: string) => Promise<readonly ApprovalRecordV1[]>;
 }
 
 /**
@@ -56,7 +67,16 @@ export async function runThreadCommand(
       // câu trả lời đến từ graph/backend, không từ ref mà một process đã chết để lại.
       const thread = await dependencies.threads.reconcile(threadId);
       const activity = await dependencies.threads.activity(threadId);
-      write(renderThreadShow(thread, activity));
+      const receipts = dependencies.launchReceipt === undefined
+        ? undefined
+        : new Map(await Promise.all(thread.executions.map(async (ref) =>
+          [ref.executionId, await dependencies.launchReceipt!(ref.executionId).catch(() => null)] as const)));
+      const approvals = dependencies.sessionApprovals === undefined
+        ? undefined
+        : new Map(await Promise.all(thread.executions.map(async (ref) =>
+          [ref.executionId, await dependencies.sessionApprovals!(ref.executionId).catch(() => [])] as const)));
+      const snapshot = await dependencies.threads.currentContext(threadId).catch(() => null);
+      write(renderThreadShow(thread, activity, receipts, approvals, snapshot));
       return 0;
     }
     case "continue": {
@@ -154,7 +174,18 @@ export function renderThreadList(summaries: readonly ThreadSummary[], options: {
   return lines;
 }
 
-export function renderThreadShow(thread: ThreadDocumentV1, activity: ThreadActivity): string[] {
+/** `ran codex 0.154.0 (oauth)` — hoặc nói rõ là không có receipt, thay vì im lặng. */
+function renderReceipt(receipt: LaunchProvenanceV1 | null): string {
+  return receipt === null ? "  no launch receipt" : `  ran ${receipt.runtime} ${receipt.runtimeVersion} (${receipt.authMethod})`;
+}
+
+export function renderThreadShow(
+  thread: ThreadDocumentV1,
+  activity: ThreadActivity,
+  receipts?: ReadonlyMap<string, LaunchProvenanceV1 | null>,
+  approvals?: ReadonlyMap<string, readonly ApprovalRecordV1[]>,
+  snapshot?: ThreadContextSnapshotV1 | null,
+): string[] {
   const context = thread.currentContext;
   const lines = [
     `Thread:    ${thread.id}`,
@@ -177,8 +208,16 @@ export function renderThreadShow(thread: ThreadDocumentV1, activity: ThreadActiv
       : ref.settled.outcome;
     const projected = ref.settled !== null && ref.settled.nextContextRevision === null ? "  (context not projected yet)" : "";
     const history = ref.history ? `  history ${renderHistory(ref.history)}` : "";
-    lines.push(`  #${ref.sequence}  ${ref.executionId}  ${state.padEnd(11)} rev ${ref.contextRevision}  ${ref.reservedAt}${projected}${history}`);
+    const receipt = receipts === undefined ? "" : renderReceipt(receipts.get(ref.executionId) ?? null);
+    lines.push(`  #${ref.sequence}  ${ref.executionId}  ${state.padEnd(11)} rev ${ref.contextRevision}  ${ref.reservedAt}${projected}${history}${receipt}`);
+    // What the principal widened under this root, one line each; a root nobody was asked
+    // about prints nothing here.
+    for (const approval of approvals?.get(ref.executionId) ?? []) {
+      lines.push(`      approved ${approval.rule} ${approval.subject} (${approval.scope}) at ${approval.decidedAt}`);
+    }
   }
+  const delegations = renderThreadDelegations(snapshot ?? null);
+  if (delegations.length > 0) lines.push("", ...delegations);
   lines.push("", `Children of a root: alp delegation tree <execution-id>`);
   if (thread.status === "open" && activity.kind === "idle") lines.push(`Continue:            alp thread continue ${thread.id}`);
   return lines;
@@ -198,6 +237,20 @@ export function renderThreadContext(threadId: string, snapshot: ThreadContextSna
     ...section("Next actions", snapshot.nextActions),
     "Outcomes:",
     ...snapshot.outcomes.map((outcome) => `  #${outcome.sequence}  ${outcome.executionId}  ${outcome.outcome}  ${outcome.runtime ?? "no runtime"}  ${outcome.finishedAt}`),
+    ...renderThreadDelegations(snapshot),
+  ];
+}
+
+/** Delegation của execution vừa chiếu, như ALP ghi (P4). Không có thì không in gì. */
+export function renderThreadDelegations(snapshot: ThreadContextSnapshotV1 | null): string[] {
+  const delegations = snapshot?.delegations ?? [];
+  if (delegations.length === 0) return [];
+  return [
+    "Delegations (ALP-recorded):",
+    ...delegations.map((entry) => {
+      const evidence = entry.evidenceDigest === null ? "" : `  (evidence ${entry.evidenceDigest.slice(0, 12)}…)`;
+      return `  - ${entry.requestId} → ${entry.target}: ${entry.decision}${evidence}${entry.task === "" ? "" : `  ${entry.task}`}`;
+    }),
   ];
 }
 
@@ -212,10 +265,12 @@ export function renderThreadHistory(thread: ThreadDocumentV1): string {
   return `${worst} (${thread.messages.length} entries)`;
 }
 
-function renderHistory(history: { readonly completeness: HistoryCompleteness; readonly entryCount: number; readonly skipped: number; readonly pinnedVersion: string | null }): string {
+function renderHistory(history: { readonly completeness: HistoryCompleteness; readonly entryCount: number; readonly skipped: number; readonly pinnedVersion: string | null; readonly usage?: UsageCounters | null }): string {
   const skipped = history.skipped > 0 ? `, ${history.skipped} skipped` : "";
   const pinned = history.pinnedVersion ? ` @${history.pinnedVersion}` : "";
-  return `${history.completeness}${pinned} (${history.entryCount} entries${skipped})`;
+  // Usage cộng dồn qua các lần collect của root này; bridge không đếm được thì không in.
+  const usage = history.usage ? `  ·  usage ${renderUsage(history.usage)}` : "";
+  return `${history.completeness}${pinned} (${history.entryCount} entries${skipped})${usage}`;
 }
 
 function renderActivity(activity: ThreadActivity): string {

@@ -33,7 +33,13 @@ export type ExecutionGraphErrorCode =
   | "RESERVATION_EXPIRED"
   | "EXECUTION_CANCELLED"
   /** Child khai Thread binding khác node cha — cây không được đổi Thread giữa chừng. */
-  | "THREAD_BINDING_MISMATCH";
+  | "THREAD_BINDING_MISMATCH"
+  /** Binding hợp lệ nhưng không phải cha trực tiếp của subject — anh em, ông, hay chính nó. */
+  | "ACCEPTANCE_NOT_PARENT"
+  /** Chưa dừng thì chưa có gì để nghiệm thu. */
+  | "ACCEPTANCE_SUBJECT_RUNNING"
+  /** Nghiệm thu là quyết định một lần; lần hai bị từ chối, không ghi đè. */
+  | "ACCEPTANCE_ALREADY_DECIDED";
 
 export class ExecutionGraphError extends Error {
   readonly code: ExecutionGraphErrorCode;

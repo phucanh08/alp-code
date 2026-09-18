@@ -1,6 +1,7 @@
 # P1 — Approval hẹp (M3, prepare-time)
 
 <!-- Sửa: rà đối kháng lượt 2 (2026-09-12) — bỏ rule mode, sửa lý do bảo vệ approvals.json -->
+<!-- Implement 2026-09-12, xem "Đã làm khác plan" cuối file -->
 
 **Mục tiêu:** `PolicyDecision` có nhánh `require_approval`; chỉ **một** surface hỏi được (`alp` root TTY); mọi surface khác ⇒ `deny`. Một rule cụ thể, không hơn.
 **Phụ thuộc:** không. Độc lập với P2–P6.
@@ -99,3 +100,21 @@ engine.decide(request) → allow                      → vé
 - `alp --workspace <path-trong-project-ngoài-grant>` hỏi trên TTY; trả lời no ⇒ không có execution nào trên đĩa; yes ⇒ `policy.json.approvals[0].rule` đúng.
 - `alp delegate` từ child chạm rule ⇒ `APPROVAL_UNAVAILABLE`, graph không có node mới.
 - `npm test` xanh.
+
+## Đã làm khác plan (implement 2026-09-12)
+
+| Plan nói | Làm thật | Vì sao |
+|---|---|---|
+| Tiêu chí "`alp --workspace <path>` hỏi trên TTY" | Root `alp` **chưa có** `--workspace`: grant của root = cwd, nên rule không bao giờ kích hoạt ở root. Surface TTY + `launch` vẫn được nối vào `runMainSession` (`test/cli/alp.test.ts`), và surface được unit-test riêng (`test/cli/approval-surface.test.ts`) | Không thêm flag ngoài phạm vi phase; cơ chế đứng sẵn cho ngày root được chỉ đi nơi khác |
+| `require_approval` chỉ có `rule`, `prompt`, `scope` | Thêm `subject` (đường dẫn canonical đang hỏi) vào decision **và** `ApprovalRecordV1` | "Yes" scope `session` phải có khoá: cùng rule + cùng subject mới là cùng câu hỏi; không có `subject` thì một "yes" cho `web/` mở cả `web/nested`, `secrets/` |
+| "grant" và "project root hiện tại" không nói rõ đọc từ đâu | Grant của con = `workspace` trong `policy.json` đã ký của **cha**; project = project đăng ký trong cùng nhất chứa grant (`ProjectRegistryStore.projectContaining`), không có thì grant là project của chính nó. Cha không có snapshot đọc được ⇒ `EXECUTION_NOT_FOUND`, không delegate | Request là field người gọi tự điền — không được là nguồn của grant. Fail-closed: không ai vouch cho grant thì không có grant |
+| `alp delegation tree` in `approvals` | Chỉ `alp thread show` in approvals theo từng root; `tree` không đổi | Graph cố ý không giữ policy (chỉ giữ node/capability hash); approvals sống ở `<root>/context/approvals.json`, `thread show` đã đọc theo root |
+| Hai rule ("hai rule, hai code" trong bảng file) | Một rule `workspace-outside-grant-inside-project`; hai code `APPROVAL_UNAVAILABLE`, `APPROVAL_DENIED` | Rule `--mode` đã bỏ ở rà lượt 2; bảng file chưa cập nhật theo |
+| Test e2e dựng root bằng `graph.createRoot` | Thêm `createMaterializedRoot` vào `test/e2e/harness.ts` (graph node + `policy.json` ký thật), ba file e2e cũ chuyển sang dùng | Delegation nay đọc grant từ snapshot của cha; một root chỉ có node mà không có identity thì không delegate được — đúng ý, và test phải dựng root như phiên thật |
+
+Bằng chứng: `test/policy/approval.test.ts` (6), `test/execution/approval-surface.test.ts` (6),
+`test/cutover/policy-approvals.test.ts` (7), `test/e2e/approval.test.ts` (4), 4 test launch-scope
+trong `test/delegation/delegation-service.test.ts`, `projectContaining` trong `test/cli/alp-init.test.ts`,
+`test/cli/approval-surface.test.ts` (3). Mười sabotage (allow trong project, `within` prefix, bỏ
+`supportsApproval`, lookup bỏ subject, bỏ `approvals` khỏi snapshot, bridge bỏ approvals,
+`projectContaining` prefix/outermost, TTY rỗng ⇒ yes, grant đọc từ request) đều bị bắt.

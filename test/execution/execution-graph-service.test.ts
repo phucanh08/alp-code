@@ -214,3 +214,43 @@ describe("ExecutionGraphService root lifecycle", () => {
     });
   });
 });
+
+/**
+ * Oracle: P3 spec, "Điểm kích hoạt" — evidence is collected *after* a node is terminal and
+ * never on a read path; the node carries the digest so the parent's `tree` can show it.
+ * A digest on a node still running would describe a run that has not happened yet.
+ */
+describe("ExecutionGraphService evidence on a node", () => {
+  const ref = { digest: "a".repeat(64), evaluation: "satisfied" as const };
+
+  it("refuses a node that has not ended, and one that does not exist", async () => {
+    const { service } = harness();
+    const root = await service.createRoot({ agentId: "main", thread: null });
+    await service.startRoot(root.binding, async () => undefined);
+    expect(await codeOf(() => service.recordEvidence(root.binding.graphId, root.binding.executionId, ref))).toBe("INVALID_NODE_TRANSITION");
+    expect(await codeOf(() => service.recordEvidence(root.binding.graphId, "exec_nobody", ref))).toBe("EXECUTION_NODE_NOT_FOUND");
+  });
+
+  it("stores the digest on an ended node, replaces it on re-collection, and rewrites nothing for the same ref", async () => {
+    const { store, service, advance } = harness();
+    const root = await service.createRoot({ agentId: "main", thread: null });
+    await service.startRoot(root.binding, async () => undefined);
+    advance(1_000);
+    await service.finishExecution(root.binding, { status: "completed" });
+    const before = (await store.get(root.binding.graphId))!.revision;
+
+    advance(1_000);
+    const recorded = await service.recordEvidence(root.binding.graphId, root.binding.executionId, ref);
+    expect(recorded).toMatchObject({ evidence: ref, status: "completed", updatedAt: "2026-09-11T00:00:02.000Z" });
+    expect((await store.get(root.binding.graphId))!.revision).toBe(before + 1);
+
+    // Same answer again (a second `wait`, a `tree` after it): no write, no revision.
+    await service.recordEvidence(root.binding.graphId, root.binding.executionId, ref);
+    expect((await store.get(root.binding.graphId))!.revision).toBe(before + 1);
+
+    // After `alp trust verify`, the verify runs and the verdict moves: the node follows.
+    const later = { digest: "b".repeat(64), evaluation: "unsatisfied" as const };
+    expect(await service.recordEvidence(root.binding.graphId, root.binding.executionId, later)).toMatchObject({ evidence: later });
+    expect((await store.get(root.binding.graphId))!.revision).toBe(before + 2);
+  });
+});

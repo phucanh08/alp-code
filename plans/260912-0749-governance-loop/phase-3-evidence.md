@@ -1,5 +1,7 @@
 # P3 — Evidence
 
+<!-- Implement 2026-09-17, xem "Đã làm khác plan" cuối file -->
+
 <!-- Sửa: rà đối kháng + kiểm chứng lượt 2 (2026-09-12) — điểm kích hoạt collect, verify qua trust, baseline porcelain, overlap gồm ancestor, tách writeIsolation/writeScope, endedAt, commandDigest -->
 
 **Mục tiêu:** sau khi child settle, ALP có `ExecutionEvidenceV1` với từng item ghi *nguồn* và *nguồn gốc*; `requiredEvidence` khai trong request được đánh giá `satisfied | unsatisfied | unknown`.
@@ -151,3 +153,20 @@ CLI: `alp delegate --require-evidence change --require-evidence verify:test`; `a
 - Delegation thật với `--require-evidence verify:test`: chưa trust ⇒ `unknown` + hướng dẫn; sau `alp trust verify`: test fail ⇒ `unsatisfied`, pass ⇒ `satisfied`.
 - `alp delegation tree` trên child đã settle **không** sinh `evidence.json`; `wait` có.
 - Thread `messages/` không đổi (assert trong E2E). `npm test` xanh.
+
+## Đã làm khác plan (implement 2026-09-17)
+
+| Plan nói | Làm thật | Vì sao |
+|---|---|---|
+| Hạ bậc theo version cho "mọi nguồn" | Chỉ git / history-bridge / runtime-event; `verify` luôn `observed` | Verify do process ALP chạy, không phụ thuộc runtime nào đã phóng — hạ nó là nói dối về nguồn |
+| `change` item ⇒ đạt mục `change` | Item `change` có `paths: []` **không** đạt | "Không đổi gì" là bằng chứng của việc không xảy ra, không phải của việc đã làm |
+| "Gọi lại chỉ bổ sung item còn `unknown`" | Short-circuit khi không còn `unknown` **và** completeness `complete`/`partial`; ngược lại thu lại theo từng nguồn (`refresh(source)`), giữ item của nguồn không thu lại | `final-only` cũng là một cái chưa xong (bridge có thể mở được sau); thu lại theo nguồn để một `wait` thứ hai không đè `verify` đã chạy bằng một lần chạy mới |
+| `requiredEvidence?` vào fingerprint | Vào fingerprint **chỉ khi không rỗng**; lưu trên reservation lẫn node; legacy đọc thành `[]`; `assertStructuralFieldsPreserved` khoá bất biến | Request cũ không có field phải giữ nguyên hash — đổi fingerprint của mọi request đang tồn tại là phá idempotency đã có |
+| Overlap (a)/(b) | Thêm: policy của node anh em **không đọc được** ⇒ vào `ambiguousWith`; item `verify` bỏ node đã `endedAt ≤ startedAt` của lần verify | Fail-closed: không biết nó có ghi được không thì coi như có. Node đã xong trước khi verify bắt đầu không thể ghi trong lúc verify chạy — đưa vào là báo nhiễu giả |
+| Baseline `status --porcelain` | Chạy ở toplevel với pathspec của workspace, path rebase về đúng cách viết `workspace` của caller (darwin `/private/var` ≠ `/var`); xử lý `R`/`C` hai field | `writeScope` so sánh chuỗi; git in realpath, caller đưa symlink — không rebase thì mọi path "ngoài scope" |
+| `node.evidence` "additive" | `ExecutionGraphService.recordEvidence(graphId, executionId, ref)`: chỉ node terminal (`INVALID_NODE_TRANSITION`), cùng ref ⇒ không ghi, khác ref ⇒ ghi đè (thu lại sau trust) | Node đang chạy mang digest là mô tả một run chưa xảy ra; ghi vô điều kiện thì mỗi `wait` bump revision |
+| `alp delegation evidence <requestId>` | Nhận **execution ID**, như mọi lệnh lifecycle | Request ID không tra ngược được từ CLI; giữ một loại khoá cho cả nhóm lệnh |
+| `src/cli/commands/agent-trust.ts` hoặc `trust.ts` | `src/cli/commands/trust-verify.ts`, `alp trust verify [--project] [--revoke]`; store `src/trust/trusted-verify-store.ts` riêng, keyed theo realpath project, một record một project | Không dùng chung file với trusted agents: hai câu hỏi khác nhau, rút cái này không được đụng cái kia |
+| Digest khối `verify` | sha256 của các tuple `[id, run, timeoutMs, cwd]` sau khi gộp hai file project theo `id`, đã điền mặc định (`600000`, `"."`); `null` khi không file nào khai `verify` | Trust phải theo *lệnh sẽ chạy*, không theo byte của file: sửa `settings.local.json` đè `run` cùng `id` là phải trust lại |
+| Delegation import `HistoryBridgeRegistry` | `src/delegation` không import `src/thread/` (guard `test/cutover/thread-not-authority.test.ts`); nhận `EvidenceHistorySource` từ composition root, mặc định `noHistoryBridges()` từ `src/execution/evidence.ts` | Bất biến "Thread không phải nguồn quyền" đã có test; evidence là consumer của Thread-bridge, delegation thì không |
+| Fake runtime "ghi file + transcript" | `ALP_E2E_WRITE_FILE` + `ALP_E2E_TRANSCRIPT`: ghi file, transcript Claude `2.1.269` có `tool_use Write`, và `context/runtime-session.json` như hook SessionStart để lại | Bridge mở transcript qua `runtime-session.json` với guard realpath dưới state dir — fake phải để lại đúng dấu vết đó, không phải mock bridge |

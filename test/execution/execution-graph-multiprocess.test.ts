@@ -188,6 +188,7 @@ describe("execution graph across processes", () => {
       task: "after the orphan",
       workspace: "/project",
       workspaceMode: "read-only",
+      writeScope: null,
       mode: "medium",
       background: true,
       interactive: false,
