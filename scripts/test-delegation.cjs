@@ -109,6 +109,9 @@ async function testAlpFacadePreservesCallerWorkspace() {
   fs.writeFileSync(fakeRuntime, [
     "#!/usr/bin/env node",
     'const fs = require("fs");',
+    // Launch receipt (v0.15.0) hỏi `<runtime> --version` trước khi launch thật. Runtime thật
+    // trả lời rồi thoát; fake cũng phải thế, không thì lần hỏi version bị đếm là lần chạy.
+    'if (process.argv[2] === "--version") { process.stdout.write("codex-cli 0.0.0-fake\\n"); process.exit(0); }',
     "fs.writeFileSync(process.env.ALP_TEST_RUNTIME_CAPTURE, JSON.stringify({",
     "  cwd: process.cwd(),",
     "  argv: process.argv.slice(2),",
@@ -132,11 +135,27 @@ async function testAlpFacadePreservesCallerWorkspace() {
   const { FileExecutionGraphStore } = require(path.join(
     process.cwd(), "dist", "src", "execution", "graph", "file-execution-graph-store.js",
   ));
-  const { executionGraphsDirectory } = require(path.join(process.cwd(), "dist", "src", "install", "paths.js"));
+  const { executionGraphsDirectory, executionsDirectory } = require(path.join(
+    process.cwd(), "dist", "src", "install", "paths.js",
+  ));
+  const { executionArtifactPaths } = require(path.join(process.cwd(), "dist", "src", "execution", "execution-store.js"));
   const graph = new ExecutionGraphService({
     store: new FileExecutionGraphStore({ root: executionGraphsDirectory({ ALP_STATE_HOME: stateHome }) }),
   });
   const parent = await graph.createRoot({ agentId: "main", thread: null });
+  // Từ v0.15.0 grant của con được đọc từ `policy.json` đã ký của cha, không phải từ request —
+  // một root chỉ có node trong cây mà không có snapshot là `EXECUTION_NOT_FOUND`. Ghi đúng
+  // thứ `materialize()` của một phiên `alp` thật để lại: workspace của cha là project này.
+  const parentArtifacts = executionArtifactPaths(executionsDirectory({ ALP_STATE_HOME: stateHome }), parent.node.executionId);
+  fs.mkdirSync(parentArtifacts.contextDirectory, { recursive: true });
+  fs.writeFileSync(parentArtifacts.policyFile, JSON.stringify({
+    executionId: parent.node.executionId,
+    role: "main",
+    workspace: fs.realpathSync(project),
+    workspaceMode: "read-write",
+    writeScope: null,
+    runtime: "claude",
+  }));
 
   const run = spawnSync(process.execPath, [
     path.join(process.cwd(), "scripts", "alp.cjs"),

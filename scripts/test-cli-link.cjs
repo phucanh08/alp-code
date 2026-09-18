@@ -326,9 +326,17 @@ function testBootstrapWiring() {
     if (process.platform !== "win32") assert(!fs.existsSync(path.join(home, ".zshrc")));
     assert.match(run.stdout, /bỏ qua theo --no-path/);
   });
+  // Bootstrap chạy `alp doctor`, doctor gọi `codex --version` để đo enforcement (launch
+  // provenance). Codex 0.154 tự ghi `~/.codex/tmp/arg0` khi được gọi — đó là rác của Codex,
+  // không phải identity. Thứ bootstrap không được để lại là profile/trust: `~/.claude.json`
+  // và mọi file dưới `~/.codex` ngoài `tmp/` (config.toml, `<role>.config.toml` của bản cũ…).
   check("bootstrap không compile/trust identity workspace", () => {
     assert(!fs.existsSync(path.join(home, ".claude.json")));
-    assert(!fs.existsSync(path.join(home, ".codex")));
+    const codexHome = path.join(home, ".codex");
+    const written = fs.existsSync(codexHome)
+      ? fs.readdirSync(codexHome, { recursive: true }).map(String).filter((rel) => !rel.startsWith("tmp"))
+      : [];
+    assert.deepStrictEqual(written, [], `bootstrap ghi identity vào ~/.codex: ${written.join(", ")}`);
   });
   const deprecated = spawnSync(process.execPath, [path.join(repoCopy, "scripts", "bootstrap.cjs"), "--no-trust"], {
     cwd: repoCopy,
