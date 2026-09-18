@@ -74,6 +74,7 @@ dir, đóng khi execution settle); không thư mục mới (`src/execution/relay
 | R2 | `c8d859f`, `217633f` | Server, allowlist, `relay/` 0700 trong artifact; mutant S1–S7 bị bắt |
 | R3 | `39cb2b8` | Root + child foreground được phục vụ với binding của chính nó; 8 mutant bị bắt |
 | R4 | `ac25081` | Claude `allowWrite` relay dir; Codex profile `default_permissions="alp"` trên argv, bỏ `-s` và bypass; `capabilities.ts` đo lại 2026-09-18; 8 mutant bị bắt |
+| R5 | (đang) | Docs xong (`docs/delegation.md` § relay, `docs/architecture.md` §3.1/3.2/4.6/4.7/6); `npm run build`; smoke thật 2026-09-18: `codex sandbox` + profile ALP → `alp help` relay về root ok, `alp thread show` exit 2, `--version` in-process; còn nợ RUNBOOK trên hai runtime + gate/README |
 
 ### Ngoài phạm vi (ghi lại khi làm R3)
 

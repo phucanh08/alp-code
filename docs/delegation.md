@@ -65,6 +65,50 @@ còn `active` có process thật không, và đóng những node mà process đ�
 này thì một lần reboot để lại cây đầy node `running` ma, và mọi lần giao việc sau đó bị trần
 đồng thời từ chối.
 
+## `alp` trong sandbox: relay qua process root
+
+Vai đang chạy *trong* sandbox gõ `alp delegate worker …` — nhưng process `alp` đó không thể
+là process thi hành delegation: nó không ghi được `~/.alp` (Codex read-only, Claude
+`denyWrite`), và một worker nó spawn sẽ thừa kế sandbox của nó. Đo đầy đủ ngày 2026-09-18
+trên cả hai runtime, cùng lý do loại từng phương án khác (unix socket bị `EPERM` ở cả hai,
+`excludedCommands` rò rỉ `&&`/`;`, Codex không escalate được dưới `approval_policy=never`):
+`plans/260918-0700-execution-relay/research/alp-inside-sandbox.md`.
+
+Quyết định: **process root `alp` là process duy nhất thi hành lệnh ALP thay cho một
+execution.** `alp` trong sandbox chỉ là *client*.
+
+```text
+<execution>/relay/server.json            { v:1, pid, executionId, registeredAt }   ← root ghi lúc đăng ký
+<execution>/relay/<id>.request.json      { v:1, id, argv, cwd, requestedAt }       ← client ghi (tmp + rename)
+<execution>/relay/<id>.response.json     { v:1, id, exitCode, stdout, stderr, finishedAt }
+```
+
+- **Client** (`src/cli/relay-client.ts`, gate trong `dispatchEntry`): thấy `ALP_RELAY_DIR`
+  là đi relay — không `ensureState`, không load full CLI. Chỉ `--version`, `hook` và
+  `__internal` còn chạy in-process. Poll 50 → 500 ms, mỗi vòng kiểm `kill(pid, 0)` và
+  `ALP_EXECUTION_DEADLINE_AT`; thiếu `server.json`, pid chết hay hết hạn ⇒ lỗi rõ, không im
+  lặng.
+- **Server** (`src/execution/relay-server.ts`): root `register({ executionId, directory,
+  env })` khi phóng, `close()` khi settle. Với mỗi request nó spawn `layout.stableCommand
+  <argv>` với env = env của root ⊕ launch env của execution, **bỏ** `ALP_RELAY_DIR` — cùng
+  code path như gõ từ terminal, nên `alp delegate` không có semantics thứ hai.
+- **Allowlist server-side, fail-closed**: `delegate`, `delegation *`, `context *`, `help`,
+  `--version` — đúng bằng những gì session context bảo vai gõ. Mọi thứ khác exit 2.
+- **Binding là của thư mục, không của request.** Request là input untrusted từ model; env
+  mà server ghép vào là env ALP gắn cho execution đó lúc đăng ký. Con A không mượn được
+  binding của root hay của con B.
+
+Ai đăng ký: `runThreadRoot` cho phiên root; `DelegationService` cho con **foreground** —
+đăng ký *trước* khi spawn (không có cửa sổ con chạy mà chưa ai phục vụ), đóng khi `wait`
+terminal, spawn hỏng hay `cancel`. Con `--background` **không** được đăng ký: process gọi
+`alp delegate --background` thoát ngay, không còn ai để trả lời — `alp` trong con đó
+fail-closed ("no ALP process is serving"). Delegation lồng từ con background cần supervisor
+phục vụ relay; chưa làm.
+
+Sandbox mở đúng một chỗ cho kênh này: Claude `sandbox.filesystem.allowWrite:
+[<execution>/relay]`; Codex một entry `"write"` cho `<execution>/relay` trong profile.
+`relay/` là `0700`, nằm ngoài workspace, sống cùng execution dir.
+
 ## Contract trung lập runtime
 
 ```text
@@ -177,8 +221,11 @@ là việc khác), và trong `alp delegation status` (`writeScope` trong kết q
 
 Runtime nhận scope theo cách nó cưỡng chế được:
 
-- **Codex**: `writable_roots = [<scope...>, <private memory của vai>]` — thay workspace chứ
-  không thêm vào; sandbox của Codex tự từ chối phần còn lại (`enforced`).
+- **Codex**: profile trên argv liệt kê `"write"` cho `[<scope...>, <private memory của vai>]`
+  — thay workspace chứ không thêm vào; sandbox của Codex tự từ chối phần còn lại
+  (`enforced`, đo lại 2026-09-18 trên chính dạng launch dùng). Trước đó scope chỉ nằm trong
+  `codex-config.toml` — file Codex **không đọc** — nên cell này từng được đo trên cơ chế chứ
+  không trên launch; xem § "Runtime cưỡng chế được gì".
 - **Claude (darwin/linux)**: đo trên 2.1.269 (`research/claude-sandbox-precedence.md`)
   `denyWrite` thắng `allowWrite`, nên không "cho phép" được một cây con — ALP liệt kê **những
   gì đứng cạnh scope** trên đường từ workspace xuống tới scope và deny từng thứ, ở cả hai mặt:
@@ -655,10 +702,22 @@ không chép từ platform bên cạnh).
 
 | | toolGrant | readIsolation | writeIsolation | writeScope | networkEgress | nativeDelegationDeny |
 |---|---|---|---|---|---|---|
-| codex · darwin/linux (đo trên 0.154) | declared-only | none | enforced | enforced | enforced | enforced |
+| codex · darwin/linux (đo trên 0.154, 2026-09-18) | declared-only | none | enforced | enforced | enforced | enforced |
 | codex · win32 | declared-only | none | none | none | none | enforced |
 | claude · darwin/linux (đo trên 2.1) | enforced | enforced | enforced | partial (đo 2026-09-12 trên 2.1.269) | declared-only | enforced |
 | claude · win32 | enforced | declared-only | none | declared-only | declared-only | enforced |
+
+**Sandbox của Codex đi trên argv, không qua file.** Adapter vẫn ghi `codex-config.toml`
+(model, hooks, rules — là file *của ALP*, để `alp doctor`/debug đọc), nhưng Codex không load
+nó: mọi thứ phải bind đều đi bằng `-c`. Từ 2026-09-18 launch mang `-c
+default_permissions="alp"` + `-c permissions.alp.filesystem={…}` với `":root"="read"`,
+`<execution>/relay` write, write roots (scope hoặc workspace + private memory của vai),
+`/tmp`/`$TMPDIR` khi `workspace-write`, và `.git`/`.agents`/`.codex` dưới mỗi write root là
+`read` — đúng hình `workspace_write` của Codex tự dựng; cộng `approval_policy="never"`. Không
+`-s <mode>` (profile thắng `sandbox_mode` trọn vẹn), và phiên interactive không còn
+`--dangerously-bypass-approvals-and-sandbox`. Profile không có mục `network` ⇒ Codex chặn
+mạng kể cả khi vai được grant `WebFetch` — grant đó trước giờ cũng chưa từng mở được mạng
+trên Codex; mở nó cần `[permissions.alp.network]`, chưa làm.
 
 `describeEnforcement(caps, policy)` sinh dòng giải thích cho bảng của `alp agent test` /
 `alp agent add` từ chính dữ liệu này, nên không thể lệch với nó. Tầng 2 của `alp agent test`
