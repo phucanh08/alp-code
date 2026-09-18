@@ -8,6 +8,8 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+## [0.15.0] - 2026-09-18
+
 ### Thêm
 
 - **Delegation có kiểm chứng.** Vòng *giao việc có phạm vi → chạy dưới enforcement đo được →
@@ -1153,7 +1155,8 @@ Bản release đánh số đầu tiên. Trước mốc này alp-code chưa có v
 - `alp init`/`alp deinit`, `alp delegate`, `alp doctor`, `alp uninstall`, installer một dòng
   cho macOS/Linux/WSL và Windows.
 
-[Chưa phát hành]: https://github.com/phucanh08/alp-code/compare/v0.14.0...HEAD
+[Chưa phát hành]: https://github.com/phucanh08/alp-code/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/phucanh08/alp-code/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/phucanh08/alp-code/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/phucanh08/alp-code/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/phucanh08/alp-code/compare/v0.12.0...v0.12.1
