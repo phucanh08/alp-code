@@ -400,6 +400,8 @@ export async function createDefaultDelegationComposition(
   registry: AgentRegistry = agentRegistry,
   /** Loadout đã ghép settings của máy/project. Bỏ trống thì chạy đúng bản built-in. */
   modeProfiles?: ModeProfiles,
+  /** Toolchain write paths của máy (`loadToolchainWritePaths`, GitHub #25). Bỏ trống thì không mở gì. */
+  toolchainWritePaths?: readonly string[],
 ): Promise<DefaultDelegationComposition> {
   const config = loadDelegationConfig(layout.installRoot, env, layout.channel);
   // The one backend. It spawns the runtime as a child process, so it needs no daemon and
@@ -434,6 +436,7 @@ export async function createDefaultDelegationComposition(
     store: new FileExecutionStore({ root: executionsRoot }),
     // Ảnh chụp work tree trước mỗi launch ghi được: không có nó, `change` chỉ có thể là `unknown`.
     baseline: (workspace) => gitBaselineProbe().capture(workspace),
+    ...(toolchainWritePaths === undefined ? {} : { toolchainWritePaths }),
   });
   const service = new DelegationService({
     registry,

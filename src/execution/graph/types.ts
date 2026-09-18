@@ -150,7 +150,8 @@ export interface ExecutionNode {
 
 export interface ExecutionEvidenceRef {
   readonly digest: string;
-  readonly evaluation: "satisfied" | "unsatisfied" | "unknown";
+  /** `unevaluated` khi request không đòi gì — không phải `satisfied` (GitHub #23). */
+  readonly evaluation: "unevaluated" | "satisfied" | "unsatisfied" | "unknown";
 }
 
 export type AcceptanceDecision = "accepted" | "rejected";

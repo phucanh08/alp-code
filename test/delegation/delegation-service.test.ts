@@ -60,6 +60,7 @@ function prepared(executionId: string, target = "search", profiles: ModeProfiles
     policy: {
       executionId,
       thread: null,
+      toolchainWritePaths: [],
       role: target,
       workspace,
       workspaceMode: "read-only",
@@ -947,7 +948,7 @@ describe("DelegationService — budget and usage", () => {
     fixture.primary.reports = "completed";
     const waited = await fixture.service.wait(spawned.executionId);
     expect(waited).toMatchObject({ status: "completed", usage: COUNTED, budgetStatus: "exceeded" });
-    expect(waited.evidence?.evaluation).toBe("satisfied");
+    expect(waited.evidence?.evaluation).toBe("unevaluated");
     const tree = await fixture.service.tree(spawned.executionId);
     expect(tree.root.children[0]).toMatchObject({ status: "completed", usage: COUNTED });
     expect(tree.usage).toEqual({ total: COUNTED, partial: true });

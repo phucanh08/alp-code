@@ -103,6 +103,14 @@ export interface ExecutionPolicy {
    */
   readonly writeScope: readonly string[] | null;
   /**
+   * Directories outside the workspace the machine opened for build and test tools —
+   * `~/fvm`, `~/.gradle`, DerivedData (GitHub #25) — canonical and sorted, `[]` when none.
+   * In the hash: a launch that may write a toolchain cache is a different identity from one
+   * that may not, and a `policy.json` from before this field reads as `[]`, which is what
+   * it meant.
+   */
+  readonly toolchainWritePaths: readonly string[];
+  /**
    * Whether this role holds any workspace grant at all. `none` for a role that declares no
    * root (read-thread, compaction, titling): it works from memory, the workspace is only
    * the process cwd, and the runtime ACL must not hand it the tree as a read root.
@@ -230,6 +238,8 @@ export interface ExecutionAuthorization {
   readonly approvals: readonly ApprovalRecordV1[];
   /** The scope policy approved — canonical, sorted, deduplicated — or `null` for the whole workspace. */
   readonly writeScope: readonly string[] | null;
+  /** The machine's toolchain write paths, checked against this workspace — see `ExecutionPolicy`. */
+  readonly toolchainWritePaths: readonly string[];
   readonly authorizedAt: string;
 }
 

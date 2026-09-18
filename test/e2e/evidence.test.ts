@@ -92,6 +92,12 @@ describe("e2e: evidence after a delegated write", () => {
       ["git", "derived", [written], []],
       ["history-bridge", "derived", [written], []],
     ]);
+    // GitHub #23: `wait --json` carries the same provenance and commit, so a coordinator can
+    // tell "did nothing" from "committed" without a second call to `evidence`.
+    expect(waited.evidence?.changes).toEqual([
+      { source: "git", provenance: "derived", commit: null, pathCount: 1, outsideScopeCount: 0 },
+      { source: "history-bridge", provenance: "derived", commit: null, pathCount: 1, outsideScopeCount: 0 },
+    ]);
     expect(items(evidence, "tool-call")).toEqual([expect.objectContaining({ ref: expect.objectContaining({ name: "Write" }) })]);
     expect(items(evidence, "verify-skipped")).toEqual([expect.objectContaining({ commandId: "test", reason: "untrusted" })]);
     expect(items(evidence, "output")).toHaveLength(1);

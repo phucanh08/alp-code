@@ -119,6 +119,18 @@ describe("graph invariants — budget and usage", () => {
     expect("budget" in normalized.nodes[1] && "usage" in normalized.nodes[1]).toBe(true);
   });
 
+  // GitHub #23: `unevaluated` is a stored verdict now; a graph written by this version must
+  // read back, and an unknown word must still be refused.
+  it("accepts `unevaluated` as an evidence verdict and refuses anything outside the enum", () => {
+    const codeOfSync = (run: () => unknown): string | null => { try { run(); return null; } catch (error) { if (isExecutionGraphError(error)) return error.code; throw error; } };
+    const ended = { status: "completed" as const, startedAt: "2026-09-11T00:00:01.000Z", endedAt: "2026-09-11T00:00:02.000Z" };
+    const withVerdict = (evaluation: string) => graphFixture({ nodes: [rootNode(), childNode("child-a", "root-1", { ...ended, evidence: { digest: "a".repeat(64), evaluation } as never })] });
+    for (const evaluation of ["unevaluated", "satisfied", "unsatisfied", "unknown"]) {
+      expect(codeOfSync(() => assertGraphDocument(withVerdict(evaluation))), evaluation).toBeNull();
+    }
+    expect(codeOfSync(() => assertGraphDocument(withVerdict("maybe")))).toBe("EXECUTION_GRAPH_INVALID");
+  });
+
   it("refuses a malformed budget, usage on an active node, and a budget that changes after delegation", () => {
     const codeOfSync = (run: () => unknown): string | null => { try { run(); return null; } catch (error) { if (isExecutionGraphError(error)) return error.code; throw error; } };
     for (const bad of [{ tokens: 0 }, { tokens: 1.5 }, { toolCalls: -1 }, { tokens: "10" }, "lots", {}]) {

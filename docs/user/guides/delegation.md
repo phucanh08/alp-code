@@ -108,7 +108,7 @@ alp delegation accept req_xyz          # hoặc: reject req_xyz --reason "sửa 
 ```
 
 - **`--write-scope <path>`** (lặp được): con chỉ ghi được trong các cây con đó của workspace. Đây là sandbox thật của runtime, không phải lời dặn — Claude bị chặn bằng `denyWrite`, Codex bằng permission profile. Đường dẫn phải tồn tại, nằm trong workspace, và không rộng hơn scope của cha; sai thì từ chối trước khi có execution nào (`WRITE_SCOPE_NOT_FOUND`, `WRITE_SCOPE_OUTSIDE_WORKSPACE`, `WRITE_SCOPE_EXCEEDS_PARENT`, `WRITE_SCOPE_ON_READ_ONLY`).
-- **`--require-evidence change`**: sau khi con xong, ALP tự nhìn `git` xem workspace có đổi so với lúc phóng không. **`--require-evidence verify:<id>`**: ALP chạy lệnh verify `<id>` của project (khai trong `.alp/settings.json`, xem dưới) và cần exit 0. Kết quả là `satisfied`, `unsatisfied` (kèm mục thiếu) hoặc `unknown` — `unknown` không phải đạt, nó là "còn một việc phải làm".
+- **`--require-evidence change`**: sau khi con xong, ALP tự nhìn `git` xem workspace có đổi so với lúc phóng không. **`--require-evidence verify:<id>`**: ALP chạy lệnh verify `<id>` của project (khai trong `.alp/settings.json`, xem dưới) và cần exit 0. Kết quả là `satisfied`, `unsatisfied` (kèm mục thiếu) hoặc `unknown` — `unknown` không phải đạt, nó là "còn một việc phải làm". Không khai `--require-evidence` nào thì `evaluation` là `unevaluated`: ALP chưa kiểm gì, đừng đọc thành "đã xong". `wait --json` in thêm `evidence.changes[]` (nguồn, `provenance`, commit sha, số path) để `main` thấy con có thực sự đổi gì không.
 - **`--budget-tokens N` / `--budget-tool-calls N`**: đếm **sau** khi con xong, từ transcript của chính runtime. Vượt thì ghi `budget exceeded` vào evidence để cha nhìn thấy khi nghiệm thu; không chặn giữa chừng, không đổi kết quả của con.
 - **`accept` / `reject`** nhận **request ID** (`alp delegate` in ra, `tree` in `req …`), không phải execution ID: cha nghiệm thu *việc nó đã giao*. Chỉ cha trực tiếp mới quyết được, con phải đã kết thúc, mỗi request quyết đúng một lần, `reject` bắt buộc `--reason`. Phán quyết được ALP ghi vào cây và vào context của Thread ở lần chạy sau — `main` mở lại phiên là thấy "đã giao gì, nhận hay từ chối" mà không cần ai nhắc.
 
@@ -125,6 +125,24 @@ alp trust verify --revoke
 ```
 
 Chưa duyệt thì `verify:test` cho `unknown` kèm `verify-skipped untrusted`, không chạy gì.
+
+### Toolchain ghi ngoài workspace
+
+Con read-only hoặc có `--write-scope` chạy trong sandbox thật, và sandbox chặn cả cache mà
+SDK phải ghi để chạy: `flutter test` qua FVM cần `~/fvm`, Gradle cần `~/.gradle`, Xcode cần
+`DerivedData`. Không mở thì test không chạy — và Flutter còn thoát 0 như thể xanh. Khai một
+lần cho **máy** trong `~/.alp/settings.json`:
+
+```json
+{ "toolchain": { "presets": ["flutter", "node"], "writePaths": ["~/fvm"] } }
+```
+
+Preset có sẵn: `flutter`, `node`, `rust`, `jvm`, `xcode`, `python`, `go` — mỗi cái là danh
+sách cache quen thuộc dưới `$HOME`, cái nào không có trên máy thì bỏ qua. `writePaths` là
+đường tuyệt đối hoặc `~/…`, phải tồn tại. Chỉ file của máy đọc khối này: đặt vào
+`.alp/settings.json` của project thì ALP từ chối chạy, vì một repo không được mở thư mục
+ngoài chính nó cho người clone. Đường nào chứa hoặc nằm trong workspace cũng bị từ chối lúc
+giao việc.
 
 ## Trần và hạn của một phiên
 

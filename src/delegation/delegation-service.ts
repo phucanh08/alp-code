@@ -13,6 +13,7 @@ import {
   parseRequiredEvidence,
   type CollectedEvidence,
   EvidenceHistorySource,
+  type EvidenceChangeItem,
   type EvidenceCollectorDependencies,
   type EvidenceItem,
   type ExecutionEvidenceV1,
@@ -44,6 +45,7 @@ import type { RelayHandle, RelayServer } from "../execution/relay-server";
 import type { RuntimeAdapter, RuntimeLaunchSpec } from "../runtime/runtime-adapter";
 import {
   DelegationError,
+  type DelegationEvidenceChange,
   type DelegationExecutionRecord,
   type DelegationExecutionStore,
   type DelegationIds,
@@ -396,6 +398,23 @@ export function backendProbe(backend: Pick<ExecutionBackend, "status">): Executi
   };
 }
 
+/**
+ * Item `change` rút gọn cho `wait --json` (GitHub #23): hai execution — một commit + push, một
+ * dừng giữa chừng không commit — từng trả về cùng một `{ evaluation, missing }`; thứ phân biệt
+ * chúng (`observed`/`derived`, commit sha) chỉ nằm trong bản in của `evidence`.
+ */
+function evidenceChanges(items: readonly EvidenceItem[]): readonly DelegationEvidenceChange[] {
+  return Object.freeze(items
+    .filter((item): item is EvidenceChangeItem => item.kind === "change")
+    .map((item) => Object.freeze({
+      provenance: item.provenance,
+      source: item.source,
+      commit: item.commit,
+      pathCount: item.paths.length,
+      outsideScopeCount: item.outsideScope.length,
+    })));
+}
+
 export class DelegationService {
   readonly config: DelegationServiceConfig;
   private readonly registry: AgentRegistry;
@@ -628,7 +647,12 @@ export class DelegationService {
     const collected = await this.collectEvidence(graph.graphId, executionId);
     return Object.freeze({
       ...result,
-      evidence: Object.freeze({ digest: collected.evidence.digest, evaluation: collected.evaluation, missing: collected.missing }),
+      evidence: Object.freeze({
+        digest: collected.evidence.digest,
+        evaluation: collected.evaluation,
+        missing: collected.missing,
+        changes: evidenceChanges(collected.evidence.items),
+      }),
       usage: collected.usage,
       budgetStatus: collected.budgetStatus,
     });

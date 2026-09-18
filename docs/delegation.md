@@ -237,6 +237,39 @@ Runtime nhận scope theo cách nó cưỡng chế được:
 Không cấu hình nào của runtime chứa `~/.alp/executions/` trong danh sách ghi được, và một
 scope bị từ chối không để lại node, file hay process nào.
 
+### `toolchain`: cache của SDK nằm ngoài workspace
+
+Sandbox của launch read-only hoặc có scope chặn **mọi** ghi ngoài workspace, kể cả cache mà
+toolchain buộc phải ghi để chạy — `flutter test` qua FVM ghi `~/fvm/versions/*/bin/cache`,
+Gradle ghi `~/.gradle`, Xcode ghi `DerivedData`. GitHub #25: con `workspace-write` không
+chạy nổi test của chính nó, và script của Flutter còn nuốt lỗi thành exit 0. Từ 0.16 máy khai
+một lần trong **`~/.alp/settings.json`**:
+
+```json
+{ "toolchain": { "presets": ["flutter", "node"], "writePaths": ["~/fvm"] } }
+```
+
+- Preset (`flutter`, `node`, `rust`, `jvm`, `xcode`, `python`, `go`, bảng
+  `TOOLCHAIN_PRESETS` trong `src/execution/toolchain.ts`) là danh sách thư mục cache quen
+  thuộc dưới `$HOME`; đường nào không tồn tại trên máy thì bỏ qua. `writePaths` khai tay
+  phải tồn tại, tuyệt đối hoặc `~/…`; `~`, `/` và bất kỳ đường nào chạm `~/.alp` bị từ chối.
+- **Chỉ tầng máy.** `.alp/settings.json` hay `settings.local.json` của project mà có khối
+  này thì phiên dừng với thông báo chỉ về file máy: một repo không được mở thư mục ngoài
+  chính nó cho bất kỳ ai clone — cùng lý do `verify` phải qua `alp trust`, nhưng ở đây
+  không có digest nào để trust.
+- Mỗi đường được canonical qua symlink như workspace, sắp xếp, khử trùng, rồi vào
+  `ExecutionPolicy.toolchainWritePaths` (`[]` khi không khai; snapshot cũ đọc lên cũng là
+  `[]`) — trong `policyHash`, và hook bridge mang nó khi tái dẫn xuất. `authorize()` từ chối
+  launch nếu một đường **chứa** workspace (mở cả cây cho vai read-only) hay **nằm trong**
+  workspace (đó là scope, không phải cache); từ chối trước khi có gì trên đĩa.
+- Enforcement: Claude thêm vào `sandbox.filesystem.allowWrite` cạnh `relay/` cho cả hai
+  khối sandbox (read-only và có scope; `workspace-write` không scope không có sandbox nên
+  không cần mở); Codex thêm một entry `"write"` mỗi đường vào profile, cả hai mode. Không
+  đường nào nằm trong workspace, nên scope không đổi.
+
+Chưa có tín hiệu riêng khi một lệnh bị sandbox chặn ghi (đề xuất 3 của #25) — agent vẫn chỉ
+thấy `Operation not permitted` trên stderr.
+
 ### `--require-evidence`: cha nói trước nó sẽ tin cái gì
 
 Con báo "xong" là **self-reported** — `state.json.output` do chính nó ghi. Từ 2026-09-17 cha
@@ -283,7 +316,11 @@ khi verify bắt đầu không vào `ambiguousWith` của item `verify`.
 Evaluator: mọi mục có item `observed | derived` khớp ⇒ `satisfied`; có mục không item nào ⇒
 `unsatisfied` (`missing` kể tên); còn lại — item `unknown`, verify chưa chạy — ⇒ `unknown`.
 `unknown` không phải đạt: cha thấy `unknown` là biết còn một việc (`alp trust verify`, chờ
-verify) chứ không phải một kết luận.
+verify) chứ không phải một kết luận. Request **không đòi gì** ⇒ `unevaluated` (từ 0.16, GitHub
+#23) — trước đó ca này trả `satisfied`, và một con dừng giữa chừng không commit nhận đúng
+verdict của một con đã commit + push. `wait --json` còn mang `evidence.changes[]` — mỗi item
+`change` rút gọn thành `{ provenance, source, commit, pathCount, outsideScopeCount }` — để
+coordinator phân biệt hai ca đó mà không phải gọi thêm `evidence`.
 
 **`verify.commands` chỉ chạy sau khi principal duyệt.** Khối khai ở `.alp/settings.json` /
 `.alp/settings.local.json` của project (tầng user không được — một lệnh verify thuộc về repo
@@ -533,7 +570,7 @@ không phải thứ để in ra.
 
 `tree` không in capability hash, fingerprint của request, hay reservation internals. Nó in
 `requestId` để nối lại với lệnh đã gọi, và — khi request có `--require-evidence` — verdict
-đã thu (`evidence satisfied|unsatisfied|unknown`) hoặc `evidence pending` nếu chưa ai `wait`.
+đã thu (`evidence unevaluated|satisfied|unsatisfied|unknown`) hoặc `evidence pending` nếu chưa ai `wait`.
 Con đã kết thúc còn mang `decision accepted|rejected`, hoặc `decision undecided` khi cha chưa
 `accept`/`reject`.
 

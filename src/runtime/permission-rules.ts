@@ -297,12 +297,13 @@ function codexWriteRoots(input: RuntimePermissionInput): readonly string[] {
  * A `default_permissions` profile wins over `sandbox_mode` outright, and under it a path is
  * writable only when listed: the relay directory (where `alp` inside the sandbox leaves its
  * request — the one opening under the executions root), the write roots, and for a
- * `workspace-write` role the temp directories Codex's own mode opens. `.git`, `.agents` and
- * `.codex` under each write root stay read-only, again as Codex's own mode keeps them. An
- * entry created *beside* a scope is refused too, which is what makes `writeScope` `enforced`
- * on this runtime. `approval_policy = "never"`: the policy already decided, and a prompt in
- * a background pane hangs forever — the interactive session runs the same profile, with only
- * the prompts gone.
+ * `workspace-write` role the temp directories Codex's own mode opens, and the machine's
+ * toolchain caches (GitHub #25) for either mode — they stand outside the workspace, which
+ * `authorize()` checked. `.git`, `.agents` and `.codex` under each write root stay
+ * read-only, again as Codex's own mode keeps them. An entry created *beside* a scope is
+ * refused too, which is what makes `writeScope` `enforced` on this runtime.
+ * `approval_policy = "never"`: the policy already decided, and a prompt in a background pane
+ * hangs forever — the interactive session runs the same profile, with only the prompts gone.
  */
 export function codexPermissionOverrides(input: RuntimePermissionInput & {
   readonly relayDirectory: string;
@@ -316,6 +317,7 @@ export function codexPermissionOverrides(input: RuntimePermissionInput & {
     ...(input.policy.workspaceMode === "workspace-write"
       ? [["/tmp", "write"] satisfies Entry, ...(input.tmpdir ? [[input.tmpdir, "write"] satisfies Entry] : [])]
       : []),
+    ...input.policy.toolchainWritePaths.map((root): Entry => [root, "write"]),
     ...writeRoots.map((root): Entry => [root, "write"]),
     ...writeRoots.flatMap((root): Entry[] =>
       [".git", ".agents", ".codex"].map((protectedName): Entry => [join(root, protectedName), "read"])),

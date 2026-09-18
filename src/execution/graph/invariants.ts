@@ -258,12 +258,14 @@ function assertRequiredEvidence(value: unknown, field: string): void {
   }
 }
 
+const EVIDENCE_EVALUATIONS: ReadonlySet<unknown> = new Set(["unevaluated", "satisfied", "unsatisfied", "unknown"]);
+
 function assertEvidenceRef(value: unknown, field: string): void {
   if (typeof value !== "object" || value === null) invalid(`${field} must be null or an evidence ref`);
   const ref = value as Record<string, unknown>;
   assertHash(ref.digest, `${field}.digest`);
-  if (ref.evaluation !== "satisfied" && ref.evaluation !== "unsatisfied" && ref.evaluation !== "unknown") {
-    invalid(`${field}.evaluation must be satisfied, unsatisfied or unknown`);
+  if (!EVIDENCE_EVALUATIONS.has(ref.evaluation)) {
+    invalid(`${field}.evaluation must be one of ${[...EVIDENCE_EVALUATIONS].join(", ")}`);
   }
 }
 

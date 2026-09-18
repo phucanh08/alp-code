@@ -185,3 +185,73 @@ describe("capabilities — writeScope after P2's measurement", () => {
     expect(capabilitiesFor("codex", "darwin").writeScope).toBe("enforced");
   });
 });
+
+/** The Codex filesystem profile parsed back from argv — the table after `-c permissions.alp.filesystem=`. */
+function codexProfile(args: readonly string[]): Record<string, string> {
+  const table = args.find((argument) => argument.startsWith("permissions.alp.filesystem="))!.slice("permissions.alp.filesystem=".length);
+  const profile: Record<string, string> = {};
+  for (const match of table.slice(1, -1).matchAll(/"((?:[^"\\]|\\.)*)"\s*=\s*"([a-z]+)"/gu)) profile[JSON.parse(`"${match[1]}"`)] = match[2]!;
+  return profile;
+}
+
+/**
+ * Oracle: GitHub #25 — `flutter test` under a sandboxed launch could not write `~/fvm`.
+ * The policy's `toolchainWritePaths` are opened on both runtimes, for a read-only and a
+ * scoped launch alike, beside the relay directory; an unscoped `workspace-write` launch on
+ * Claude has no sandbox and so nothing to open.
+ */
+describe("runtime adapters — toolchainWritePaths", () => {
+  async function toolchainFixture(overrides: Partial<ExecutionPolicy>) {
+    const value = await runtimeFixture(writer(overrides));
+    const project = join(value.root, "project");
+    await mkdir(join(project, "src", "lib"), { recursive: true });
+    await mkdir(join(project, "docs"), { recursive: true });
+    const fvm = join(value.root, "fvm");
+    const gradle = join(value.root, ".gradle");
+    await mkdir(fvm);
+    await mkdir(gradle);
+    const toolchain = [gradle, fvm];
+    const prepared = { ...value.prepared, policy: { ...value.prepared.policy, toolchainWritePaths: toolchain } };
+    return { root: value.root, project, toolchain, prepared, env: { HOME: value.root, ALP_REPO_ROOT: value.root } };
+  }
+  const claudeSettings = async (prepared: Awaited<ReturnType<typeof toolchainFixture>>["prepared"], env: NodeJS.ProcessEnv) => {
+    const launch = await new ClaudeRuntimeAdapter({ platform: "darwin", env }).prepare({ execution: prepared, model: "claude-test", reasoningEffort: "high", interactive: false });
+    return JSON.parse(await readFile(launch.temporaryFiles.find((file) => file.endsWith("claude-settings.json"))!, "utf8"));
+  };
+
+  it("Claude read-only: the sandbox opens the toolchain beside the relay directory, the workspace stays denied", async () => {
+    const { project, toolchain, prepared, env } = await toolchainFixture({ workspaceMode: "read-only" });
+    const settings = await claudeSettings(prepared, env);
+    expect(settings.sandbox.filesystem).toEqual({ denyWrite: [project], allowWrite: [prepared.artifacts.relayDirectory, ...toolchain] });
+  });
+
+  it("Claude scoped workspace-write: the same opening, the siblings still denied", async () => {
+    const { project, toolchain, prepared, env } = await toolchainFixture({});
+    const scoped = { ...prepared, policy: { ...prepared.policy, writeScope: [join(project, "src", "lib")] } };
+    const settings = await claudeSettings(scoped, env);
+    expect(settings.sandbox.filesystem).toEqual({ denyWrite: [join(project, "docs")], allowWrite: [prepared.artifacts.relayDirectory, ...toolchain] });
+  });
+
+  it("Claude unscoped workspace-write: still no sandbox block", async () => {
+    const { prepared, env } = await toolchainFixture({ writeScope: null });
+    expect(await claudeSettings(prepared, env)).not.toHaveProperty("sandbox");
+  });
+
+  it("Codex: each toolchain path is a `write` entry of the profile, for a read-only and a scoped launch", async () => {
+    const { project, toolchain, prepared, env, root } = await toolchainFixture({ workspaceMode: "read-only" });
+    const adapter = new CodexRuntimeAdapter({ platform: "linux", env });
+    const readOnly = await adapter.prepare({ execution: prepared, model: "gpt-test", reasoningEffort: "high", interactive: false });
+    expect(codexProfile(readOnly.args)).toEqual({
+      ":root": "read",
+      [prepared.artifacts.relayDirectory]: "write",
+      ...Object.fromEntries(toolchain.map((path) => [path, "write"])),
+    });
+    const scope = join(project, "src", "lib");
+    const scoped = { ...prepared, policy: { ...prepared.policy, workspaceMode: "workspace-write" as const, writeScope: [scope] } };
+    const profile = codexProfile((await adapter.prepare({ execution: scoped, model: "gpt-test", reasoningEffort: "high", interactive: false })).args);
+    for (const path of toolchain) expect(profile[path]).toBe("write");
+    expect(profile[scope]).toBe("write");
+    expect(profile[project]).toBeUndefined();
+    expect(profile[join(root, ".alp", "memory", "private", "worker")]).toBe("write");
+  });
+});

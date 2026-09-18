@@ -8,6 +8,35 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Thêm
+
+- **Khối `toolchain` trong `~/.alp/settings.json`** (GitHub #25). Con read-only hoặc có
+  `--write-scope` chạy trong sandbox chặn mọi ghi ngoài workspace, nên `flutter test` qua
+  FVM (`~/fvm`), Gradle (`~/.gradle`), Xcode (`DerivedData`)… không chạy nổi — và Flutter còn
+  thoát 0 như thể xanh. Máy khai một lần
+  `{ "toolchain": { "presets": ["flutter", "node"], "writePaths": ["~/fvm"] } }`: preset
+  (`flutter`, `node`, `rust`, `jvm`, `xcode`, `python`, `go`) bung ra cache quen thuộc dưới
+  `$HOME` và bỏ qua cái không tồn tại; `writePaths` phải tồn tại. Đường được canonical, vào
+  `ExecutionPolicy.toolchainWritePaths` (trong `policyHash`; snapshot cũ đọc là `[]`), mở
+  trên Claude (`sandbox.filesystem.allowWrite`) và Codex (entry `"write"` trong profile).
+  Chỉ tầng máy: khối này trong `.alp/settings.json` của project là lỗi — một repo không được
+  mở thư mục ngoài chính nó cho người clone. Launch bị từ chối nếu một đường chứa hoặc nằm
+  trong workspace. `policy.json` có thêm trường, nên execution phóng bởi 0.15 còn chạy dở
+  lúc nâng cấp sẽ trượt tamper check ở hook Stop (như mọi lần thêm trường trước).
+
+### Sửa
+
+- **`evidence.evaluation` không còn là `satisfied` khi request không đòi gì** (GitHub #23).
+  Trước đây một con dừng giữa chừng, không commit, và một con đã commit + push nhận cùng một
+  verdict `completed / satisfied / missing: []` trên `alp delegation wait --json`, vì "không
+  mục nào thiếu" và "mọi mục đều đạt" là cùng một từ. Giờ request không có `--require-evidence`
+  trả `evaluation: "unevaluated"` — ALP chưa kiểm gì, đừng đọc thành "đã xong". Cùng lúc,
+  `wait --json` mang thêm `evidence.changes[]`: mỗi item `change` rút gọn thành
+  `{ provenance, source, commit, pathCount, outsideScopeCount }`, nên coordinator thấy được
+  `derived`/`observed` và commit sha mà không phải gọi thêm `evidence`. Cây (`tree`) và
+  invariants nhận verdict mới; graph ghi bởi bản này có node `unevaluated` mà bản 0.15 đọc lên
+  sẽ báo `EXECUTION_GRAPH_INVALID`.
+
 ## [0.15.0] - 2026-09-18
 
 ### Thêm

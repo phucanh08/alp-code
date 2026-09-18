@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { MODE_PROFILES } from "../../src/agents/modes";
-import { loadModeProfiles, modeSettingsFiles, projectSettingsRoot } from "../../src/cli/settings";
+import { loadModeProfiles, loadToolchainWritePaths, modeSettingsFiles, projectSettingsRoot } from "../../src/cli/settings";
 import { removeTemporary } from "../support/temporary-root";
 
 /**
@@ -86,5 +86,48 @@ describe("settings files", () => {
 
     await writeFile(file, settings({ high: { worker: { model: "gpt-42" } } }));
     await expect(loadModeProfiles({ cwd: project, env })).rejects.toThrow(/chưa được gán runtime/);
+  });
+});
+
+/**
+ * GitHub #25: the `toolchain` block opens directories outside the workspace for every
+ * sandboxed launch on the machine — so only the machine may say it. A project file that
+ * carries it stops the session, the way a broken loadout does.
+ */
+describe("toolchain settings", () => {
+  it("is empty when the machine says nothing, even if the project has other settings", async () => {
+    const { project, env } = await workspace();
+    await writeFile(join(project, ".alp", "settings.json"), settings({}));
+    await expect(loadToolchainWritePaths(project, env)).resolves.toEqual({ paths: [], file: null });
+  });
+
+  it("reads the machine file: `~` is HOME, presets keep what exists, typed paths must exist", async () => {
+    const { home, project, env } = await workspace();
+    await mkdir(join(home, "fvm"));
+    await mkdir(join(home, ".pub-cache"));
+    const file = join(env.ALP_STATE_HOME!, "settings.json");
+    await writeFile(file, JSON.stringify({ toolchain: { presets: ["flutter"], writePaths: ["~/fvm"] } }));
+    const loaded = await loadToolchainWritePaths(project, { ...env, HOME: home });
+    expect(loaded.file).toBe(file);
+    expect(loaded.paths).toEqual([await realpath(join(home, ".pub-cache")), await realpath(join(home, "fvm"))]);
+
+    await writeFile(file, JSON.stringify({ toolchain: { writePaths: ["~/.gradle"] } }));
+    await expect(loadToolchainWritePaths(project, { ...env, HOME: home })).rejects.toThrow(/`~\/\.gradle` does not exist/);
+  });
+
+  it("refuses the block in a project file, naming where it belongs", async () => {
+    const { home, project, env } = await workspace();
+    await mkdir(join(home, "fvm"));
+    await writeFile(join(project, ".alp", "settings.local.json"), JSON.stringify({ toolchain: { writePaths: ["~/fvm"] } }));
+    await expect(loadToolchainWritePaths(project, { ...env, HOME: home }))
+      .rejects.toThrow(/settings\.local\.json: `toolchain` is a machine setting; move it to .*settings\.json/);
+  });
+
+  it("does not refuse itself when the state home is the project's own `.alp/`", async () => {
+    const { home, project } = await workspace();
+    await mkdir(join(home, "fvm"));
+    const env = { ALP_STATE_HOME: join(project, ".alp"), HOME: home };
+    await writeFile(join(project, ".alp", "settings.json"), JSON.stringify({ toolchain: { writePaths: ["~/fvm"] } }));
+    await expect(loadToolchainWritePaths(project, env)).resolves.toMatchObject({ paths: [await realpath(join(home, "fvm"))] });
   });
 });

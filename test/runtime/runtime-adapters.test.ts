@@ -78,6 +78,7 @@ async function fixture(): Promise<{ root: string; project: string; prepared: Pre
     policy: {
       executionId: "exec-runtime",
       thread: null,
+      toolchainWritePaths: [],
       role: "search",
       workspace: project,
       workspaceMode: "read-only",
