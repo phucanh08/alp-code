@@ -31,6 +31,7 @@ import { loadVerifyCommands } from "../settings";
 import type { RuntimeAdapter } from "../../runtime/runtime-adapter";
 import { WorkflowRunner } from "../../workflow/workflow-runner";
 import type { InstallLayout } from "../../install-layout";
+import { RelayServer, spawnRelayExecutor } from "../../execution/relay-server";
 import { loadDelegationConfig } from "../../install/config";
 import { executionGraphsDirectory, executionsDirectory, memoryRoot } from "../../install/paths";
 
@@ -455,6 +456,9 @@ export async function createDefaultDelegationComposition(
       ["codex", new CodexRuntimeAdapter({ env })],
     ]),
     backend,
+    // Con foreground gõ `alp delegate` trong sandbox của nó: process này trả lời, bằng cùng
+    // `alp` mà terminal gọi, với binding của con.
+    relay: new RelayServer({ execute: spawnRelayExecutor({ stableCommand: layout.stableCommand }) }),
     executionStore: new FileDelegationExecutionStore({ file: join(config.stateDir, "code-native-executions.json") }),
     // Con kế thừa nấc của cha: một phiên `ultra` mà subagent lặng lẽ tụt về `medium` thì
     // nấc chỉ còn đúng ở ghế ngoài cùng.

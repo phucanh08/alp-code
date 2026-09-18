@@ -456,7 +456,7 @@ describe.each([
   ["claude", (env: NodeJS.ProcessEnv) => new ClaudeRuntimeAdapter({ platform: "linux", env })],
   ["codex", (env: NodeJS.ProcessEnv) => new CodexRuntimeAdapter({ platform: "linux", env })],
 ] as const)("%s adapter conformance", (_name, build) => {
-  async function launch(interactive: boolean): Promise<{ spec: RuntimeLaunchSpec; capsuleTask: string }> {
+  async function launch(interactive: boolean): Promise<{ spec: RuntimeLaunchSpec; capsuleTask: string; relayDirectory: string }> {
     const { root, prepared } = await fixture();
     const spec = await build({ HOME: root, ALP_REPO_ROOT: root }).prepare({
       execution: prepared,
@@ -464,8 +464,16 @@ describe.each([
       reasoningEffort: "high",
       interactive,
     });
-    return { spec, capsuleTask: prepared.capsule.task };
+    return { spec, capsuleTask: prepared.capsule.task, relayDirectory: prepared.artifacts.relayDirectory };
   }
+
+  it("hands the runtime its relay directory on both execution modes", async () => {
+    // Nơi duy nhất `alp` trong sandbox nói được với process root (plans/260918-0700-execution-relay).
+    for (const interactive of [true, false]) {
+      const { spec, relayDirectory } = await launch(interactive);
+      expect(spec.env.ALP_RELAY_DIR).toBe(relayDirectory);
+    }
+  });
 
   it("injects session context on both execution modes", async () => {
     for (const interactive of [true, false]) {

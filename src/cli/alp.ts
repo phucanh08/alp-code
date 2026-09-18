@@ -7,6 +7,7 @@ import { agentRegistry } from "../agents/registry";
 import { LocalProcessBackend } from "../backend/local-process-backend";
 import { ExecutionService } from "../execution/execution-service";
 import { FileExecutionStore } from "../execution/execution-store";
+import { RelayServer, spawnRelayExecutor } from "../execution/relay-server";
 import { ExecutionGraphService } from "../execution/graph/execution-graph-service";
 import { FileExecutionGraphStore } from "../execution/graph/file-execution-graph-store";
 import { FileThreadStore } from "../thread/file-thread-store";
@@ -269,6 +270,11 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
   const graph = new ExecutionGraphService({
     store: new FileExecutionGraphStore({ root: executionGraphsDirectory() }),
   });
+  // `alp delegate` gõ từ trong sandbox của root chạy ở đây, bằng đúng `alp` mà terminal gọi
+  // (nên nó thấy đúng cây, đúng state dir) — chỉ khác là mang launch env của root.
+  const relay = new RelayServer({
+    execute: spawnRelayExecutor({ stableCommand: layout?.stableCommand ?? join(repoRoot, "scripts", "alp.cjs") }),
+  });
   const threads = new ThreadService({
     store: new FileThreadStore({ root: threadsDirectory() }),
     graph: threadGraphReader(graph, backendProbe(backend)),
@@ -294,6 +300,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
       announce: (line) => stderr.write(`${line}\n`),
       adapters,
       backend,
+      relay,
       executionId: () => `exec_${randomUUID().replaceAll("-", "").slice(0, 20)}`,
       interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
       workspaceModeFor: async (project) => (await projectRegistry.isRegistered(project))

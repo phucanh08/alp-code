@@ -40,6 +40,7 @@ import { findNode, isTerminalNodeStatus, type AcceptanceDecision, type Execution
 import type { ExecutionAuthorization, MaterializeExecutionInput, PreparedExecution } from "../execution/types";
 import type { MemoryService } from "../memory/memory-service";
 import type { PolicyEngine } from "../policy/policy-engine";
+import type { RelayHandle, RelayServer } from "../execution/relay-server";
 import type { RuntimeAdapter, RuntimeLaunchSpec } from "../runtime/runtime-adapter";
 import {
   DelegationError,
@@ -161,6 +162,12 @@ export interface DelegationServiceOptions {
    */
   readonly projectRootOf?: (path: string) => Promise<string | null>;
   readonly evidence?: DelegationEvidenceOptions;
+  /**
+   * Phục vụ `alp …` gõ từ trong sandbox của con, với launch env của con. Chỉ có ý nghĩa khi
+   * process này còn sống để trả lời — tức con chạy foreground và process này `wait` nó; con
+   * `--background` không được đăng ký, và `alp` trong nó fail-closed vì không có server.
+   */
+  readonly relay?: Pick<RelayServer, "register">;
   readonly ids?: DelegationIds;
   readonly now?: () => Date;
 }
@@ -403,10 +410,13 @@ export class DelegationService {
   private readonly executionStore: DelegationExecutionStore;
   private readonly projectRootOf: (path: string) => Promise<string | null>;
   private readonly evidenceDeps: EvidenceCollectorDependencies;
+  private readonly relay: Pick<RelayServer, "register"> | null;
+  private readonly relays = new Map<string, RelayHandle>();
   private readonly ids: DelegationIds;
   private readonly now: () => Date;
 
   constructor(options: DelegationServiceOptions) {
+    this.relay = options.relay ?? null;
     this.registry = options.registry;
     this.policy = options.policy;
     this.memory = options.memory;
@@ -536,6 +546,12 @@ export class DelegationService {
       throw error;
     }
 
+    // Đăng ký trước khi có process: lệnh đầu tiên con gõ có thể tới ngay sau SessionStart.
+    // Env đăng ký là env của launch — binding của con, không phải thứ request nói.
+    const relay = !request.executionOptions.background && this.relay
+      ? this.relay.register({ executionId, directory: execution.artifacts.relayDirectory, env: (launchSpec as RuntimeLaunchSpec).env })
+      : null;
+    if (relay) this.relays.set(executionId, relay);
     try {
       const spawned = await this.graph.startReservedChild(reservation, async () =>
         this.backend.spawn({
@@ -571,9 +587,15 @@ export class DelegationService {
       );
     } catch (error) {
       // Cây đã ghi node là `failed` dưới lease của nó; ở đây chỉ còn rác trên đĩa.
+      this.closeRelay(executionId);
       await removeTemporaryFiles(launchSpec).catch(() => undefined);
       throw error;
     }
+  }
+
+  private closeRelay(executionId: string): void {
+    this.relays.get(executionId)?.close();
+    this.relays.delete(executionId);
   }
 
   async status(executionId: string): Promise<DelegationResult> {
@@ -595,6 +617,8 @@ export class DelegationService {
   async wait(executionId: string, options: { readonly timeoutMs?: number | null } = {}): Promise<DelegationResult> {
     const record = await this.lifecycleRecord(executionId);
     const value = await this.backendResult(executionId, record, () => this.backend.wait(executionId, options));
+    // Process con đã kết thúc (hay hết thời gian chờ): không còn ai để nhận response.
+    if (value.status !== "running") this.closeRelay(executionId);
     const result = this.result(record, value);
     this.rememberLegacyStatus(record, result.status);
     const graph = await this.graph.findGraphFor(executionId);
@@ -713,6 +737,7 @@ export class DelegationService {
     const graph = await this.graph.findGraphFor(executionId);
     if (!graph) {
       const value = await this.backend.cancel(executionId);
+      this.closeRelay(executionId);
       this.rememberLegacyStatus(record, value.status);
       return this.result(record, value);
     }
@@ -727,6 +752,7 @@ export class DelegationService {
       },
       async (target: string) => {
         await this.backend.cancel(target);
+        this.closeRelay(target);
       },
     );
     // Hỏi lại backend sau khi tín hiệu đã bay đi: node nào backend đã ghi terminal thì cây

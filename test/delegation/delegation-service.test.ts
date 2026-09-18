@@ -24,6 +24,7 @@ import type {
   PrepareExecutionInput,
 } from "../../src/execution/types";
 import { capabilitiesFor } from "../../src/runtime/capabilities";
+import type { RelayHandle, RelayServer } from "../../src/execution/relay-server";
 import type { RuntimeAdapter, RuntimeLaunchSpec } from "../../src/runtime/runtime-adapter";
 import { HistoryBridgeRegistry, type RuntimeHistoryBridge } from "../../src/thread/history-bridge";
 import type { UsageCounters } from "../../src/execution/usage";
@@ -233,6 +234,7 @@ async function serviceFixture(options: {
   modeProfiles?: ModeProfiles;
   projectRootOf?: (path: string) => Promise<string | null>;
   evidence?: DelegationEvidenceOptions;
+  relay?: Pick<RelayServer, "register">;
 }) {
   const runtime = new FakeRuntime();
   const primary = options.primary ?? new FakeBackend("primary");
@@ -247,6 +249,7 @@ async function serviceFixture(options: {
     executionService,
     ...(options.projectRootOf ? { projectRootOf: options.projectRootOf } : {}),
     ...(options.evidence ? { evidence: options.evidence } : {}),
+    ...(options.relay ? { relay: options.relay } : {}),
     graph,
     binding: parent.binding,
     executionsRoot: join(options.root, "executions"),
@@ -972,5 +975,84 @@ describe("DelegationService — budget and usage", () => {
     const waited = await fixture.service.wait(spawned.executionId);
     expect(waited).not.toHaveProperty("usage");
     expect(waited).not.toHaveProperty("budgetStatus");
+  });
+});
+
+/**
+ * Relay là cái cho `alp delegate` gõ trong sandbox của con có người trả lời. Người trả lời
+ * là process đang `wait` con — nên chỉ con foreground được đăng ký, đăng ký trước khi process
+ * con kịp gõ gì, và đóng khi không còn ai để nhận response (con kết thúc, spawn hỏng, cancel).
+ * Oracle: ADR "đăng ký lúc spawn, đóng lúc settle" và "con background không được phục vụ"
+ * trong `plans/260918-0700-execution-relay/plan.md`.
+ */
+describe("DelegationService — execution relay", () => {
+  let root = "";
+  beforeEach(async () => { root = await mkdtemp(join(tmpdir(), "alp-delegation-relay-")); });
+  afterEach(async () => { await removeTemporary(root); });
+
+  function fakeRelay(calls: string[]) {
+    const registrations: { executionId: string; directory: string; env: NodeJS.ProcessEnv; closed: number }[] = [];
+    const relay: Pick<RelayServer, "register"> = {
+      register(registration) {
+        calls.push("relay.register");
+        const entry = { ...registration, env: { ...registration.env }, closed: 0 };
+        registrations.push(entry);
+        const handle: RelayHandle = { close() { calls.push("relay.close"); entry.closed += 1; } };
+        return handle;
+      },
+    };
+    return { relay, registrations };
+  }
+
+  it("registers a foreground child before its process exists, with the launch env, and closes it once the wait settles", async () => {
+    const primary = new FakeBackend("primary");
+    const { relay, registrations } = fakeRelay(primary.calls);
+    const fixture = await serviceFixture({ root, primary, relay });
+
+    const result = await fixture.service.delegate({ ...input, executionOptions: { background: false } });
+    expect(primary.calls).toEqual(["health", "relay.register", "spawn"]);
+    expect(registrations).toEqual([{
+      executionId: result.executionId,
+      directory: executionArtifactPaths(join(root, "executions"), result.executionId).relayDirectory,
+      env: { ALP_DELEGATION_EXECUTION_ID: result.executionId },
+      closed: 0,
+    }]);
+
+    // Một wait chưa terminal (timeout) chưa được đóng: con vẫn sống và vẫn có thể gõ lệnh.
+    primary.waitResult = { executionId: result.executionId, status: "running" };
+    await fixture.service.wait(result.executionId, { timeoutMs: 1 });
+    expect(registrations[0]!.closed).toBe(0);
+
+    primary.waitResult = null;
+    await fixture.service.wait(result.executionId);
+    expect(registrations[0]!.closed).toBe(1);
+    await fixture.service.wait(result.executionId);
+    expect(registrations[0]!.closed).toBe(1);
+  });
+
+  it("never registers a background child: no process stays behind to answer it", async () => {
+    const primary = new FakeBackend("primary");
+    const { relay, registrations } = fakeRelay(primary.calls);
+    const fixture = await serviceFixture({ root, primary, relay });
+
+    const result = await fixture.service.delegate({ ...input, executionOptions: { background: true } });
+    await fixture.service.wait(result.executionId);
+    expect(registrations).toEqual([]);
+    expect(primary.calls).not.toContain("relay.register");
+  });
+
+  it("closes the registration when the spawn fails or the child is cancelled", async () => {
+    const failing = new FakeBackend("primary", true, new Error("spawn exploded"));
+    const failingRelay = fakeRelay(failing.calls);
+    const broken = await serviceFixture({ root, primary: failing, relay: failingRelay.relay });
+    await expect(broken.service.delegate({ ...input, executionOptions: { background: false } })).rejects.toThrow("spawn exploded");
+    expect(failingRelay.registrations.map((entry) => entry.closed)).toEqual([1]);
+
+    const primary = new FakeBackend("primary");
+    const { relay, registrations } = fakeRelay(primary.calls);
+    const fixture = await serviceFixture({ root: join(root, "cancel"), primary, relay });
+    const result = await fixture.service.delegate({ ...input, executionOptions: { background: false } });
+    await fixture.service.cancel(result.executionId);
+    expect(registrations.map((entry) => entry.closed)).toEqual([1]);
   });
 });

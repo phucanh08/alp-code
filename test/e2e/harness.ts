@@ -75,6 +75,30 @@ if (process.env.ALP_E2E_COMPACT_FIXTURES) {
   record.reinjected = parsed.hookSpecificOutput.additionalContext;
 }
 
+// Relay mode: đứng vai một model gõ \`alp …\` từ trong sandbox. Viết đúng giao thức v1
+// (plans/260918-0700-execution-relay/plan.md) chứ không import client — bản ghi là oracle độc lập.
+if (process.env.ALP_E2E_RELAY_ARGV) {
+  const { renameSync, existsSync } = require("node:fs");
+  const relayDirectory = process.env.ALP_RELAY_DIR || "";
+  const id = require("node:crypto").randomBytes(16).toString("hex");
+  const request = { v: 1, id, argv: JSON.parse(process.env.ALP_E2E_RELAY_ARGV), cwd: process.cwd(), requestedAt: new Date().toISOString() };
+  record.relay = { directory: relayDirectory, request, response: null, error: null };
+  try {
+    const server = existsSync(join(relayDirectory, "server.json")) ? JSON.parse(readFileSync(join(relayDirectory, "server.json"), "utf8")) : null;
+    record.relay.server = server;
+    if (!server) throw new Error("no server.json");
+    writeFileSync(join(relayDirectory, id + ".request.json.tmp"), JSON.stringify(request));
+    renameSync(join(relayDirectory, id + ".request.json.tmp"), join(relayDirectory, id + ".request.json"));
+    const deadline = Date.now() + Number(process.env.ALP_E2E_RELAY_TIMEOUT_MS || 4000);
+    const responseFile = join(relayDirectory, id + ".response.json");
+    while (Date.now() < deadline && !existsSync(responseFile)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    if (existsSync(responseFile)) record.relay.response = JSON.parse(readFileSync(responseFile, "utf8"));
+    else record.relay.error = "timeout";
+  } catch (error) {
+    record.relay.error = String(error && error.message || error);
+  }
+}
+
 writeFileSync(join(process.env.ALP_E2E_CAPTURE, ${JSON.stringify(runtime)} + ".json"), JSON.stringify(record, null, 2));
 // Cùng một runtime chạy cho nhiều nấc trong một cây, nên bản ghi theo tên runtime bị đè.
 // Bản theo execution ID là bản mà một test nhiều tầng đọc được.
@@ -184,6 +208,14 @@ export interface RuntimeCapture {
   /** Set only in compact-bridge mode: the `additionalContext` from a second, simulated
    * `SessionStart(source="compact")` fired after the fixture pre/post events. */
   readonly reinjected?: string;
+  /** Set only in relay mode (`ALP_E2E_RELAY_ARGV`): what the fake sent and what came back. */
+  readonly relay?: {
+    readonly directory: string;
+    readonly server: { readonly v: number; readonly pid: number; readonly executionId: string } | null;
+    readonly request: { readonly v: number; readonly id: string; readonly argv: readonly string[]; readonly cwd: string };
+    readonly response: { readonly v: number; readonly id: string; readonly exitCode: number; readonly stdout: string; readonly stderr: string; readonly finishedAt: string } | null;
+    readonly error: string | null;
+  };
 }
 
 /** One fixture pre/post payload the fake runtime feeds straight into `compact-record.cjs`. */
