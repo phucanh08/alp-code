@@ -73,6 +73,7 @@ dir, đóng khi execution settle); không thư mục mới (`src/execution/relay
 | R1 | `2112f7e` | Client + gating; mutant M1–M5 bị bắt |
 | R2 | `c8d859f`, `217633f` | Server, allowlist, `relay/` 0700 trong artifact; mutant S1–S7 bị bắt |
 | R3 | `39cb2b8` | Root + child foreground được phục vụ với binding của chính nó; 8 mutant bị bắt |
+| R4 | `ac25081` | Claude `allowWrite` relay dir; Codex profile `default_permissions="alp"` trên argv, bỏ `-s` và bypass; `capabilities.ts` đo lại 2026-09-18; 8 mutant bị bắt |
 
 ### Ngoài phạm vi (ghi lại khi làm R3)
 
