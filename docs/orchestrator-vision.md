@@ -3,7 +3,14 @@
 Tài liệu này mở rộng §5.9 của [triết lý thiết kế & tầm nhìn kiến trúc](./alp-design-philosophy-and-vision.md).
 Mọi tham chiếu `§x.y` dưới đây trỏ về doc đó.
 
-Trạng thái: **đề xuất**. Chưa có code. Điều kiện mở khoá nằm ở cuối.
+Trạng thái: **đề xuất, đã thu hẹp 2026-09-18**. Chưa có code. Điều kiện mở khoá nằm ở cuối.
+
+> **Thu hẹp (§4.13 của doc gốc).** Mô hình Supervisor / Lead / Peer đặt phần "chạy dài phút–giờ,
+> schedule, heartbeat gọi ngược, recovery, vòng đời" của role này vào **Supervisor** — một surface
+> đứng trên root, ngoài ALP (đầu tiên là Hermes). Câu hỏi đầu của §7 nhờ vậy có lời đáp: thứ điều
+> phối *trên* `main` không `reportsTo` ai trong ALP cả, vì nó không phải Agent. Phần còn lại cho
+> `orchestrator` — fan-out song song trên worktree tách biệt, dưới `main` — vẫn nguyên như dưới
+> đây, và vẫn chờ use case thật.
 
 ---
 

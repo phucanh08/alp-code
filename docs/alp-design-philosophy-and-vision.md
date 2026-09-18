@@ -1,7 +1,8 @@
 # ALP Code — Triết lý thiết kế & Tầm nhìn kiến trúc
 
 > **Status:** Draft · **Ngày:** 2026-08-27 · cập nhật 2026-09-04 (§0, §4.6, §10.3), 2026-09-10
-> (§5.8, §8, §11 — đối chứng Amp) · **Owner:** anhlp
+> (§5.8, §8, §11 — đối chứng Amp), 2026-09-18 (§0, §2, §4.13 mới, §5.9, §8, §11 — mô hình
+> Supervisor / Lead / Peer) · **Owner:** anhlp
 > **Quan hệ với các doc khác:** `docs/architecture.md` mô tả hệ thống **đang là**. Doc này mô tả
 > hệ thống **nên trở thành** và các nguyên tắc để quyết định từng bước đi. Khi hai doc mâu thuẫn,
 > `architecture.md` đúng về hiện trạng, doc này đúng về hướng.
@@ -21,6 +22,9 @@ Bản nháp trước dùng một từ "Harness" cho hai thứ nằm ở hai phí
 | **Agent** | Đơn vị identity **đầy đủ**: một mục đích cụ thể, cộng trọn bộ phương tiện để phục vụ mục đích đó — tool, skill, subagent, MCP server, memory, workspace | 8 agent trong `src/agents/`, nhưng `capabilities` mới có tool, memory, workspace |
 | **Agents team** | Tập agent đã đăng ký trong registry, cùng quan hệ `reportsTo`/`delegatesTo` giữa chúng. Thành viên của team là Agent, **không** phải subagent | `main` + 7 specialist |
 | **Subagent** | Đơn vị thực thi **phụ thuộc**, sống bên trong tiến trình runtime của một agent. Không identity, không memory, không policy snapshot, không execution record — nó là một **grant** của agent, ngang hàng skill và MCP server, không phải một chỗ ngồi trong team | Chưa có. Claude Code cấp qua `--agents <json>`; Codex chưa có tương đương |
+| **Supervisor** | Tầng trách nhiệm đại diện principal: quan sát, governance, recovery, vòng đời của Lead. **Là một Surface, không phải Agent** — §4.13 | Chưa có; sẽ là Hermes gọi `alp` qua CLI |
+| **Lead** | Tầng trách nhiệm sở hữu phán quyết kỹ thuật của một project: framing, cắt việc, routing, nghiệm thu | `main` — giữ tên, chỉ ghi rõ vai |
+| **Peer** | Tầng trách nhiệm sở hữu **một** outcome có biên; có phán quyết riêng trong biên đó, được chất vấn premise | `worker` (generic) và 4 specialist (`review`, `oracle`, `search`, `librarian`) — giữ tên |
 
 Điểm dễ nhầm nhất: **Claude Code vừa có thể là surface vừa có thể là runtime.** Khi principal gõ
 `alp delegate review` từ trong một phiên Claude Code, Claude Code là surface. Khi
@@ -70,6 +74,7 @@ Doc này chỉ có giá trị nếu nó thành thật về khoảng cách. Tại
 | Công cụ test agent | `npm test` (unit, registry giả) | `alp agent test`: static → dry-run prepare → deny-path → live, chạy được cả agent built-in | **Chưa có** — §10.3 |
 | Policy | `PolicyEngine.decide()` trả `allow / deny / require_approval`; một luật (`workspace-outside-grant-inside-project`, scope `session`); `authorize()` vẫn nhị phân, fail-closed | + thêm luật khi có nhu cầu thật; scope `once`/`execution` | **Đã có, phạm vi hẹp** — §6 |
 | Delegation | `DelegationService` → policy → backend, deny-first | Giữ nguyên | ✅ Đạt |
+| Mô hình trách nhiệm | `main` cắt việc + nghiệm thu, `worker` thi hành; vai được mô tả bằng *loại việc* | Ba tầng Supervisor / Lead / Peer trên cùng primitive: `worker` có contract Peer (own outcome, `blocked` / `reopen-request`), delegation là Assignment có biên rõ, Supervisor là surface ngoài ALP | **Một phần** — §4.13, [master plan](./plans/2026-09-18-master-plan.md) |
 | Tool | `TOOL_CATALOG` hardcode từ vựng Claude Code | Capability là kiểu chính; tên tool sống trong adapter | **Ngược hướng** — §4.5 |
 | Runtime | `ClaudeRuntimeAdapter`, `CodexRuntimeAdapter` | Giữ hai runtime này | ✅ Đạt |
 | Skill | 17 skill trong `skills/`, được **runtime** nạp; skill root là danh sách chung lấy từ env | ALP sở hữu selection + budget; skill root theo từng agent, pin trong policy | **Chưa có engine** — §4.4, §5.7 |
@@ -360,6 +365,65 @@ review được. Nó chỉ trở thành vấn đề khi có runtime thứ ba; l�
 
 Mọi contract core cần `schemaVersion`. "Define once, run anywhere" chết ở lần bump contract đầu tiên
 nếu không có versioning và deprecation policy.
+
+### 4.13. Ba tầng trách nhiệm: Supervisor / Lead / Peer
+
+**Quyết định 2026-09-18.** ALP nhận mô hình SLP làm **lớp trách nhiệm** đặt trên các primitive
+đã có — không phải một engine thứ hai, không đổi tên vai nào. Ba tầng trả lời ba câu hỏi khác nhau:
+
+| Tầng | Sở hữu | Trong ALP là |
+|---|---|---|
+| **Supervisor** | Ý định của principal, quan sát nhiều project, governance, recovery, vòng đời Lead, leo thang lên người | **Surface** (§0) — một process đứng *trên* root, chỉ nói chuyện với ALP qua CLI. Đầu tiên là Hermes; ALP không biết nó tồn tại |
+| **Lead** | Phán quyết kỹ thuật của một project: framing → cắt việc → routing → dependency → nghiệm thu → integration | **`main`** — root session, read-only, sở hữu Thread |
+| **Peer** | Một outcome có biên; phán quyết kỹ thuật *trong* biên; được chất vấn premise khi bằng chứng nói ngược | **`worker`** (generic) và các specialist: `review`, `oracle`, `search`, `librarian` |
+
+Ba vai còn lại — `read-thread`, `compaction`, `titling` — là **system service**: chúng không sở hữu
+outcome kỹ thuật nào, ép vào tầng Peer chỉ làm loãng chữ Peer.
+
+**Vì sao Supervisor là surface chứ không phải Agent.** Hai lý do nằm ở runtime, không ở triết lý:
+
+1. Execution con là **một lần** `claude -p`; Thread — continuity, compaction, memory, handoff —
+   chỉ có cho root (`reserveRoot`). Lead là con thì mỗi câu principal hỏi là một Lead mới không nhớ
+   gì, hoặc Supervisor phải gói lại toàn bộ state cho nó — tức Supervisor đang làm Lead.
+2. Con background **không có relay** (GitHub #24): Lead giao việc dài cho Peer thì hoặc Supervisor
+   đứng chờ cả phiên, hoặc Peer mất `alp`.
+
+Giữ `main` ở root xoá cả hai. Cái phải trả: Supervisor không được ALP govern — nên luật cứng là
+**Supervisor chỉ chạm ALP qua CLI, không bao giờ chạm workspace**, và mọi phán quyết của nó phải
+để lại bản ghi trong ALP (acceptance có `actor`). Ngày Supervisor cần thành Agent — khi có nhiều
+Lead song song và child session bền nhiều lượt — thì primitive đã xây cho Hermes cũng là primitive
+cho nó; xem điều kiện mở khoá ở §8.
+
+**Ba phép tách phải giữ, theo thứ tự làm:**
+
+1. **Peer ≠ Worker vâng lời.** Contract của `worker` đổi từ "execute the task" sang "own the
+   outcome": kiểm tra premise, trả `done | blocked | reopen-request | dependency-request` có lý do,
+   thay vì hoàn tất bằng mọi giá. Bất đồng có bằng chứng là dữ liệu để Lead reconcile, không phải
+   bất tuân. Assignment đi kèm đủ: objective, owned scope, excluded scope, verification, handoff.
+2. **Cha của execution ≠ người có quyền nghiệm thu.** Hôm nay `assertAcceptable` chỉ cho cha
+   accept con — đúng cho `main → worker`. Nó chỉ cần tách khi có ca "Lead viết → principal nghiệm
+   thu" (acceptance với `actor` không phải execution). `main` chưa cầm bút nên chưa cần; ghi ở đây
+   để không ai biến "cha" thành "arbiter" một cách vô thức.
+3. **Supervisor ≠ Lead.** Đã tách bằng cách đặt Supervisor ra ngoài. Không xây role Supervisor
+   trong ALP trước khi điều kiện ở §8 mở.
+
+**Invariant thêm vào bảng §1**, cái nào code đã ép thì ghi rõ:
+
+| Invariant | Đã ép ở |
+|---|---|
+| Peer viết → Lead nghiệm thu | `assertAcceptable` (chỉ cha) |
+| Execution xong ≠ việc được nhận | `unevaluated` (#23), acceptance là hành động riêng |
+| Capability ≠ authority | Authority table chỉ nói được cấp gì; accept/reject là bản ghi khác |
+| Một scope ghi đang đổi có đúng một người viết | `--write-scope` + overlap check |
+| Bằng chứng mạnh hơn lời agent | `evidence.json` tách khỏi `state.json.output` |
+| Peer không sở hữu topology | `worker.delegatesTo: []`, `maxDepth: 2` |
+| Unknown vẫn là unknown | `verify-skipped`, `provenance: unknown` |
+| Lead viết → principal nghiệm thu | **chưa** — chờ ca thật |
+| Supervisor không chạm workspace | **chưa** — luật của surface, ALP chưa kiểm được |
+
+Cái bảng này cố tình không hứa: `orchestrator` (§5.9) từng gánh phần "điều phối dài, song song"
+mà nay chia đôi — phần lịch, heartbeat, recovery, vòng đời thuộc Supervisor bên ngoài; phần
+fan-out trên worktree vẫn là câu hỏi mở của một role trong ALP.
 
 ---
 
@@ -729,6 +793,12 @@ rỗng nên nó phải là built-in. Ba ràng buộc — không miễn trừ inv
 §4.10 xong trước, và nó là phép thử của câu "không phải swarm tự do" (§8) — ở
 [`orchestrator-vision.md`](./orchestrator-vision.md).
 
+**Thu hẹp 2026-09-18 (§4.13).** Nửa "chạy dài, theo lịch, gọi ngược, recovery" của role này là việc
+của Supervisor — một surface ngoài ALP, không phải Agent. Phần còn lại cho `orchestrator` là
+fan-out song song trên worktree tách biệt; phần đó vẫn chờ use case thật, và trần đếm-execution
+(`maxChildrenPerExecution: 4`, `delegationLimit: 8`) phải được lý luận lại trước khi có role nào
+sống được với nó.
+
 ---
 
 ## 6. Approval là quyết định của core
@@ -853,7 +923,9 @@ tới khi có nhu cầu thật, vì mỗi thứ đều tự biện minh được
 | Plugin **có code** / registry | Có ≥ 3 extension bên thứ ba thật, **và** có mô hình signing + sandbox |
 | Workflow DSL / engine tổng quát | Có ≥ 2 workflow không diễn đạt được bằng linear workflow |
 | Custom agent được delegate | Có use case thật cần cây sâu 2 tầng (built-in `orchestrator` ở §5.9 là đường khác, không phải cái này) |
-| `orchestrator` (§5.9) | §4.10 xong: budget, cancellation, trace parent→child — cancellation và delegation/wall-clock budget xong 2026-09-11; token/tool-call budget observe-only xong 2026-09-17 ⇒ **điều kiện đã mở**, plan riêng cho role này còn phải viết |
+| `orchestrator` (§5.9) | §4.10 xong: budget, cancellation, trace parent→child — cancellation và delegation/wall-clock budget xong 2026-09-11; token/tool-call budget observe-only xong 2026-09-17. **Thu hẹp 2026-09-18**: phần lịch/heartbeat/recovery về Supervisor (§4.13); phần fan-out worktree chờ use case thật và bảng limit được lý luận lại |
+| Supervisor **là Agent** trong ALP (§4.13) | (a) child session bền nhiều lượt có Thread; (b) relay cho con background (#24); (c) ≥ 2 Lead/project chạy song song thật. Tới lúc đó Supervisor là surface (Hermes) gọi `alp` qua CLI |
+| Đổi tên `main`/`worker` thành `lead`/`peer` | Không. Tên là chỗ ngồi, vai là contract; đổi tên tốn docs/skills/fixtures mà không đổi hành vi |
 | Runtime thứ ba | Có người dùng thật cần |
 | Cloud execution / ALP Cloud | Sau khi trace và budget đã đầy đủ |
 | Tách repo thành `core/ runtime/ extensions/` | Xem §9 |
@@ -1026,6 +1098,10 @@ phương án ngang nhau về giá trị — nới ra sau rẻ hơn thu lại.
 | 9 | **Agent ≠ subagent** (§0). Thành viên agents team luôn là Agent có identity đầy đủ — mục đích riêng cộng tool, skill, subagent, MCP, memory, workspace của riêng nó | Một từ dùng cho hai thứ ở hai tầng enforcement khác nhau: cái đi qua `PolicyEngine` từng lần, và cái chỉ được cấp một lần lúc prepare. Bản nháp §4.6 trộn đúng hai cái đó |
 | 10 | **Subagent là in-process của runtime**, khai trong definition ngang hàng skill và MCP — không phải một execution con do ALP spawn | Execution con đã có tên: đó là delegation. Thêm loại execution con thứ hai không identity sẽ đẻ ra hai đường làm cùng một việc, và đường thứ hai không trace được (§4.10) |
 | 11 | **`alp agent test` (§10.3) chặn trước §5** — không mở custom agent khi chưa có tầng 1–3 | Custom agent là identity do principal viết, chạy với quyền thật. Không có deny-path test thì trần capability ở §5.5 chỉ là lời hứa trong doc |
+| 12 | **SLP là lớp trách nhiệm, không phải engine.** `main` = Lead, `worker` + specialist = Peer, `read-thread`/`compaction`/`titling` = system service. **Giữ nguyên tên** | §4.13. Cái cần đổi là contract trong prompt và bản ghi nghiệm thu; đổi tên chỉ tốn công mà không đổi hành vi |
+| 13 | **Supervisor là Surface (§0), không phải Agent.** Đầu tiên là Hermes, gọi ALP qua CLI, không chạm workspace | §4.13: con là `-p` một lần không có Thread, con background không có relay. Đặt Supervisor ra ngoài xoá cả hai; ALP chỉ cần root headless + `needs-approval` + acceptance có `actor` |
+| 14 | **Thứ tự làm: Peer ≠ Worker → Cha ≠ Arbiter → Supervisor ≠ Lead** | Cái đầu chỉ cần prompt + output contract; cái hai chỉ cần khi Lead cầm bút; cái ba đã giải bằng quyết định 13 |
+| 15 | **Hoàn thiện ALP trước, ghép Hermes sau** | Primitive Hermes cần (root headless, approval không TTY, acceptance có `actor`) là việc của ALP và nằm sau các issue đang mở — [master plan](./plans/2026-09-18-master-plan.md) |
 
 Quyết định **12–15** (khai đầy đủ thay vì `extends`; plugin v1 là bundle dữ liệu; hook bridge là
 event surface duy nhất; `ai.ask`/UI prompt nằm ngoài phạm vi custom agent) nằm ở
