@@ -283,7 +283,11 @@ khi verify bắt đầu không vào `ambiguousWith` của item `verify`.
 Evaluator: mọi mục có item `observed | derived` khớp ⇒ `satisfied`; có mục không item nào ⇒
 `unsatisfied` (`missing` kể tên); còn lại — item `unknown`, verify chưa chạy — ⇒ `unknown`.
 `unknown` không phải đạt: cha thấy `unknown` là biết còn một việc (`alp trust verify`, chờ
-verify) chứ không phải một kết luận.
+verify) chứ không phải một kết luận. Request **không đòi gì** ⇒ `unevaluated` (từ 0.16, GitHub
+#23) — trước đó ca này trả `satisfied`, và một con dừng giữa chừng không commit nhận đúng
+verdict của một con đã commit + push. `wait --json` còn mang `evidence.changes[]` — mỗi item
+`change` rút gọn thành `{ provenance, source, commit, pathCount, outsideScopeCount }` — để
+coordinator phân biệt hai ca đó mà không phải gọi thêm `evidence`.
 
 **`verify.commands` chỉ chạy sau khi principal duyệt.** Khối khai ở `.alp/settings.json` /
 `.alp/settings.local.json` của project (tầng user không được — một lệnh verify thuộc về repo
@@ -533,7 +537,7 @@ không phải thứ để in ra.
 
 `tree` không in capability hash, fingerprint của request, hay reservation internals. Nó in
 `requestId` để nối lại với lệnh đã gọi, và — khi request có `--require-evidence` — verdict
-đã thu (`evidence satisfied|unsatisfied|unknown`) hoặc `evidence pending` nếu chưa ai `wait`.
+đã thu (`evidence unevaluated|satisfied|unsatisfied|unknown`) hoặc `evidence pending` nếu chưa ai `wait`.
 Con đã kết thúc còn mang `decision accepted|rejected`, hoặc `decision undecided` khi cha chưa
 `accept`/`reject`.
 

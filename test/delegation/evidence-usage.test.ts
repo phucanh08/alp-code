@@ -109,7 +109,7 @@ describe("collectExecutionEvidence — usage", () => {
     }]);
     expect(collected.usage).toEqual(COUNTED);
     expect(collected.budgetStatus).toBe("within");
-    expect(collected.evaluation).toBe("satisfied");
+    expect(collected.evaluation).toBe("unevaluated");
     const file = JSON.parse(await readFile(usageFile(fx.executionsRoot, "exec_a"), "utf8"));
     expect(file).toEqual({
       version: 1, executionId: "exec_a", source: "history-bridge", completeness: "complete", collectedAt: "2026-09-17T10:00:00.000Z", ...COUNTED,
@@ -124,7 +124,7 @@ describe("collectExecutionEvidence — usage", () => {
     const collected = await collectExecutionEvidence({ executionId: "exec_a" }, deps(fx, [bridge([{ usageDelta: COUNTED }])]));
     expect(usageItems(collected)[0]?.status).toBe("exceeded");
     expect(collected.budgetStatus).toBe("exceeded");
-    expect(collected.evaluation).toBe("satisfied");
+    expect(collected.evaluation).toBe("unevaluated");
     const node = (await fx.graph.findGraphFor("exec_a"))!.nodes.find((entry) => entry.executionId === "exec_a")!;
     expect(node.status).toBe("completed");
   });

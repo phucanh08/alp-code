@@ -1,5 +1,6 @@
 import type { RuntimeId } from "../agents/types";
 import type { BackendExecutionStatus } from "../backend/execution-backend";
+import type { EvidenceEvaluation, Provenance } from "../execution/evidence";
 import type { BudgetStatus, ExecutionBudget, UsageCounters } from "../execution/usage";
 
 export type DelegationErrorCode =
@@ -150,11 +151,31 @@ export interface DelegationResult {
   readonly metadata: Readonly<{ backend: string; runtime: RuntimeId } & Record<string, unknown>>;
 }
 
+/**
+ * Một item `change` rút gọn cho `wait --json`: đủ để coordinator biết con *có làm gì không*
+ * mà không phải gọi thêm `evidence`. Đường dẫn cụ thể vẫn ở `alp delegation evidence --json`.
+ */
+export interface DelegationEvidenceChange {
+  /** `observed` — chỉ con này có thể đã ghi; `derived` — có thể có node khác góp; `unknown` — không đọc được. */
+  readonly provenance: Provenance;
+  readonly source: "git" | "history-bridge";
+  /** Commit HEAD sau khi con dừng, khác HEAD lúc `materialize`; `null` khi không commit. */
+  readonly commit: string | null;
+  readonly pathCount: number;
+  readonly outsideScopeCount: number;
+}
+
 export interface DelegationEvidenceSummary {
   readonly digest: string;
-  readonly evaluation: "satisfied" | "unsatisfied" | "unknown";
-  /** Những mục đã đòi mà evidence nói rõ là *không* có — rỗng khi `satisfied` hoặc `unknown`. */
+  /**
+   * `unevaluated` khi request không có `requiredEvidence` — ALP chưa kiểm gì, không phải "đủ".
+   * Trước v0.16 ca này trả `satisfied` và coordinator đọc nhầm thành "đã xong" (GitHub #23).
+   */
+  readonly evaluation: EvidenceEvaluation;
+  /** Những mục đã đòi mà evidence nói rõ là *không* có — rỗng khi không `unsatisfied`. */
   readonly missing: readonly string[];
+  /** Item `change` đã thu, mỗi nguồn một dòng; rỗng khi không nguồn nào thấy thay đổi. */
+  readonly changes: readonly DelegationEvidenceChange[];
 }
 
 export interface DelegationIds {

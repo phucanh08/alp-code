@@ -228,8 +228,12 @@ describe("evaluateEvidence", () => {
   });
   const output: EvidenceItem = { kind: "output", provenance: "self-reported", source: "agent-output", digest: "x" };
 
-  it("is satisfied with nothing required", () => {
-    expect(evaluateEvidence([], [output])).toEqual({ evaluation: "satisfied", missing: [] });
+  // GitHub #23: an empty requirement list is not "met", it is "never checked" — an execution
+  // that did nothing and one that committed and pushed must not share a verdict.
+  it("is unevaluated with nothing required, whatever the items say", () => {
+    expect(evaluateEvidence([], [output])).toEqual({ evaluation: "unevaluated", missing: [] });
+    expect(evaluateEvidence([], [change("observed")])).toEqual({ evaluation: "unevaluated", missing: [] });
+    expect(evaluateEvidence([], [])).toEqual({ evaluation: "unevaluated", missing: [] });
   });
 
   it("meets `change` with an observed or derived change that names paths", () => {

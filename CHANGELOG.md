@@ -8,6 +8,19 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ## [Chưa phát hành]
 
+### Sửa
+
+- **`evidence.evaluation` không còn là `satisfied` khi request không đòi gì** (GitHub #23).
+  Trước đây một con dừng giữa chừng, không commit, và một con đã commit + push nhận cùng một
+  verdict `completed / satisfied / missing: []` trên `alp delegation wait --json`, vì "không
+  mục nào thiếu" và "mọi mục đều đạt" là cùng một từ. Giờ request không có `--require-evidence`
+  trả `evaluation: "unevaluated"` — ALP chưa kiểm gì, đừng đọc thành "đã xong". Cùng lúc,
+  `wait --json` mang thêm `evidence.changes[]`: mỗi item `change` rút gọn thành
+  `{ provenance, source, commit, pathCount, outsideScopeCount }`, nên coordinator thấy được
+  `derived`/`observed` và commit sha mà không phải gọi thêm `evidence`. Cây (`tree`) và
+  invariants nhận verdict mới; graph ghi bởi bản này có node `unevaluated` mà bản 0.15 đọc lên
+  sẽ báo `EXECUTION_GRAPH_INVALID`.
+
 ## [0.15.0] - 2026-09-18
 
 ### Thêm

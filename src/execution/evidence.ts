@@ -41,7 +41,13 @@ import { findNode, isTerminalNodeStatus, type ExecutionNode } from "./graph/type
  */
 export type Provenance = "observed" | "derived" | "self-reported" | "unknown";
 export type EvidenceSource = "git" | "history-bridge" | "alp-verifier" | "agent-output" | "runtime-event";
-export type EvidenceEvaluation = "satisfied" | "unsatisfied" | "unknown";
+/**
+ * `unevaluated` is the empty case: the request declared no `requiredEvidence`, so nothing was
+ * checked. It is deliberately not `satisfied` — GitHub #23 found a coordinator reading
+ * `satisfied` off an execution that had done nothing, because "no requirement is missing"
+ * and "the requirements are met" were the same word.
+ */
+export type EvidenceEvaluation = "unevaluated" | "satisfied" | "unsatisfied" | "unknown";
 
 export interface EvidenceToolCallItem {
   readonly kind: "tool-call";
@@ -300,8 +306,10 @@ export function parseRequiredEvidence(values: readonly string[]): readonly strin
  * `unsatisfied` names what is missing; `unknown` says a producer could not answer and
  * nothing is missing outright. Missing beats unknown: a verify that never ran and a change
  * that could not be read is a "no", not a "maybe". An empty `paths` satisfies nothing.
+ * Nothing required is `unevaluated`, never `satisfied`: a vacuous truth is not a verdict.
  */
 export function evaluateEvidence(required: readonly string[], items: readonly EvidenceItem[]): { readonly evaluation: EvidenceEvaluation; readonly missing: readonly string[] } {
+  if (required.length === 0) return { evaluation: "unevaluated", missing: [] };
   const missing: string[] = [];
   let unknown = false;
   for (const requirement of required) {

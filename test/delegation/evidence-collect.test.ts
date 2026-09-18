@@ -473,7 +473,7 @@ describe("collectExecutionEvidence — verify", () => {
     const collected = await collectExecutionEvidence({ executionId: "exec_a" }, d.value);
     expect(d.verifierCalls).toEqual([]);
     expect(itemsOf(collected, "verify")).toEqual([]);
-    expect(collected).toMatchObject({ required: [], evaluation: "satisfied" });
+    expect(collected).toMatchObject({ required: [], evaluation: "unevaluated" });
   });
 
   it("names the executions active while the command ran", async () => {
