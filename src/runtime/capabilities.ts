@@ -63,16 +63,23 @@ type Cells = Readonly<Record<EnforcementField, EnforcementLevel>>;
  * format to: a patch release does not move the sandbox, and a table that flagged every
  * patch as unmeasured would be ignored by the second week.
  */
-const CLAUDE_MEASURED = { runtimeVersion: "2.1", measuredAt: "2026-09-12" } as const;
-const CODEX_MEASURED = { runtimeVersion: "0.154", measuredAt: "2026-09-12" } as const;
+const CLAUDE_MEASURED = { runtimeVersion: "2.1", measuredAt: "2026-09-18" } as const;
+const CODEX_MEASURED = { runtimeVersion: "0.154", measuredAt: "2026-09-18" } as const;
 
 /**
  * Measured 2026-09-10 (`link-auditor` on Codex ran `/bin/zsh -lc` holding no `Bash`;
  * `codex sandbox -c sandbox_mode='"read-only"' -- cat <outside>` printed the file) and
  * re-run 2026-09-12 with `codex sandbox` on `workspace-write`: a write outside the writable
  * roots → `Operation not permitted`, `curl` → could not resolve host. `[[rules]]` with
- * `allow = false` is honoured by the runtime. `writeScope` is the same seatbelt as
- * `writeIsolation`: `writable_roots` *is* the declared scope.
+ * `allow = false` is honoured by the runtime.
+ *
+ * Re-measured 2026-09-18 on the form the launch actually uses since the relay (`-c
+ * default_permissions` profile on argv; `plans/260918-0700-execution-relay/research/`):
+ * a path is writable only when listed, an entry created beside the scope is refused, `.git`
+ * under a write root stays read-only, and with no `network` section `curl` still cannot
+ * resolve a host. `writeScope` is the same seatbelt as `writeIsolation`: the profile's
+ * `"write"` entries *are* the declared scope. Until then the scope had only been written to
+ * a config file Codex never read — the cell was measured on the mechanism, not on the launch.
  */
 const CODEX_POSIX: Cells = {
   toolGrant: "declared-only",

@@ -5,6 +5,7 @@ import { agentRegistry } from "../../src/agents/registry";
 import type { ModeId } from "../../src/agents/modes";
 import { DelegationService, InMemoryDelegationExecutionStore } from "../../src/delegation/delegation-service";
 import { readWriteScope } from "../../src/execution/execution-policy";
+import { executionArtifactPaths } from "../../src/execution/execution-store";
 import { absoluteRule } from "../../src/runtime/permission-rules";
 import { cleanupEnvironments, createE2eEnvironment, createMaterializedRoot, type E2eEnvironment } from "./harness";
 
@@ -68,6 +69,18 @@ describe("e2e: delegating with a write scope", () => {
     const roots = writableRoots(capture.runtimeConfig);
     expect(roots).toEqual([scope, join(environment.memoryRoot, "private", "worker")]);
     for (const entry of roots) expect(environment.executionsRoot.startsWith(entry)).toBe(false);
+    // What Codex actually reads is the profile on argv (the config file above is ALP's own
+    // record): the scope and private memory are the write roots, the workspace is not, and
+    // the only writable path under the executions root is this execution's relay directory.
+    const profileArgument = capture.argv.find((argument) => argument.startsWith("permissions.alp.filesystem="));
+    expect(profileArgument).toBeDefined();
+    expect(capture.argv[capture.argv.indexOf(profileArgument!) - 1]).toBe("-c");
+    expect(capture.argv).toContain('default_permissions="alp"');
+    expect(capture.argv).not.toContain("-s");
+    for (const entry of roots) expect(profileArgument).toContain(`${JSON.stringify(entry)}="write"`);
+    expect(profileArgument).not.toContain(`${JSON.stringify(project)}="write"`);
+    expect(profileArgument).toContain(`${JSON.stringify(executionArtifactPaths(environment.executionsRoot, spawned.executionId).relayDirectory)}="write"`);
+    expect(profileArgument!.match(/"[^"]*"="write"/gu)!.filter((entry) => entry.includes(environment.executionsRoot))).toHaveLength(1);
   });
 
   it("confines a Claude worker by denying what stands beside the scope", async () => {
@@ -77,7 +90,7 @@ describe("e2e: delegating with a write scope", () => {
     const spawned = await service.delegate({ targetRole: "worker", task: "Fix the parser", workspace: project, workspaceMode: "workspace-write", writeScope: ["src/parser"] });
     await expect(service.wait(spawned.executionId)).resolves.toMatchObject({ status: "completed", output: "done" });
 
-    const settings = JSON.parse((await environment.capture("claude")).runtimeConfig) as { sandbox?: { filesystem: { denyWrite: string[] } }; permissions: { allow: string[]; deny: string[] } };
+    const settings = JSON.parse((await environment.capture("claude")).runtimeConfig) as { sandbox?: { filesystem: { denyWrite: string[]; allowWrite?: string[] } }; permissions: { allow: string[]; deny: string[] } };
     const siblings = [join(project, "docs"), join(project, "index.ts"), join(project, "src", "lexer")];
     for (const sibling of siblings) expect(settings.permissions.deny).toContain(absoluteRule("Edit", sibling));
     expect(settings.permissions.deny).not.toContain(absoluteRule("Edit", join(project, "src")));
@@ -85,7 +98,9 @@ describe("e2e: delegating with a write scope", () => {
       expect(settings).not.toHaveProperty("sandbox");
     } else {
       expect(settings.sandbox?.filesystem.denyWrite).toEqual(siblings);
-      expect(settings.sandbox?.filesystem).not.toHaveProperty("allowWrite");
+      // The only opening: the execution's relay directory, never the execution directory
+      // (`policy.json`, evidence) and never the scope.
+      expect(settings.sandbox?.filesystem.allowWrite).toEqual([executionArtifactPaths(environment.executionsRoot, spawned.executionId).relayDirectory]);
     }
     expect(settings.permissions.allow.filter((rule) => rule.startsWith("Edit(") && rule.includes(environment.executionsRoot))).toEqual([]);
   });

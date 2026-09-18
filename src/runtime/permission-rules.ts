@@ -252,9 +252,7 @@ export function codexSandboxLines(input: RuntimePermissionInput): readonly strin
   const { policy } = input;
   // The scope replaces the workspace as what Codex may write — never widens it. Codex
   // enforces `writable_roots` in its own sandbox, so this line alone is the enforcement.
-  const writableRoots = policy.workspaceMode === "workspace-write"
-    ? [...(policy.writeScope ?? [policy.workspace]), join(input.memoryRoot, "private", policy.role)]
-    : [];
+  const writableRoots = codexWriteRoots(input);
   return Object.freeze([
     // Nothing in a delegated execution should need an approval prompt: the policy already
     // decided what is allowed, and a prompt in a background pane just hangs forever.
@@ -274,6 +272,59 @@ export function codexSandboxLines(input: RuntimePermissionInput): readonly strin
     `prefix = ["paseo"]`,
     "allow = false",
     "",
+  ]);
+}
+
+/** Name of the one permission profile ALP hands Codex on argv. */
+export const CODEX_PERMISSION_PROFILE = "alp";
+
+/**
+ * Write roots of a launch, the same list `codexSandboxLines` records: the scope (or the
+ * whole workspace) plus the role's private memory, and nothing for a read-only role.
+ */
+function codexWriteRoots(input: RuntimePermissionInput): readonly string[] {
+  const { policy } = input;
+  return policy.workspaceMode === "workspace-write"
+    ? [...(policy.writeScope ?? [policy.workspace]), join(input.memoryRoot, "private", policy.role)]
+    : [];
+}
+
+/**
+ * The Codex sandbox, as `-c` overrides — the only form Codex reads from ALP (the config
+ * file the adapter writes is ALP's own record; measured 2026-09-18 on codex-cli 0.154.0,
+ * `plans/260918-0700-execution-relay/research/alp-inside-sandbox.md`).
+ *
+ * A `default_permissions` profile wins over `sandbox_mode` outright, and under it a path is
+ * writable only when listed: the relay directory (where `alp` inside the sandbox leaves its
+ * request — the one opening under the executions root), the write roots, and for a
+ * `workspace-write` role the temp directories Codex's own mode opens. `.git`, `.agents` and
+ * `.codex` under each write root stay read-only, again as Codex's own mode keeps them. An
+ * entry created *beside* a scope is refused too, which is what makes `writeScope` `enforced`
+ * on this runtime. `approval_policy = "never"`: the policy already decided, and a prompt in
+ * a background pane hangs forever — the interactive session runs the same profile, with only
+ * the prompts gone.
+ */
+export function codexPermissionOverrides(input: RuntimePermissionInput & {
+  readonly relayDirectory: string;
+  readonly tmpdir: string | undefined;
+}): readonly string[] {
+  const writeRoots = codexWriteRoots(input);
+  type Entry = readonly [path: string, access: "read" | "write"];
+  const entries: readonly Entry[] = [
+    [":root", "read"],
+    [input.relayDirectory, "write"],
+    ...(input.policy.workspaceMode === "workspace-write"
+      ? [["/tmp", "write"] satisfies Entry, ...(input.tmpdir ? [[input.tmpdir, "write"] satisfies Entry] : [])]
+      : []),
+    ...writeRoots.map((root): Entry => [root, "write"]),
+    ...writeRoots.flatMap((root): Entry[] =>
+      [".git", ".agents", ".codex"].map((protectedName): Entry => [join(root, protectedName), "read"])),
+  ];
+  const table = `{${entries.map(([path, access]) => `${tomlString(path)}=${tomlString(access)}`).join(",")}}`;
+  return Object.freeze([
+    "-c", `default_permissions=${tomlString(CODEX_PERMISSION_PROFILE)}`,
+    "-c", `permissions.${CODEX_PERMISSION_PROFILE}.filesystem=${table}`,
+    "-c", `approval_policy="never"`,
   ]);
 }
 

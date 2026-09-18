@@ -3,7 +3,7 @@ import { defaultAutoCompactTokens } from "../agents/model-context";
 import { agentRegistry } from "../agents/registry";
 import { memoryRoot as resolveMemoryRoot } from "../state-paths";
 import { atomicRuntimeFile, baseRuntimeEnvironment, compactBridgeEnabled, hookCommand, resolveRuntimeCommand, runtimeSkillRoots, taskArguments, writeRuntimeContextFiles } from "./adapter-files";
-import { codexMcpOverrides, codexSandboxLines, tomlString } from "./permission-rules";
+import { codexMcpOverrides, codexPermissionOverrides, codexSandboxLines, tomlString } from "./permission-rules";
 import type { PrepareRuntimeInput, RuntimeAdapter, RuntimeHealth, RuntimeLaunchSpec } from "./runtime-adapter";
 import { hookInvocation, renderHookCommand } from "./hook-command";
 
@@ -176,13 +176,18 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
         // Granted MCP servers. Codex has no in-process subagent, so a `subagents` grant is
         // simply not translated here — §4.6: subagent là tối ưu hoá, không phải điều kiện.
         ...codexMcpOverrides(policy),
-        // Đối xứng với `--dangerously-skip-permissions` của Claude: phiên interactive bỏ approval
-        // và sandbox. `-s` bị bỏ đi chứ không để lẫn — Codex không báo lỗi khi có cả hai (chỉ
-        // `--approve-for-me` mới khai `conflicts_with`), cờ bypass thắng và `-s` thành dòng chết
-        // nói sai về chế độ đang chạy. Delegate luôn interactive=false nên vẫn đi nhánh `-s`.
-        ...(input.interactive
-          ? ["--dangerously-bypass-approvals-and-sandbox"]
-          : ["-s", policy.workspaceMode]),
+        // Sandbox thật của launch này — cho cả interactive lẫn delegated. Không `-s`: profile
+        // thắng `sandbox_mode` trọn vẹn nên `-s` chỉ là dòng chết nói sai về chế độ đang chạy.
+        // Không `--dangerously-bypass-approvals-and-sandbox` cho phiên interactive nữa: đối
+        // xứng với `--dangerously-skip-permissions` của Claude là bỏ *prompt*, không bỏ sandbox.
+        ...codexPermissionOverrides({
+          policy,
+          memoryRoot: this.memoryRoot(),
+          allRoles: agentRegistry.list().map((definition) => definition.id),
+          runtimeDirectory: artifacts.runtimeDirectory,
+          relayDirectory: artifacts.relayDirectory,
+          tmpdir: this.env.TMPDIR,
+        }),
         // Measured on codex-cli 0.149.0: a positional PROMPT becomes a `role: user` message,
         // i.e. turn 1. Interactive must not have one — identity reaches the model as a
         // `role: developer` message from the SessionStart hook, ahead of the user's turn.

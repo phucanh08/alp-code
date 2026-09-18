@@ -136,12 +136,16 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
           sandboxed: this.sandboxAvailable(),
           ...(denyPaths.length === 0 ? {} : { writeScopeDenyPaths: denyPaths }),
         }),
+        // `allowWrite` opens exactly one directory outside the workspace: where `alp` inside
+        // the sandbox leaves its relay request (measured 2026-09-18: a write beside the
+        // workspace is refused unless its directory is listed). `denyWrite` still beats it,
+        // and the relay directory is never inside a workspace, so the scope is untouched.
         ...(policy.workspaceMode === "read-only" && this.sandboxAvailable() ? {
           sandbox: {
             enabled: true,
             failIfUnavailable: true,
             allowUnsandboxedCommands: false,
-            filesystem: { denyWrite: [capsule.activeWorkspace] },
+            filesystem: { denyWrite: [capsule.activeWorkspace], allowWrite: [artifacts.relayDirectory] },
           },
         } : {}),
         ...(denyPaths.length > 0 && this.sandboxAvailable() ? {
@@ -149,7 +153,7 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
             enabled: true,
             failIfUnavailable: true,
             allowUnsandboxedCommands: false,
-            filesystem: { denyWrite: [...denyPaths] },
+            filesystem: { denyWrite: [...denyPaths], allowWrite: [artifacts.relayDirectory] },
           },
         } : {}),
       }, null, 2)}\n`,

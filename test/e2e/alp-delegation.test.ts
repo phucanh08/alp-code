@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { agentRegistry } from "../../src/agents/registry";
 import { DelegationService, InMemoryDelegationExecutionStore } from "../../src/delegation/delegation-service";
+import { executionArtifactPaths } from "../../src/execution/execution-store";
 import { cleanupEnvironments, createE2eEnvironment, createMaterializedRoot, type E2eEnvironment } from "./harness";
 
 const SEARCH_OUTPUT = "Entrypoint located at index.ts:1 — `export const entrypoint`.";
@@ -61,8 +62,13 @@ describe("e2e: specialist delegation", () => {
       activeWorkspace: environment.project,
       outputContract: { name: agentRegistry.get("search").output.name },
     });
-    // Delegated specialists are read-only, so the runtime is pinned to a read-only sandbox.
-    expect(capture.argv).toContain("read-only");
+    // Delegated specialists are read-only, so the profile Codex reads lists the workspace
+    // in no `"write"` entry — only the execution's relay directory is writable.
+    const profile = capture.argv.find((argument) => argument.startsWith("permissions.alp.filesystem="))!;
+    expect(profile).toBeDefined();
+    expect(profile).not.toContain(`${JSON.stringify(environment.project)}="write"`);
+    expect(profile).toContain(`${JSON.stringify(executionArtifactPaths(environment.executionsRoot, capture.env.ALP_DELEGATION_EXECUTION_ID!).relayDirectory)}="write"`);
+    expect(capture.argv).not.toContain("-s");
     expect(capture.env.ALP_READONLY_DIRS).toBe(environment.project);
   });
 

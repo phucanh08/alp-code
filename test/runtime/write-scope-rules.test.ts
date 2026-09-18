@@ -135,11 +135,13 @@ describe("runtime adapters — a scoped workspace-write launch", () => {
       enabled: true,
       failIfUnavailable: true,
       allowUnsandboxedCommands: false,
-      filesystem: { denyWrite: siblings },
+      // `allowWrite` opens exactly one directory outside the workspace — the relay directory
+      // (measured 2026-09-18, `research/alp-inside-sandbox.md`) — and never the scope: the
+      // scope is still expressed by what is denied beside it.
+      filesystem: { denyWrite: siblings, allowWrite: [prepared.artifacts.relayDirectory] },
     });
     for (const sibling of siblings) expect(settings.permissions.deny).toContain(absoluteRule("Edit", sibling));
     expect(settings.permissions.deny).not.toContain(absoluteRule("Edit", join(project, "src")));
-    expect(settings.sandbox.filesystem).not.toHaveProperty("allowWrite");
     // The runtime directory under the executions root is *read* (task, capsule); nothing
     // there is ever granted for writing, by rule or by sandbox.
     expect(settings.permissions.allow.filter((rule: string) => rule.startsWith("Edit(") && rule.includes(executionsRoot))).toEqual([]);
