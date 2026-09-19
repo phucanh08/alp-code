@@ -23,6 +23,10 @@ Agent trong ALP là một role có definition, không phải một model process
 
 `main` **không ghi được vào workspace**: nó không cầm `Write`/`Edit` và không khai write root nào. Mọi thay đổi file đi qua `worker` — vai duy nhất khai `writeRoots: ["."]`. Đây là một ranh giới kiểm được ở lớp policy, không phải một câu trong prompt: một `main` cố ghi bị `PolicyEngine` từ chối với `WORKSPACE_NOT_GRANTED`, và `alp` hạ luôn phiên `main` xuống `read-only` kể cả trong project đã đăng ký.
 
+### Vì sao `main` không commit
+
+Read-only của `main` phủ **cả `.git`**: `git commit` từ phiên `main` trả `fatal: Unable to create '.git/index.lock': Operation not permitted`, và đó là chủ ý, không phải sandbox hỏng. Principal duyệt commit không đổi cái ghế này ghi được gì — nó đổi *ai được nhờ ghi*. Đường đi là `main` giao `worker` một task riêng: nêu rõ principal đã duyệt, nhánh, file cần stage, message chính xác, có push hay không; `worker` commit, báo hash; `main` đọc `alp delegation evidence` thấy item `change` mang commit đó rồi mới báo lại principal. Xem thêm [Giao việc](../../guides/delegation/#commit-đi-qua-worker).
+
 ## Sáu nhóm capability
 
 1. **Tools:** tên tool role được gọi.
@@ -76,7 +80,7 @@ Trên Claude, ranh giới này là ACL thật. Trên Codex nó là ràng buộc 
 
 ## Workspace của phiên main
 
-`main` nhận `workspace-write` khi project đã được đăng ký bằng `alp init`. Cwd chưa đăng ký là read-only. Delegated role còn bị giới hạn bởi workspace mode và roots của chính execution đó.
+Phiên `main` luôn `read-only`, kể cả trong project đã `alp init` — vai này không khai write root nào nên `alp` không xin `workspace-write` cho nó. Đăng ký project là **trần** cho con: `worker` chỉ nhận `workspace-write` trong project đã đăng ký; cwd lạ thì mọi execution đều read-only. Delegated role còn bị giới hạn bởi workspace mode và roots của chính execution đó.
 
 ## Kiểm agent trước khi chạy
 

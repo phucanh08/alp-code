@@ -144,6 +144,18 @@ sách cache quen thuộc dưới `$HOME`, cái nào không có trên máy thì b
 ngoài chính nó cho người clone. Đường nào chứa hoặc nằm trong workspace cũng bị từ chối lúc
 giao việc.
 
+## Commit đi qua `worker`
+
+`main` không commit được, kể cả sau khi bạn duyệt: workspace của nó read-only **cả `.git`**, nên `git commit` từ `main` trả `Operation not permitted`. Đó là thiết kế — cái ghế nói chuyện với bạn không cầm bút, và commit là một nhát bút. Khi bạn duyệt, `main` giao `worker` một task riêng:
+
+```bash
+alp delegate worker --require-evidence change -- "Principal approved this commit. On branch
+fix/parser, stage src/parser/index.ts and test/parser.test.ts only, commit with message
+'fix(parser): không nuốt dấu đóng ngoặc' and report the hash. Do not push."
+```
+
+Task phải nêu rõ: đã duyệt, nhánh, file cần stage, message chính xác, và có push hay không — push là một lần duyệt riêng. `worker` commit và báo hash; `main` đọc `alp delegation evidence` thấy item `change` mang commit đó rồi mới báo bạn. Nếu `main` đưa lệnh `git commit` cho bạn chạy tay thay vì giao `worker`, đó là `main` chưa đọc đúng vai của nó.
+
 ## Trần và hạn của một phiên
 
 Trần là cố định trong ALP, không sửa bằng config:

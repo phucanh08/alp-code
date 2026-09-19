@@ -16,7 +16,7 @@ Nguồn kiểm chứng chính: [`src/cli/`](https://github.com/phucanh08/alp-cod
 
 **Triệu chứng:** Agent có thể phân tích nhưng không được sửa file.
 
-**Nguyên nhân thường gặp:** cwd chưa đăng ký; ALP cố ý cho `main` read-only ở project lạ.
+**Nguyên nhân:** đây là thiết kế — `main` không cầm `Write`/`Edit` và phiên của nó luôn read-only, kể cả trong project đã `alp init`. Mọi thay đổi file đi qua `worker`; `main` giao việc chứ không tự sửa. Nếu **`worker`** cũng không ghi được thì cwd chưa đăng ký:
 
 ```bash
 cd ~/code/my-app
@@ -25,6 +25,12 @@ alp
 ```
 
 Kiểm output `READY` của init và bảo đảm mở phiên từ đúng project canonical.
+
+## `main` không commit được sau khi đã duyệt
+
+**Triệu chứng:** principal duyệt commit, `main` chạy `git commit` và nhận `fatal: Unable to create '.git/index.lock': Operation not permitted`; hoặc `main` đưa lệnh `git commit` cho bạn chạy tay.
+
+**Nguyên nhân:** read-only của `main` phủ cả `.git`, có chủ ý. Duyệt không đổi quyền ghi của ghế đó — nó đổi ai được nhờ ghi. Đường đúng: `main` giao `worker` một task commit riêng (nêu rõ đã duyệt, nhánh, file, message, có push hay không), `worker` báo hash, `main` kiểm `alp delegation evidence` rồi báo lại. Xem [Commit đi qua `worker`](../../guides/delegation/#commit-đi-qua-worker). Không có cấu hình nào mở `.git` cho `main`; nếu `main` cứ tự thử `git commit`, đó là prompt của vai chưa cập nhật — `alp update`.
 
 ## Runtime flag bị từ chối
 

@@ -8,6 +8,12 @@ description: Thao tác git với conventional commit — stage, quét secret, t�
 Skill này cần `Write`/`Edit` và `Bash`. Execution policy không cấp đủ thì chỉ đọc được trạng thái
 repo, không commit được.
 
+**`main` không commit được, kể cả khi principal đã duyệt**: workspace của nó read-only *cả
+`.git`*, nên `git commit` trả `Operation not permitted` — đó là thiết kế. `main` dùng skill này
+để đọc trạng thái (`--stat`, `log`, `diff`) và để **viết task giao `worker` commit**: nêu rõ
+principal đã duyệt, nhánh, file cần stage, message chính xác, và có push hay không (xem skill
+`delegation`, mục "Commit goes through `worker` too"). `worker` là người chạy quy trình dưới đây.
+
 ## Cổng chặn — đọc trước mọi thứ khác
 
 **Không commit, không push, trừ khi principal yêu cầu** (HOUSE-RULES §1.3).

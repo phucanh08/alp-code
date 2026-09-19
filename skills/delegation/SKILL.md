@@ -38,6 +38,24 @@ A `worker` task is one cut of work, stated so that it can be checked: what is in
 the result should be, and how it will be verified. `worker` delegates to nobody — if it would
 have to go ask `search` halfway through, the cut was wrong, not its grants.
 
+## Commit goes through `worker` too
+
+`main`'s workspace is read-only *including `.git`*: `git commit` from `main` fails with
+`Operation not permitted`, and that is the design, not a broken sandbox. Principal approval
+does not change what the seat can write — it changes who may be asked to write. So when the
+principal approves a commit or push, hand it to `worker` as a task of its own:
+
+```bash
+alp delegate worker --require-evidence change -- "Principal approved this commit. On branch
+fix/parser, stage src/parser/index.ts and test/parser.test.ts only, commit with message
+'fix(parser): không nuốt dấu đóng ngoặc' and report the hash. Do not push."
+```
+
+Name the approval, the branch, the files, and the exact message; say whether a push was
+approved. Then `wait`, read the hash from the worker's report, check `evidence` shows a
+`change` item carrying that commit, and only then tell the principal it is committed. A
+push is a separate approval and a separate line in the task.
+
 Do not invoke runtime-specific delegation tools directly. In particular, do not call
 `paseo`, `create_agent`, or `spawn_agent` to delegate ALP work.
 
