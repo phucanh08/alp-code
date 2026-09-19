@@ -27,3 +27,7 @@ node_modules/
 
 # Artifact phát hành do scripts/pack-release.cjs dựng.
 /build/
+
+# Bản chép tạm của fixture live (scripts/live-*.cjs) — phải nằm trong workspace để `alp delegate`
+# chấp nhận, nên không ở $TMPDIR; mỗi bản là một git repo riêng và tự xoá khi xong.
+.alp-live/

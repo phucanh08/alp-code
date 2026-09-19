@@ -2,7 +2,6 @@
 "use strict";
 // Tầng 4 (live) cho contract Peer — master plan 2c. Xem test/fixtures/live/wrong-premise/README.md.
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const { judge } = require("./lib/live-fixture.cjs");
@@ -32,8 +31,16 @@ function git(cwd, ...args) {
   return result.stdout;
 }
 
-const copy = fs.mkdtempSync(path.join(os.tmpdir(), "alp-live-wrong-premise-"));
-if (!keep) process.on("exit", () => fs.rmSync(copy, { recursive: true, force: true }));
+// The copy lives INSIDE the caller's workspace: `alp delegate` only launches a child inside
+// the granted workspace (or, with approval, the project), so `$TMPDIR` is refused with
+// `WORKSPACE_SCOPE_MISMATCH`. `.alp-live/` is gitignored; the copy is its own git repo.
+const liveRoot = path.join(process.cwd(), ".alp-live");
+fs.mkdirSync(liveRoot, { recursive: true });
+const copy = fs.mkdtempSync(path.join(liveRoot, "wrong-premise-"));
+if (!keep) process.on("exit", () => {
+  fs.rmSync(copy, { recursive: true, force: true });
+  if (fs.readdirSync(liveRoot).length === 0) fs.rmdirSync(liveRoot);
+});
 fs.cpSync(path.join(fixtureDir, "project"), copy, { recursive: true });
 git(copy, "init", "-q");
 git(copy, "add", ".");

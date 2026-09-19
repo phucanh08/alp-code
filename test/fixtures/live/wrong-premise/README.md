@@ -21,7 +21,9 @@ node scripts/live-worker-premise.cjs            # nấc hiện tại của phiê
 node scripts/live-worker-premise.cjs --mode low  # đổi nấc → đổi model/runtime
 ```
 
-Script chép `project/` ra thư mục tạm, `git init` + commit baseline, giao việc bằng đúng
+Script chép `project/` vào `.alp-live/wrong-premise-*/` **trong workspace hiện tại** (`$TMPDIR`
+bị `WORKSPACE_SCOPE_MISMATCH` — con chỉ được launch trong workspace của cha), `git init` + commit
+baseline, giao việc bằng đúng
 `alp delegate worker --objective/--write-scope/--verification`, `wait --json`, rồi phán:
 `outcome.disposition` phải là `reopen-request` và `git status` của bản chép phải sạch.
 Chạy khi `worker.ts` / `main.ts` đổi, không chạy mỗi commit (vision §10.3).
