@@ -24,6 +24,17 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   trong workspace. `policy.json` có thêm trường, nên execution phóng bởi 0.15 còn chạy dở
   lúc nâng cấp sẽ trượt tamper check ở hook Stop (như mọi lần thêm trường trước).
 
+- **Evidence giữ đuôi của tool result** (GitHub #26). Bridge Claude và Codex trước đây chỉ
+  đọc `is_error` từ `tool_result`, nên `alp delegation evidence` chỉ nói được `Bash` chứ
+  không nói test pass hay fail — cha phải mở log của backend. Nay mỗi tool call trong
+  `evidence.json` (và trong Thread history) mang `result: { digest, bytes, tail }`: digest
+  sha256 của toàn bộ output **sau redaction**, kích thước, và 2 KB cuối. Codex không có cờ
+  lỗi: bridge đọc `metadata.exit_code` trong envelope của shell. Text view của `evidence` in
+  summary + `· error` + 3 dòng cuối cho call lỗi; `--json` có nguyên đuôi. `wait --json` có
+  thêm `evidence.toolCalls` và `evidence.toolErrors[]` (`name`, `summary`, `tail`, tối đa 5)
+  để cha thấy "con nói done, test nói fail" mà không gọi thêm lệnh. Entry ghi trước khi có
+  trường này đọc là vắng `result`.
+
 ### Sửa
 
 - **Con `--background` có relay** (GitHub #24). Trước đây `alp delegate --background` trả về

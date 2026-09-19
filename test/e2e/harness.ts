@@ -136,6 +136,16 @@ if (process.env.ALP_E2E_WRITE_FILE) {
       JSON.stringify({ type: "user", uuid: "u2", parentUuid: "a1", timestamp: at, ...base, message: { role: "user", content: [
         { type: "tool_result", tool_use_id: "toolu_1", content: "ok" },
       ] } }),
+      // When asked, a failing test run after the write: the shape GitHub #26 wants the
+      // parent to see without opening the backend log.
+      ...(process.env.ALP_E2E_TOOL_ERROR ? [
+        JSON.stringify({ type: "assistant", uuid: "a2", parentUuid: "u2", timestamp: at, ...base, message: { id: "msg_e2e_2", role: "assistant", usage, content: [
+          { type: "tool_use", id: "toolu_2", name: "Bash", input: { command: "npm test" } },
+        ] } }),
+        JSON.stringify({ type: "user", uuid: "u3", parentUuid: "a2", timestamp: at, ...base, message: { role: "user", content: [
+          { type: "tool_result", tool_use_id: "toolu_2", is_error: true, content: "FAIL src/parser/new.test.ts\\nTests: 1 failed, 2 passed" },
+        ] } }),
+      ] : []),
     ].join("\\n") + "\\n");
     writeFileSync(
       join(process.env.ALP_EXECUTION_ROOT, executionId, "context", "runtime-session.json"),

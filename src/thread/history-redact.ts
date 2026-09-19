@@ -77,6 +77,22 @@ export function truncateUtf8(text: string, maxBytes: number): string {
   return `${text.slice(0, end)}${marker}`;
 }
 
+/** Như `truncateUtf8` nhưng giữ **đuôi**: phần cuối của output là chỗ kết quả nằm. */
+export function tailUtf8(text: string, maxBytes: number): string {
+  if (Buffer.byteLength(text, "utf8") <= maxBytes) return text;
+  const marker = "[truncated]… ";
+  const budget = Math.max(0, maxBytes - Buffer.byteLength(marker, "utf8"));
+  let bytes = 0;
+  let start = text.length;
+  for (const char of [...text].reverse()) {
+    const size = Buffer.byteLength(char, "utf8");
+    if (bytes + size > budget) break;
+    bytes += size;
+    start -= char.length;
+  }
+  return `${marker}${text.slice(start)}`;
+}
+
 /** Redact rồi cắt — theo thứ tự đó, để một token bị cắt đôi không lọt qua regex. */
 export function sanitizeText(text: string, maxBytes: number): string {
   return truncateUtf8(redactSecrets(text).text, maxBytes);

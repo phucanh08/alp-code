@@ -46,13 +46,29 @@ describe("CodexHistoryBridge", () => {
       ["assistant", "m3"],
     ]);
     const texts = JSON.stringify(delta.entries);
-    for (const forbidden of ["system rules", "environment_context", "opaque", "3:teh", "eyJhbGciOiJIUzI1NiJ9"]) {
+    for (const forbidden of ["system rules", "environment_context", "opaque", "eyJhbGciOiJIUzI1NiJ9"]) {
       expect(texts).not.toContain(forbidden);
     }
     expect(texts).toContain(REDACTED);
     expect(delta.entries[3]).toMatchObject({ kind: "change", workspace: "/project", paths: ["README.md"] });
-    expect(delta.entries[1]).toMatchObject({ kind: "tool", name: "shell", callId: "call_1" });
+    // Output của tool đi vào `result` (GitHub #26): digest + đuôi, không phải body của entry.
+    expect(delta.entries[1]).toMatchObject({ kind: "tool", name: "shell", callId: "call_1", isError: false, result: { bytes: 5, tail: "3:teh" } });
+    expect(delta.entries[2]).toMatchObject({ kind: "tool", name: "apply_patch", result: { tail: "Done" } });
     expect(delta.cursor).toEqual({ transcriptPath, lineOffset: 14, lastNativeId: "m3" });
+  });
+
+  it("reads exit_code out of a shell output envelope and redacts the output", async () => {
+    const envelope = JSON.stringify({ output: "npm ERR! token=ghp_abcdefghijklmnopqrstuvwxyz0123456789\nTests: 1 failed", metadata: { exit_code: 1, duration_seconds: 0.4 } });
+    const lines = (await readFile(FIXTURE, "utf8")).replace('"output": "3:teh"', `"output": ${JSON.stringify(envelope)}`);
+    expect(lines).not.toBe(await readFile(FIXTURE, "utf8"));
+    const { bridge, execution } = await harness(lines);
+    const delta = await bridge.collectDelta({ execution, cursor: null });
+    const tool = delta.entries[1];
+    expect(tool.kind).toBe("tool");
+    if (tool.kind !== "tool") return;
+    expect(tool.isError).toBe(true);
+    expect(tool.result?.tail).toBe(`npm ERR! token=${REDACTED}\nTests: 1 failed`);
+    expect(JSON.stringify(delta.entries)).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz0123456789");
   });
 
   it("is partial when the CLI version leaves the pin, and when a response item has an unknown shape", async () => {

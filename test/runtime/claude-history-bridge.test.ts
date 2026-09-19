@@ -53,16 +53,38 @@ describe("ClaudeHistoryBridge", () => {
       ["tool", "a2#0"],
       ["assistant", "a4#0"],
     ]);
-    // Bỏ: isMeta, slash command, thinking, sidechain, tool_result, dòng housekeeping.
+    // Bỏ: isMeta, slash command, thinking, sidechain, dòng housekeeping. `tool_result` không
+    // thành entry riêng — nó gắn vào entry tool cùng lô.
     const texts = JSON.stringify(delta.entries);
-    for (const forbidden of ["injected", "/clear", "secret reasoning", "sidechain noise", "File written"]) {
+    for (const forbidden of ["injected", "/clear", "secret reasoning", "sidechain noise"]) {
       expect(texts).not.toContain(forbidden);
     }
     expect(delta.entries[3]).toMatchObject({ kind: "change", workspace: "/project", paths: ["/project/README.md"], commit: null });
-    // Tool bị lỗi ở lô này được đánh dấu ngược lên.
-    expect(delta.entries[2]).toMatchObject({ kind: "tool", name: "Write", callId: "toolu_1", isError: false });
-    expect(delta.entries[4]).toMatchObject({ kind: "tool", name: "Bash", callId: "toolu_2", isError: true });
+    // Result ở lô này đi ngược lên entry tool: cờ lỗi và đuôi output (GitHub #26).
+    expect(delta.entries[2]).toMatchObject({ kind: "tool", name: "Write", callId: "toolu_1", isError: false, result: { bytes: 12, tail: "File written" } });
+    expect(delta.entries[4]).toMatchObject({ kind: "tool", name: "Bash", callId: "toolu_2", isError: true, result: { tail: "cat: /nonexistent: No such file" } });
+    const digest = delta.entries[2].kind === "tool" ? delta.entries[2].result?.digest : undefined;
+    expect(digest).toMatch(/^[0-9a-f]{64}$/);
     expect(delta.cursor).toEqual({ transcriptPath, lineOffset: 11, lastNativeId: "a4#0" });
+  });
+
+  it("keeps only a bounded, redacted tail of a tool result", async () => {
+    const big = `${"x".repeat(5000)}\nAPI_KEY=supersecretvalue123\nTests: 3 passed`;
+    const line = JSON.stringify({
+      type: "user", uuid: "u9", parentUuid: "a2", timestamp: "2026-09-11T10:00:05.000Z", version: "2.1.268", sessionId: "sess-claude-1", isMeta: false, isSidechain: false,
+      message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_2", content: [{ type: "text", text: big }] }] },
+    });
+    const { bridge, execution } = await harness(`${await readFile(FIXTURE, "utf8")}${line}\n`);
+    const delta = await bridge.collectDelta({ execution, cursor: null });
+    const tool = delta.entries[4];
+    expect(tool.kind).toBe("tool");
+    if (tool.kind !== "tool") return;
+    expect(tool.result).toBeDefined();
+    expect(Buffer.byteLength(tool.result!.tail, "utf8")).toBeLessThanOrEqual(2048);
+    expect(tool.result!.tail.startsWith("[truncated]… ")).toBe(true);
+    expect(tool.result!.tail.endsWith("Tests: 3 passed")).toBe(true);
+    expect(tool.result!.tail).not.toContain("supersecretvalue123");
+    expect(tool.result!.bytes).toBeGreaterThan(5000);
   });
 
   it("redacts secrets before anything leaves the bridge", async () => {
