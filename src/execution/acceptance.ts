@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { atomicRuntimeFile } from "../runtime/adapter-files";
 import { sanitizeText } from "../thread/history-redact";
 import { isTerminalNodeStatus, type AcceptanceDecision, type ExecutionGraphDocument, type ExecutionNode } from "./graph/types";
+import type { OutcomeDisposition } from "./outcome";
 
 export { TASK_EXCERPT_MAX_CHARS, taskExcerpt } from "./graph/types";
 
@@ -22,6 +23,11 @@ export interface AcceptanceRecordV1 {
   readonly decision: AcceptanceDecision;
   /** Digest của `evidence.json` mà cha đã nhìn khi quyết. */
   readonly evidenceDigest: string;
+  /**
+   * Disposition con khai (2a) *lúc cha quyết* — cha đã thấy `reopen-request` mà vẫn `accepted`
+   * là một sự thật đáng ghi. Vắng ở bản ghi trước 2a; đọc là `unknown`.
+   */
+  readonly disposition?: OutcomeDisposition;
   /** Đã redact như history: phán quyết đi vào handoff của lần chạy sau. */
   readonly reasons: readonly string[];
   readonly decidedAt: string;
@@ -42,6 +48,7 @@ export async function writeAcceptanceRecord(executionsRoot: string, record: Acce
     acceptedByExecutionId: record.acceptedByExecutionId,
     decision: record.decision,
     evidenceDigest: record.evidenceDigest,
+    disposition: record.disposition ?? "unknown",
     reasons: record.reasons.map((reason) => sanitizeText(reason, ACCEPTANCE_REASON_MAX_BYTES)),
     decidedAt: record.decidedAt,
   };

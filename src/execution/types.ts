@@ -18,6 +18,7 @@ import type {
 import type { LaunchScope, PolicyDecision } from "../policy/types";
 import type { RuntimeEnforcementCapabilitiesV1 } from "../runtime/capabilities";
 import type { ApprovalRecordV1, SessionApprovals } from "./approvals";
+import type { ExecutionOutcome } from "./outcome";
 import type { ThreadContextHandoff } from "../thread/context-types";
 import type { WorkflowExecutionState } from "../workflow/types";
 import type { WorkflowRunStatus } from "../workflow/types";
@@ -184,6 +185,11 @@ export interface StoredExecutionState {
   readonly policyHash: string;
   readonly createdAt: string;
   readonly output?: unknown;
+  /**
+   * Kết cục con tự khai qua trailer của output (master plan 2a); vắng khi output không qua
+   * được validation hoặc state do `alp` cũ ghi — đọc ra là `unknown`.
+   */
+  readonly outcome?: ExecutionOutcome;
 }
 
 export interface ExecutionArtifactPaths {

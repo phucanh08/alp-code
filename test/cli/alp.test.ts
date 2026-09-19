@@ -22,10 +22,7 @@ import {
   runDelegationLifecycleCommand,
   sharedBackendStateDirectory,
 } from "../../src/cli/commands/delegate";
-import type {
-  ExecutionTreeNode,
-  ExecutionTreeView,
-} from "../../src/execution/graph/execution-graph-service";
+import type { DelegationTreeNode, DelegationTreeView } from "../../src/delegation/types";
 import { DEFAULT_EXECUTION_GRAPH_LIMITS } from "../../src/execution/graph/defaults";
 import { NO_USAGE } from "../../src/execution/usage";
 
@@ -875,7 +872,7 @@ describe("alp delegate", () => {
   });
 });
 
-function treeNode(overrides: Partial<ExecutionTreeNode> = {}): ExecutionTreeNode {
+function treeNode(overrides: Partial<DelegationTreeNode> = {}): DelegationTreeNode {
   return {
     executionId: "exec_root",
     parentExecutionId: null,
@@ -895,12 +892,13 @@ function treeNode(overrides: Partial<ExecutionTreeNode> = {}): ExecutionTreeNode
     acceptance: null,
     budget: null,
     usage: null,
+    outcome: null,
     children: [],
     ...overrides,
   };
 }
 
-function treeView(root: ExecutionTreeNode, overrides: Partial<ExecutionTreeView> = {}): ExecutionTreeView {
+function treeView(root: DelegationTreeNode, overrides: Partial<DelegationTreeView> = {}): DelegationTreeView {
   return {
     graphId: "exec_root",
     rootExecutionId: "exec_root",
@@ -920,7 +918,7 @@ function treeView(root: ExecutionTreeNode, overrides: Partial<ExecutionTreeView>
 }
 
 /** Cây ba nấc, đủ để một dòng có cả anh em lẫn con. */
-function sampleView(highlighted = "exec_root"): ExecutionTreeView {
+function sampleView(highlighted = "exec_root"): DelegationTreeView {
   const grandchild = treeNode({
     executionId: "exec_grandchild", parentExecutionId: "exec_worker", agentId: "search",
     depth: 2, status: "cancelled", requestId: "req_deep", endedAt: "2026-09-11T00:15:00.000Z",
@@ -941,7 +939,7 @@ function sampleView(highlighted = "exec_root"): ExecutionTreeView {
   return treeView(root, { executionId: highlighted });
 }
 
-function lifecycleService(view: ExecutionTreeView) {
+function lifecycleService(view: DelegationTreeView) {
   const asked: string[] = [];
   return {
     asked,
@@ -1034,6 +1032,30 @@ describe("alp delegation tree", () => {
     expect(text).toContain("USER_REQUEST · requested by principal");
     expect(text).toContain("PARENT_CANCELLED · requested by exec_worker");
     expect(text).toContain("CHILD_START_FAILED: runtime refused the task");
+  });
+
+  /**
+   * Lời con tự khai (2a) đứng cạnh `status`: `completed` + `reopen-request` là một dòng cha
+   * phải đọc khác `completed` + `done`; và con đã dừng mà không nói gì in ra `unknown`,
+   * chứ không im lặng như "đã xong".
+   */
+  it("prints the disposition each stopped node declared, unknown included", () => {
+    const reopened = treeNode({
+      executionId: "exec_reopen", parentExecutionId: "exec_root", agentId: "worker", depth: 1,
+      status: "completed", requestId: "req_r", endedAt: "2026-09-11T00:10:00.000Z",
+      outcome: { disposition: "reopen-request", reason: "premise is wrong", evidenceRefs: ["src/a.ts"] },
+    });
+    const silent = treeNode({
+      executionId: "exec_silent", parentExecutionId: "exec_root", agentId: "worker", depth: 1,
+      status: "completed", requestId: "req_s", endedAt: "2026-09-11T00:10:00.000Z",
+      outcome: { disposition: "unknown", reason: null, evidenceRefs: [] },
+    });
+    const lines = renderExecutionTree(treeView(treeNode({ children: [reopened, silent] }))).split("\n");
+
+    expect(lines.find((line) => line.includes("exec_reopen"))).toContain("completed  ·  req req_r  ·  disposition reopen-request");
+    expect(lines.find((line) => line.includes("exec_silent"))).toContain("disposition unknown");
+    // Node còn chạy chưa có gì để khai.
+    expect(lines.find((line) => line.includes("exec_root"))).not.toContain("disposition");
   });
 
   /** Một nhánh bị đồng hồ giết đọc y hệt một nhánh người dùng huỷ, nếu không nói ra. */

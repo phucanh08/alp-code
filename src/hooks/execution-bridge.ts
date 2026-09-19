@@ -7,6 +7,7 @@ import type { AgentDefinition } from "../agents/types";
 import { loadModeProfiles } from "../cli/settings";
 import { readApprovals } from "../execution/approvals";
 import { createExecutionPolicy, hashAgentDefinition, readToolchainWritePaths, readWriteScope } from "../execution/execution-policy";
+import { parseOutcome } from "../execution/outcome";
 import type { ExecutionPolicy, StoredExecutionState } from "../execution/types";
 import { WorkflowRunner } from "../workflow/workflow-runner";
 import type { WorkflowExecutionState } from "../workflow/types";
@@ -136,11 +137,15 @@ export async function finalizeExecution(input: FinalizeExecutionInput): Promise<
   const runner = new WorkflowRunner();
   const workflow = advanceToOutput(runner, definition, state.workflow);
   const result = runner.submitOutput(workflow, definition.output, input.output);
+  const output = result.validation.ok ? result.validation.value ?? input.output : undefined;
   await persistState(input, {
     ...state,
     status: result.state.status,
     workflow: result.state,
-    ...(result.validation.ok ? { output: result.validation.value ?? input.output } : {}),
+    ...(result.validation.ok ? { output } : {}),
+    // Kết cục con tự khai (master plan 2a) — đọc từ đuôi output, chỉ khi output là văn xuôi
+    // đã qua validation. Output không hợp lệ thì không có gì để tin, và `unknown` là mặc định.
+    ...(typeof output === "string" ? { outcome: parseOutcome(output) } : {}),
   });
   return {
     ok: result.validation.ok,

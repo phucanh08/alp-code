@@ -87,6 +87,12 @@ Hạn của cả phiên thì ngược lại: một mốc tuyệt đối, quá m�
 
 Khi backend báo terminal, service đọc `state.json`: **output đã validate của ALP thắng**, kết quả thô của backend chỉ là fallback khi state không đọc được. Spawn hỏng nửa chừng được ghi `failed` và **không retry** — một retry tự động sau spawn là cách tạo ra execution trùng mà không ai đếm.
 
+## Disposition: lời con tự khai, tách khỏi `status`
+
+`status: completed` nói process đã sống hết; `evidence satisfied` nói workspace có đổi. Không cái nào nói con *nghĩ* việc đã xong chưa — một worker viết "tiền đề sai, không làm" vẫn đọc như xong. Con kết thúc báo cáo bằng trailer `Disposition: done | blocked | reopen-request | dependency-request`, `Reason: <một câu>`, `Evidence: <tham chiếu>`; hook Stop đọc từ đuôi output đã validate và ghi `state.json.outcome`. `wait`/`status --json` có `outcome` khi execution đã kết thúc; `tree` in `disposition …` trên mọi node đã dừng; record acceptance giữ disposition con khai **lúc cha quyết**.
+
+Thiếu trailer, sai bảng, hay con chết trước Stop hook đều là `unknown` — **không phải `done`**. `outcome` không đi qua graph: nó đọc từ `state.json` của chính node, có ngay khi con dừng, không cần `wait` hay thu evidence; và nó vẫn là self-reported như `output` — evidence mới là thứ ALP tự quan sát.
+
 ## Lifecycle và legacy
 
 `tree`/`status`/`wait`/`cancel`/`cleanup` hỏi cây trước. Chỉ khi cây trả lời *"không có node nào cho ID này"* thì mới rơi về record legacy (execution tạo trước khi có execution graph).

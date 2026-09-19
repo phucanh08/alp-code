@@ -160,6 +160,19 @@ describe("code-native role definitions", () => {
     expect(instructions).toBe(renderInstructions(agentRegistry.get(id).instructions));
   });
 
+  /**
+   * Master plan 2a: the trailer is the one line of the worker's prose ALP parses, so the
+   * prompt has to spell its exact shape — the parser in `execution/outcome.ts` and this rule
+   * are two halves of one contract.
+   */
+  it("tells the worker the exact trailer the outcome parser reads", () => {
+    const instructions = renderInstructions(agentRegistry.get("worker").instructions);
+    expect(instructions).toContain("Disposition: done | blocked | reopen-request | dependency-request");
+    expect(instructions).toContain("Reason:");
+    expect(instructions).toContain("Evidence:");
+    expect(instructions).toContain("recorded as `unknown`, not as done");
+  });
+
   it("returns frozen definitions and grants", () => {
     for (const definition of agentRegistry.list()) {
       expect(Object.isFrozen(definition)).toBe(true);

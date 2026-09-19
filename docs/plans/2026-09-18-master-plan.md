@@ -118,7 +118,7 @@ nhóm trước còn PR chưa merge. Cột mốc là tag, không phải "gần xo
 
 ## 7. Tiêu chí "roadmap này xong"
 
-- [ ] #24, #26 đóng bằng PR liên kết tới mục 1a–1c.
+- [x] #24, #26 đóng bằng PR liên kết tới mục 1a–1c (PR #29, #30, #31).
 - [ ] `alp delegation wait --json` trả `disposition`; fixture premise-sai trả `reopen-request`.
 - [ ] Một script không TTY chạy: mở Thread → `needs-approval` → `--approve` → `worker` commit →
       principal accept root — toàn bộ chỉ qua `alp`, không sửa file nào bằng tay.

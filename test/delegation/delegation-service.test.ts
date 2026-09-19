@@ -471,6 +471,36 @@ describe("DelegationService", () => {
   });
 
   /**
+   * Oracle: master plan 2a — the child's own word about its outcome rides on `wait`, `status`
+   * and `tree` from `state.json`, next to (not instead of) `status`. A state with no
+   * `outcome` — a child that died before its Stop hook, or one launched by a pre-2a `alp` —
+   * reads `unknown`; a running node has no outcome yet.
+   */
+  it("reports the stored disposition on wait, status and tree, and unknown when the child declared none", async () => {
+    const fixture = await serviceFixture({ root });
+    const spawned = await fixture.service.delegate(input);
+    const stateFile = executionArtifactPaths(join(root, "executions"), spawned.executionId).stateFile;
+    const outcome = { disposition: "reopen-request", reason: "premise is wrong", evidenceRefs: ["src/parser.ts"] };
+    await writeFile(stateFile, JSON.stringify({ status: "completed", output: "cannot do as written\n\nDisposition: reopen-request", outcome }));
+
+    await expect(fixture.service.wait(spawned.executionId)).resolves.toMatchObject({ status: "completed", outcome });
+    fixture.primary.reports = "completed";
+    await expect(fixture.service.status(spawned.executionId)).resolves.toMatchObject({ status: "completed", outcome });
+    const tree = await fixture.service.tree(spawned.executionId);
+    expect(tree.root.children.find((node) => node.executionId === spawned.executionId)?.outcome).toEqual(outcome);
+    expect(tree.root.outcome).toBeNull();
+
+    // Không truyền `requestId` để fixture cấp ID mới cho cả request lẫn execution.
+    const { requestId: _explicit, ...anonymous } = input;
+    const silent = await fixture.service.delegate({ ...anonymous, task: "second task" });
+    await writeFile(executionArtifactPaths(join(root, "executions"), silent.executionId).stateFile, JSON.stringify({ status: "completed", output: "done" }));
+    await expect(fixture.service.wait(silent.executionId)).resolves.toMatchObject({
+      status: "completed",
+      outcome: { disposition: "unknown", reason: null, evidenceRefs: [] },
+    });
+  });
+
+  /**
    * A spawn that fails partway must stay failed. There is nothing to retry onto — the
    * fallback that used to exist was removed with Paseo — but the tree still has to say
    * `failed` rather than leave the node at `queued`, which reads as an execution still

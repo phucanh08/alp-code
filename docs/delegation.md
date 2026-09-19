@@ -340,6 +340,41 @@ lại; `--revoke` rút. Lý do trust: lệnh chạy bằng process ALP **ngoài*
 workspace của con, env chỉ `PATH`+`HOME`; một repo lạ mang `.alp/settings.json` không được
 quyền chạy gì trên máy anh chỉ vì anh đã `alp delegate` vào nó.
 
+### Disposition: con tự nói việc kết thúc thế nào
+
+`status` nói process có sống hết không; `evidence` nói workspace có đổi không. Không cái
+nào nói **con nghĩ việc đã xong chưa** — một worker viết "không làm được vì tiền đề sai"
+vẫn là `completed` + `change satisfied`, và cha đọc prose kiểu gì cũng được (master plan 2a).
+Từ 2026-09-19 con kết thúc báo cáo bằng một trailer máy đọc được:
+
+```text
+Disposition: done | blocked | reopen-request | dependency-request
+Reason: <một câu>
+Evidence: <đường dẫn, lệnh, request ID — cách nhau bằng dấu phẩy>
+```
+
+Hook Stop (`finalizeExecution`) đọc trailer từ đuôi output **đã qua validation** và ghi
+`state.json.outcome = { disposition, reason, evidenceRefs }` (`execution/outcome.ts`).
+Trailer bắt đầu ở dòng `Disposition:` cuối cùng; `Reason:`/`Evidence:` chỉ đọc sau dòng đó,
+nên phần thân được nhắc tới chữ này. `reason` qua `history-redact`, cắt 2 000 byte;
+`evidenceRefs` tối đa 20 mục, mỗi mục 500 byte — chúng là *lời con khai*, ALP không kiểm.
+
+Bốn quy tắc đọc:
+
+- **Thiếu trailer ⇒ `unknown`, không phải `done`.** Con chết trước Stop hook, output trượt
+  validation, hay `state.json` của `alp` trước 2a — tất cả đọc là `unknown`. Cha không được
+  suy "không nói gì" thành "đã xong".
+- Giá trị ngoài bảng cũng là `unknown`, giữ `reason` để người đọc thấy con định nói gì.
+- `outcome` **không** đi qua graph: nó đọc từ `state.json` của chính node, có ngay khi con
+  dừng, không cần `wait` hay thu evidence. `wait`/`status` (`DelegationResult.outcome`) chỉ
+  có khi execution đã terminal; `tree` in `disposition …` trên mọi node đã dừng (`--json`:
+  `outcome` trên node, `null` khi chưa dừng).
+- Disposition không đổi `status`, không đổi `evaluation`, không chặn gì. Nó là câu hỏi thứ
+  ba cha phải đọc cạnh hai câu kia.
+
+Prompt `worker` khai đúng hình trailer này; ý nghĩa từng disposition (khi nào `reopen-request`,
+khi nào `dependency-request`) là mục 2c của master plan.
+
 ### `alp delegation accept|reject`: cha nghiệm thu, ALP ghi phán quyết
 
 Evidence trả lời "đã xảy ra gì"; nó chưa trả lời "cha có nhận kết quả này không". Từ
@@ -377,11 +412,14 @@ Kết quả ghi ở hai chỗ, cả hai do ALP viết:
   không đổi (một con `failed` được `accept` vẫn là `failed` — nghiệm thu không viết lại lịch
   sử). Invariants từ chối graph có `acceptance` trên node còn active hay trên root.
 - **Record**: `<executions>/<parent>/acceptance/<requestId>.json` (`AcceptanceRecordV1`, 0600,
-  atomic) mang thêm `reasons` — mỗi lý do đi qua `history-redact`, cắt ở 2 000 byte. Record nằm
+  atomic) mang thêm `reasons` — mỗi lý do đi qua `history-redact`, cắt ở 2 000 byte — và
+  `disposition`: cái con khai **lúc cha quyết** (2a), để "cha thấy `reopen-request` mà vẫn
+  `accepted`" là một sự thật ghi lại được; record trước 2a đọc là `unknown`. Record nằm
   dưới thư mục **cha**, vì phán quyết là của cha; `cleanup` con không xoá nó.
 
 Phán quyết hiện ở mọi chỗ cha nhìn: `tree` thêm `decision accepted|rejected` (hoặc
-`decision undecided` cho con đã kết thúc mà chưa ai quyết), `evidence` in dòng `decision …`,
+`decision undecided` cho con đã kết thúc mà chưa ai quyết), `accept|reject` in
+`disposition …` cạnh `evidence …` trên dòng phán quyết, `evidence` in dòng `decision …`,
 và — quan trọng nhất — **Thread context** của lần chạy sau (xem § "Phán quyết vào Thread").
 Cùng dòng `tree` còn có `usage …` và `budget …` của node (xem § "Usage và budget").
 
