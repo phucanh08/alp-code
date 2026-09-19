@@ -12,6 +12,8 @@
     "dist/src",
     "scripts",
     "!scripts/test-*.cjs",
+    "!scripts/live-*.cjs",
+    "!scripts/lib/live-fixture.cjs",
     "!scripts/cut-release.cjs",
     "!scripts/pack-release.cjs",
     "!scripts/probe-compact-hooks.cjs",

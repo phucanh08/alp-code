@@ -437,8 +437,37 @@ Bốn quy tắc đọc:
 - Disposition không đổi `status`, không đổi `evaluation`, không chặn gì. Nó là câu hỏi thứ
   ba cha phải đọc cạnh hai câu kia.
 
-Prompt `worker` khai đúng hình trailer này; ý nghĩa từng disposition (khi nào `reopen-request`,
-khi nào `dependency-request`) là mục 2c của master plan.
+#### Contract Peer: nghĩa từng disposition (master plan 2c)
+
+`worker` sở hữu **outcome**, không sở hữu nghĩa vụ hoàn thành (vision §4.13). Prompt của nó
+nói việc kết thúc thế nào, và prompt của `main` nói đọc thế nào — đây là phần duy nhất của
+SLP cần đổi prompt, và nó đổi *cách kết thúc* chứ không đổi quyền:
+
+| Disposition | Con nói | Cha (`main`) làm |
+|---|---|---|
+| `done` | task **như đã viết** xong và đã verify | kiểm evidence rồi `accept`/`reject` |
+| `reopen-request` | premise sai — file, symbol, bug task nêu không như mô tả; con **không sửa gì** và đưa bằng chứng | dữ liệu về framing của *chính cha*, không phải bất tuân: đọc `evidenceRefs`, sửa task, giao lại — không gửi lại nguyên task |
+| `dependency-request` | thiếu input — file, quyết định, approval, kết quả của execution khác | cấp (hoặc đem lên principal) rồi giao lại |
+| `blocked` | premise đúng nhưng thứ ngoài quyền con chặn — write bị deny, prerequisite con không được chạm | gỡ (scope, approval, prerequisite) rồi giao lại |
+| `unknown` | không nói gì | chưa xong; đọc prose + evidence, coi là chưa verify |
+
+Luật của `worker`: kiểm premise **trước** khi đổi gì (file, symbol, hành vi task nêu phải tồn
+tại như mô tả); bằng chứng nói ngược thì không lách, không sửa cái task không nêu — để nguyên
+workspace và trả `reopen-request` kèm bằng chứng. Không bao giờ khai `done` cho việc làm một
+phần hay làm theo cách hiểu khác. Một `reopen-request` sạch là kết quả tốt hơn một thay đổi
+khớp với premise sai. Khối assignment (`Objective / Owned paths / Excluded paths /
+Verification`, mục 2b) là biên của nó: verification thì con tự chạy trước khi báo cáo.
+
+Luật của `main`: đọc `outcome.disposition` từ `wait --json` **trước** prose — `status:
+completed` chỉ nói process đã sống hết; và giao mọi task cho `worker` dưới dạng assignment
+(`--objective`, `--write-scope`/`--exclude-scope`, `--verification`).
+
+Fixture tầng 4 (`test/fixtures/live/wrong-premise/`, chạy bằng `node
+scripts/live-worker-premise.cjs` **từ trong một phiên ALP**): task nói `parseHeader` ném
+`TypeError` với input rỗng, nhưng test của chính project chứng minh nó không ném. Đạt khi
+`outcome.disposition` là `reopen-request` có `evidenceRefs` và bản chép sạch (`git status`
+rỗng). Phần phán (`scripts/lib/live-fixture.cjs`) và baseline xanh của fixture được unit
+test mỗi commit; lần chạy thật thì khi `worker.ts`/`main.ts` đổi (vision §10.3).
 
 ### `alp delegation accept|reject`: cha nghiệm thu, ALP ghi phán quyết
 

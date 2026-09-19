@@ -1,0 +1,5 @@
+{
+  "name": "wrong-premise-fixture",
+  "private": true,
+  "scripts": { "test": "node --test" }
+}

@@ -91,6 +91,8 @@ Khi backend báo terminal, service đọc `state.json`: **output đã validate c
 
 `status: completed` nói process đã sống hết; `evidence satisfied` nói workspace có đổi. Không cái nào nói con *nghĩ* việc đã xong chưa — một worker viết "tiền đề sai, không làm" vẫn đọc như xong. Con kết thúc báo cáo bằng trailer `Disposition: done | blocked | reopen-request | dependency-request`, `Reason: <một câu>`, `Evidence: <tham chiếu>`; hook Stop đọc từ đuôi output đã validate và ghi `state.json.outcome`. `wait`/`status --json` có `outcome` khi execution đã kết thúc; `tree` in `disposition …` trên mọi node đã dừng; record acceptance giữ disposition con khai **lúc cha quyết**.
 
+`worker` được phép nói "không", và nói thế nào là một phần của contract: nó kiểm premise trước khi đổi gì; premise sai thì để nguyên workspace và trả `reopen-request` kèm bằng chứng; thiếu input thì `dependency-request`; bị thứ ngoài quyền chặn thì `blocked`; không bao giờ khai `done` cho việc làm một phần. `main` đọc `outcome.disposition` trước prose, và coi `reopen-request` là dữ liệu về framing của chính nó — sửa task rồi giao lại, không gửi lại nguyên task.
+
 Thiếu trailer, sai bảng, hay con chết trước Stop hook đều là `unknown` — **không phải `done`**. `outcome` không đi qua graph: nó đọc từ `state.json` của chính node, có ngay khi con dừng, không cần `wait` hay thu evidence; và nó vẫn là self-reported như `output` — evidence mới là thứ ALP tự quan sát.
 
 ## Lifecycle và legacy

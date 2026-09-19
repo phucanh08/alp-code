@@ -173,6 +173,28 @@ describe("code-native role definitions", () => {
     expect(instructions).toContain("recorded as `unknown`, not as done");
   });
 
+  /**
+   * Master plan 2c: the Peer contract lives in the prompt — the worker checks the premise
+   * first and answers `reopen-request` with evidence instead of working around it; the Lead
+   * reads that disposition before the prose and treats it as data about its own framing.
+   */
+  it("gives the worker the Peer contract: premise first, a wrong premise is a clean reopen-request", () => {
+    const instructions = renderInstructions(agentRegistry.get("worker").instructions);
+    expect(instructions).toContain("Check the task's premise against the workspace before you change anything");
+    expect(instructions).toContain("leave the workspace unchanged and report `reopen-request`");
+    expect(instructions).toContain("report `dependency-request` naming exactly what is missing");
+    expect(instructions).toContain("You own the outcome, not the obligation to finish");
+    expect(instructions).toContain("`Objective`, `Owned paths`, `Excluded paths`, `Verification`");
+  });
+
+  it("tells main to read the disposition before the prose and to reconcile a reopen-request", () => {
+    const instructions = renderInstructions(agentRegistry.get("main").instructions);
+    expect(instructions).toContain("Read `outcome.disposition` from `alp delegation wait --json` before you read the child's prose");
+    expect(instructions).toContain("`reopen-request` means the child found the premise wrong: it is data about your framing, not disobedience");
+    expect(instructions).toContain("`unknown` is not done");
+    expect(instructions).toContain("`--objective` for what done means");
+  });
+
   it("returns frozen definitions and grants", () => {
     for (const definition of agentRegistry.list()) {
       expect(Object.isFrozen(definition)).toBe(true);
