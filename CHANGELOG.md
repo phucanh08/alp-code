@@ -47,6 +47,20 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   hook, hay state của bản cũ đều là `unknown` — không bao giờ suy thành `done`. Prompt
   `worker` khai đúng hình trailer; ý nghĩa từng disposition là mục 2c.
 
+- **Assignment có biên** (master plan 2b). `alp delegate` thêm `--exclude-scope <path>...`
+  (bù cho `--write-scope`: cây con *bên trong* scope mà con vẫn không được ghi), và
+  `--objective <text>` / `--verification <text>` thành trường riêng của request thay vì trộn
+  vào task text. Con nhận một khối `Objective / Owned paths / Excluded paths / Verification`
+  đứng trước task (chỉ khi request có gì ngoài task; giao việc kiểu cũ đọc ra y hệt). Hai con
+  đang sống không được cùng sở hữu một path: `DelegationService` đọc `policy.json` đã ký của
+  mọi node `workspace-write` còn sống trong cùng graph và từ chối `WRITE_SCOPE_OVERLAP` khi có
+  vùng chung mà không bên nào đã loại trọn — đó là cách hai `worker` cùng đứng trong `src/`.
+  Exclusion vào `ExecutionPolicy.excludeScope` (trong `policyHash`; key chỉ có mặt khi có loại
+  trừ nên snapshot cũ giữ nguyên hash), Claude deny thêm từng entry, Codex chỉ nhận ở mức lời
+  dặn; evidence (`outsideScope`, `ambiguousNodes`) dùng cùng định nghĩa. Lỗi mới:
+  `EXCLUDE_SCOPE_NOT_FOUND` · `EXCLUDE_SCOPE_OUTSIDE_WRITE_SCOPE` ·
+  `EXCLUDE_SCOPE_COVERS_WRITE_SCOPE` · `EXCLUDE_SCOPE_ON_READ_ONLY` · `WRITE_SCOPE_OVERLAP`.
+
 ### Sửa
 
 - **Con `--background` có relay** (GitHub #24). Trước đây `alp delegate --background` trả về

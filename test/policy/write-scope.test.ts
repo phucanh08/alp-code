@@ -143,3 +143,41 @@ describe("PolicyEngine.decide — writeScope", () => {
       .toMatchObject({ kind: "deny", code: "WORKSPACE_NOT_GRANTED" });
   });
 });
+
+/**
+ * Oracle: master plan 2b — `excludeScope` is the complement of `writeScope`: each entry sits
+ * inside an owned root (the scope, or the whole workspace) without covering it, only on a
+ * write launch. What it removes is not the policy's business to approve or widen.
+ */
+describe("PolicyEngine.decide — excludeScope", () => {
+  const excluding = (writeScope: readonly string[] | undefined, excludeScope: readonly string[], options: Parameters<typeof scoped>[2] = {}) =>
+    ({ ...scoped("/project/api", writeScope, options), excludeScope });
+
+  it("allows an exclusion inside an owned root — scoped or the whole workspace", () => {
+    expect(engine.decide(excluding(["/project/api/src"], ["/project/api/src/parser"]))).toEqual({ kind: "allow" });
+    expect(engine.decide(excluding(undefined, ["/project/api/docs", "/project/api/src/parser"]))).toEqual({ kind: "allow" });
+  });
+
+  it("denies an exclusion outside every owned root, naming the entry", () => {
+    expect(engine.decide(excluding(["/project/api/src"], ["/project/api/docs"]))).toEqual({
+      kind: "deny",
+      code: "EXCLUDE_SCOPE_OUTSIDE_WRITE_SCOPE",
+      reason: expect.stringContaining("/project/api/docs"),
+    });
+    expect(engine.decide(excluding(undefined, ["/project/web"]))).toMatchObject({ kind: "deny", code: "EXCLUDE_SCOPE_OUTSIDE_WRITE_SCOPE" });
+  });
+
+  it("denies an exclusion that swallows an owned root whole", () => {
+    expect(engine.decide(excluding(["/project/api/src"], ["/project/api/src"]))).toMatchObject({ kind: "deny", code: "EXCLUDE_SCOPE_COVERS_WRITE_SCOPE" });
+    expect(engine.decide(excluding(undefined, ["/project/api"]))).toMatchObject({ kind: "deny", code: "EXCLUDE_SCOPE_COVERS_WRITE_SCOPE" });
+  });
+
+  it("denies an exclusion on a read-only launch", () => {
+    expect(engine.decide(excluding(undefined, ["/project/api/src"], { workspaceMode: "read-only" })))
+      .toMatchObject({ kind: "deny", code: "EXCLUDE_SCOPE_ON_READ_ONLY" });
+  });
+
+  it("judges the scope first: a bad scope is refused before its exclusions are looked at", () => {
+    expect(engine.decide(excluding(["/elsewhere"], ["/elsewhere/x"]))).toMatchObject({ kind: "deny", code: "WRITE_SCOPE_OUTSIDE_WORKSPACE" });
+  });
+});

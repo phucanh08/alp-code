@@ -6,7 +6,7 @@ import { agentRegistry } from "../agents/registry";
 import type { AgentDefinition } from "../agents/types";
 import { loadModeProfiles } from "../cli/settings";
 import { readApprovals } from "../execution/approvals";
-import { createExecutionPolicy, hashAgentDefinition, readToolchainWritePaths, readWriteScope } from "../execution/execution-policy";
+import { createExecutionPolicy, hashAgentDefinition, readExcludeScope, readToolchainWritePaths, readWriteScope } from "../execution/execution-policy";
 import { parseOutcome } from "../execution/outcome";
 import type { ExecutionPolicy, StoredExecutionState } from "../execution/types";
 import { WorkflowRunner } from "../workflow/workflow-runner";
@@ -99,6 +99,7 @@ async function loadExecution(input: HookExecutionInput): Promise<{
     // And the scope: signed for the same reason. A `policy.json` from before scopes existed
     // reads as `null`, which is what it meant.
     writeScope: readWriteScope(policy as unknown as Record<string, unknown>),
+    excludeScope: readExcludeScope(policy as unknown as Record<string, unknown>),
     // And the toolchain paths (GitHub #25): signed, and the machine settings may have moved
     // since the launch — the snapshot says what this execution was actually given.
     toolchainWritePaths: readToolchainWritePaths(policy as unknown as Record<string, unknown>),

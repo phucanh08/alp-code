@@ -90,6 +90,9 @@ export async function runDelegateCommand(
   let timeoutMs: number | null = null;
   let workspace = dependencies.cwd;
   const writeScope: string[] = [];
+  const excludeScope: string[] = [];
+  let objective: string | null = null;
+  let verification: string | null = null;
   const requiredEvidence: string[] = [];
   const budget: { tokens?: number; toolCalls?: number } = {};
   const task: string[] = [];
@@ -115,6 +118,13 @@ export async function runDelegateCommand(
     } else if (value === "--write-scope") {
       // Repeatable: each flag names one subtree of the workspace the child may write.
       writeScope.push(required(argv, ++index, "--write-scope requires a path"));
+    } else if (value === "--exclude-scope") {
+      // Repeatable: each flag carves one subtree out of what the child may write (2b).
+      excludeScope.push(required(argv, ++index, "--exclude-scope requires a path"));
+    } else if (value === "--objective") {
+      objective = required(argv, ++index, "--objective requires a sentence");
+    } else if (value === "--verification") {
+      verification = required(argv, ++index, "--verification requires a sentence");
     } else if (value === "--require-evidence") {
       // Repeatable: `change` or `verify:<id>`; the service validates the spelling.
       requiredEvidence.push(required(argv, ++index, "--require-evidence requires `change` or `verify:<id>`"));
@@ -146,6 +156,9 @@ export async function runDelegateCommand(
     // Only when asked for: absent means the whole workspace, and the service (not this
     // parser) is where a scope on a read-only role is refused, by policy.
     ...(writeScope.length === 0 ? {} : { writeScope }),
+    ...(excludeScope.length === 0 ? {} : { excludeScope }),
+    ...(objective === null ? {} : { objective }),
+    ...(verification === null ? {} : { verification }),
     ...(requiredEvidence.length === 0 ? {} : { requiredEvidence }),
     ...(Object.keys(budget).length === 0 ? {} : { budget }),
     metadata: {},

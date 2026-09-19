@@ -240,6 +240,71 @@ Runtime nhận scope theo cách nó cưỡng chế được:
 Không cấu hình nào của runtime chứa `~/.alp/executions/` trong danh sách ghi được, và một
 scope bị từ chối không để lại node, file hay process nào.
 
+### Assignment có biên: `--exclude-scope`, `--objective`, `--verification`, và chồng lấn
+
+Master plan 2b. `--write-scope` nói con *được* ghi gì; ba cờ này nói phần còn lại của một
+assignment — cái con **không** được ghi dù nằm trong scope, việc phải đạt, và cách nghiệm
+thu — thành **trường riêng** của `DelegationRequest` (`excludeScope`, `objective`,
+`verification`, mỗi cái `null` khi không khai) thay vì trộn vào task text rồi hy vọng con
+đọc ra:
+
+```bash
+alp delegate worker --write-scope src --exclude-scope src/parser \
+  --objective 'Lexer emits one token per literal' \
+  --verification 'npx vitest run test/lexer' \
+  -- 'Viết lại lexer'
+```
+
+`--exclude-scope <path>` (lặp được) là **bù** của scope: mỗi entry phải tồn tại
+(`EXCLUDE_SCOPE_NOT_FOUND`), nằm trong một gốc được ghi — scope đã khai, hoặc cả workspace
+khi không scope (`EXCLUDE_SCOPE_OUTSIDE_WRITE_SCOPE`), và không được *bằng* gốc đó, vì loại
+trọn scope là một scope rỗng (`EXCLUDE_SCOPE_COVERS_WRITE_SCOPE`); vai đích read-only thì
+`EXCLUDE_SCOPE_ON_READ_ONLY`. Policy xét scope trước, exclusion sau. Entry resolve, sort, bỏ
+trùng như scope và đi vào `ExecutionPolicy.excludeScope` — khác `writeScope`, key này **chỉ
+có mặt khi có loại trừ**, để mọi `policy.json` viết trước 2b giữ nguyên hash; hook bridge
+chép lại qua `readExcludeScope`, bỏ exclusion sau khi ký là "invalid or stale". Runtime:
+Claude deny thêm từng entry (`Edit(//path/**)` + `sandbox.filesystem.denyWrite`) cạnh các
+sibling của scope; **Codex chỉ nhận exclusion ở mức lời dặn** — permission profile của Codex
+không có "write trừ cây con này", nên cell này là `declared-only` và evidence là chỗ bắt
+(xem dưới).
+
+`--objective <text>` và `--verification <text>` là hai câu; câu trống là `INVALID_REQUEST`
+(bỏ cờ thay vì để trống). Cả bốn trường vào fingerprint của request — cùng task khác
+objective/exclusion là việc khác (`REQUEST_ID_CONFLICT` khi retry cùng `requestId`).
+
+Con nhận assignment bằng một khối đứng **trước** task trong prompt, đường dẫn đã canonical
+— đúng cái sandbox chặn:
+
+```text
+Objective: Lexer emits one token per literal
+Owned paths (you may write): `/ws/src`
+Excluded paths (you may not write, another execution owns them): `/ws/src/parser`
+Verification (how done is checked): npx vitest run test/lexer
+
+Viết lại lexer
+```
+
+Khối chỉ được render khi request có gì ngoài task (objective, verification hay exclusion):
+một lần giao việc chỉ có `--write-scope` đọc ra y hệt trước 2b. `taskExcerpt` trên node cây
+vẫn là task nguyên văn.
+
+**Hai con đang sống không được cùng sở hữu một path.** Sau khi giữ chỗ trong cây (để retry
+cùng request vẫn trả về con cũ), `DelegationService` đọc `policy.json` đã ký của mọi node
+`workspace-write` chưa kết thúc trong cùng graph — trừ chính nó và các tổ tiên của nó, vì
+con đứng trong scope cha là chuyện bình thường — và từ chối `WRITE_SCOPE_OVERLAP` khi có
+**vùng chung**: hai gốc được ghi mà một gốc nằm trong gốc kia (vùng chung là gốc sâu hơn; không
+scope là cả workspace), và không bên nào đã *loại trọn* vùng đó. Loại một phần không đủ. Đó
+chính là cách hai `worker` cùng đứng trong `src/`: một con `--write-scope src --exclude-scope
+src/parser`, con kia `--write-scope src/parser`. Message nêu execution đang sở hữu và ba lối
+ra: thu hẹp scope, loại bằng `--exclude-scope`, hay đợi. Node bị từ chối được thả ngay, không
+để lại file hay process. Một node đang giữ chỗ mà chưa có `policy.json` (hai `delegate` chạy
+đúng cùng lúc) chưa nhìn thấy nhau — cửa sổ vài mili-giây, ghi nhận, chưa đóng.
+
+Evidence dùng cùng định nghĩa (`src/execution/assignment.ts`: `ownsPath`, `sharedRegion`):
+`outsideScope` coi một path trong exclusion là ngoài scope, và `ambiguousNodes` không kể một
+node đã loại trọn vùng chung là "cũng có thể đã sửa". Với Codex đây là lưới duy nhất bắt một
+con ghi vào cây bị loại.
+
 ### `toolchain`: cache của SDK nằm ngoài workspace
 
 Sandbox của launch read-only hoặc có scope chặn **mọi** ghi ngoài workspace, kể cả cache mà
@@ -859,6 +924,8 @@ Cây trả thêm một lớp mã riêng, và chúng đều fail đóng:
 | `EXECUTION_GRAPH_LOCK_TIMEOUT` · `EXECUTION_GRAPH_REVISION_CONFLICT` | không lấy được lease, hoặc phát hiện lost update lúc ghi |
 | `APPROVAL_UNAVAILABLE` · `APPROVAL_DENIED` | policy cần principal trả lời mà không có surface nào hỏi được, hoặc principal đã nói "no" — xem "`--workspace` ngoài grant" ở trên |
 | `WRITE_SCOPE_ON_READ_ONLY` · `WRITE_SCOPE_NOT_FOUND` · `WRITE_SCOPE_OUTSIDE_WORKSPACE` · `WRITE_SCOPE_PROTECTED_ROOT` · `WRITE_SCOPE_EXCEEDS_PARENT` | `--write-scope` không hợp lệ — xem bảng ở "`--write-scope`" ở trên |
+| `EXCLUDE_SCOPE_ON_READ_ONLY` · `EXCLUDE_SCOPE_NOT_FOUND` · `EXCLUDE_SCOPE_OUTSIDE_WRITE_SCOPE` · `EXCLUDE_SCOPE_COVERS_WRITE_SCOPE` | `--exclude-scope` không hợp lệ — xem "Assignment có biên" ở trên |
+| `WRITE_SCOPE_OVERLAP` | Một execution đang sống trong cùng graph đã sở hữu vùng con xin ghi — thu hẹp scope, `--exclude-scope` vùng đó, hay đợi |
 
 Một node chết không đẹp còn mang mã của riêng nó — thứ `tree` in ra sau execution ID:
 `ROOT_START_FAILED` và `CHILD_START_FAILED` (backend từ chối spawn sau khi chỗ đã được giữ),

@@ -127,6 +127,15 @@ describe("ambiguousNodes", () => {
     expect(ambiguousNodes(child, [node({ workspace: "/ws/src/lib" })])).toEqual(["exec_n"]);
   });
 
+  it("excludes a writer whose exclusion carves out the meeting point (master plan 2b)", () => {
+    // N owns all of `/ws` but excluded `/ws/src`, which is exactly what C owns.
+    expect(ambiguousNodes(child, [node({ excludeScope: ["/ws/src"] })])).toEqual([]);
+    // C's own exclusion counts too.
+    expect(ambiguousNodes({ ...child, excludeScope: ["/ws/src/lib"] }, [node({ writeScope: ["/ws/src/lib"] })])).toEqual([]);
+    // An exclusion that leaves part of the meeting point shared still names N.
+    expect(ambiguousNodes(child, [node({ excludeScope: ["/ws/src/lib"] })])).toEqual(["exec_n"]);
+  });
+
   it("excludes a sandboxed read-only root active the whole time, includes a Windows root", () => {
     const root = node({ executionId: "exec_root", workspaceMode: "read-only", startedAt: "2026-09-17T09:00:00.000Z", endedAt: null });
     expect(ambiguousNodes(child, [root])).toEqual([]);
@@ -192,6 +201,8 @@ describe("outsideScope", () => {
   it("lists the changed paths that lie beside the scope, and nothing when unscoped", () => {
     expect(outsideScope(["/ws/src/a.ts", "/ws/docs/b.md", "/ws/src-old/c.ts"], ["/ws/src"], "/ws")).toEqual(["/ws/docs/b.md", "/ws/src-old/c.ts"]);
     expect(outsideScope(["/ws/src/a.ts", "/elsewhere/x"], null, "/ws")).toEqual(["/elsewhere/x"]);
+    // An excluded subtree is outside the scope even though it sits inside a root (2b).
+    expect(outsideScope(["/ws/src/a.ts", "/ws/src/parser/p.ts"], ["/ws/src"], "/ws", ["/ws/src/parser"])).toEqual(["/ws/src/parser/p.ts"]);
   });
 });
 

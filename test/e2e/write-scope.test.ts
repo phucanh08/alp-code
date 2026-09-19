@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { agentRegistry } from "../../src/agents/registry";
 import type { ModeId } from "../../src/agents/modes";
 import { DelegationService, InMemoryDelegationExecutionStore } from "../../src/delegation/delegation-service";
-import { readWriteScope } from "../../src/execution/execution-policy";
+import { readExcludeScope, readWriteScope } from "../../src/execution/execution-policy";
 import { executionArtifactPaths } from "../../src/execution/execution-store";
 import { absoluteRule } from "../../src/runtime/permission-rules";
 import { cleanupEnvironments, createE2eEnvironment, createMaterializedRoot, type E2eEnvironment } from "./harness";
@@ -22,6 +22,9 @@ async function session(environment: E2eEnvironment, executionId: string, mode: M
     .map((directory) => mkdir(directory, { recursive: true })));
   await writeFile(join(project, "docs", "guide.md"), "# guide\n");
   const root = await createMaterializedRoot(environment, { agentId: "main", executionId: "exec_root_main" });
+  // One id per delegate call: `executionId`, then `executionId_2`, `executionId_3`, …
+  let calls = 0;
+  const suffix = () => (calls === 1 ? "" : `_${calls}`);
   const service = new DelegationService({
     registry: agentRegistry,
     policy: environment.policy,
@@ -34,7 +37,7 @@ async function session(environment: E2eEnvironment, executionId: string, mode: M
     backend: environment.backend,
     executionStore: new InMemoryDelegationExecutionStore(),
     config: { mode },
-    ids: { request: () => `req_${executionId}`, execution: () => executionId },
+    ids: { request: () => `req_${executionId}${suffix()}`, execution: () => { calls += 1; return `${executionId}${suffix()}`; } },
   });
   return { service, project };
 }
@@ -116,4 +119,77 @@ describe("e2e: delegating with a write scope", () => {
     expect(await readdir(environment.executionsRoot)).toEqual(["exec_root_main"]);
     await expect(environment.capture("codex")).rejects.toMatchObject({ code: "ENOENT" });
   });
+});
+
+/**
+ * Oracle: master plan 2b "Assignment có biên" — an exclusion is the complement of the scope:
+ * Claude's sandbox denies it beside the siblings, the signed policy records it, and the child
+ * reads objective / owned / excluded / verification as separate lines before the task; two
+ * live `worker`s cannot own the same path, and the exclusion is what lets them stand side
+ * by side in the same tree.
+ */
+describe("e2e: assignment with an exclusion", () => {
+  it("denies the excluded subtree to a Claude worker and tells it the assignment", async () => {
+    const environment = await createE2eEnvironment({ output: "done" });
+    const { service, project } = await session(environment, "exec_excluded", "low");
+    const excludedPath = join(project, "src", "parser");
+
+    const spawned = await service.delegate({
+      targetRole: "worker", task: "Rewrite the lexer", workspace: project, workspaceMode: "workspace-write",
+      writeScope: ["src"], excludeScope: ["src/parser"], objective: "The lexer emits tokens", verification: "npx vitest run test/lexer",
+    });
+    await expect(service.wait(spawned.executionId)).resolves.toMatchObject({ status: "completed", output: "done" });
+
+    const policy = JSON.parse(await readFile(join(environment.executionsRoot, "exec_excluded", "policy.json"), "utf8")) as Record<string, unknown>;
+    expect(readWriteScope(policy)).toEqual([join(project, "src")]);
+    expect(readExcludeScope(policy)).toEqual([excludedPath]);
+
+    const capture = await environment.capture("claude");
+    const settings = JSON.parse(capture.runtimeConfig) as { sandbox?: { filesystem: { denyWrite: string[] } }; permissions: { deny: string[] } };
+    const denied = [join(project, "docs"), join(project, "index.ts"), excludedPath];
+    for (const entry of denied) expect(settings.permissions.deny).toContain(absoluteRule("Edit", entry));
+    expect(settings.permissions.deny).not.toContain(absoluteRule("Edit", join(project, "src", "lexer")));
+    if (process.platform !== "win32") expect(settings.sandbox?.filesystem.denyWrite).toEqual(denied);
+    // The task file wraps the task in the execution prompt; the assignment is its own block
+    // right before the task.
+    expect(capture.task).toContain([
+      "Objective: The lexer emits tokens",
+      `Owned paths (you may write): \`${join(project, "src")}\``,
+      `Excluded paths (you may not write, another execution owns them): \`${excludedPath}\``,
+      "Verification (how done is checked): npx vitest run test/lexer",
+      "",
+      "Rewrite the lexer",
+    ].join("\n"));
+  });
+
+  it("refuses a second live worker on a path the first one owns, unless the first excluded it", async () => {
+    const environment = await createE2eEnvironment({ output: "done", holdMs: 4_000, holdRoles: ["worker"] });
+    const { service, project } = await session(environment, "exec_overlap", "low");
+    const request = { targetRole: "worker", workspace: project, workspaceMode: "workspace-write" as const };
+
+    const first = await service.delegate({ ...request, task: "Own src", writeScope: ["src"] });
+    // Inside, equal, and containing: all overlap with a live `src`.
+    for (const writeScope of [["src/parser"], ["src"], undefined]) {
+      await expect(service.delegate({ ...request, task: "Also src", ...(writeScope === undefined ? {} : { writeScope }) }))
+        .rejects.toMatchObject({ code: "WRITE_SCOPE_OVERLAP", message: expect.stringContaining(first.executionId) });
+    }
+    // Beside: fine.
+    const beside = await service.delegate({ ...request, task: "Own docs", writeScope: ["docs"] });
+    expect(beside.executionId).not.toBe(first.executionId);
+    // Nothing was reserved for the refused ones.
+    expect((await readdir(environment.executionsRoot)).sort()).toEqual(["exec_overlap", "exec_overlap_5", "exec_root_main"]);
+
+    for (const executionId of [first.executionId, beside.executionId]) {
+      await service.cancel(executionId);
+      await service.wait(executionId).catch(() => undefined);
+    }
+    // Once `src` is no longer live, `src` minus `src/parser` and `src/parser` can stand side
+    // by side — `src/lexer`, which the carved one still owns, cannot.
+    const carved = await service.delegate({ ...request, task: "Own src but the parser", writeScope: ["src"], excludeScope: ["src/parser"] });
+    await expect(service.delegate({ ...request, task: "Own the lexer", writeScope: ["src/lexer"] })).rejects.toMatchObject({ code: "WRITE_SCOPE_OVERLAP" });
+    const parser = await service.delegate({ ...request, task: "Own the parser", writeScope: ["src/parser"] });
+    expect(parser.executionId).not.toBe(carved.executionId);
+
+    for (const executionId of [carved.executionId, parser.executionId]) await service.cancel(executionId).catch(() => undefined);
+  }, 20_000);
 });

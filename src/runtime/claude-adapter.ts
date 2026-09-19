@@ -92,12 +92,17 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
     // (the shell). Neither can *allow* a subtree — measured 2026-09-12, `denyWrite` beats
     // `allowWrite` — so the workspace's siblings are enumerated instead, and the executions
     // root, which is never inside a workspace policy would sign, is in no list at all.
-    const denyPaths = policy.workspaceMode === "workspace-write" && policy.writeScope !== null
+    // An exclusion (master plan 2b) is the one thing this surface expresses directly: a
+    // denied subtree inside an owned root, no enumeration needed.
+    const siblingDenyPaths = policy.workspaceMode === "workspace-write" && policy.writeScope !== null
       ? await writeScopeDenyPaths(
           capsule.activeWorkspace,
           [...policy.writeScope, join(this.memoryRoot(), "private", policy.role)],
           (directory) => readdir(directory),
         )
+      : [];
+    const denyPaths = policy.workspaceMode === "workspace-write"
+      ? [...new Set([...siblingDenyPaths, ...(policy.excludeScope ?? [])])].sort()
       : [];
     const settingsFile = await atomicRuntimeFile(
       join(artifacts.runtimeDirectory, "claude-settings.json"),

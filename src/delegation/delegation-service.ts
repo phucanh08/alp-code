@@ -23,7 +23,8 @@ import {
   type VerifySettings,
 } from "../execution/evidence";
 import { gitBaselineProbe, spawnVerifier } from "../execution/evidence-baseline";
-import { readWriteScope } from "../execution/execution-policy";
+import { readExcludeScope, readWriteScope } from "../execution/execution-policy";
+import { renderAssignment, sharedRegion, type AssignmentScope } from "../execution/assignment";
 import type { ExecutionService } from "../execution/execution-service";
 import { executionArtifactPaths } from "../execution/execution-store";
 import { parseBudget, type ExecutionBudget } from "../execution/usage";
@@ -217,7 +218,10 @@ function normalizeRequest(input: DelegationRequestInput, ids: DelegationIds): De
     task: input.task.trim(),
     workspace: input.workspace,
     workspaceMode: input.workspaceMode ?? "read-only",
-    writeScope: normalizeWriteScope(input.writeScope),
+    writeScope: normalizeScope("writeScope", input.writeScope),
+    excludeScope: normalizeScope("excludeScope", input.excludeScope),
+    objective: normalizeSentence("objective", input.objective),
+    verification: normalizeSentence("verification", input.verification),
     requiredEvidence: normalizeRequiredEvidence(input.requiredEvidence),
     budget: normalizeBudget(input.budget),
     metadata: Object.freeze({ ...(input.metadata ?? {}) }),
@@ -259,16 +263,27 @@ function normalizeBudget(value: DelegationRequestInput["budget"]): ExecutionBudg
  * fingerprint. Rỗng hay có phần tử trống là lỗi ở đây — trước khi hỏi policy — vì đó không
  * phải "không được phép" mà là "không nói gì cả".
  */
-function normalizeWriteScope(value: readonly string[] | undefined): readonly string[] | null {
+function normalizeScope(field: "writeScope" | "excludeScope", value: readonly string[] | undefined): readonly string[] | null {
   if (value === undefined) return null;
   if (!Array.isArray(value) || value.length === 0) {
-    throw new DelegationError("INVALID_REQUEST", "writeScope must list at least one path (omit it for the whole workspace)");
+    throw new DelegationError("INVALID_REQUEST", field === "writeScope"
+      ? "writeScope must list at least one path (omit it for the whole workspace)"
+      : "excludeScope must list at least one path (omit it to exclude nothing)");
   }
   const entries = value.map((entry) => (typeof entry === "string" ? entry.trim() : ""));
   if (entries.some((entry) => entry === "")) {
-    throw new DelegationError("INVALID_REQUEST", "writeScope entries must be non-empty paths");
+    throw new DelegationError("INVALID_REQUEST", `${field} entries must be non-empty paths`);
   }
   return Object.freeze([...new Set(entries)].sort());
+}
+
+/** Một câu của assignment (2b): trim; đưa mà trống là "không nói gì" — lỗi ở đây. */
+function normalizeSentence(field: "objective" | "verification", value: string | undefined): string | null {
+  if (value === undefined) return null;
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new DelegationError("INVALID_REQUEST", `${field} must be a non-empty sentence (omit it instead)`);
+  }
+  return value.trim();
 }
 
 /** Trạng thái node quy về từ vựng của backend, cho những caller chỉ biết từ vựng đó. */
@@ -510,6 +525,7 @@ export class DelegationService {
       workspace: request.workspace,
       workspaceMode: request.workspaceMode,
       ...(request.writeScope === null ? {} : { writeScope: request.writeScope }),
+      ...(request.excludeScope === null ? {} : { excludeScope: request.excludeScope }),
       // The parent's own scope rides along, from the same signed snapshot as the grant: a
       // child may only be handed a piece of what its launcher may write. `null` out loud
       // when the parent is unscoped, so "no constraint" is a value and not an omission.
@@ -542,8 +558,21 @@ export class DelegationService {
     let execution: PreparedExecution;
     let runtime: RuntimeId;
     try {
+      // Sau khi giữ chỗ, trước khi có file: một con mới không được cầm bút trên đường dẫn một
+      // con còn sống đang cầm (master plan 2b). Đứng sau `reserveChild` để retry của cùng
+      // request đã được trả con cũ ở trên, không tự chặn chính nó.
+      await this.refuseScopeOverlap(binding.graphId, executionId, parent.node.executionId, authorization);
       execution = await this.executionService.materialize(authorization, {
-        task: request.task,
+        task: renderAssignment({
+          task: request.task,
+          objective: request.objective,
+          verification: request.verification,
+          // Biên được kể cho con bằng đường dẫn đã canonical — đúng cái sandbox chặn — và chỉ
+          // khi request có gì ngoài task, để mọi lần giao việc trước 2b đọc ra y hệt.
+          scope: request.objective === null && request.verification === null && request.excludeScope === null
+            ? null
+            : { workspace: authorization.workspace, writeScope: authorization.writeScope, excludeScope: authorization.excludeScope },
+        }),
         // Binding chép từ node cha qua reservation — không phải từ Thread mutable, và không
         // phải từ thứ gì process con tự khai.
         thread: parent.node.thread,
@@ -626,6 +655,46 @@ export class DelegationService {
       this.closeRelay(executionId);
       await removeTemporaryFiles(launchSpec).catch(() => undefined);
       throw error;
+    }
+  }
+
+  /**
+   * Phần được ghi của con mới đối chiếu với mọi execution còn sống trong cây, trừ chính nó và
+   * tổ tiên của nó — cha ghi được cả `src/` rồi giao `src/parser` cho con là chuyện bình
+   * thường, hai con cùng giao `src/parser` thì không. Scope đọc từ `policy.json` đã ký của
+   * từng node; node chưa có snapshot (đang `preparing` song song) chưa có gì để đối chiếu.
+   */
+  private async refuseScopeOverlap(
+    graphId: string,
+    executionId: string,
+    parentExecutionId: string,
+    authorization: Pick<ExecutionAuthorization, "workspace" | "workspaceMode" | "writeScope" | "excludeScope">,
+  ): Promise<void> {
+    if (authorization.workspaceMode !== "workspace-write") return;
+    const graph = await this.graph.getGraph(graphId);
+    if (graph === null) return;
+    const ancestors = new Set<string>();
+    for (let cursor: ExecutionNode | null = findNode(graph, parentExecutionId); cursor !== null; cursor = cursor.parentExecutionId ? findNode(graph, cursor.parentExecutionId) : null) {
+      ancestors.add(cursor.executionId);
+    }
+    const mine: AssignmentScope = { workspace: authorization.workspace, writeScope: authorization.writeScope, excludeScope: authorization.excludeScope };
+    for (const node of graph.nodes) {
+      if (node.executionId === executionId || ancestors.has(node.executionId) || isTerminalNodeStatus(node.status)) continue;
+      let snapshot: Record<string, unknown>;
+      try {
+        snapshot = this.policySnapshot(node.executionId) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      if (snapshot.workspaceMode !== "workspace-write" || typeof snapshot.workspace !== "string") continue;
+      const theirs: AssignmentScope = { workspace: snapshot.workspace, writeScope: readWriteScope(snapshot), excludeScope: readExcludeScope(snapshot) };
+      const shared = sharedRegion(mine, theirs);
+      if (shared !== null) {
+        throw new DelegationError(
+          "WRITE_SCOPE_OVERLAP",
+          `\`${shared}\` is already owned by live execution \`${node.executionId}\` (${node.agentId}); narrow the write scope, exclude it with excludeScope, or wait for that execution`,
+        );
+      }
     }
   }
 
@@ -985,6 +1054,9 @@ export class DelegationService {
       writeScope: request.writeScope,
       ...(request.requiredEvidence.length === 0 ? {} : { requiredEvidence: request.requiredEvidence }),
       ...(request.budget === null ? {} : { budget: request.budget }),
+      ...(request.excludeScope === null ? {} : { excludeScope: request.excludeScope }),
+      ...(request.objective === null ? {} : { objective: request.objective }),
+      ...(request.verification === null ? {} : { verification: request.verification }),
       // Nấc nằm trong fingerprint vì nấc quyết định model: cùng một câu hỏi ở `puck` và ở
       // `ultra` là hai việc khác nhau, và một retry đổi nấc phải được đẻ ra con mới.
       mode: this.config.mode ?? DEFAULT_MODE,
