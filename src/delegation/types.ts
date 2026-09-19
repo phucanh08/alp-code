@@ -1,6 +1,8 @@
 import type { RuntimeId } from "../agents/types";
 import type { BackendExecutionStatus } from "../backend/execution-backend";
 import type { EvidenceEvaluation, Provenance } from "../execution/evidence";
+import type { ExecutionTreeNode, ExecutionTreeView } from "../execution/graph/execution-graph-service";
+import type { ExecutionOutcome } from "../execution/outcome";
 import type { BudgetStatus, ExecutionBudget, UsageCounters } from "../execution/usage";
 
 export type DelegationErrorCode =
@@ -137,6 +139,13 @@ export interface DelegationResult {
   /** The write scope in the execution's signed policy — `null` for the whole workspace; absent for a legacy record. */
   readonly writeScope?: readonly string[] | null;
   /**
+   * Kết cục con tự khai qua trailer `Disposition:` của output (master plan 2a) — chỉ có khi
+   * execution đã kết thúc. `unknown` khi con không khai, khai sai bảng, hay chết trước khi
+   * kịp khai: khác `status: completed` (process đã dừng bình thường) và khác `evidence`
+   * (workspace có đổi không). Cha đọc ba thứ này tách nhau.
+   */
+  readonly outcome?: ExecutionOutcome;
+  /**
    * Evidence thu được khi `wait` thấy execution kết thúc — `null` khi execution này không
    * nằm trong cây (legacy) nên không có gì để thu; vắng khi kết quả không phải từ `wait`.
    */
@@ -198,3 +207,16 @@ export interface DelegationIds {
   request(): string;
   execution(): string;
 }
+
+/**
+ * Node của cây như `alp delegation tree` trả: node của graph, cộng `outcome` đọc từ
+ * `state.json` của chính execution đó. Graph không giữ outcome — nó là lời con tự khai, có
+ * ngay khi con dừng, không cần cha `wait` hay thu evidence. `null` khi node chưa dừng;
+ * node đã dừng mà không có state là `unknown`.
+ */
+export type DelegationTreeNode = Omit<ExecutionTreeNode, "children"> & {
+  readonly outcome: ExecutionOutcome | null;
+  readonly children: readonly DelegationTreeNode[];
+};
+
+export type DelegationTreeView = Omit<ExecutionTreeView, "root"> & { readonly root: DelegationTreeNode };

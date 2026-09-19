@@ -35,6 +35,18 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   để cha thấy "con nói done, test nói fail" mà không gọi thêm lệnh. Entry ghi trước khi có
   trường này đọc là vắng `result`.
 
+- **Disposition — con tự nói việc kết thúc thế nào** (master plan 2a). `status: completed`
+  chỉ nói process đã sống hết; `evidence satisfied` chỉ nói workspace có đổi; không cái nào
+  nói con *nghĩ* việc xong chưa — một worker viết "tiền đề sai, không làm" vẫn đọc như xong.
+  Nay con kết thúc báo cáo bằng trailer `Disposition: done | blocked | reopen-request |
+  dependency-request` + `Reason:` + `Evidence:`; hook Stop đọc từ đuôi output đã qua
+  validation và ghi `state.json.outcome = { disposition, reason, evidenceRefs }`. `wait`/
+  `status --json` có `outcome` khi execution đã kết thúc; `tree` in `disposition …` trên mọi
+  node đã dừng; `accept|reject` in disposition trên dòng phán quyết và `AcceptanceRecordV1`
+  ghi `disposition` con khai **lúc cha quyết**. Thiếu trailer, sai bảng, chết trước Stop
+  hook, hay state của bản cũ đều là `unknown` — không bao giờ suy thành `done`. Prompt
+  `worker` khai đúng hình trailer; ý nghĩa từng disposition là mục 2c.
+
 ### Sửa
 
 - **Con `--background` có relay** (GitHub #24). Trước đây `alp delegate --background` trả về

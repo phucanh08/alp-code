@@ -133,6 +133,29 @@ describe("compiled execution hook bridge", () => {
     expect(state.output).toContain("Migrated one module");
   });
 
+  /**
+   * Master plan 2a: the Stop hook is the one place the child's own word about its outcome
+   * enters ALP, read off the trailer of the prose it already returns. A report with no
+   * trailer is `unknown` on disk — never inferred to be `done` from `status: completed`.
+   */
+  it("persists the disposition the child declared in its output trailer, and unknown when it declared none", async () => {
+    const declared = await fixture("worker", "workspace-write");
+    await expect(finalizeExecution({
+      executionId: declared.executionId,
+      executionRoot: declared.root,
+      output: "`parseHeader` does not exist, so the task cannot be done as written.\n\nDisposition: reopen-request\nReason: premise is wrong\nEvidence: src/parser.ts",
+    })).resolves.toMatchObject({ ok: true, status: "completed" });
+    const state = JSON.parse(await readFile(join(declared.directory, "state.json"), "utf8")) as { output?: string; outcome?: unknown };
+    expect(state.outcome).toEqual({ disposition: "reopen-request", reason: "premise is wrong", evidenceRefs: ["src/parser.ts"] });
+    // The prose stays whole: the trailer is part of what the parent reads.
+    expect(state.output).toContain("Disposition: reopen-request");
+
+    const silent = await fixture("worker", "workspace-write");
+    await finalizeExecution({ executionId: silent.executionId, executionRoot: silent.root, output: "Changed two files." });
+    const silentState = JSON.parse(await readFile(join(silent.directory, "state.json"), "utf8")) as { outcome?: unknown };
+    expect(silentState.outcome).toEqual({ disposition: "unknown", reason: null, evidenceRefs: [] });
+  });
+
   it("refuses to finalize when the definition no longer matches the hash it ran with", async () => {
     const project = await agentProject({ migrator: VALID_AGENT_FILE });
     const [agent] = (await loadProjectAgents({ projectRoot: project })).loaded;

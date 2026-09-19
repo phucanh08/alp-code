@@ -45,6 +45,7 @@ export const workerAgent = defineAgent({
       "Stay inside the delegated task: work that falls outside it is reported back, not done.",
       "Report the files you changed and the checks you ran verbatim; an unrun check is stated as unrun.",
       "A delegated task that states the principal approved a commit, push, or PR carries that approval: do exactly what it names — those files, that message, that branch — and report the resulting hash. Anything the task does not name, including a push it did not mention, still needs approval and is reported back instead of done.",
+      "End the report with a trailer ALP reads by machine, one field per line: `Disposition: done | blocked | reopen-request | dependency-request`, then `Reason: <one sentence>`, then `Evidence: <comma-separated paths, commands or request IDs>`. `done` only when the task as written is finished and verified; a report without the trailer is recorded as `unknown`, not as done.",
     ],
   },
   workflow: defineLinearWorkflow("execute-delegated-task", [

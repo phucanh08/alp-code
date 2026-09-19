@@ -9,7 +9,8 @@ import { loadVerifyCommands } from "../../src/cli/settings";
 import { DelegationService, InMemoryDelegationExecutionStore } from "../../src/delegation/delegation-service";
 import { acceptanceFile, type AcceptanceRecordV1 } from "../../src/execution/acceptance";
 import { evidenceFile, type ExecutionEvidenceV1 } from "../../src/execution/evidence";
-import type { ExecutionTreeNode } from "../../src/execution/graph/execution-graph-service";
+import type { ExecutionOutcome } from "../../src/execution/outcome";
+import type { DelegationTreeNode } from "../../src/delegation/types";
 import { ClaudeHistoryBridge } from "../../src/runtime/claude-history-bridge";
 import { HistoryBridgeRegistry } from "../../src/thread/history-bridge";
 import { REDACTED } from "../../src/thread/history-redact";
@@ -19,11 +20,11 @@ import { cleanupEnvironments, createE2eEnvironment, createMaterializedRoot, type
 afterEach(cleanupEnvironments);
 
 const run = promisify(execFile);
-const flatten = (node: ExecutionTreeNode): ExecutionTreeNode[] => [node, ...node.children.flatMap(flatten)];
+const flatten = (node: DelegationTreeNode): DelegationTreeNode[] => [node, ...node.children.flatMap(flatten)];
 
 /** Two roots in one environment: `main` and another `main`, each with its own binding. */
-async function session(tag: string) {
-  const environment = await createE2eEnvironment({ output: "done", extraEnv: { ALP_E2E_WRITE_FILE: "src/parser/new.ts", ALP_E2E_TRANSCRIPT: "1" } });
+async function session(tag: string, outcome?: ExecutionOutcome) {
+  const environment = await createE2eEnvironment({ output: "done", outcome, extraEnv: { ALP_E2E_WRITE_FILE: "src/parser/new.ts", ALP_E2E_TRANSCRIPT: "1" } });
   const { project } = environment;
   await mkdir(join(project, "src", "parser"), { recursive: true });
   await mkdir(join(project, ".alp"), { recursive: true });
@@ -69,7 +70,8 @@ const nodeOf = async (service: DelegationService, executionId: string) => flatte
  */
 describe("e2e: acceptance closes the loop", () => {
   it("accept collects the evidence first, then records the verdict once, on node and disk", async () => {
-    const { environment, project, root, service } = await session("accept");
+    const outcome: ExecutionOutcome = { disposition: "done", reason: "parser added, tests green", evidenceRefs: ["src/parser/new.ts"] };
+    const { environment, project, root, service } = await session("accept", outcome);
     const spawned = await service.delegate({ targetRole: "worker", task: "Add a parser for the config file", workspace: project, workspaceMode: "workspace-write", requiredEvidence: ["change"] });
     // Wait on the graph without collecting: `status` until terminal, so `accept` has to collect.
     await service.wait(spawned.executionId);
@@ -77,15 +79,17 @@ describe("e2e: acceptance closes the loop", () => {
     const evidence = await readJson<ExecutionEvidenceV1>(evidencePath);
 
     const decided = await service.accept(spawned.requestId, { reasons: ["diff matches the ask", "token sk-ant-api03-abcdefghijklmnopqrstuvwxyz seen"] });
-    expect(decided).toMatchObject({ requestId: spawned.requestId, executionId: spawned.executionId, decision: "accepted", evidenceDigest: evidence.digest, evaluation: "satisfied" });
+    expect(decided).toMatchObject({ requestId: spawned.requestId, executionId: spawned.executionId, decision: "accepted", evidenceDigest: evidence.digest, evaluation: "satisfied", disposition: "done" });
     expect(decided.reasons[1]).toContain(REDACTED);
+    // The record keeps the disposition the parent saw at decision time (2a), next to the evidence digest.
     const record = await readJson<AcceptanceRecordV1>(acceptanceFile(environment.executionsRoot, root.binding.executionId, spawned.requestId));
     expect(record).toEqual({
       version: 1, requestId: spawned.requestId, subjectExecutionId: spawned.executionId, acceptedByExecutionId: root.binding.executionId,
-      decision: "accepted", evidenceDigest: evidence.digest, reasons: decided.reasons, decidedAt: decided.decidedAt,
+      decision: "accepted", evidenceDigest: evidence.digest, disposition: "done", reasons: decided.reasons, decidedAt: decided.decidedAt,
     });
     expect(await nodeOf(service, spawned.executionId)).toMatchObject({
       taskExcerpt: "Add a parser for the config file",
+      outcome,
       acceptance: { decision: "accepted", evidenceDigest: evidence.digest, decidedAt: decided.decidedAt },
     });
     // Once.
@@ -93,7 +97,7 @@ describe("e2e: acceptance closes the loop", () => {
     expect((await nodeOf(service, spawned.executionId)).acceptance?.decision).toBe("accepted");
     // The CLI renders the tree with the decision.
     const tree = await runDelegationLifecycleCommand(["tree", spawned.executionId], service) as { rendered: string };
-    expect(tree.rendered).toContain(`worker  ·  ${spawned.executionId}  ·  completed  ·  req ${spawned.requestId}  ·  evidence satisfied  ·  decision accepted`);
+    expect(tree.rendered).toContain(`worker  ·  ${spawned.executionId}  ·  completed  ·  req ${spawned.requestId}  ·  disposition done  ·  evidence satisfied  ·  decision accepted`);
   }, 15_000);
 
   it("accept on a child never waited collects evidence.json before it writes any record", async () => {
@@ -110,7 +114,11 @@ describe("e2e: acceptance closes the loop", () => {
     const decided = await service.accept(spawned.requestId, {});
     const evidence = await readJson<ExecutionEvidenceV1>(evidencePath);
     expect(decided.evidenceDigest).toBe(evidence.digest);
-    expect((await readJson<AcceptanceRecordV1>(acceptanceFile(environment.executionsRoot, root.binding.executionId, spawned.requestId))).reasons).toEqual([]);
+    const record = await readJson<AcceptanceRecordV1>(acceptanceFile(environment.executionsRoot, root.binding.executionId, spawned.requestId));
+    expect(record.reasons).toEqual([]);
+    // A child that declared nothing is recorded as `unknown` — the parent accepted without a word from it, and the record says so.
+    expect(record.disposition).toBe("unknown");
+    expect(decided.disposition).toBe("unknown");
   }, 15_000);
 
   it("refuses a running subject, a stranger, and a forged binding — and writes nothing", async () => {
@@ -157,14 +165,16 @@ describe("e2e: acceptance closes the loop", () => {
   }, 15_000);
 
   it("`alp delegation reject` needs a reason; `accept` prints the verdict", async () => {
-    const { project, service } = await session("cli");
+    const { project, service } = await session("cli", { disposition: "blocked", reason: "needs a token", evidenceRefs: [] });
     const spawned = await service.delegate({ targetRole: "worker", task: "Add a parser", workspace: project, workspaceMode: "workspace-write" });
     await service.wait(spawned.executionId);
     await expect(runDelegationLifecycleCommand(["reject", spawned.requestId], service)).rejects.toThrow(/--reason/);
     await expect(runDelegationLifecycleCommand(["accept"], service)).rejects.toThrow(/request/i);
-    const json = await runDelegationLifecycleCommand(["accept", spawned.requestId, "--reason", "looks right", "--json"], service);
-    expect(json).toMatchObject({ requestId: spawned.requestId, decision: "accepted", reasons: ["looks right"] });
+    const { rendered: verdict } = await runDelegationLifecycleCommand(["reject", spawned.requestId, "--reason", "not done"], service) as { rendered: string };
+    // The verdict line carries what the child said it was (2a): a reader sees `rejected` and `blocked` together.
+    expect(verdict).toContain(`rejected ${spawned.requestId}  ·  execution ${spawned.executionId}  ·  disposition blocked  ·  evidence`);
+    await expect(runDelegationLifecycleCommand(["accept", spawned.requestId, "--reason", "looks right", "--json"], service)).rejects.toMatchObject({ code: "ACCEPTANCE_ALREADY_DECIDED" });
     const { rendered } = await runDelegationLifecycleCommand(["evidence", spawned.executionId], service) as { rendered: string };
-    expect(rendered).toContain("accepted");
+    expect(rendered).toContain("rejected");
   }, 15_000);
 });

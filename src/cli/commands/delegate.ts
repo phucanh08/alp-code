@@ -5,15 +5,13 @@ import type { AgentRegistry, RuntimeId } from "../../agents/types";
 import { LocalProcessBackend } from "../../backend/local-process-backend";
 import { DelegationService, FileDelegationExecutionStore, type DelegationAcceptanceView, type DelegationEvidenceView } from "../../delegation/delegation-service";
 import { ProjectRegistryStore } from "./init";
-import type { DelegationResult } from "../../delegation/types";
+import type { DelegationResult, DelegationTreeNode, DelegationTreeView } from "../../delegation/types";
 import { gitBaselineProbe } from "../../execution/evidence-baseline";
 import { ExecutionService } from "../../execution/execution-service";
 import { FileExecutionStore } from "../../execution/execution-store";
 import {
   ExecutionGraphService,
   readBindingFromEnvironment,
-  type ExecutionTreeNode,
-  type ExecutionTreeView,
 } from "../../execution/graph/execution-graph-service";
 import { FileExecutionGraphStore } from "../../execution/graph/file-execution-graph-store";
 import { evaluateBudget, NO_USAGE, USAGE_COLUMNS, type ExecutionTreeUsageLike } from "../../execution/usage";
@@ -186,7 +184,7 @@ export function isRenderedOutput(value: unknown): value is RenderedOutput {
 }
 
 /** Vì sao một node dừng, gói trong một câu. `null` khi nó chưa dừng, hoặc dừng bình thường. */
-function nodeAnnotation(node: ExecutionTreeNode): string | null {
+function nodeAnnotation(node: DelegationTreeNode): string | null {
   if (node.cancellation) {
     const reason = node.terminationReason === "deadline"
       ? `${node.cancellation.reason} (deadline)`
@@ -197,7 +195,7 @@ function nodeAnnotation(node: ExecutionTreeNode): string | null {
 }
 
 function renderBranch(
-  node: ExecutionTreeNode,
+  node: DelegationTreeNode,
   highlighted: string,
   prefix: string,
   isLast: boolean,
@@ -211,6 +209,9 @@ function renderBranch(
     node.status,
     ...(node.requestId ? [`req ${node.requestId}`] : []),
     ...(annotation ? [annotation] : []),
+    // Lời con tự khai (2a): in ngay khi con dừng, kể cả `unknown` — cha phải thấy "con không
+    // nói gì" khác với "con nói xong". Node chưa dừng thì chưa có gì để in.
+    ...(node.outcome ? [`disposition ${node.outcome.disposition}`] : []),
     // Đã thu evidence thì nói kết luận; chưa thu mà có đòi thì nói "chưa" — cha đọc cây
     // để biết còn phải `alp delegation evidence` hay không.
     ...(node.evidence ? [`evidence ${node.evidence.evaluation}`] : node.requiredEvidence.length > 0 ? ["evidence pending"] : []),
@@ -239,7 +240,7 @@ function renderBranch(
  * là "vì sao nó không đẻ thêm con nữa", và câu trả lời gần như luôn là một con số trong khối
  * này — nhưng chỉ khi con số đó nằm ngay đó để so.
  */
-export function renderExecutionTree(view: ExecutionTreeView): string {
+export function renderExecutionTree(view: DelegationTreeView): string {
   const { limits, delegation, summary } = view;
   return [
     `graph ${view.graphId}  ·  revision ${view.revision}  ·  updated ${view.updatedAt}`,
@@ -356,7 +357,7 @@ function reasonsFrom(argv: readonly string[]): string[] {
 
 export function renderAcceptance(view: DelegationAcceptanceView): string {
   return [
-    `${view.decision} ${view.requestId}  ·  execution ${view.executionId}  ·  evidence ${view.evaluation} (${view.evidenceDigest.slice(0, 12)})  ·  at ${view.decidedAt}`,
+    `${view.decision} ${view.requestId}  ·  execution ${view.executionId}  ·  disposition ${view.disposition}  ·  evidence ${view.evaluation} (${view.evidenceDigest.slice(0, 12)})  ·  at ${view.decidedAt}`,
     ...view.reasons.map((reason) => `  - ${reason}`),
     "",
   ].join("\n");

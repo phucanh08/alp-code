@@ -11,6 +11,7 @@ import { ExecutionService } from "../../src/execution/execution-service";
 import { FileExecutionStore } from "../../src/execution/execution-store";
 import { ExecutionGraphService } from "../../src/execution/graph/execution-graph-service";
 import { FileExecutionGraphStore } from "../../src/execution/graph/file-execution-graph-store";
+import type { ExecutionOutcome } from "../../src/execution/outcome";
 import { FileThreadStore } from "../../src/thread/file-thread-store";
 import { ThreadService, threadGraphReader } from "../../src/thread/thread-service";
 import { MarkdownFileStore } from "../../src/memory/adapters/markdown-file-store";
@@ -157,7 +158,8 @@ if (process.env.ALP_E2E_WRITE_FILE) {
 if (process.env.ALP_E2E_OUTPUT) {
   const stateFile = join(process.env.ALP_EXECUTION_ROOT, process.env.ALP_DELEGATION_EXECUTION_ID, "state.json");
   const state = JSON.parse(readFileSync(stateFile, "utf8"));
-  writeFileSync(stateFile, JSON.stringify({ ...state, status: "completed", output: process.env.ALP_E2E_OUTPUT }));
+  const outcome = process.env.ALP_E2E_OUTCOME ? { outcome: JSON.parse(process.env.ALP_E2E_OUTCOME) } : {};
+  writeFileSync(stateFile, JSON.stringify({ ...state, status: "completed", output: process.env.ALP_E2E_OUTPUT, ...outcome }));
 }
 // Một runtime thật còn sống trong lúc nó làm việc. Test nào cần huỷ, hay cần một cha còn
 // đang chạy để giao việc tiếp, thì cần đúng cái đó chứ không phải một process đã thoát.
@@ -248,6 +250,8 @@ export async function cleanupEnvironments(): Promise<void> {
 export async function createE2eEnvironment(options: {
   /** Prose the fake runtime writes back as the execution's answer. */
   readonly output?: string;
+  /** Kết cục (2a) fake runtime ghi kèm — cái Stop hook thật đọc ra từ đuôi `output`. */
+  readonly outcome?: ExecutionOutcome;
   readonly exitCode?: number;
   /** Giữ runtime giả sống thêm ngần này mili-giây sau khi nó đã ghi xong. */
   readonly holdMs?: number;
@@ -354,6 +358,7 @@ export async function createE2eEnvironment(options: {
     ALP_E2E_CAPTURE: captureDirectory,
     ALP_E2E_HOOKS_DIR: hooksDirectory,
     ...(options.output === undefined ? {} : { ALP_E2E_OUTPUT: options.output }),
+    ...(options.outcome === undefined ? {} : { ALP_E2E_OUTCOME: JSON.stringify(options.outcome) }),
     ...(options.exitCode === undefined ? {} : { ALP_E2E_EXIT: String(options.exitCode) }),
     ...(options.holdMs === undefined ? {} : { ALP_E2E_HOLD_MS: String(options.holdMs) }),
     ...(options.holdRoles === undefined ? {} : { ALP_E2E_HOLD_ROLES: options.holdRoles.join(",") }),

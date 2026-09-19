@@ -34,10 +34,11 @@ import {
   type ExecutionBinding,
   type ExecutionGraphService,
   type ExecutionProbe,
-  type ExecutionTreeView,
+  type ExecutionTreeNode,
   type ProbeStatus,
 } from "../execution/graph/execution-graph-service";
 import { ExecutionGraphError } from "../execution/graph/errors";
+import { readStoredOutcome, type ExecutionOutcome, type OutcomeDisposition } from "../execution/outcome";
 import { findNode, isTerminalNodeStatus, type AcceptanceDecision, type ExecutionAcceptanceRef, type ExecutionGraphDocument, type ExecutionNode } from "../execution/graph/types";
 import type { ExecutionAuthorization, MaterializeExecutionInput, PreparedExecution } from "../execution/types";
 import type { MemoryService } from "../memory/memory-service";
@@ -55,6 +56,8 @@ import {
   type DelegationRequest,
   type DelegationRequestInput,
   type DelegationResult,
+  type DelegationTreeNode,
+  type DelegationTreeView,
 } from "./types";
 
 export interface DelegationServiceConfig {
@@ -135,6 +138,8 @@ export interface DelegationAcceptanceView {
   readonly decision: AcceptanceDecision;
   readonly evidenceDigest: string;
   readonly evaluation: CollectedEvidence["evaluation"];
+  /** Disposition con khai, như cha thấy lúc quyết (2a). */
+  readonly disposition: OutcomeDisposition;
   readonly decidedAt: string;
   readonly reasons: readonly string[];
 }
@@ -728,6 +733,8 @@ export class DelegationService {
     // Guards first, so a stranger or a still-running subject never triggers a verify run.
     assertAcceptable(parent.node, subject);
     const collected = await this.collectEvidence(graph.graphId, subject.executionId);
+    // Disposition con khai *lúc cha quyết* (2a): bản ghi nói cha đã nhìn thấy gì, kể cả khi đó là `unknown`.
+    const disposition = readStoredOutcome(executionArtifactPaths(this.executionsRoot, subject.executionId).stateFile).disposition;
     const decidedAt = this.now().toISOString();
     const decided = await this.graph.acceptChild(binding, requestId, { decision, evidenceDigest: collected.evidence.digest, decidedAt });
     const record: AcceptanceRecordV1 = {
@@ -737,6 +744,7 @@ export class DelegationService {
       acceptedByExecutionId: parent.node.executionId,
       decision,
       evidenceDigest: collected.evidence.digest,
+      disposition,
       reasons,
       decidedAt,
     };
@@ -748,6 +756,7 @@ export class DelegationService {
       decision,
       evidenceDigest: collected.evidence.digest,
       evaluation: collected.evaluation,
+      disposition,
       decidedAt,
       reasons: written?.reasons ?? reasons,
     });
@@ -809,7 +818,7 @@ export class DelegationService {
    * phải là trạng thái bây giờ: một cây toàn node `running` ma — process đã chết trong một
    * lần reboot mà không ai kịp ghi — đọc hệt như một cây đang làm việc.
    */
-  async tree(executionId: string): Promise<ExecutionTreeView> {
+  async tree(executionId: string): Promise<DelegationTreeView> {
     const graph = await this.graph.findGraphFor(executionId);
     if (!graph) {
       // Execution của bản cũ không thuộc cây nào. Nói thẳng thế, chứ không vẽ một cây một
@@ -821,7 +830,17 @@ export class DelegationService {
       );
     }
     await this.reconcileGraph(graph.graphId);
-    return this.graph.getExecutionTree(executionId);
+    const view = await this.graph.getExecutionTree(executionId);
+    return Object.freeze({ ...view, root: this.treeNodeWithOutcome(view.root) });
+  }
+
+  /** Outcome (2a) đọc từ `state.json` của từng node đã dừng — lời con tự khai, không qua graph. */
+  private treeNodeWithOutcome(node: ExecutionTreeNode): DelegationTreeNode {
+    return Object.freeze({
+      ...node,
+      outcome: isTerminalNodeStatus(node.status) ? readStoredOutcome(executionArtifactPaths(this.executionsRoot, node.executionId).stateFile) : null,
+      children: Object.freeze(node.children.map((child) => this.treeNodeWithOutcome(child))),
+    });
   }
 
   /**
@@ -1011,7 +1030,10 @@ export class DelegationService {
   private result(record: DelegationExecutionRecord, value: BackendExecutionResult): DelegationResult {
     let status = value.status;
     let output = value.output;
+    let outcome: ExecutionOutcome | undefined;
     if (["completed", "failed", "cancelled"].includes(value.status) && record.executionStateFile) {
+      // Đã dừng thì luôn có outcome — không có state là `unknown`, không phải "vắng".
+      outcome = readStoredOutcome(record.executionStateFile);
       try {
         const state = JSON.parse(readFileSync(record.executionStateFile, "utf8")) as { status?: unknown; output?: unknown };
         if (["completed", "failed", "cancelled"].includes(String(state.status))) {
@@ -1032,6 +1054,7 @@ export class DelegationService {
       requestId: record.requestId,
       status,
       ...(output === undefined ? {} : { output }),
+      ...(outcome === undefined ? {} : { outcome }),
       ...(value.exitCode === undefined ? {} : { exitCode: value.exitCode }),
       ...(value.signal === undefined ? {} : { signal: value.signal }),
       ...(value.error === undefined ? {} : { error: value.error }),
