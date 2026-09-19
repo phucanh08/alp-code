@@ -412,6 +412,7 @@ export async function createDefaultDelegationComposition(
   const backend = new LocalProcessBackend({
     env,
     stateDir: config.stateDir,
+    relayCommand: layout.stableCommand,
     ...(layout.channel === "dev" ? {} : {
       supervisorInvocation: { executable: layout.selfExecutable, args: ["__internal", "supervisor"] },
     }),

@@ -266,8 +266,12 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
     installRoot: layout?.installRoot ?? repoRoot,
     channel: layout?.channel ?? "dev",
   });
+  // Một lệnh `alp` cho cả hai chỗ thi hành relay: root cho con foreground, supervisor cho
+  // con background — cùng code path như gõ từ terminal.
+  const stableCommand = layout?.stableCommand ?? join(repoRoot, "scripts", "alp.cjs");
   const backend = new LocalProcessBackend({
     stateDir: delegationStateDir,
+    relayCommand: stableCommand,
     ...(layout && layout.channel !== "dev" ? {
       supervisorInvocation: { executable: layout.selfExecutable, args: ["__internal", "supervisor"] },
     } : {}),
@@ -278,7 +282,7 @@ function defaultDependencies(cwd: string, stdout: AlpIo, stderr: AlpIo, layout?:
   // `alp delegate` gõ từ trong sandbox của root chạy ở đây, bằng đúng `alp` mà terminal gọi
   // (nên nó thấy đúng cây, đúng state dir) — chỉ khác là mang launch env của root.
   const relay = new RelayServer({
-    execute: spawnRelayExecutor({ stableCommand: layout?.stableCommand ?? join(repoRoot, "scripts", "alp.cjs") }),
+    execute: spawnRelayExecutor({ stableCommand }),
   });
   const threads = new ThreadService({
     store: new FileThreadStore({ root: threadsDirectory() }),

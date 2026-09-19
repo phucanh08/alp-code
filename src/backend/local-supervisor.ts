@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createWriteStream, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { RelayServer, spawnRelayExecutor, type RelayHandle } from "../execution/relay-server";
 import { resolveSpawnCommand } from "../runtime/windows-shim";
 
 /**
@@ -27,10 +28,25 @@ export interface LocalSupervisorSpec {
    */
   readonly deadlineAt?: string | null;
   /**
+   * Relay của execution — thư mục `<execution>/relay/` mà `alp` trong sandbox ghi request
+   * vào, và lệnh `alp` ổn định để thi hành chúng.
+   *
+   * Supervisor phục vụ relay vì nó là process ALP duy nhất còn sống suốt đời một run
+   * background: CLI đã gọi `delegate` trả về ngay, nên `server.json` do nó đăng ký sẽ trỏ
+   * vào một pid đã chết (GitHub #24 — `alp context pin` từ trong con fail vì "no ALP process
+   * is serving"). `null` thì con này không có relay, như trước.
+   */
+  readonly relay?: LocalSupervisorRelay | null;
+  /**
    * Deleted by whoever read it, since it duplicates the launch spec — and carries the
    * execution capability, which must not sit on disk for the life of the run.
    */
   readonly specFile?: string;
+}
+
+export interface LocalSupervisorRelay {
+  readonly directory: string;
+  readonly stableCommand: string;
 }
 
 export interface LocalSupervisorResult {
@@ -84,6 +100,9 @@ export async function superviseExecution(spec: LocalSupervisorSpec): Promise<voi
   mkdirSync(dirname(spec.logFile), { recursive: true, mode: 0o700 });
   const log = createWriteStream(spec.logFile, { flags: "a", mode: 0o600 });
   const resolved = resolveSpawnCommand(spec.command, spec.args, { ...process.env, ...spec.env });
+  // Đăng ký trước khi có process, như root làm với con foreground: lệnh đầu tiên con gõ có
+  // thể tới ngay sau SessionStart. Env của lệnh relay là env của launch — binding của con.
+  const relay = openRelay(spec, log);
 
   await new Promise<void>((settle) => {
     // A failed spawn emits `error` and then `close` with a synthetic exit code, so without
@@ -99,6 +118,9 @@ export async function superviseExecution(spec: LocalSupervisorSpec): Promise<voi
       // Nhả timer trên *mọi* đường ra, kể cả đường spawn hỏng: một timer còn sống giữ
       // event loop mở, và supervisor sẽ ngồi im cho tới hạn thay vì thoát ngay.
       if (deadlineTimer) clearTimeout(deadlineTimer);
+      // Runtime đã kết thúc: không còn ai để nhận response, và `server.json` để lại sẽ trỏ
+      // vào pid của ta sau khi ta thoát — đúng cái lỗi này sinh ra để sửa.
+      relay?.close();
       removeFiles([...spec.temporaryFiles, ...(spec.specFile ? [spec.specFile] : [])]);
       // The log is flushed before the result file appears, never after: `status()` treats
       // the result file as proof the run is over and reads the transcript in the same
@@ -151,6 +173,19 @@ export async function superviseExecution(spec: LocalSupervisorSpec): Promise<voi
     });
     child.on("close", (code, signal) => finish({ exitCode: code, signal }));
   });
+}
+
+function openRelay(spec: LocalSupervisorSpec, log: { write(chunk: string): unknown }): RelayHandle | null {
+  if (!spec.relay) return null;
+  try {
+    const server = new RelayServer({ execute: spawnRelayExecutor({ stableCommand: spec.relay.stableCommand }) });
+    return server.register({ executionId: spec.executionId, directory: spec.relay.directory, env: spec.env });
+  } catch (error) {
+    // Không có relay thì con vẫn chạy được — `alp` trong nó fail-closed rõ ràng — còn không
+    // có run thì không có gì cả. Ghi lại để `status()` quote được lý do.
+    log.write(`[alp] relay unavailable for this execution: ${(error as Error).message}\n`);
+    return null;
+  }
 }
 
 /* c8 ignore start -- entry point exercised as a spawned process, not by unit tests */

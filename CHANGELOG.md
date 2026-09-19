@@ -26,6 +26,13 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
 
 ### Sửa
 
+- **Con `--background` có relay** (GitHub #24). Trước đây `alp delegate --background` trả về
+  ngay và không ai đăng ký relay cho con — `relay/` rỗng, mọi `alp context pin` / `alp delegate`
+  từ trong con fail-closed "no ALP process is serving", worker mất continuity rồi quay vòng
+  báo lỗi. Nay supervisor detached của backend local — process duy nhất sống bằng đời một run
+  background — phục vụ relay cho con: `LocalProcessBackend` đưa `relay: { directory,
+  stableCommand }` vào spec, supervisor đăng ký trước khi spawn runtime và gỡ `server.json` khi
+  runtime kết thúc; cùng `RelayServer`, cùng allowlist, cùng binding-của-thư-mục như root.
 - **`evidence.evaluation` không còn là `satisfied` khi request không đòi gì** (GitHub #23).
   Trước đây một con dừng giữa chừng, không commit, và một con đã commit + push nhận cùng một
   verdict `completed / satisfied / missing: []` trên `alp delegation wait --json`, vì "không

@@ -116,9 +116,10 @@ describe("e2e: execution relay", () => {
     const childRelay = executionArtifactPaths(environment.executionsRoot, foreground.executionId).relayDirectory;
     await expect(stat(join(childRelay, "server.json"))).rejects.toMatchObject({ code: "ENOENT" });
 
-    // Con `--background` không có ai đứng lại để trả lời: bản dev không có supervisor để chạy
-    // nó ở đây, nên "không đăng ký" được chứng minh ở `test/delegation/delegation-service.test.ts`
-    // và "không server.json ⇒ fail-closed" ở `test/cli/relay-client.test.ts`.
+    // Con `--background` được supervisor detached của backend local phục vụ (GitHub #24), và
+    // harness này không spawn supervisor thật: "không đăng ký ở service" chứng minh ở
+    // `test/delegation/delegation-service.test.ts`, "supervisor phục vụ đúng bằng đời runtime"
+    // ở `test/backend/local-supervisor.test.ts`, "spec mang relay" ở `local-process-backend.test.ts`.
   });
 
   it("refuses from the root what the session context never offered", async () => {
