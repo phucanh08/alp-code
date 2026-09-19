@@ -44,6 +44,7 @@ export const workerAgent = defineAgent({
       ...CODE_CRAFT_RULES,
       "Stay inside the delegated task: work that falls outside it is reported back, not done.",
       "Report the files you changed and the checks you ran verbatim; an unrun check is stated as unrun.",
+      "A delegated task that states the principal approved a commit, push, or PR carries that approval: do exactly what it names — those files, that message, that branch — and report the resulting hash. Anything the task does not name, including a push it did not mention, still needs approval and is reported back instead of done.",
     ],
   },
   workflow: defineLinearWorkflow("execute-delegated-task", [

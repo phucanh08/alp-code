@@ -44,6 +44,15 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   background — phục vụ relay cho con: `LocalProcessBackend` đưa `relay: { directory,
   stableCommand }` vào spec, supervisor đăng ký trước khi spawn runtime và gỡ `server.json` khi
   runtime kết thúc; cùng `RelayServer`, cùng allowlist, cùng binding-của-thư-mục như root.
+- **`main` biết mình không commit được và giao `worker` làm** (GitHub #26). Read-only của
+  `main` phủ cả `.git` — có chủ ý — nhưng prompt chỉ nói "không commit khi chưa được duyệt",
+  hàm ý duyệt rồi thì làm được; `main` thử `git commit`, nhận `Operation not permitted` giữa
+  lúc principal đang chờ, rồi đưa lệnh cho principal chạy tay. Nay rule của `main` nói thẳng
+  ranh giới và đường đi: duyệt ⇒ giao `worker` một task commit riêng (nêu đã duyệt, nhánh,
+  file, message, có push không), đọc hash + evidence `change` rồi mới báo. `worker` có rule
+  đối ứng: task nêu đã duyệt là đủ để commit đúng cái được nêu, không hơn. Skill `delegation`
+  và `git`, docs Agent và quyền / Giao việc / Xử lý sự cố nói cùng một điều; mục "`main` chỉ
+  đọc được project" trong troubleshooting sửa lại nguyên nhân (không phải cwd chưa đăng ký).
 - **`evidence.evaluation` không còn là `satisfied` khi request không đòi gì** (GitHub #23).
   Trước đây một con dừng giữa chừng, không commit, và một con đã commit + push nhận cùng một
   verdict `completed / satisfied / missing: []` trên `alp delegation wait --json`, vì "không
