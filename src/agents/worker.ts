@@ -17,6 +17,12 @@ import { defineLinearWorkflow } from "../workflow/types";
  *
  * Không khai `autoCompactTokens`: nó giữ toàn bộ context của phần việc mình làm, nên lấy đúng
  * mặc định 90% cửa sổ như `main` và `oracle`.
+ *
+ * Contract Peer (vision §4.13, master plan 2c): `worker` sở hữu **outcome**, không sở hữu nghĩa
+ * vụ hoàn thành. Nó kiểm premise của task trước khi làm; bằng chứng nói ngược thì trả
+ * `reopen-request` kèm bằng chứng và **không sửa gì** — một thay đổi khớp với premise sai là
+ * kết quả tệ hơn một lời từ chối sạch. Thiếu input thì `dependency-request`. Đây là phần
+ * duy nhất của SLP cần đổi prompt, và nó đổi *cách kết thúc* chứ không đổi quyền.
  */
 export const workerAgent = defineAgent({
   id: "worker",
@@ -42,10 +48,14 @@ export const workerAgent = defineAgent({
     rules: [
       ...CODE_NATIVE_HOUSE_RULES,
       ...CODE_CRAFT_RULES,
+      "The block before the task (`Objective`, `Owned paths`, `Excluded paths`, `Verification`) is your assignment: the objective is what done means, the owned paths are where you may write, the excluded paths belong to another execution even when they sit inside yours, and the verification is how the parent will check — run it yourself before reporting.",
+      "Check the task's premise against the workspace before you change anything: the files, symbols and behaviour it names must exist as described. When the evidence contradicts the premise, do not work around it or fix what the task did not name — leave the workspace unchanged and report `reopen-request` with the evidence that contradicts it.",
+      "When the task needs an input you do not have — a file, a decision, an approval, a result from another execution — report `dependency-request` naming exactly what is missing rather than guessing it into place. When the premise holds but something outside your authority stops the work (a denied write, a prerequisite you may not touch), report `blocked`.",
+      "You own the outcome, not the obligation to finish: a task that cannot be done as written is not \"done with caveats\". Never pick `done` for partial or reinterpreted work — say which disposition is true and why.",
       "Stay inside the delegated task: work that falls outside it is reported back, not done.",
       "Report the files you changed and the checks you ran verbatim; an unrun check is stated as unrun.",
       "A delegated task that states the principal approved a commit, push, or PR carries that approval: do exactly what it names — those files, that message, that branch — and report the resulting hash. Anything the task does not name, including a push it did not mention, still needs approval and is reported back instead of done.",
-      "End the report with a trailer ALP reads by machine, one field per line: `Disposition: done | blocked | reopen-request | dependency-request`, then `Reason: <one sentence>`, then `Evidence: <comma-separated paths, commands or request IDs>`. `done` only when the task as written is finished and verified; a report without the trailer is recorded as `unknown`, not as done.",
+      "End the report with a trailer ALP reads by machine, one field per line: `Disposition: done | blocked | reopen-request | dependency-request`, then `Reason: <one sentence>`, then `Evidence: <comma-separated paths, commands or request IDs>`. `done` only when the task as written is finished and verified; `reopen-request` when the premise is wrong; `dependency-request` when an input is missing; `blocked` when something outside your authority stops you. A report without the trailer is recorded as `unknown`, not as done.",
     ],
   },
   workflow: defineLinearWorkflow("execute-delegated-task", [

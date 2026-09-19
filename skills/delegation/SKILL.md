@@ -38,6 +38,44 @@ A `worker` task is one cut of work, stated so that it can be checked: what is in
 the result should be, and how it will be verified. `worker` delegates to nobody — if it would
 have to go ask `search` halfway through, the cut was wrong, not its grants.
 
+## State the assignment, not just the task
+
+`worker` owns one outcome with a boundary. Give it the boundary as fields, not as prose it
+has to dig out of the task:
+
+```bash
+alp delegate worker --write-scope src --exclude-scope src/parser \
+  --objective 'The lexer emits one token per literal' \
+  --verification 'npx vitest run test/lexer' \
+  --require-evidence change --require-evidence verify:test \
+  -- 'Rewrite the lexer in src/lexer to tokenize literals one at a time.'
+```
+
+`--objective` is what done means; `--write-scope` is what it owns; `--exclude-scope` is the
+part inside that scope another execution owns (two live workers may not own the same path —
+`WRITE_SCOPE_OVERLAP` says which one already does); `--verification` is how you will check.
+ALP renders these as an `Objective / Owned paths / Excluded paths / Verification` block in
+front of the task, with the paths the sandbox actually enforces.
+
+## Read the outcome before the prose
+
+`alp delegation wait <id> --json` carries `outcome: { disposition, reason, evidenceRefs }` —
+what the child *itself* says about how the work ended, separate from `status` (did the
+process end) and `evidence` (did the workspace change). Read it first:
+
+| `disposition` | It means | You do |
+|---|---|---|
+| `done` | the task as written is finished and verified, says the child | verify against `evidence`, then `accept` or `reject` |
+| `reopen-request` | the premise was wrong — the file, symbol or bug the task named is not as described; the child left the workspace alone | data about **your** framing, not disobedience: read `evidenceRefs`, correct the task, delegate again; never re-send the same task |
+| `dependency-request` | an input is missing — a file, a decision, an approval, another execution's result | supply it (or take it to the principal), then delegate again |
+| `blocked` | the premise holds but something outside the child's authority stopped it — a denied write, a prerequisite it may not touch | clear it (scope, approval, prerequisite) and delegate again |
+| `unknown` | no trailer, an unrecognised value, or the child died before reporting | not done; read the prose and the evidence, and treat the work as unverified |
+
+`status: completed` with `disposition: reopen-request` is a normal, good result: a worker
+that refuses a wrong premise cleanly is worth more than one that changes code to fit it.
+Close it like any other delegation — `accept` when the refusal was right, `reject --reason`
+when it was not — and the record keeps the disposition the child declared.
+
 ## Commit goes through `worker` too
 
 `main`'s workspace is read-only *including `.git`*: `git commit` from `main` fails with

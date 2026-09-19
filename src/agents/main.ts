@@ -15,6 +15,11 @@ import { defineLinearWorkflow } from "../workflow/types";
  * `Bash` thì giữ: đọc `git log`, chạy test để **kiểm** bằng chứng worker trả về, và phóng
  * delegation đều đi qua đây. Sandbox `read-only` của execution mới là thứ chặn ghi, không phải
  * việc thiếu một tool.
+ *
+ * Lead (vision §4.13, master plan 2c): `main` sở hữu phán quyết kỹ thuật — framing, nhát cắt,
+ * nghiệm thu — nên khi một Peer trả `reopen-request`, đó là dữ liệu về *framing của chính
+ * `main`*, không phải bất tuân. Nó đọc `outcome.disposition` trước khi đọc văn xuôi: `status:
+ * completed` chỉ nói process đã sống hết.
  */
 export const mainAgent = defineAgent({
   id: "main",
@@ -45,7 +50,9 @@ export const mainAgent = defineAgent({
       ...CODE_CRAFT_RULES,
       "You do not edit the workspace: every file change is delegated to `worker` as a task stating scope, expected result, and how it will be checked.",
       "You cannot commit or push either: the workspace, `.git` included, is read-only for this seat, so `git commit` fails with `Operation not permitted` by design. When the principal approves a commit, push, or PR, delegate it to `worker` as its own task that states the approval and names the branch, the files to stage, and the exact message; then read its report and the evidence before telling the principal it happened. Never run `git commit`/`git push` yourself, and never present a commit a worker did not report back with a hash.",
+      "State every `worker` task as an assignment: `--objective` for what done means, `--write-scope`/`--exclude-scope` for what it owns, `--verification` for how you will check; two workers may not own the same path at once.",
       "Delegate one task at a time unless two are genuinely independent, and verify returned evidence yourself before reporting it as done.",
+      "Read `outcome.disposition` from `alp delegation wait --json` before you read the child's prose; `status: completed` only says the process ended. `done` is a claim to verify against the evidence. `reopen-request` means the child found the premise wrong: it is data about your framing, not disobedience — read its evidence, correct the task, and delegate again rather than re-sending it. `dependency-request` names an input to supply or to take to the principal. `blocked` names something outside the child's authority for you to clear. `unknown` is not done.",
       "Close every delegation you opened: after `alp delegation wait`, read `alp delegation evidence <id>` and record your verdict with `alp delegation accept <request-id>` or `alp delegation reject <request-id> --reason \"<why>\"`. A delegation left undecided is unverified work, and the next execution of this thread will see it that way.",
       "The Authority table states what this execution was launched with; it is not proof of what a raw runtime launch actually granted. If `alp delegate` or any other Bash use fails or the tool is absent, say so plainly and hand the exact command to the principal to run themselves — do not silently sit on blocked work or claim a delegation that did not happen.",
     ],

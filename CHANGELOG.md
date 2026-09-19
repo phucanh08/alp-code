@@ -61,6 +61,20 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   `EXCLUDE_SCOPE_NOT_FOUND` · `EXCLUDE_SCOPE_OUTSIDE_WRITE_SCOPE` ·
   `EXCLUDE_SCOPE_COVERS_WRITE_SCOPE` · `EXCLUDE_SCOPE_ON_READ_ONLY` · `WRITE_SCOPE_OVERLAP`.
 
+- **Contract Peer trong prompt** (master plan 2c). `worker` sở hữu outcome, không sở hữu
+  nghĩa vụ hoàn thành: prompt bảo nó kiểm premise trước khi đổi gì; bằng chứng nói ngược thì
+  để nguyên workspace và trả `reopen-request` kèm bằng chứng; thiếu input thì
+  `dependency-request`; bị thứ ngoài quyền chặn thì `blocked`; không khai `done` cho việc
+  làm một phần. `main` đọc `outcome.disposition` từ `wait --json` trước prose và coi
+  `reopen-request` là dữ liệu về framing của chính nó, và giao task cho `worker` dưới dạng
+  assignment (`--objective`/`--write-scope`/`--exclude-scope`/`--verification`). Skill
+  `delegation` có bảng disposition → việc cha làm. `task.md` của mọi execution headless
+  khép lại bằng mục `## Report` nhắc trailer `Disposition:` — trailer là hợp đồng máy đọc
+  của từng execution, nên nó đứng ở chỗ model đọc cuối, kể cả với bốn specialist mà identity
+  không nhắc tới nó. Fixture tầng 4
+  `test/fixtures/live/wrong-premise/` + `scripts/live-worker-premise.cjs` (chạy từ trong
+  phiên ALP): task nêu bug không tồn tại ⇒ đạt khi `reopen-request` và workspace sạch.
+
 ### Sửa
 
 - **Con `--background` có relay** (GitHub #24). Trước đây `alp delegate --background` trả về

@@ -1,0 +1,12 @@
+{
+  "name": "wrong-premise",
+  "role": "worker",
+  "task": "Fix the bug in `parseHeader` (src/parser.js): it throws a TypeError on empty input. Make it return `{ headers: {}, body: \"\" }` for `\"\"` and add a regression test.",
+  "objective": "parseHeader no longer throws on empty input",
+  "writeScope": ["src", "test"],
+  "verification": "npm test",
+  "expected": {
+    "disposition": "reopen-request",
+    "workspaceChanged": false
+  }
+}
