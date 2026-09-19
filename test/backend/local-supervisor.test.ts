@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -168,6 +168,57 @@ describe("superviseExecution", () => {
     // SIGTERM sẽ đổ cho đồng hồ một quyết định của con người.
     expect(result.signal).toBe("SIGTERM");
     expect(result.terminationReason).toBeUndefined();
+  });
+
+  it("serves the execution's relay for exactly as long as the runtime lives (GitHub #24)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "alp-supervisor-"));
+    roots.push(root);
+    const relayDirectory = join(root, "relay");
+    await mkdir(relayDirectory);
+    // Lệnh `alp` giả: in argv và binding — đủ để thấy request đi qua server với launch env.
+    const stableCommand = join(root, "fake-alp");
+    await writeFile(stableCommand, `#!/bin/sh\necho "relayed argv=$* binding=$ALP_EXECUTION_GRAPH_ID"\n`);
+    await chmod(stableCommand, 0o755);
+    // Runtime giả: đợi server.json (đăng ký phải đi trước spawn), gửi một request, in response.
+    const runtime = `
+      const fs = require("node:fs"); const path = require("node:path");
+      const dir = process.env.ALP_RELAY_DIR;
+      const wait = (file) => { const until = Date.now() + 5000; while (!fs.existsSync(file)) { if (Date.now() > until) { console.log("timeout " + file); process.exit(9); } Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10); } };
+      wait(path.join(dir, "server.json"));
+      const server = JSON.parse(fs.readFileSync(path.join(dir, "server.json"), "utf8"));
+      console.log("server pid matches supervisor: " + (server.pid === process.ppid));
+      const id = "a".repeat(32);
+      fs.writeFileSync(path.join(dir, id + ".request.json"), JSON.stringify({ v: 1, id, argv: ["context", "pin", "x"], cwd: process.cwd(), requestedAt: new Date().toISOString() }));
+      wait(path.join(dir, id + ".response.json"));
+      process.stdout.write(JSON.parse(fs.readFileSync(path.join(dir, id + ".response.json"), "utf8")).stdout);
+    `;
+
+    const result = await supervise(root, process.execPath, ["-e", runtime], [], {
+      env: { PATH: process.env.PATH ?? "", ALP_RELAY_DIR: relayDirectory, ALP_EXECUTION_GRAPH_ID: "graph_bg" },
+      relay: { directory: relayDirectory, stableCommand },
+    });
+
+    expect(result.exitCode).toBe(0);
+    const log = await readFile(join(root, "run.log"), "utf8");
+    expect(log).toContain("server pid matches supervisor: true");
+    expect(log).toContain("relayed argv=context pin x binding=graph_bg");
+    // Runtime đã kết thúc thì `server.json` phải biến mất — để lại là một pid chết trong file
+    // mà client fail-closed dựa vào.
+    expect(existsSync(join(relayDirectory, "server.json"))).toBe(false);
+  });
+
+  it("runs without relay when the spec names none, and when the relay directory cannot be served", async () => {
+    const root = await mkdtemp(join(tmpdir(), "alp-supervisor-"));
+    roots.push(root);
+    const plain = await supervise(root, process.execPath, ["-e", "process.exit(0)"], [], { relay: null });
+    expect(plain.exitCode).toBe(0);
+    expect(existsSync(join(root, "relay", "server.json"))).toBe(false);
+
+    const missing = await supervise(root, process.execPath, ["-e", "process.exit(0)"], [], {
+      relay: { directory: join(root, "does-not-exist"), stableCommand: process.execPath },
+    });
+    expect(missing.exitCode).toBe(0);
+    expect(await readFile(join(root, "run.log"), "utf8")).toContain("[alp] relay unavailable for this execution");
   });
 
   it("deletes a spec it was handed, deadline or not", async () => {

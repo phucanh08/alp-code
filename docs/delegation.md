@@ -100,10 +100,13 @@ execution.** `alp` trong sandbox chỉ là *client*.
 
 Ai đăng ký: `runThreadRoot` cho phiên root; `DelegationService` cho con **foreground** —
 đăng ký *trước* khi spawn (không có cửa sổ con chạy mà chưa ai phục vụ), đóng khi `wait`
-terminal, spawn hỏng hay `cancel`. Con `--background` **không** được đăng ký: process gọi
-`alp delegate --background` thoát ngay, không còn ai để trả lời — `alp` trong con đó
-fail-closed ("no ALP process is serving"). Delegation lồng từ con background cần supervisor
-phục vụ relay; chưa làm.
+terminal, spawn hỏng hay `cancel`. Con `--background` (GitHub #24) do **supervisor detached**
+của backend local phục vụ: process gọi `alp delegate --background` thoát ngay, nên
+`server.json` phải mang pid của thứ sống bằng đời con — chính supervisor đang giữ runtime.
+`LocalProcessBackend` đưa `relay: { directory, stableCommand }` vào spec của supervisor
+(`relayCommand` là `layout.stableCommand`); supervisor đăng ký trước khi spawn, đóng khi
+runtime kết thúc, và cùng `RelayServer` + allowlist với root. Không có `relayCommand`
+(backend dựng tay) thì con background không có relay như trước.
 
 Sandbox mở đúng một chỗ cho kênh này: Claude `sandbox.filesystem.allowWrite:
 [<execution>/relay]`; Codex một entry `"write"` cho `<execution>/relay` trong profile.

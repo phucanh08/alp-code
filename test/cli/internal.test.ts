@@ -70,6 +70,12 @@ describe("internal CLI commands", () => {
       .rejects.toThrow(/schema/);
     await expect(run(await write("numeric-deadline.json", { ...validSpec(root), deadlineAt: 1_760_000_000_000 })))
       .rejects.toThrow(/schema/);
+    // Relay nửa vời — thiếu lệnh thi hành hay thiếu thư mục — là một server không bao giờ trả
+    // lời, tức đúng cái treo mà client fail-closed sinh ra để tránh.
+    await expect(run(await write("relay-no-command.json", { ...validSpec(root), relay: { directory: "/x/relay" } })))
+      .rejects.toThrow(/schema/);
+    await expect(run(await write("relay-empty-dir.json", { ...validSpec(root), relay: { directory: "", stableCommand: "/alp" } })))
+      .rejects.toThrow(/schema/);
     expect(supervise).not.toHaveBeenCalled();
   });
 
@@ -79,15 +85,17 @@ describe("internal CLI commands", () => {
     const deadlineAt = new Date(Date.now() + 3_600_000).toISOString();
 
     for (const [name, deadline] of [["with", deadlineAt], ["null", null], ["absent", undefined]] as const) {
+      // `relay` đi cùng: có, null, và vắng đều hợp lệ.
+      const relay = name === "with" ? { directory: join(root, "relay"), stableCommand: "/alp" } : name === "null" ? null : undefined;
       const file = join(root, `${name}.json`);
-      const spec = { ...validSpec(root), ...(deadline === undefined ? {} : { deadlineAt: deadline }) };
+      const spec = { ...validSpec(root), ...(deadline === undefined ? {} : { deadlineAt: deadline }), ...(relay === undefined ? {} : { relay }) };
       await writeFile(file, JSON.stringify(spec), { mode: 0o600 });
       const supervise = vi.fn();
       expect(await runInternalCommand(["supervisor", file], {
         ensureState: vi.fn(), refreshUpdateCheck: vi.fn(), supervise,
       })).toBe(0);
       expect(supervise).toHaveBeenCalledWith(expect.objectContaining(
-        deadline === undefined ? { executionId: "exec_1" } : { deadlineAt: deadline },
+        deadline === undefined ? { executionId: "exec_1" } : { deadlineAt: deadline, relay },
       ));
     }
   });

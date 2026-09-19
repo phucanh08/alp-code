@@ -191,6 +191,29 @@ describe("LocalProcessBackend", () => {
     await expectPosixMode(join(stateDir, "specs"), 0o700);
   });
 
+  it("hands the supervisor the execution's relay when it has a relay command and a relay directory (GitHub #24)", async () => {
+    const stateDir = await temporaryRoot();
+    const child = new FakeChild(process.pid);
+    const spawn = async (backend: LocalProcessBackend, executionId: string, env: Record<string, string>) => {
+      await backend.spawn({
+        executionId,
+        launchSpec: launchSpec({ env }),
+        lifecycle: { requestId: `req_${executionId}`, parentExecutionId: null, background: true, interactive: false, timeoutMs: null, deadlineAt: null },
+      });
+      return JSON.parse(await readFile(join(stateDir, "specs", `${executionId}.json`), "utf8")) as Record<string, unknown>;
+    };
+
+    const served = new LocalProcessBackend({ stateDir, spawnProcess: () => child, supervisorScript: "/supervisor.js", relayCommand: "/opt/alp/bin/alp" });
+    // Thư mục là của launch env — chính thư mục `alp` trong sandbox sẽ ghi request vào.
+    expect((await spawn(served, "exec_relayed", { ALP_RELAY_DIR: "/executions/exec_relayed/relay" })).relay)
+      .toEqual({ directory: "/executions/exec_relayed/relay", stableCommand: "/opt/alp/bin/alp" });
+    // Không có thư mục relay thì không có gì để phục vụ.
+    expect((await spawn(served, "exec_no_dir", {})).relay).toBeNull();
+    // Không có lệnh `alp` thì supervisor không thi hành được — như trước khi có #24.
+    const unserved = new LocalProcessBackend({ stateDir, spawnProcess: () => child, supervisorScript: "/supervisor.js" });
+    expect((await spawn(unserved, "exec_no_cmd", { ALP_RELAY_DIR: "/executions/exec_no_cmd/relay" })).relay).toBeNull();
+  });
+
   it("self-invokes the native internal supervisor without treating the binary as Node", async () => {
     const stateDir = await temporaryRoot();
     const child = new FakeChild(process.pid);

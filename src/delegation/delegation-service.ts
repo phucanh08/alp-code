@@ -166,8 +166,9 @@ export interface DelegationServiceOptions {
   readonly evidence?: DelegationEvidenceOptions;
   /**
    * Phục vụ `alp …` gõ từ trong sandbox của con, với launch env của con. Chỉ có ý nghĩa khi
-   * process này còn sống để trả lời — tức con chạy foreground và process này `wait` nó; con
-   * `--background` không được đăng ký, và `alp` trong nó fail-closed vì không có server.
+   * process này còn sống để trả lời — tức con chạy foreground và process này `wait` nó. Con
+   * `--background` không đăng ký ở đây: supervisor detached của backend local sống bằng đời
+   * con và phục vụ relay cho nó (`local-supervisor.ts`, GitHub #24).
    */
   readonly relay?: Pick<RelayServer, "register">;
   readonly ids?: DelegationIds;
@@ -566,7 +567,8 @@ export class DelegationService {
     }
 
     // Đăng ký trước khi có process: lệnh đầu tiên con gõ có thể tới ngay sau SessionStart.
-    // Env đăng ký là env của launch — binding của con, không phải thứ request nói.
+    // Env đăng ký là env của launch — binding của con, không phải thứ request nói. Con
+    // background thuộc về supervisor của backend, process duy nhất còn sống khi ta đã trả về.
     const relay = !request.executionOptions.background && this.relay
       ? this.relay.register({ executionId, directory: execution.artifacts.relayDirectory, env: (launchSpec as RuntimeLaunchSpec).env })
       : null;

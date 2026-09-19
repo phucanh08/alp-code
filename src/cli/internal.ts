@@ -32,7 +32,10 @@ function readSupervisorSpec(file: string): LocalSupervisorSpec {
     typeof spec.logFile !== "string" || typeof spec.resultFile !== "string" ||
     !Array.isArray(spec.temporaryFiles) || !spec.temporaryFiles.every((value) => typeof value === "string") ||
     !(spec.deadlineAt === undefined || spec.deadlineAt === null
-      || (typeof spec.deadlineAt === "string" && Number.isFinite(Date.parse(spec.deadlineAt))))
+      || (typeof spec.deadlineAt === "string" && Number.isFinite(Date.parse(spec.deadlineAt)))) ||
+    !(spec.relay === undefined || spec.relay === null
+      || (typeof spec.relay === "object" && typeof spec.relay.directory === "string" && spec.relay.directory.length > 0
+        && typeof spec.relay.stableCommand === "string" && spec.relay.stableCommand.length > 0))
   ) throw new Error("invalid supervisor spec schema");
   // Xoá ngay sau khi đọc xong, và trước khi runtime được spawn.
   //

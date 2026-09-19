@@ -118,8 +118,8 @@ Sandbox của runtime chặn ghi `~/.alp`, nên một `alp delegate` gõ từ *t
 Hệ quả bạn nhìn thấy:
 
 - `alp thread show` hay `alp --mode low` từ trong một phiên bị từ chối (exit 2) — đó là allowlist, không phải lỗi cài đặt.
-- Execution background không có relay: nó sống lâu hơn tiến trình phục vụ nó.
-- Sau khi execution kết thúc, `relay/` rỗng; một `server.json` còn lại nghĩa là root vẫn đang chạy.
+- Execution `--background` cũng có relay: supervisor detached giữ runtime là process phục vụ nó, nên `alp context pin` hay `alp delegate` từ trong con vẫn chạy sau khi lệnh `delegate` của cha đã trả về.
+- Sau khi execution kết thúc, `relay/` rỗng; một `server.json` còn lại nghĩa là process phục vụ (root, hay supervisor của con background) vẫn đang chạy.
 - Trong Codex, lệnh chạy qua `zsh -lc`; task chứa `()` mà không đặt trong dấu nháy sẽ bị zsh đọc thành định nghĩa hàm và `alp` không hề chạy — im lặng, exit 0. Nháy task lại.
 
 ## Kiểm chứng

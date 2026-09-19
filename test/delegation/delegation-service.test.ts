@@ -1031,7 +1031,7 @@ describe("DelegationService — execution relay", () => {
     expect(registrations[0]!.closed).toBe(1);
   });
 
-  it("never registers a background child: no process stays behind to answer it", async () => {
+  it("never registers a background child here: its supervisor serves it, this process is gone", async () => {
     const primary = new FakeBackend("primary");
     const { relay, registrations } = fakeRelay(primary.calls);
     const fixture = await serviceFixture({ root, primary, relay });

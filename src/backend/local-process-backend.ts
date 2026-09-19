@@ -4,6 +4,7 @@ import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { DelegationError } from "../delegation/types";
+import { RELAY_DIRECTORY_ENV } from "../execution/relay-protocol";
 import { resolveRuntimeCommand } from "../runtime/adapter-files";
 import { buildLaunchProvenance, createRuntimeVersionReader, macKeychainHas, writeLaunchReceipt } from "../runtime/launch-provenance";
 import { resolveSpawnCommand } from "../runtime/windows-shim";
@@ -57,6 +58,11 @@ export interface LocalProcessBackendOptions {
   /** `<command> --version` for the launch receipt; defaults to the budgeted, cached reader. */
   readonly runtimeVersion?: (command: string) => Promise<string>;
   readonly now?: () => Date;
+  /**
+   * Lệnh `alp` ổn định mà supervisor của một run background dùng để thi hành lệnh relay
+   * cho con. Vắng thì con background không có relay — `alp` trong nó fail-closed (GitHub #24).
+   */
+  readonly relayCommand?: string | null;
 }
 
 interface InFlight {
@@ -169,6 +175,7 @@ export class LocalProcessBackend implements ExecutionBackend {
   private readonly probeRuntimes: NonNullable<LocalProcessBackendOptions["probeRuntimes"]>;
   private readonly runtimeVersion: NonNullable<LocalProcessBackendOptions["runtimeVersion"]>;
   private readonly now: () => Date;
+  private readonly relayCommand: string | null;
   /** Handles for executions this process started, so it need not poll its own children. */
   private readonly inFlight = new Map<string, InFlight>();
 
@@ -195,6 +202,7 @@ export class LocalProcessBackend implements ExecutionBackend {
       args: [options.supervisorScript ?? join(__dirname, "local-supervisor.js")],
     };
     this.platform = options.platform ?? process.platform;
+    this.relayCommand = options.relayCommand ?? null;
     this.killProcess = options.killProcess ?? ((pid, signal) => process.kill(pid, signal));
     // Looked up in the launch environment: the runtime the receipt names is the one the
     // process will find on *its* PATH, which the harness and a principal's shell may set
@@ -284,6 +292,11 @@ export class LocalProcessBackend implements ExecutionBackend {
       resultFile,
       temporaryFiles: [...launchSpec.temporaryFiles],
       deadlineAt: input.lifecycle?.deadlineAt ?? null,
+      // Relay đi theo supervisor, vì nó là process duy nhất sống bằng đời con: thư mục lấy
+      // từ launch env — chính thư mục mà `alp` trong sandbox sẽ ghi request vào.
+      relay: this.relayCommand && launchSpec.env[RELAY_DIRECTORY_ENV]
+        ? { directory: launchSpec.env[RELAY_DIRECTORY_ENV], stableCommand: this.relayCommand }
+        : null,
     };
     mkdirSync(join(this.stateDir, "specs"), { recursive: true, mode: 0o700 });
     writeFileSync(specFile, `${JSON.stringify(supervisorSpec, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
