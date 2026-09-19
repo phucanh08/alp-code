@@ -17,6 +17,7 @@ Chạy từ **trong một phiên ALP** (cần binding của cha; `alp delegate` 
 `PARENT_EXECUTION_REQUIRED`):
 
 ```bash
+npm run build                                    # trước, ở terminal trần: `alp` chạy từ dist/
 node scripts/live-worker-premise.cjs            # nấc hiện tại của phiên
 node scripts/live-worker-premise.cjs --mode low  # đổi nấc → đổi model/runtime
 ```

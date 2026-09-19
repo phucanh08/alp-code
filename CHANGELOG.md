@@ -69,8 +69,9 @@ Mọi thay đổi đáng chú ý của alp-code được ghi ở đây.
   `reopen-request` là dữ liệu về framing của chính nó, và giao task cho `worker` dưới dạng
   assignment (`--objective`/`--write-scope`/`--exclude-scope`/`--verification`). Skill
   `delegation` có bảng disposition → việc cha làm. `task.md` của mọi execution headless
-  khép lại bằng mục `## Report` nhắc trailer `Disposition:` — lần chạy live đầu cho thấy
-  worker kết luận đúng bằng prose nhưng bỏ trailer khi luật chỉ nằm trong identity. Fixture tầng 4
+  khép lại bằng mục `## Report` nhắc trailer `Disposition:` — trailer là hợp đồng máy đọc
+  của từng execution, nên nó đứng ở chỗ model đọc cuối, kể cả với bốn specialist mà identity
+  không nhắc tới nó. Fixture tầng 4
   `test/fixtures/live/wrong-premise/` + `scripts/live-worker-premise.cjs` (chạy từ trong
   phiên ALP): task nêu bug không tồn tại ⇒ đạt khi `reopen-request` và workspace sạch.
 

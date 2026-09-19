@@ -19,6 +19,20 @@ if (!process.env.ALP_DELEGATION_EXECUTION_ID) {
   process.exit(2);
 }
 
+// `alp` on PATH is `scripts/alp.cjs` → `dist/`; a `dist/` older than `src/` runs the
+// previous worker prompt and, before 2a, records no outcome at all — the first live run
+// judged a build from the day before and learned nothing about this branch.
+const distEntry = path.join(repoRoot, "dist", "src", "cli", "alp.js");
+const builtAt = fs.existsSync(distEntry) ? fs.statSync(distEntry).mtimeMs : 0;
+const newest = (dir) => fs.readdirSync(dir, { withFileTypes: true }).reduce((max, entry) => {
+  const full = path.join(dir, entry.name);
+  return Math.max(max, entry.isDirectory() ? newest(full) : fs.statSync(full).mtimeMs);
+}, 0);
+if (builtAt < newest(path.join(repoRoot, "src"))) {
+  console.error("ERROR     dist/ is older than src/: run `npm run build` (from a bare terminal — `main` cannot write the workspace), then rerun");
+  process.exit(2);
+}
+
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, { encoding: "utf8", ...options });
   if (result.error) throw result.error;

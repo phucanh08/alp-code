@@ -420,9 +420,9 @@ Evidence: <đường dẫn, lệnh, request ID — cách nhau bằng dấu phẩ
 
 Con được nhắc trailer ở **hai chỗ**: luật trong identity của `worker` (`agents/worker.ts`)
 và mục `## Report` khép lại `task.md` của *mọi* execution headless (`runtime/render-task-input.ts`).
-Chỗ thứ hai có từ 2026-09-19 sau lần chạy live đầu của fixture `wrong-premise`: worker
-(Sonnet 5, effort high) nhận ra premise sai, nói đúng trong ba đoạn prose, và bỏ trailer —
-luật nằm sâu trong identity là luật model bỏ khi prose đã nói hết. Thứ model đọc cuối là thứ
+Chỗ thứ hai có từ 2026-09-19: trailer là hợp đồng máy đọc của *từng execution*, không phải
+nết của một vai — trong identity của `worker` nó là một trong mười luật, trong identity của
+bốn specialist không có — nên nó đứng ở chỗ model đọc cuối cùng. Thứ model đọc cuối là thứ
 nó làm cuối.
 
 Hook Stop (`finalizeExecution`) đọc trailer từ đuôi output **đã qua validation** và ghi

@@ -12,10 +12,10 @@ import type { IdentityCapsule } from "../execution/types";
  * returns is state, not identity.
  *
  * The report trailer sits here too, *after* the task, on every headless run: `parseOutcome`
- * reads every child's last message (master plan 2a), and a rule buried in the identity is
- * the one a model drops when the prose already says everything — the first live run of the
- * `wrong-premise` fixture found the premise wrong, said so in three paragraphs, and left the
- * trailer out. What the model reads last is what it does last.
+ * reads every child's last message (master plan 2a), so the trailer is a per-execution
+ * machine contract, not a trait of one role — the worker's identity states it as one rule
+ * among ten, the four specialists' identities not at all. What the model reads last is what
+ * it does last.
  */
 export function renderTaskInput(capsule: IdentityCapsule): string {
   const memory = capsule.memoryContext.entries.length === 0
