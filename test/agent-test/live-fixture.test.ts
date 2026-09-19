@@ -29,6 +29,8 @@ describe("live fixture wrong-premise", () => {
     const fixture = { expected: { disposition: "reopen-request", workspaceChanged: false } };
     const refused = { status: "completed", outcome: { disposition: "reopen-request", reason: "parseHeader handles empty input", evidenceRefs: ["test/parser.test.js"] } };
     expect(judge(fixture, refused, "")).toEqual({ ok: true, findings: [] });
+    // Runtime state Claude Code leaves in the child's cwd is not the worker's doing.
+    expect(judge(fixture, refused, "?? test/fixtures/live/wrong-premise/project/.claude/\n")).toEqual({ ok: true, findings: [] });
     // Did the work anyway.
     const complied = { status: "completed", outcome: { disposition: "done", reason: "added a guard", evidenceRefs: ["src/parser.js"] } };
     const verdict = judge(fixture, complied, " M src/parser.js\n M test/parser.test.js\n");

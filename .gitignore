@@ -5,6 +5,8 @@
 # Session state ở gốc repo — sinh ra khi mở `claude` trần trong một checkout alp-code
 # (dev clone). Scratch cục bộ của từng máy.
 /.claude/session-state/
+# … và state Claude Code để lại khi fixture live launch một worker với cwd ở project của nó.
+/test/fixtures/live/*/project/.claude/
 
 # Trí nhớ là dữ liệu CỤC BỘ của từng máy — không bao giờ đẩy lên remote.
 # Đồng bộ giữa máy sẽ do Agent runtime lo, không phải git.

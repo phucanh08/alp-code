@@ -10,6 +10,12 @@ import type { IdentityCapsule } from "../execution/types";
  * Memory sits here rather than in the session context because it is selected per task:
  * `MemoryService.buildContext` runs against the task's queries and budget, and what it
  * returns is state, not identity.
+ *
+ * The report trailer sits here too, *after* the task, on every headless run: `parseOutcome`
+ * reads every child's last message (master plan 2a), and a rule buried in the identity is
+ * the one a model drops when the prose already says everything — the first live run of the
+ * `wrong-premise` fixture found the premise wrong, said so in three paragraphs, and left the
+ * trailer out. What the model reads last is what it does last.
  */
 export function renderTaskInput(capsule: IdentityCapsule): string {
   const memory = capsule.memoryContext.entries.length === 0
@@ -27,6 +33,18 @@ export function renderTaskInput(capsule: IdentityCapsule): string {
     "## Task",
     "",
     capsule.task,
+    "",
+    "## Report",
+    "",
+    "End your final message with this trailer, one field per line, nothing after it:",
+    "",
+    "```",
+    "Disposition: done | blocked | reopen-request | dependency-request",
+    "Reason: <one sentence>",
+    "Evidence: <comma-separated paths, commands or request IDs>",
+    "```",
+    "",
+    "`done` only when the task as written is finished and verified; `reopen-request` when the premise is wrong (leave the workspace unchanged); `dependency-request` when an input is missing; `blocked` when something outside your authority stops you. Without the trailer the outcome is recorded as `unknown`, not as done.",
     "",
   ].join("\n");
 }

@@ -418,6 +418,13 @@ Reason: <một câu>
 Evidence: <đường dẫn, lệnh, request ID — cách nhau bằng dấu phẩy>
 ```
 
+Con được nhắc trailer ở **hai chỗ**: luật trong identity của `worker` (`agents/worker.ts`)
+và mục `## Report` khép lại `task.md` của *mọi* execution headless (`runtime/render-task-input.ts`).
+Chỗ thứ hai có từ 2026-09-19 sau lần chạy live đầu của fixture `wrong-premise`: worker
+(Sonnet 5, effort high) nhận ra premise sai, nói đúng trong ba đoạn prose, và bỏ trailer —
+luật nằm sâu trong identity là luật model bỏ khi prose đã nói hết. Thứ model đọc cuối là thứ
+nó làm cuối.
+
 Hook Stop (`finalizeExecution`) đọc trailer từ đuôi output **đã qua validation** và ghi
 `state.json.outcome = { disposition, reason, evidenceRefs }` (`execution/outcome.ts`).
 Trailer bắt đầu ở dòng `Disposition:` cuối cùng; `Reason:`/`Evidence:` chỉ đọc sau dòng đó,

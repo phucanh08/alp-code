@@ -610,4 +610,17 @@ describe.each([
     expect(context).not.toContain(capsuleTask);
     expect(task).not.toContain("Search only the active workspace.");
   });
+
+  it("closes the task with the report trailer, after the task and only there", async () => {
+    const { spec, capsuleTask } = await launch(false);
+    const context = await readFile(runtimeFile(spec, "session-context.md"), "utf8");
+    const task = await readFile(runtimeFile(spec, "task.md"), "utf8");
+
+    // What the model reads last is what it does last: the trailer `parseOutcome` needs sits
+    // after the task on every headless run, not only in the worker's identity.
+    expect(task.indexOf("## Report")).toBeGreaterThan(task.indexOf(capsuleTask));
+    expect(task).toContain("Disposition: done | blocked | reopen-request | dependency-request");
+    expect(task).toContain("Without the trailer the outcome is recorded as `unknown`");
+    expect(context).not.toContain("Disposition: done | blocked");
+  });
 });
