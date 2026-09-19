@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { agentRegistry } from "../../src/agents/registry";
-import { createExecutionPolicy, readWriteScope } from "../../src/execution/execution-policy";
+import { createExecutionPolicy, readExcludeScope, readWriteScope } from "../../src/execution/execution-policy";
 import { finalizeExecution } from "../../src/hooks/execution-bridge";
 import { WorkflowRunner } from "../../src/workflow/workflow-runner";
 import { removeTemporary } from "../support/temporary-root";
@@ -37,8 +37,38 @@ describe("readWriteScope — a policy.json read from disk", () => {
   });
 });
 
+/**
+ * Oracle: master plan 2b — `excludeScope` is hashed beside `writeScope`, and is absent (not
+ * `null`) from a snapshot with nothing excluded so that every policy written before 2b still
+ * hashes the same.
+ */
+describe("readExcludeScope — a policy.json read from disk", () => {
+  it("reads `null` from a snapshot that predates the field, and from an explicit null", () => {
+    expect(readExcludeScope({ role: "worker", policyHash: "abc" })).toBeNull();
+    expect(readExcludeScope({ excludeScope: null })).toBeNull();
+  });
+
+  it("reads back the list a policy carries, and refuses anything else", () => {
+    expect(readExcludeScope({ excludeScope: ["/ws/src/parser"] })).toEqual(["/ws/src/parser"]);
+    expect(() => readExcludeScope({ excludeScope: "/ws/src" })).toThrowError(/excludeScope/);
+    expect(() => readExcludeScope({ excludeScope: [] })).toThrowError(/excludeScope/);
+    expect(() => readExcludeScope({ excludeScope: ["/ws/src", ""] })).toThrowError(/excludeScope\[1\]/);
+  });
+
+  it("leaves the key out of the snapshot when nothing is excluded, so old snapshots keep their hash", () => {
+    const definition = agentRegistry.get("worker");
+    const base = { executionId: "exec_x", thread: null, definition, workspace: "/ws", workspaceMode: "workspace-write" as const, writeScope: ["/ws/src"], createdAt: "2026-09-12T10:00:00.000Z" };
+    const before = createExecutionPolicy(base);
+    expect(before).not.toHaveProperty("excludeScope");
+    expect(createExecutionPolicy({ ...base, excludeScope: null }).policyHash).toBe(before.policyHash);
+    const excluded = createExecutionPolicy({ ...base, excludeScope: ["/ws/src/parser", "/ws/src/lexer", "/ws/src/parser"] });
+    expect(excluded.excludeScope).toEqual(["/ws/src/lexer", "/ws/src/parser"]);
+    expect(excluded.policyHash).not.toBe(before.policyHash);
+  });
+});
+
 describe("the hook bridge carries writeScope through its tamper check", () => {
-  async function executionOnDisk(writeScope: readonly string[] | null) {
+  async function executionOnDisk(writeScope: readonly string[] | null, excludeScope: readonly string[] | null = null) {
     const root = await mkdtemp(join(tmpdir(), "alp-write-scope-bridge-"));
     roots.push(root);
     const workspace = join(root, "workspace");
@@ -48,7 +78,7 @@ describe("the hook bridge carries writeScope through its tamper check", () => {
     await mkdir(directory);
     const definition = agentRegistry.get("worker");
     const policy = createExecutionPolicy({
-      executionId, thread: null, definition, workspace, workspaceMode: "workspace-write", writeScope, createdAt: "2026-09-12T10:00:00.000Z",
+      executionId, thread: null, definition, workspace, workspaceMode: "workspace-write", writeScope, excludeScope, createdAt: "2026-09-12T10:00:00.000Z",
     });
     const state = { executionId, status: "prepared", workflow: new WorkflowRunner().initialize(definition.workflow), policyHash: policy.policyHash, createdAt: policy.createdAt };
     await writeFile(join(directory, "policy.json"), JSON.stringify(policy));
@@ -61,6 +91,16 @@ describe("the hook bridge carries writeScope through its tamper check", () => {
     const value = await executionOnDisk([join("/ws", "src")]);
     await expect(finalizeExecution({ executionId: value.executionId, executionRoot: value.root, output: "done" }))
       .resolves.toMatchObject({ ok: true, status: "completed" });
+  });
+
+  it("finalizes an execution that ran under an exclusion, and refuses one whose exclusion was dropped", async () => {
+    const value = await executionOnDisk([join("/ws", "src")], [join("/ws", "src", "parser")]);
+    await expect(finalizeExecution({ executionId: value.executionId, executionRoot: value.root, output: "done" }))
+      .resolves.toMatchObject({ ok: true, status: "completed" });
+    const { excludeScope: _dropped, ...tampered } = value.policy;
+    await writeFile(join(value.directory, "policy.json"), JSON.stringify(tampered));
+    await expect(finalizeExecution({ executionId: value.executionId, executionRoot: value.root, output: "done" }))
+      .rejects.toThrow(/policy snapshot is invalid or stale/);
   });
 
   it("refuses an execution whose scope was widened after the fact", async () => {

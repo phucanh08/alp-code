@@ -78,6 +78,10 @@ export class PolicyEngine {
       const scope = this.decideWriteScope(request, request.writeScope);
       if (scope !== null) return scope;
     }
+    if (request.excludeScope !== undefined) {
+      const excluded = this.decideExcludeScope(request, request.excludeScope);
+      if (excluded !== null) return excluded;
+    }
     if (request.launch === undefined) return { kind: "allow" };
 
     let target: string;
@@ -164,6 +168,51 @@ export class PolicyEngine {
       }
     }
     return this.decideParentScope(request, workspace, entries);
+  }
+
+  /**
+   * The exclude-scope checks (master plan 2b): an exclusion on a read-only launch is a
+   * contradiction; each entry must resolve and sit inside an owned root — the scope, or the
+   * whole workspace when there is none — without swallowing that root whole, which would
+   * leave the child owning nothing under a name that says it owns something.
+   */
+  private decideExcludeScope(
+    request: Extract<AuthorizationRequest, { type: "workspace" }>,
+    excludeScope: readonly string[],
+  ): PolicyDecision | null {
+    if (request.operation !== "write") {
+      return {
+        kind: "deny",
+        code: "EXCLUDE_SCOPE_ON_READ_ONLY",
+        reason: `\`${request.actor}\` was given an exclude scope for a read-only launch at \`${request.path}\``,
+      };
+    }
+    let owned: string[];
+    const entries: string[] = [];
+    try {
+      owned = (request.writeScope ?? [request.path]).map((entry) => this.canonicalizePath(entry));
+      for (const entry of excludeScope) entries.push(this.canonicalizePath(entry));
+    } catch (error) {
+      return { kind: "deny", code: "PATH_RESOLUTION_FAILED", reason: `cannot resolve exclude scope: ${String(error)}` };
+    }
+    for (const entry of entries) {
+      const root = owned.find((candidate) => within(candidate, entry));
+      if (root === undefined) {
+        return {
+          kind: "deny",
+          code: "EXCLUDE_SCOPE_OUTSIDE_WRITE_SCOPE",
+          reason: `exclude scope entry \`${entry}\` is outside what \`${request.actor}\` may write [${owned.join(", ")}]`,
+        };
+      }
+      if (root === entry) {
+        return {
+          kind: "deny",
+          code: "EXCLUDE_SCOPE_COVERS_WRITE_SCOPE",
+          reason: `exclude scope entry \`${entry}\` covers the whole owned root; drop the root from the write scope instead`,
+        };
+      }
+    }
+    return null;
   }
 
   /**

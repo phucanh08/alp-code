@@ -7,6 +7,12 @@ import type { BudgetStatus, ExecutionBudget, UsageCounters } from "../execution/
 
 export type DelegationErrorCode =
   | "INVALID_REQUEST"
+  /**
+   * Phần được ghi của request chạm phần được ghi của một execution còn sống trong cùng cây
+   * (master plan 2b). Hai con cùng cầm bút trên một đường dẫn không phải một việc song song
+   * — đó là hai bản diff chờ nhau; cha thu hẹp bằng `writeScope`/`excludeScope` hoặc chờ.
+   */
+  | "WRITE_SCOPE_OVERLAP"
   | "BACKEND_UNAVAILABLE"
   | "RUNTIME_UNAVAILABLE"
   | "EXECUTION_NOT_FOUND"
@@ -62,6 +68,17 @@ export interface DelegationRequestInput {
    */
   readonly writeScope?: readonly string[];
   /**
+   * Các cây con bị loại khỏi phần được ghi (master plan 2b) — tương đối so với workspace hoặc
+   * tuyệt đối, mỗi entry phải nằm trong một gốc được ghi mà không nuốt trọn gốc đó. Chỉ có
+   * nghĩa với `workspace-write`; bỏ trống là không loại gì. Rỗng hoặc phần tử trống là
+   * `INVALID_REQUEST`. Đi vào fingerprint.
+   */
+  readonly excludeScope?: readonly string[];
+  /** Mục tiêu của assignment, tách khỏi task (2b). Trống sau khi trim là `INVALID_REQUEST`. */
+  readonly objective?: string;
+  /** Cách cha nghiệm thu — lệnh, tiêu chí — tách khỏi task (2b). Trống sau khi trim là `INVALID_REQUEST`. */
+  readonly verification?: string;
+  /**
    * Bằng chứng cha đòi khi con kết thúc: `change` (work tree đã đổi) hoặc `verify:<id>` (một
    * lệnh verify của project đã chạy và thoát 0). Khác thế là `INVALID_REQUEST`. Đi vào
    * fingerprint và bất biến trên node — đòi thêm sau khi giao là một việc khác.
@@ -86,6 +103,10 @@ export interface DelegationRequest {
   readonly workspaceMode: "read-only" | "workspace-write";
   /** Đã trim, sort, bỏ trùng — `null` là cả workspace. */
   readonly writeScope: readonly string[] | null;
+  /** Đã trim, sort, bỏ trùng — `null` là không loại gì. */
+  readonly excludeScope: readonly string[] | null;
+  readonly objective: string | null;
+  readonly verification: string | null;
   /** Đã trim, sort, bỏ trùng — rỗng là không đòi gì. */
   readonly requiredEvidence: readonly string[];
   /** Chỉ những trần đã khai, đã kiểm — `null` là không khai. */

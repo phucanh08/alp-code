@@ -104,6 +104,12 @@ export interface ExecutionPolicy {
    */
   readonly writeScope: readonly string[] | null;
   /**
+   * The subtrees carved out of `writeScope` (master plan 2b), canonical and sorted. Present
+   * only when the launch excluded something: an absent key hashes like a `policy.json`
+   * written before exclusions existed, which is what every such launch meant.
+   */
+  readonly excludeScope?: readonly string[];
+  /**
    * Directories outside the workspace the machine opened for build and test tools —
    * `~/fvm`, `~/.gradle`, DerivedData (GitHub #25) — canonical and sorted, `[]` when none.
    * In the hash: a launch that may write a toolchain cache is a different identity from one
@@ -244,6 +250,8 @@ export interface ExecutionAuthorization {
   readonly approvals: readonly ApprovalRecordV1[];
   /** The scope policy approved — canonical, sorted, deduplicated — or `null` for the whole workspace. */
   readonly writeScope: readonly string[] | null;
+  /** The exclusions policy approved — canonical, sorted, deduplicated — or `null` when none. */
+  readonly excludeScope: readonly string[] | null;
   /** The machine's toolchain write paths, checked against this workspace — see `ExecutionPolicy`. */
   readonly toolchainWritePaths: readonly string[];
   readonly authorizedAt: string;
@@ -267,6 +275,11 @@ export interface AuthorizeExecutionInput {
    * contradiction and refused. Absent means the whole workspace.
    */
   readonly writeScope?: readonly string[];
+  /**
+   * Subtrees carved out of the write scope, relative to the workspace or absolute. Each must
+   * exist and sit inside an owned root without covering it. Absent means nothing excluded.
+   */
+  readonly excludeScope?: readonly string[];
   /** The session's collected approvals, when the launch runs under a root that keeps them. */
   readonly sessionApprovals?: SessionApprovals;
 }

@@ -24,6 +24,7 @@ import {
 } from "../../src/cli/commands/delegate";
 import type { DelegationTreeNode, DelegationTreeView } from "../../src/delegation/types";
 import { DEFAULT_EXECUTION_GRAPH_LIMITS } from "../../src/execution/graph/defaults";
+import type { DelegationRequestInput } from "../../src/delegation/types";
 import { NO_USAGE } from "../../src/execution/usage";
 
 const temporaryRoots: string[] = [];
@@ -767,6 +768,39 @@ describe("alp delegate", () => {
     expect(calls[1]).not.toHaveProperty("writeScope");
     await expect(runDelegateCommand(["worker", "--", "fix", "--write-scope"], { cwd: "/caller/project", env: {}, service }))
       .rejects.toThrow(/--write-scope requires a path/);
+  });
+
+  /**
+   * Oracle: master plan 2b — `--exclude-scope` repeats like `--write-scope`; `--objective` and
+   * `--verification` are request fields of their own, not words of the task.
+   */
+  it("collects `--exclude-scope`, `--objective` and `--verification` into the request, out of the task", async () => {
+    const calls: DelegationRequestInput[] = [];
+    const service = {
+      async delegate(input: DelegationRequestInput) { calls.push(input); return { executionId: "exec-child", requestId: "req", status: "completed" as const, metadata: { backend: "local", runtime: "codex" as const } }; },
+      async wait() { throw new Error("unused"); },
+      async status() { throw new Error("unused"); },
+      async cancel() { throw new Error("unused"); },
+      async cleanup() { throw new Error("unused"); },
+      listExecutions() { return []; },
+      async evidence() { throw new Error("unused"); },
+      async accept() { throw new Error("unused"); },
+      async reject() { throw new Error("unused"); },
+      async tree() { throw new Error("unused"); },
+    };
+    await runDelegateCommand([
+      "worker", "--write-scope", "src", "--exclude-scope", "src/parser", "--exclude-scope", "src/lexer",
+      "--objective", "lexer emits tokens", "--verification", "npx vitest run test/lexer", "--", "rewrite", "the", "lexer",
+    ], { cwd: "/caller/project", env: {}, service });
+    expect(calls[0]).toMatchObject({
+      writeScope: ["src"], excludeScope: ["src/parser", "src/lexer"], objective: "lexer emits tokens", verification: "npx vitest run test/lexer", task: "rewrite the lexer",
+    });
+    await runDelegateCommand(["worker", "--", "fix"], { cwd: "/caller/project", env: {}, service });
+    for (const field of ["excludeScope", "objective", "verification"]) expect(calls[1]).not.toHaveProperty(field);
+    for (const [flag, message] of [["--exclude-scope", "a path"], ["--objective", "a sentence"], ["--verification", "a sentence"]]) {
+      await expect(runDelegateCommand(["worker", "--", "fix", flag], { cwd: "/caller/project", env: {}, service }))
+        .rejects.toThrow(new RegExp(`${flag} requires ${message}`));
+    }
   });
 
   /**

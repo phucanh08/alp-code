@@ -211,7 +211,14 @@ function fakeExecutionService(options: {
       const [input] = call;
       authorized.push(call);
       if (options.authorizeError) throw options.authorizeError;
-      const ticket = { executionId: input.executionId } as ExecutionAuthorization;
+      // The fake ticket carries the scope fields the service renders into the child's task;
+      // the real ticket would hold them canonicalized, here they pass through as given.
+      const ticket = {
+        executionId: input.executionId,
+        workspace: input.workspace,
+        writeScope: input.writeScope === undefined ? null : input.writeScope.map((entry) => join(input.workspace, entry)),
+        excludeScope: input.excludeScope === undefined ? null : input.excludeScope.map((entry) => join(input.workspace, entry)),
+      } as ExecutionAuthorization;
       tickets.set(ticket, { ...input, thread: null, task: "", memoryQueries: [], characterBudget: 0, invariantContext: "", policyContext: "" } as PrepareExecutionInput);
       return ticket;
     },
@@ -929,6 +936,66 @@ describe("DelegationService — writeScope", () => {
     const status = await fixture.service.status(unscoped.executionId);
     expect(status).toHaveProperty("writeScope");
     expect(status.writeScope).toBeNull();
+  });
+});
+
+/**
+ * Oracle: master plan 2b "Assignment có biên" — the request carries objective / owned /
+ * excluded / verification as fields of their own: `excludeScope` is normalized and handed to
+ * authorization beside `writeScope`; a field that names nothing is `INVALID_REQUEST` before
+ * anything is authorized; the child's task is rendered with the assignment first; and the
+ * assignment is part of what was asked, so a retry with another one is another child.
+ */
+describe("DelegationService — assignment", () => {
+  let root = "";
+  beforeEach(async () => { root = await mkdtemp(join(tmpdir(), "alp-delegation-")); });
+  afterEach(async () => { await removeTemporary(root); });
+
+  const scopedInput = { ...input, targetRole: "worker", workspaceMode: "workspace-write" as const };
+
+  it("passes a normalized exclusion to authorization beside the scope", async () => {
+    const fixture = await serviceFixture({ root });
+    await fixture.service.delegate({ ...scopedInput, writeScope: ["src"], excludeScope: [" src/parser ", "src/lexer", "src/parser"] });
+    const [authorizeInput] = fixture.executionService.authorized[0];
+    expect(authorizeInput).toMatchObject({ writeScope: ["src"], excludeScope: ["src/lexer", "src/parser"] });
+  });
+
+  it("refuses an assignment field that names nothing before anything is authorized", async () => {
+    const fixture = await serviceFixture({ root });
+    for (const excludeScope of [[], [" "], ["src", ""]]) {
+      await expect(fixture.service.delegate({ ...scopedInput, excludeScope })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    }
+    for (const field of ["objective", "verification"] as const) {
+      await expect(fixture.service.delegate({ ...scopedInput, [field]: "  " })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    }
+    expect(fixture.executionService.authorized).toHaveLength(0);
+  });
+
+  it("renders the assignment before the task the child receives, and leaves a bare task alone", async () => {
+    const tasks: string[] = [];
+    const fixture = await serviceFixture({
+      root,
+      materialize: async (request) => { tasks.push(request.task); return prepared(request.executionId, request.target); },
+    });
+    await fixture.service.delegate({ ...scopedInput, task: "Rewrite the lexer", objective: "lexer emits tokens", verification: "npx vitest run test/lexer" });
+    expect(tasks[0].split("\n").slice(0, 3)).toEqual([
+      "Objective: lexer emits tokens",
+      `Owned paths (you may write): the whole workspace \`${process.cwd()}\``,
+      "Excluded paths (you may not write, another execution owns them): none",
+    ]);
+    expect(tasks[0]).toContain("Verification (how done is checked): npx vitest run test/lexer");
+    expect(tasks[0].endsWith("\n\nRewrite the lexer")).toBe(true);
+    const { requestId: _explicit, ...withoutId } = scopedInput;
+    await fixture.service.delegate({ ...withoutId, task: "Just the task" });
+    expect(tasks[1]).toBe("Just the task");
+  });
+
+  it("treats the same task under another assignment as different work", async () => {
+    const fixture = await serviceFixture({ root });
+    const first = await fixture.service.delegate({ ...scopedInput, objective: "one" });
+    expect((await fixture.service.delegate({ ...scopedInput, objective: "one" })).executionId).toBe(first.executionId);
+    await expect(fixture.service.delegate({ ...scopedInput, objective: "two" })).rejects.toMatchObject({ code: "REQUEST_ID_CONFLICT" });
+    await expect(fixture.service.delegate({ ...scopedInput, excludeScope: ["src"] })).rejects.toMatchObject({ code: "REQUEST_ID_CONFLICT" });
   });
 });
 

@@ -10,7 +10,7 @@ import { unsupportedHistoryBridge, type HistoryBridgeRegistry } from "../thread/
 import { sanitizeText } from "../thread/history-redact";
 import type { CollectedEntry, HistoryCompleteness, HistoryDelta, RuntimeHistoryCursor, ThreadExecutionBoundary, ThreadToolCallRef } from "../thread/history-types";
 import type { ThreadExecutionOutcome } from "../thread/types";
-import { readWriteScope } from "./execution-policy";
+import { readExcludeScope, readWriteScope } from "./execution-policy";
 import {
   accumulateUsage,
   countersOf,
@@ -21,6 +21,7 @@ import {
   type ExecutionBudget,
   type UsageCounters,
 } from "./usage";
+import { ownsPath, sharedRegion, type AssignmentScope } from "./assignment";
 import { executionArtifactPaths } from "./execution-store";
 import type { ExecutionGraphService } from "./graph/execution-graph-service";
 import { findNode, isTerminalNodeStatus, type ExecutionNode } from "./graph/types";
@@ -153,6 +154,8 @@ export interface OverlapNode {
   readonly workspace: string;
   readonly workspaceMode: "read-only" | "workspace-write";
   readonly writeScope: readonly string[] | null;
+  /** Carved out of the scope (master plan 2b); absent on records from before exclusions. */
+  readonly excludeScope?: readonly string[] | null;
   readonly writeIsolation: EnforcementLevel | null;
   readonly startedAt: string | null;
   readonly endedAt: string | null;
@@ -237,12 +240,8 @@ export function demoteForVersion(provenance: Provenance, measured: string, actua
 
 const instant = (value: string | null, fallback: number): number => (value === null ? fallback : Date.parse(value));
 
-function effectiveScope(node: OverlapNode): readonly string[] {
-  return node.writeScope ?? [node.workspace];
-}
-
-function scopesTouch(left: readonly string[], right: readonly string[]): boolean {
-  return left.some((a) => right.some((b) => within(a, b) || within(b, a)));
+function assignmentScope(node: OverlapNode): AssignmentScope {
+  return { workspace: node.workspace, writeScope: node.writeScope, excludeScope: node.excludeScope ?? null };
 }
 
 /**
@@ -255,7 +254,7 @@ function scopesTouch(left: readonly string[], right: readonly string[]): boolean
 export function ambiguousNodes(target: OverlapNode, others: readonly OverlapNode[]): readonly string[] {
   const targetStart = instant(target.startedAt, Number.NEGATIVE_INFINITY);
   const targetEnd = instant(target.endedAt, Number.POSITIVE_INFINITY);
-  const targetScope = effectiveScope(target);
+  const targetScope = assignmentScope(target);
   const named = new Set<string>();
   for (const node of others) {
     if (node.executionId === target.executionId) continue;
@@ -265,7 +264,9 @@ export function ambiguousNodes(target: OverlapNode, others: readonly OverlapNode
     if (start > targetEnd || end < targetStart) continue;
     if (node.writeIsolation !== "enforced") { named.add(node.executionId); continue; }
     if (node.workspaceMode === "read-only") continue;
-    if (scopesTouch(effectiveScope(node), targetScope)) named.add(node.executionId);
+    // Two scopes that meet only where one of them excluded the meeting point never wrote
+    // the same path (master plan 2b) — that is what the exclusion was for.
+    if (sharedRegion(assignmentScope(node), targetScope) !== null) named.add(node.executionId);
   }
   return [...named].sort();
 }
@@ -283,9 +284,9 @@ export function diffBaseline(before: GitBaselineV1, after: GitBaselineV1, change
   return { paths: [...paths].sort(), commit };
 }
 
-export function outsideScope(paths: readonly string[], writeScope: readonly string[] | null, workspace: string): readonly string[] {
-  const roots = writeScope ?? [workspace];
-  return paths.filter((path) => !roots.some((root) => within(root, path)));
+export function outsideScope(paths: readonly string[], writeScope: readonly string[] | null, workspace: string, excludeScope: readonly string[] | null = null): readonly string[] {
+  const scope: AssignmentScope = { workspace, writeScope, excludeScope };
+  return paths.filter((path) => !ownsPath(scope, path));
 }
 
 const VERIFY_ID = /^[a-z0-9][a-z0-9._-]*$/;
@@ -404,6 +405,7 @@ interface PolicyView {
   readonly workspace: string;
   readonly workspaceMode: "read-only" | "workspace-write";
   readonly writeScope: readonly string[] | null;
+  readonly excludeScope: readonly string[] | null;
   readonly runtime: RuntimeId | null;
   readonly enforcement: RuntimeEnforcementCapabilitiesV1 | null;
 }
@@ -430,6 +432,7 @@ async function readPolicy(executionsRoot: string, executionId: string): Promise<
     workspace,
     workspaceMode,
     writeScope: readWriteScope(snapshot),
+    excludeScope: readExcludeScope(snapshot),
     runtime: typeof runtime === "string" && (RUNTIME_IDS as readonly string[]).includes(runtime) ? runtime as RuntimeId : null,
     enforcement: readEnforcement(snapshot),
   };
@@ -442,6 +445,7 @@ function overlapNodeOf(node: ExecutionNode, policy: PolicyView | null): OverlapN
     workspace: policy?.workspace ?? "/",
     workspaceMode: policy?.workspaceMode ?? "workspace-write",
     writeScope: policy?.writeScope ?? null,
+    excludeScope: policy?.excludeScope ?? null,
     writeIsolation: policy?.enforcement?.writeIsolation ?? null,
     startedAt: node.startedAt ?? node.createdAt,
     endedAt: node.endedAt,
@@ -519,7 +523,7 @@ export async function collectExecutionEvidence(input: { readonly executionId: st
         source: "git",
         paths: diff.paths,
         commit: diff.commit,
-        outsideScope: outsideScope(diff.paths, policy.writeScope, policy.workspace),
+        outsideScope: outsideScope(diff.paths, policy.writeScope, policy.workspace, policy.excludeScope),
         outsideScopeVerified: scopeVerified,
         ambiguousWith,
       });
@@ -539,7 +543,7 @@ export async function collectExecutionEvidence(input: { readonly executionId: st
       else if (entry.kind === "change") {
         items.push({
           kind: "change", provenance, source: "history-bridge", paths: entry.paths, commit: entry.commit,
-          outsideScope: outsideScope(entry.paths, policy.writeScope, policy.workspace), outsideScopeVerified: scopeVerified, ambiguousWith: [],
+          outsideScope: outsideScope(entry.paths, policy.writeScope, policy.workspace, policy.excludeScope), outsideScopeVerified: scopeVerified, ambiguousWith: [],
         });
       }
     }

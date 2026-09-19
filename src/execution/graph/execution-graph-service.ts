@@ -177,6 +177,13 @@ export interface ChildRequest {
   readonly requiredEvidence?: readonly string[];
   /** Trần token / tool call cho con (P6). Đặt trần khác là một việc khác — vào fingerprint chỉ khi có. */
   readonly budget?: ExecutionBudget | null;
+  /**
+   * Biên của assignment (master plan 2b): phần loại khỏi scope ghi, mục tiêu, cách nghiệm
+   * thu. Đổi biên là đổi quyền, đổi mục tiêu là đổi việc — vào fingerprint, chỉ khi có.
+   */
+  readonly excludeScope?: readonly string[] | null;
+  readonly objective?: string | null;
+  readonly verification?: string | null;
 }
 
 /** Context string của HMAC. Đổi nó là đổi mọi capability con, nên version nằm trong tên. */
@@ -254,6 +261,9 @@ export function requestFingerprint(
         metadata: request.metadata,
         requiredEvidence: request.requiredEvidence?.length ? request.requiredEvidence : undefined,
         budget: request.budget ?? undefined,
+        excludeScope: request.excludeScope?.length ? request.excludeScope : undefined,
+        objective: request.objective ?? undefined,
+        verification: request.verification ?? undefined,
       }),
       "utf8",
     )

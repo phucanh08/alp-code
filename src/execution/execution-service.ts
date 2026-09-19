@@ -141,7 +141,8 @@ export class ExecutionService {
     }
 
     const workspace = await this.resolveWorkspace(input.workspace);
-    const writeScope = input.writeScope === undefined ? null : await this.resolveWriteScope(workspace, input.writeScope);
+    const writeScope = input.writeScope === undefined ? null : await this.resolveScope("write scope", "WRITE_SCOPE_NOT_FOUND", workspace, input.writeScope);
+    const excludeScope = input.excludeScope === undefined ? null : await this.resolveScope("exclude scope", "EXCLUDE_SCOPE_NOT_FOUND", workspace, input.excludeScope);
     // A toolchain path is a cache beside the project, never the project: one that contained
     // this workspace would hand a read-only or scoped role the whole tree through the
     // machine's settings, and no approval was asked for that.
@@ -155,7 +156,7 @@ export class ExecutionService {
     const approvals: ApprovalRecordV1[] = [];
     // A scope is always asked about, even on a read-only launch: the deny it earns there
     // (`WRITE_SCOPE_ON_READ_ONLY`) is policy's to give, not something to drop on the floor.
-    if (grantsWorkspace || input.workspaceMode === "workspace-write" || writeScope !== null) {
+    if (grantsWorkspace || input.workspaceMode === "workspace-write" || writeScope !== null || excludeScope !== null) {
       const decision = decideWith(this.policy, {
         type: "workspace",
         actor: definition.id,
@@ -168,6 +169,7 @@ export class ExecutionService {
         },
         ...(input.launch === undefined ? {} : { launch: input.launch }),
         ...(writeScope === null ? {} : { writeScope }),
+        ...(excludeScope === null ? {} : { excludeScope }),
       });
       if (decision.kind === "require_approval") {
         approvals.push(await this.settle(decision, input, surface));
@@ -184,6 +186,7 @@ export class ExecutionService {
       workspaceMode: input.workspaceMode,
       approvals,
       writeScope,
+      excludeScope,
       toolchainWritePaths: this.toolchainWritePaths,
       authorizedAt: this.now().toISOString(),
     });
@@ -195,16 +198,17 @@ export class ExecutionService {
    * Each entry resolved the way the workspace was — through symlinks — so what policy judges
    * is where writes would really land. A missing entry is refused rather than created: the
    * scope names what the child may touch, and a launch is not the moment to grow the tree.
+   * The same rule for an exclusion: excluding a path that is not there names nothing.
    */
-  private async resolveWriteScope(workspace: string, entries: readonly string[]): Promise<readonly string[]> {
-    if (entries.length === 0) throw new Error("workspace authorization failed: write scope must not be empty (omit it for the whole workspace)");
+  private async resolveScope(label: string, missingCode: string, workspace: string, entries: readonly string[]): Promise<readonly string[]> {
+    if (entries.length === 0) throw new Error(`workspace authorization failed: ${label} must not be empty (omit it instead)`);
     const resolved = new Set<string>();
     for (const entry of entries) {
       try {
         resolved.add(await this.resolveWorkspace(resolve(workspace, entry)));
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-          throw new Error(`workspace authorization failed (WRITE_SCOPE_NOT_FOUND): write scope entry \`${entry}\` does not exist under \`${workspace}\``);
+          throw new Error(`workspace authorization failed (${missingCode}): ${label} entry \`${entry}\` does not exist under \`${workspace}\``);
         }
         throw error;
       }
@@ -270,6 +274,7 @@ export class ExecutionService {
       workspaceMode: authorization.workspaceMode,
       approvals: authorization.approvals,
       writeScope: authorization.writeScope,
+      excludeScope: authorization.excludeScope,
       toolchainWritePaths: authorization.toolchainWritePaths,
       ...(input.mode === undefined ? {} : { mode: input.mode }),
       ...(input.modeProfiles === undefined ? {} : { modeProfiles: input.modeProfiles }),

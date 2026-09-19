@@ -62,7 +62,9 @@ alp agent list [--project <path>] [--json]
 ```text
 alp delegate <role> [--background] [--timeout-ms <positive>] [--project <path>] -- <task>
 alp delegate <role> [--background] [--timeout-ms <positive>] [--workspace <path>] -- <task>
-alp delegate <role> [--write-scope <path>]... [--require-evidence change|verify:<id>]...
+alp delegate <role> [--write-scope <path>]... [--exclude-scope <path>]...
+                    [--objective <text>] [--verification <text>]
+                    [--require-evidence change|verify:<id>]...
                     [--budget-tokens N] [--budget-tool-calls N] -- <task>
 ```
 
@@ -105,6 +107,8 @@ alp trust verify [--project <path>] [--revoke]
 | `DELEGATION_LIMIT_EXCEEDED` | Hết 8 lượt của cả đời phiên | Mở phiên mới |
 | `WALL_CLOCK_EXCEEDED` | Phiên quá hạn 2 giờ | Mở phiên mới; hạn không gia hạn được |
 | `WRITE_SCOPE_NOT_FOUND` · `WRITE_SCOPE_OUTSIDE_WORKSPACE` · `WRITE_SCOPE_EXCEEDS_PARENT` · `WRITE_SCOPE_ON_READ_ONLY` | `--write-scope` trỏ vào chỗ không có, ngoài workspace, rộng hơn scope của cha, hay vai đích không ghi được | Sửa đường dẫn; scope phải tồn tại sẵn, ALP không tạo hộ |
+| `EXCLUDE_SCOPE_NOT_FOUND` · `EXCLUDE_SCOPE_OUTSIDE_WRITE_SCOPE` · `EXCLUDE_SCOPE_COVERS_WRITE_SCOPE` · `EXCLUDE_SCOPE_ON_READ_ONLY` | `--exclude-scope` trỏ vào chỗ không có, ngoài phần được ghi, trùng cả scope, hay vai đích không ghi được | Loại trừ phải là một cây con *bên trong* scope (hoặc workspace) và nhỏ hơn nó |
+| `WRITE_SCOPE_OVERLAP` | Một con khác đang sống đã sở hữu path này | Thu hẹp `--write-scope`, `--exclude-scope` vùng đó, hoặc `wait`/`cancel` con kia |
 | `ACCEPTANCE_NOT_PARENT` · `ACCEPTANCE_SUBJECT_RUNNING` · `ACCEPTANCE_ALREADY_DECIDED` | Nghiệm thu một request không phải của mình, con còn chạy, hay đã quyết rồi | Chỉ cha trực tiếp quyết; `cancel` rồi `reject` nếu muốn dừng; đổi ý là giao lại |
 | `EXECUTION_GRAPH_CORRUPT` · `EXECUTION_GRAPH_LOCK_TIMEOUT` | Không đọc/khoá được file cây | Xem [Xử lý sự cố](../troubleshooting/#cây-execution-hỏng-hoặc-bị-khoá) |
 

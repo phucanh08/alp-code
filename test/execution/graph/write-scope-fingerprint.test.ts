@@ -33,3 +33,24 @@ describe("requestFingerprint — writeScope", () => {
       .toBe(requestFingerprint("exec_parent", { ...base, writeScope: ["/ws/src"] }));
   });
 });
+
+/**
+ * Oracle: master plan 2b — the assignment's boundary and wording are part of what was asked:
+ * a different exclusion, objective or verification is different work; and a request that
+ * names none of them fingerprints exactly as it did before they existed.
+ */
+describe("requestFingerprint — assignment", () => {
+  it("separates requests by exclusion, objective and verification", () => {
+    const plain = requestFingerprint("exec_parent", { ...base, writeScope: ["/ws/src"] });
+    const excluded = requestFingerprint("exec_parent", { ...base, writeScope: ["/ws/src"], excludeScope: ["/ws/src/parser"] });
+    const objective = requestFingerprint("exec_parent", { ...base, writeScope: ["/ws/src"], objective: "make it parse" });
+    const verification = requestFingerprint("exec_parent", { ...base, writeScope: ["/ws/src"], verification: "npm test" });
+    expect(new Set([plain, excluded, objective, verification]).size).toBe(4);
+  });
+
+  it("hashes an absent, null or empty assignment field like a request from before 2b", () => {
+    const before = requestFingerprint("exec_parent", base);
+    expect(requestFingerprint("exec_parent", { ...base, excludeScope: null, objective: null, verification: null })).toBe(before);
+    expect(requestFingerprint("exec_parent", { ...base, excludeScope: [] })).toBe(before);
+  });
+});

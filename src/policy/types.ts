@@ -13,7 +13,11 @@ export type PolicyErrorCode =
   | "WRITE_SCOPE_OUTSIDE_WORKSPACE"
   | "WRITE_SCOPE_EXCEEDS_PARENT"
   | "WRITE_SCOPE_NOT_FOUND"
+  | "EXCLUDE_SCOPE_NOT_FOUND"
   | "WRITE_SCOPE_PROTECTED_ROOT"
+  | "EXCLUDE_SCOPE_ON_READ_ONLY"
+  | "EXCLUDE_SCOPE_OUTSIDE_WRITE_SCOPE"
+  | "EXCLUDE_SCOPE_COVERS_WRITE_SCOPE"
   | "PATH_RESOLUTION_FAILED"
   | "POLICY_MUTATION_DENIED"
   | "DEFINITION_MUTATION_DENIED"
@@ -113,6 +117,12 @@ export type AuthorizationRequest =
        * scope. Absent means "the whole workspace", which is what every launch meant before.
        */
       readonly writeScope?: readonly string[];
+      /**
+       * Subtrees carved *out* of the write scope — absolute, already resolved. Only meaningful
+       * with `operation: "write"`; every entry must lie inside an owned root without covering
+       * it whole (master plan 2b). Absent means nothing is excluded.
+       */
+      readonly excludeScope?: readonly string[];
     }
   | {
       readonly type: "configuration";

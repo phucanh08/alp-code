@@ -31,6 +31,8 @@ export interface CreateExecutionPolicyInput {
   readonly approvals?: readonly ApprovalRecordV1[];
   /** The approved write scope; absent or `null` means the whole workspace. */
   readonly writeScope?: readonly string[] | null;
+  /** The approved exclusions; absent or `null` means none. */
+  readonly excludeScope?: readonly string[] | null;
   /** The machine's toolchain write paths (GitHub #25); absent means none. */
   readonly toolchainWritePaths?: readonly string[];
   /** Defaults to the shipped catalog — see `capability-catalog.ts`. */
@@ -139,6 +141,24 @@ export function readWriteScope(snapshot: Record<string, unknown>): readonly stri
 }
 
 /**
+ * `excludeScope` as a persisted snapshot carries it. Absent or `null` is "nothing excluded"
+ * — every `policy.json` written before master plan 2b reads that way; anything else must be
+ * a non-empty list of non-empty strings, or the snapshot is not one this code wrote.
+ */
+export function readExcludeScope(snapshot: Record<string, unknown>): readonly string[] | null {
+  const value = snapshot.excludeScope;
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value)) throw new Error("policy snapshot `excludeScope` must be a list of paths or null");
+  if (value.length === 0) throw new Error("policy snapshot `excludeScope` must not be empty; omit it when nothing is excluded");
+  value.forEach((entry, index) => {
+    if (typeof entry !== "string" || entry.length === 0) {
+      throw new Error(`policy snapshot \`excludeScope[${index}]\` must be a non-empty path`);
+    }
+  });
+  return Object.freeze([...(value as string[])]);
+}
+
+/**
  * `toolchainWritePaths` as a persisted snapshot carries it. Absent is `[]` — every
  * `policy.json` written before GitHub #25 reads that way; present, it must be a list of
  * non-empty strings, or the snapshot is not one this code wrote.
@@ -201,6 +221,9 @@ export function createExecutionPolicy(
     // Sorted here as well as at authorization: the hash must not depend on the order a
     // caller happened to list the same scope in.
     writeScope: input.writeScope === undefined || input.writeScope === null ? null : [...input.writeScope].sort(),
+    // Only when something is excluded (master plan 2b): `canonicalize()` drops `undefined`,
+    // so a launch that excludes nothing hashes exactly like one from before exclusions.
+    ...(input.excludeScope === undefined || input.excludeScope === null ? {} : { excludeScope: [...new Set(input.excludeScope)].sort() }),
     // Sorted and deduplicated for the same reason; `[]` rather than absent so the key is
     // always in the hash.
     toolchainWritePaths: [...new Set(input.toolchainWritePaths ?? [])].sort(),
