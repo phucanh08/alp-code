@@ -102,7 +102,7 @@ Legacy store từ nay **chỉ còn được đọc**: không record mới nào g
 | Item | Nguồn | Độ tin cao nhất | Điều kiện |
 |---|---|---|---|
 | `change` | `git` (so với baseline chụp lúc `materialize`) | `observed` | không node nào khác có thể đã ghi cùng workspace **và** runtime cưỡng chế được write isolation |
-| `change`, `tool-call` | transcript của chính runtime | `observed` / `derived` | transcript đọc trọn (`complete`) ⇒ `observed`; đọc thiếu ⇒ `derived` |
+| `change`, `tool-call` | transcript của chính runtime | `observed` / `derived` | transcript đọc trọn (`complete`) ⇒ `observed`; đọc thiếu ⇒ `derived`. `tool-call` mang `result: { digest, bytes, tail }` — 2 KB cuối của output, đã lọc secret — nên `npm test` fail hiện ngay trong `evidence`, không phải mở log backend |
 | `verify` | ALP chạy lệnh verify đã được trust | `observed` | chưa trust ⇒ `verify-skipped`, `unknown` |
 | `output` | con tự khai | `self-reported` | không bao giờ thoả mục nào |
 | `usage`, `budget` | transcript | — | cột đếm không được là `null`, không phải 0; `null` lan qua phép cộng |

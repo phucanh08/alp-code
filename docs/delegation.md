@@ -301,7 +301,7 @@ Mỗi item ghi **nguồn** và **độ tin** (`observed · derived · self-repor
 | Item | Nguồn | `observed` khi | Ghi chú |
 |---|---|---|---|
 | `change` | `git` | không node nào khác có thể đã ghi cùng workspace (`ambiguousWith = []`) **và** `enforcement.writeIsolation = enforced` | `paths` = khác baseline chụp lúc `materialize` (status khác, hoặc hash khác với file dirty sẵn); `outsideScope` chỉ là bằng chứng khi `outsideScopeVerified` |
-| `change`, `tool-call` | `history-bridge` | transcript đọc `complete` | `partial`/`final-only` ⇒ `derived`; `unsupported` ⇒ `unknown` |
+| `change`, `tool-call` | `history-bridge` | transcript đọc `complete` | `partial`/`final-only` ⇒ `derived`; `unsupported` ⇒ `unknown`. `tool-call.ref.result` = `{ digest, bytes, tail }` của output (GitHub #26) — xem dưới |
 | `verify` / `verify-skipped` | `alp-verifier` | đã chạy | chưa trust ⇒ `verify-skipped untrusted`; timeout ⇒ `timeout`; không cấu hình ⇒ `not-configured` |
 | `output` | `agent-output` | không bao giờ | `self-reported`, không đạt mục nào |
 | `boundary` | `runtime-event` | luôn | |
@@ -585,11 +585,28 @@ decision accepted  ·  2026-09-17T02:20:11.000Z
 
   change         observed      git  2 path(s)
   change         observed      history-bridge  2 path(s)
-  tool-call      observed      history-bridge  Write
+  tool-call      observed      history-bridge  Write {"file_path":"src/parser/new.ts",…}  · result 2 B
+  tool-call      observed      history-bridge  Bash {"command":"npm test"}  · error  · result 53 B
+      │ FAIL src/parser/new.test.ts
+      │ Tests: 1 failed, 2 passed
   verify         observed      alp-verifier  verify:test exit 0 in 8123 ms
   output         self-reported agent-output  digest 91a0…
   boundary       observed      runtime-event  completed · history complete
 ```
+
+**Tool result trong evidence (GitHub #26).** Trước đây bridge chỉ đọc `is_error` của
+`tool_result`, nên item `tool-call` chỉ có tên tool và cha phải mở log của backend để biết
+`npm test` nói gì. Nay `ref.result = { digest, bytes, tail }`: digest sha256 của toàn bộ
+output **sau redaction** (cái người đọc có thể đối chiếu), kích thước, và
+`HISTORY_TOOL_RESULT_TAIL_MAX_BYTES` (2 KB) cuối — đuôi chứ không phải đầu, vì đó là chỗ
+kết quả nằm. Redact chạy trước digest và trước cắt. Codex không có cờ lỗi: bridge mở envelope
+`{ output, metadata: { exit_code } }` của shell, `exit_code ≠ 0` ⇒ `isError`. Result chỉ gắn
+được khi cùng lát đọc với `tool_use` — với con (thu một lần sau khi settle) là luôn luôn;
+entry ghi trước khi có trường này vắng `result`. Text view chỉ in 3 dòng cuối cho call
+**lỗi** để không ngập trong `ok` của mỗi Read; `--json` có nguyên đuôi của mọi call.
+`wait --json` mang bản rút gọn: `evidence.toolCalls` (đếm) và `evidence.toolErrors[]`
+(`name`, `summary`, `tail`; tối đa 5, theo thứ tự transcript) — đủ để cha thấy "con nói
+`done`, test nói fail" mà không gọi thêm `evidence`.
 
 ### Breaking change: delegate phải có cha
 

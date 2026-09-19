@@ -265,6 +265,15 @@ function renderTreeUsage(usage: ExecutionTreeUsageLike): string {
   return `usage in ${total.inputTokens}  ·  out ${total.outputTokens}  ·  cache r/w ${total.cacheReadTokens}/${total.cacheWriteTokens}  ·  tools ${total.toolCalls}${partial ? "  (partial)" : ""}`;
 }
 
+const TOOL_TAIL_LINES = 3;
+const TOOL_TAIL_LINE_MAX_CHARS = 160;
+
+/** N dòng cuối không rỗng, mỗi dòng cắt còn một màn hình. */
+function lastLines(text: string, count: number): string[] {
+  return text.split("\n").filter((line) => line.trim() !== "").slice(-count)
+    .map((line) => line.length > TOOL_TAIL_LINE_MAX_CHARS ? `${line.slice(0, TOOL_TAIL_LINE_MAX_CHARS - 1)}…` : line);
+}
+
 /** Một dòng cho một item: nguồn, độ tin, rồi phần người đọc cần để tự kiểm lại. */
 function renderEvidenceItem(item: DelegationEvidenceView["items"][number]): string {
   const head = `  ${item.kind.padEnd(14)} ${item.provenance.padEnd(13)} ${item.source}`;
@@ -281,8 +290,16 @@ function renderEvidenceItem(item: DelegationEvidenceView["items"][number]): stri
     }
     case "verify-skipped":
       return `${head}  verify:${item.commandId} skipped: ${item.reason}${item.reason === "untrusted" ? " — run `alp trust verify` in the project" : ""}`;
-    case "tool-call":
-      return `${head}  ${item.ref.name}`;
+    case "tool-call": {
+      // Summary là tên + đầu input; result là đuôi output (GitHub #26). Text view chỉ in vài
+      // dòng cuối của call **lỗi** — đủ để thấy `Tests: 1 failed` mà không ngập trong `ok`
+      // của mỗi Read; nguyên đuôi của mọi call nằm ở `--json`.
+      const result = item.ref.result;
+      const status = item.ref.isError ? "  · error" : "";
+      const size = result === undefined ? "" : `  · result ${result.bytes} B`;
+      const tail = result === undefined || !item.ref.isError ? [] : lastLines(result.tail, TOOL_TAIL_LINES).map((line) => `${" ".repeat(6)}│ ${line}`);
+      return [`${head}  ${item.ref.summary}${status}${size}`, ...tail].join("\n");
+    }
     case "output":
       return `${head}  digest ${item.digest.slice(0, 12)}`;
     case "boundary":

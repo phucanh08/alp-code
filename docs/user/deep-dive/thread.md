@@ -93,7 +93,7 @@ Sau khi một root settle, ALP hỏi runtime của nó xem transcript còn đọ
 
 Mức của cả Thread là **mức xấu nhất** trong các root. `alp thread sync` chạy lại việc chép cho mọi root đã settle, và chạy lại thì **không** nhân đôi entry: mỗi entry có ID theo ID native của runtime.
 
-Text tool input đi qua bộ lọc secret trước khi ghi. Đây là bản ghi để tra, không phải nguồn context — projector không đọc `messages/`.
+Text tool input và đuôi tool output (2 KB cuối, kèm digest của toàn bộ output) đi qua bộ lọc secret trước khi ghi. Đây là bản ghi để tra, không phải nguồn context — projector không đọc `messages/`.
 
 ## Trên đĩa
 

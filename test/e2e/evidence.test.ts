@@ -110,6 +110,30 @@ describe("e2e: evidence after a delegated write", () => {
     expect(flatten(tree.root).find((node) => node.executionId === spawned.executionId)).toMatchObject({ evidence: { digest: evidence.digest, evaluation: "unknown" } });
   }, 15_000);
 
+  it("carries the tail of a failing tool result to `wait --json` and the evidence view (GitHub #26)", async () => {
+    const { environment, service, project } = await session("exec_tool_error", { verifyRun: "exit 0", extraEnv: { ALP_E2E_TOOL_ERROR: "1" } });
+    const spawned = await service.delegate({ targetRole: "worker", task: "Add a parser", workspace: project, workspaceMode: "workspace-write", requiredEvidence: ["change"] });
+    const waited = await service.wait(spawned.executionId);
+    // The child said `done`; the transcript says its test run failed. `wait` shows both.
+    expect(waited).toMatchObject({ status: "completed", output: "done" });
+    expect(waited.evidence?.toolCalls).toBe(2);
+    expect(waited.evidence?.toolErrors).toEqual([
+      { name: "Bash", summary: 'Bash {"command":"npm test"}', tail: "FAIL src/parser/new.test.ts\nTests: 1 failed, 2 passed" },
+    ]);
+    const evidence = await evidenceOf(environment, spawned.executionId);
+    const calls = items(evidence, "tool-call") as Extract<EvidenceItem, { kind: "tool-call" }>[];
+    expect(calls.map((item) => [item.ref.name, item.ref.isError, item.ref.result?.tail])).toEqual([
+      ["Write", false, "ok"],
+      ["Bash", true, "FAIL src/parser/new.test.ts\nTests: 1 failed, 2 passed"],
+    ]);
+    expect(calls[1].ref.result?.digest).toMatch(/^[0-9a-f]{64}$/);
+    // The text view prints the summary, the error mark, and the last lines of the tail.
+    const rendered = await runDelegationLifecycleCommand(["evidence", spawned.executionId], service) as { rendered: string };
+    expect(rendered.rendered).toContain('Bash {"command":"npm test"}  · error  · result');
+    expect(rendered.rendered).toContain("│ Tests: 1 failed, 2 passed");
+    expect(rendered.rendered).not.toContain("│ ok");
+  }, 15_000);
+
   it("runs the verify once trusted — pass satisfies, fail does not — and the CLI shows it", async () => {
     const { environment, service, project, env } = await session("exec_verify_pass", { verifyRun: "exit 0" });
     const spawned = await service.delegate({ targetRole: "worker", task: "Add a parser", workspace: project, workspaceMode: "workspace-write", requiredEvidence: ["verify:test"] });

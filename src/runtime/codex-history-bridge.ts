@@ -10,6 +10,7 @@ import {
 import type { HistoryDelta } from "../thread/history-types";
 import {
   accumulator,
+  attachToolResult,
   messageText,
   objectOf,
   parseLine,
@@ -127,7 +128,11 @@ function collectItem(acc: EntryAccumulator, payload: Record<string, unknown>, ti
       return true;
     }
     case "function_call_output":
-    case "custom_tool_call_output":
+    case "custom_tool_call_output": {
+      const parsed = codexToolOutput(payload.output);
+      attachToolResult(acc, stringOf(payload.call_id), parsed.text, parsed.isError);
+      return true;
+    }
     case "reasoning":
     case "agent_message":
     case "web_search_call":
@@ -135,6 +140,23 @@ function collectItem(acc: EntryAccumulator, payload: Record<string, unknown>, ti
     default:
       return false;
   }
+}
+
+/**
+ * `output` của Codex là string; shell gói nó thành JSON `{ output, metadata: { exit_code } }`.
+ * Codex không có cờ `is_error` — exit code khác 0 là tín hiệu duy nhất.
+ */
+function codexToolOutput(output: unknown): { readonly text: string | null; readonly isError: boolean } {
+  if (typeof output !== "string") return { text: null, isError: false };
+  try {
+    const parsed = objectOf(JSON.parse(output));
+    const inner = parsed === null ? null : stringOf(parsed.output);
+    const exitCode = parsed === null ? null : objectOf(parsed.metadata)?.exit_code;
+    if (inner !== null) return { text: inner, isError: typeof exitCode === "number" && exitCode !== 0 };
+  } catch {
+    // Không phải JSON: output thô.
+  }
+  return { text: output, isError: false };
 }
 
 /** `function_call.arguments` là JSON string; `apply_patch` để patch ở `input`/`patch`. */

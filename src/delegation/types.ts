@@ -165,6 +165,16 @@ export interface DelegationEvidenceChange {
   readonly outsideScopeCount: number;
 }
 
+/**
+ * Một tool call kết thúc lỗi, rút gọn cho `wait --json` (GitHub #26): cha thấy ngay "npm test
+ * fail" mà không phải mở log của backend. Chỉ tool có `isError`; đuôi output nếu bridge ghi.
+ */
+export interface DelegationEvidenceToolError {
+  readonly name: string;
+  readonly summary: string;
+  readonly tail: string | null;
+}
+
 export interface DelegationEvidenceSummary {
   readonly digest: string;
   /**
@@ -176,7 +186,13 @@ export interface DelegationEvidenceSummary {
   readonly missing: readonly string[];
   /** Item `change` đã thu, mỗi nguồn một dòng; rỗng khi không nguồn nào thấy thay đổi. */
   readonly changes: readonly DelegationEvidenceChange[];
+  /** Số tool call bridge thấy trong transcript của con. */
+  readonly toolCalls: number;
+  /** Tool call kết thúc lỗi, theo thứ tự transcript, tối đa `EVIDENCE_TOOL_ERRORS_MAX`. */
+  readonly toolErrors: readonly DelegationEvidenceToolError[];
 }
+
+export const EVIDENCE_TOOL_ERRORS_MAX = 5;
 
 export interface DelegationIds {
   request(): string;

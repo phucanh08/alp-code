@@ -52,13 +52,29 @@ export interface ThreadAssistantMessage extends ThreadEntryBase {
   readonly text: string;
 }
 
-/** Tên + thứ tự + summary đã redact. Raw args/output **không** copy. */
+/**
+ * Những gì giữ lại của một tool result: digest của toàn bộ text (sau redaction) để đối chiếu,
+ * kích thước, và **đuôi** — phần cuối là chỗ `npm test` nói pass/fail, nên đuôi giữ lại chứ
+ * không phải đầu. Raw output không đi xa hơn hàm dựng ra nó.
+ */
+export interface ThreadToolResultRef {
+  readonly digest: string;
+  readonly bytes: number;
+  readonly tail: string;
+}
+
+/** Tên + thứ tự + summary đã redact + đuôi result đã redact. Raw args/output **không** copy. */
 export interface ThreadToolCallRef extends ThreadEntryBase {
   readonly kind: "tool";
   readonly name: string;
   readonly callId: string | null;
   readonly summary: string;
   readonly isError: boolean;
+  /**
+   * Result của call này, khi transcript có nó trong cùng lát đọc (GitHub #26). Vắng mặt ở
+   * entry ghi trước khi có trường này, khi result chưa tới, hay khi runtime không ghi result.
+   */
+  readonly result?: ThreadToolResultRef;
   /** Ref tới artifact của execution nếu có (P4 chưa ghi — luôn `null`). */
   readonly artifact: string | null;
 }
@@ -149,3 +165,5 @@ export interface ThreadExecutionHistory {
 export const HISTORY_TEXT_MAX_BYTES = 16 * 1024;
 /** Trần summary của tool call. */
 export const HISTORY_TOOL_SUMMARY_MAX_BYTES = 512;
+/** Trần đuôi của tool result giữ lại trong `ThreadToolResultRef.tail`. */
+export const HISTORY_TOOL_RESULT_TAIL_MAX_BYTES = 2 * 1024;

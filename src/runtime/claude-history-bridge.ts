@@ -10,7 +10,8 @@ import {
 import type { HistoryDelta } from "../thread/history-types";
 import {
   accumulator,
-  markToolError,
+  attachToolResult,
+  contentBlocksText,
   messageText,
   objectOf,
   parseLine,
@@ -127,7 +128,7 @@ function collectLine(acc: EntryAccumulator, type: "user" | "assistant", record: 
         break;
       }
       case "tool_result":
-        if (block.is_error === true) markToolError(acc, stringOf(block.tool_use_id));
+        attachToolResult(acc, stringOf(block.tool_use_id), contentBlocksText(block.content), block.is_error === true);
         break;
       case "thinking":
       case "redacted_thinking":

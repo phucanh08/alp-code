@@ -16,6 +16,7 @@ import {
   type EvidenceChangeItem,
   type EvidenceCollectorDependencies,
   type EvidenceItem,
+  type EvidenceToolCallItem,
   type ExecutionEvidenceV1,
   type GitBaselineProbe,
   type Verifier,
@@ -46,6 +47,8 @@ import type { RuntimeAdapter, RuntimeLaunchSpec } from "../runtime/runtime-adapt
 import {
   DelegationError,
   type DelegationEvidenceChange,
+  type DelegationEvidenceToolError,
+  EVIDENCE_TOOL_ERRORS_MAX,
   type DelegationExecutionRecord,
   type DelegationExecutionStore,
   type DelegationIds,
@@ -415,6 +418,13 @@ function evidenceChanges(items: readonly EvidenceItem[]): readonly DelegationEvi
     })));
 }
 
+function evidenceToolErrors(items: readonly EvidenceItem[]): readonly DelegationEvidenceToolError[] {
+  return Object.freeze(items
+    .filter((item): item is EvidenceToolCallItem => item.kind === "tool-call" && item.ref.isError)
+    .slice(0, EVIDENCE_TOOL_ERRORS_MAX)
+    .map((item) => Object.freeze({ name: item.ref.name, summary: item.ref.summary, tail: item.ref.result?.tail ?? null })));
+}
+
 export class DelegationService {
   readonly config: DelegationServiceConfig;
   private readonly registry: AgentRegistry;
@@ -652,6 +662,8 @@ export class DelegationService {
         evaluation: collected.evaluation,
         missing: collected.missing,
         changes: evidenceChanges(collected.evidence.items),
+        toolCalls: collected.evidence.items.filter((item) => item.kind === "tool-call").length,
+        toolErrors: evidenceToolErrors(collected.evidence.items),
       }),
       usage: collected.usage,
       budgetStatus: collected.budgetStatus,
