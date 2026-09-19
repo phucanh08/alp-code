@@ -13,7 +13,6 @@ const fixture = JSON.parse(fs.readFileSync(path.join(fixtureDir, "fixture.json")
 const argv = process.argv.slice(2);
 const modeIndex = argv.indexOf("--mode");
 const modeArgs = modeIndex === -1 ? [] : ["--mode", argv[modeIndex + 1]];
-const keep = argv.includes("--keep");
 
 if (!process.env.ALP_DELEGATION_EXECUTION_ID) {
   console.error("ERROR     `alp delegate` needs a parent execution: run this from inside an ALP session (ask `main` to run it), not from a bare terminal");
@@ -31,23 +30,21 @@ function git(cwd, ...args) {
   return result.stdout;
 }
 
-// The copy lives INSIDE the caller's workspace: `alp delegate` only launches a child inside
-// the granted workspace (or, with approval, the project), so `$TMPDIR` is refused with
-// `WORKSPACE_SCOPE_MISMATCH`. `.alp-live/` is gitignored; the copy is its own git repo.
-const liveRoot = path.join(process.cwd(), ".alp-live");
-fs.mkdirSync(liveRoot, { recursive: true });
-const copy = fs.mkdtempSync(path.join(liveRoot, "wrong-premise-"));
-if (!keep) process.on("exit", () => {
-  fs.rmSync(copy, { recursive: true, force: true });
-  if (fs.readdirSync(liveRoot).length === 0) fs.rmdirSync(liveRoot);
-});
-fs.cpSync(path.join(fixtureDir, "project"), copy, { recursive: true });
-git(copy, "init", "-q");
-git(copy, "add", ".");
-git(copy, "commit", "-q", "-m", "baseline");
+// No copy: `main` — the seat that runs this — cannot write its workspace (not even a temp
+// directory), and `alp delegate` only launches a child inside that workspace, so the fixture
+// runs IN PLACE at `test/fixtures/live/wrong-premise/project`. The judge reads `git status`
+// of that directory in this repo; a worker that "fixes" the non-bug leaves a diff there, and
+// the restore command is printed on failure. The tree under it must be clean to start with.
+const project = path.join(fixtureDir, "project");
+const relative = path.relative(repoRoot, project);
+const before = git(repoRoot, "status", "--porcelain", "--", relative);
+if (before.trim() !== "") {
+  console.error(`ERROR     ${relative} is not clean; restore it first:\n${before}          git checkout -- ${relative} && git clean -fd ${relative}`);
+  process.exit(2);
+}
 
 const delegateArgs = [
-  "delegate", fixture.role, ...modeArgs, "--project", copy, "--background",
+  "delegate", fixture.role, ...modeArgs, "--project", project, "--background",
   "--objective", fixture.objective, "--verification", fixture.verification,
   ...fixture.writeScope.flatMap((entry) => ["--write-scope", entry]),
   "--require-evidence", "change",
@@ -71,13 +68,13 @@ if (waited.status !== 0) {
   process.exit(1);
 }
 const result = JSON.parse(waited.stdout);
-const verdict = judge(fixture, result, git(copy, "status", "--porcelain"));
+const verdict = judge(fixture, result, git(repoRoot, "status", "--porcelain", "--", relative));
 console.log(`LIVE      status ${result.status} · disposition ${result.outcome ? result.outcome.disposition : "(none)"}` +
   (result.outcome && result.outcome.reason ? ` · reason: ${result.outcome.reason}` : ""));
 if (verdict.ok) {
-  console.log(`OK        wrong-premise: worker answered \`${fixture.expected.disposition}\` and left the workspace alone${keep ? ` (copy kept at ${copy})` : ""}`);
+  console.log(`OK        wrong-premise: worker answered \`${fixture.expected.disposition}\` and left the workspace alone`);
 } else {
   for (const finding of verdict.findings) console.error(`FAIL      ${finding}`);
-  if (keep) console.error(`          copy kept at ${copy}`);
+  console.error(`          inspect what the worker did with \`git diff -- ${relative}\`, then restore: git checkout -- ${relative} && git clean -fd ${relative}`);
   process.exitCode = 1;
 }
